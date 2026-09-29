@@ -10998,6 +10998,25 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_flash_attn_ext(72, 64, 4, {1, 1}, 256, 2, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
     test_cases.emplace_back(new test_flash_attn_ext(64, 72, 4, {1, 1}, 256, 2, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
 
+    // small batches (speculative decoding) with quantized K/V, KV length a multiple of 256 so that the vector kernel is eligible
+    for (int hs : { 64, 128, 256 }) {
+        for (int nr2 : { 1, 6 }) {
+            for (int nb : { 2, 3, 4, 5, 8 }) {
+                for (ggml_type type_KV : { GGML_TYPE_Q8_0, GGML_TYPE_Q4_0 }) {
+                    test_cases.emplace_back(new test_flash_attn_ext(hs, hs, 2, {nr2, 1}, 512, nb, true, false, 0, 0, GGML_PREC_F32, type_KV, type_KV));
+                }
+            }
+        }
+    }
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, 512, 4, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}));
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 2}, 512, 4, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 2}, 512, 3, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, 512, 4, true, true,  0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    test_cases.emplace_back(new test_flash_attn_ext(128, 128, 2, {4, 1}, 512, 4, true, false, 0, 10.0f, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    test_cases.emplace_back(new test_flash_attn_ext(128, 128, 2, {4, 1}, 512, 3, true, false, 8.0f, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, 512, 4, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_F16));
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, 512, 4, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16,  GGML_TYPE_Q8_0));
+
     // mixed quant and Q1_0 test cases
     test_cases.emplace_back(new test_flash_attn_ext(64, 64, 4, {1, 1}, 128, 2, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q4_0));
     test_cases.emplace_back(new test_flash_attn_ext(64, 64, 4, {1, 1}, 128, 2, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q4_0, GGML_TYPE_F16));
@@ -11563,6 +11582,15 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 65536, 512, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 131072, 1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 131072, 512, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
+
+    // speculative decoding verify batches, K/V laid out like the KV cache
+    for (int kv : { 8192, 32768, 98304 }) {
+        for (int nb : { 1, 2, 3, 4, 5, 8 }) {
+            for (ggml_type type_KV : { GGML_TYPE_F16, GGML_TYPE_Q8_0 }) {
+                test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, kv, nb, true, false, 0, 0, GGML_PREC_F32, type_KV, type_KV, {0, 2, 1, 3}, false));
+            }
+        }
+    }
 
     for (int kv : { 4096, 8192, 16384,32768, 65536, }) {
         for (int hs : { 64, 128, 256, 576, }) {
