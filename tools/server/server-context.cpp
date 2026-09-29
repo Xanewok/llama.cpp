@@ -52,6 +52,14 @@ static common_speculative_output_limits server_output_limits(const common_params
     return result;
 }
 
+// env LLAMA_HOST_PROF: host time per speculative round (us): verify decode+sync, accept (target sampling), round wall
+struct server_hprof {
+    bool    on = getenv("LLAMA_HOST_PROF") != nullptr;
+    int64_t t[4] = {}; // decode+sync, accept, round, rounds
+    int64_t t_last = 0;
+};
+static server_hprof g_srv_hprof;
+
 // a checkpoint restore dropped tokens the target had accepted - re-accept them rather than verify again
 static std::vector<llama_token> server_accept_replay(
         common_sampler * smpl,
@@ -3700,12 +3708,25 @@ private:
         // yield to the queue, so we can still handle metrics tasks while decoding
         // note: the sync is done here too, so that the wait is also covered by the yield
         int ret = 0;
+        const int64_t hp_t0 = g_srv_hprof.on && batch.view.size() <= 32 ? ggml_time_us() : 0;
         queue_tasks.yield_to_queue([&]() {
             ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
             if (ret == 0 && has_output) {
                 llama_synchronize(ctx_tgt);
             }
         });
+        if (hp_t0) {
+            g_srv_hprof.t[0] += ggml_time_us() - hp_t0;
+            if (g_srv_hprof.t_last) {
+                g_srv_hprof.t[2] += hp_t0 - g_srv_hprof.t_last;
+                if (++g_srv_hprof.t[3] % 128 == 0) {
+                    const double n = (double) g_srv_hprof.t[3];
+                    SRV_INF("host-prof server: %lld rounds; per round us: wall %.0f, verify decode+sync %.0f, accept %.0f\n",
+                            (long long) g_srv_hprof.t[3], g_srv_hprof.t[2]/n, g_srv_hprof.t[0]/n, g_srv_hprof.t[1]/n);
+                }
+            }
+            g_srv_hprof.t_last = hp_t0;
+        }
 
         if (ret != 0) {
             {
@@ -3940,6 +3961,7 @@ private:
                 const bool use_rejection = slot.use_spec_rejection() && !slot.spec_draft_q.empty();
 
                 std::vector<llama_token> accepted;
+                const int64_t hp_t0 = g_srv_hprof.on ? ggml_time_us() : 0;
                 if (!synth_probs.empty()) {
                     // synthetic acceptance replaces verification entirely, so it comes first
                     accepted = server_sample_and_accept_synth(
@@ -3953,6 +3975,9 @@ private:
                     accepted = common_sampler_sample_and_accept_n(slot.smpl.get(), slot.ctx_tgt, slot.spec_i_batch, slot.spec_draft);
                 }
                 slot.spec_i_batch.clear();
+                if (hp_t0) {
+                    g_srv_hprof.t[1] += ggml_time_us() - hp_t0;
+                }
 
                 GGML_ASSERT(accepted.size() >= 1);
 

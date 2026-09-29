@@ -1975,6 +1975,11 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
     // If the previous cgraph had a defined UID it can be used to skip rebuilding the subgraphs per simple backend.
     const bool needs_rebuild = (cgraph->uid == 0) || (cgraph->uid != backend_ctx->uid);
 
+    // env LLAMA_HOST_PROF: host time of the subgraph rebuild, per call; printed every 256 calls
+    static const bool hprof_on = getenv("LLAMA_HOST_PROF") != nullptr;
+    static int64_t hprof_calls = 0, hprof_rebuilds = 0, hprof_us = 0, hprof_nodes = 0;
+    const int64_t hprof_t0 = hprof_on ? ggml_time_us() : 0;
+
     bool max_nnodes_raised = false;
     if (cgraph->n_nodes > backend_ctx->max_nnodes) {
         for (size_t j = 0; j < n_backends; j++) {
@@ -2231,6 +2236,11 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
 
         backend_ctx->uid         = cgraph->uid;
         backend_ctx->n_subgraphs = n_subgraphs;
+        if (hprof_on) {
+            hprof_us += ggml_time_us() - hprof_t0;
+            hprof_rebuilds++;
+            hprof_nodes += cgraph->n_nodes;
+        }
 
         if (max_tmp_size > backend_ctx->max_tmp_size) {
             for (size_t j = 0; j < n_backends; j++) {
@@ -2436,6 +2446,12 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
         return GGML_STATUS_SUCCESS;
     };
 
+
+    if (hprof_on && ++hprof_calls % 256 == 0) {
+        fprintf(stderr, "host-prof meta: %lld computes, %lld rebuilds, rebuild %.0f us each (%.0f nodes), %zu subgraphs now\n",
+                (long long) hprof_calls, (long long) hprof_rebuilds, hprof_rebuilds ? (double) hprof_us/hprof_rebuilds : 0.0,
+                hprof_rebuilds ? (double) hprof_nodes/hprof_rebuilds : 0.0, backend_ctx->n_subgraphs);
+    }
 
     for (size_t i = 0; i < backend_ctx->n_subgraphs; i++) {
         for (size_t j = 0; j < n_backends; j++) {
