@@ -405,7 +405,12 @@ extern "C" {
         ggml_backend_dev_t * devs, size_t n_devs, ggml_backend_meta_get_split_state_t get_split_state, void * get_split_state_ud);
 
     // all-gather: on a meta backend a split tensor becomes MIRRORED, bit-exact (a sum of zero-padded slices);
-    // elsewhere an identity copy
+    // elsewhere an identity copy.
+    // Contract (meta backend): the result must be consumed by a later node, and only through views, reshapes or
+    // copies; the reduction that completes it runs where the next subgraph starts, so a gather that ends the graph
+    // is never reduced, and an arithmetic op on it (e.g. a MUL with a MIRRORED operand) moves the reduction onto that
+    // op, which then takes the lossy backend AllReduce. Reading the gather itself with ggml_backend_tensor_get() is
+    // not supported; read a consumer. -0.0f comes out as +0.0f.
     GGML_API struct ggml_tensor * ggml_backend_meta_gather(struct ggml_context * ctx, struct ggml_tensor * a);
 
     //
