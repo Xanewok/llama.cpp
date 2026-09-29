@@ -3002,6 +3002,10 @@ private:
                             slot.spec_ckpt.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
                         }
 
+                        // the verification pass overwrites the draft's carried state, keep it for a rollback
+                        slot.spec_ckpt.data_spec.clear();
+                        common_speculative_get_state(spec.get(), slot.id, slot.spec_ckpt.data_spec);
+
                         slot.spec_prompt = slot.prompt.tokens.get_text_tokens();
 
                         common_speculative_get_draft_params(spec.get(), slot.id) = {
@@ -3928,6 +3932,8 @@ private:
                         if (slot.ctx_dft) {
                             ckpt.load_dft(slot.ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
                         }
+
+                        common_speculative_set_state(spec.get(), slot.id, ckpt.data_spec);
 
                         slot.mem.seq_rm(slot.id, ckpt.pos_max + 1, -1);
 
