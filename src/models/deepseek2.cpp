@@ -395,6 +395,10 @@ llama_model_deepseek2::graph_mtp::graph_mtp(const llama_model & model, const llm
 
     if (inp_out_ids) {
         cur = ggml_get_rows(ctx0, cur, inp_out_ids);
+        if (cparams.embeddings_nextn_masked) {
+            // masked rows are output rows: get_embeddings_nextn_ith resolves a batch index to its output row
+            res->t_h_nextn = cur;
+        }
     }
     cb(cur, "mtp_shared_head_norm", -1);
 
