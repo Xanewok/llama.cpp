@@ -756,6 +756,10 @@ llama_model_glm_dsa::graph_mtp::graph_mtp(const llama_model & model, const llm_g
     res->t_h_nextn = cur;
 
     cur = ggml_get_rows(ctx0, cur, inp_out_ids);
+    if (cparams.embeddings_nextn_masked) {
+        // masked rows are output rows: get_embeddings_nextn_ith resolves a batch index to its output row
+        res->t_h_nextn = cur;
+    }
     cb(cur, "mtp_shared_head_norm", -1);
 
     ggml_tensor * head_w = layer.nextn.shared_head_head ? layer.nextn.shared_head_head : model.output;
