@@ -11,6 +11,7 @@
 #include "common.h"
 #include "fit.h"
 #include "llama.h"
+#include "../../src/llama-ext.h" // staging API: llama_get_ctx_other
 #include "log.h"
 #include "sampling.h"
 #include "speculative.h"
@@ -2551,6 +2552,19 @@ private:
                         break;
                     }
 
+                    // the draft state cannot be rebuilt from the tokens, so it goes into a companion file;
+                    // fs_validate_filename() rejects "..", so no user file can collide with it
+                    const std::string filepath_dft = filepath + "..dft";
+                    {
+                        // a failed save must not leave a companion that belongs to an older target file
+                        std::error_code ec;
+                        std::filesystem::remove(filepath_dft, ec);
+                        if (ec) {
+                            send_error(task, "Unable to remove the old slot draft file", ERROR_TYPE_SERVER);
+                            break;
+                        }
+                    }
+
                     GGML_ASSERT(packed.size() % sizeof(llama_token) == 0);
                     const size_t nwrite = llama_state_seq_save_file(
                         ctx_tgt, filepath.c_str(), slot->id,
@@ -2558,6 +2572,14 @@ private:
                     if (nwrite == 0) {
                         send_error(task, "Unable to save slot", ERROR_TYPE_SERVER);
                         break;
+                    }
+
+                    // a draft context that shares the memory of another context has no state of its own
+                    if (ctx_dft && llama_get_ctx_other(ctx_dft) == nullptr) {
+                        if (llama_state_seq_save_file(ctx_dft, filepath_dft.c_str(), slot->id, nullptr, 0) == 0) {
+                            send_error(task, "Unable to save slot draft", ERROR_TYPE_SERVER);
+                            break;
+                        }
                     }
 
                     const int64_t t_end = ggml_time_us();
@@ -2595,6 +2617,9 @@ private:
 
                     size_t nread = 0;
                     try {
+                        // the file only replaces the target state; a draft context must not keep the previous one
+                        slot->mem.seq_rm(slot->id, -1, -1);
+
                         size_t n_packed = 0;
                         llama_tokens packed;
                         nread = llama_state_seq_load_file(ctx_tgt, filepath.c_str(), slot->id, nullptr, 0, &n_packed);
@@ -2615,6 +2640,22 @@ private:
 
                         if (!restored.validate(ctx_tgt)) {
                             throw std::runtime_error("Invalid tokens in slot save file");
+                        }
+
+                        if (ctx_dft && llama_get_ctx_other(ctx_dft) == nullptr) {
+                            const std::string filepath_dft = filepath + "..dft";
+                            std::error_code ec;
+                            const bool has_dft = std::filesystem::exists(filepath_dft, ec);
+                            if (ec) {
+                                throw std::runtime_error("Unable to look up the draft state file");
+                            }
+                            if (has_dft) {
+                                llama_token unused;
+                                size_t n_unused = 0;
+                                if (llama_state_seq_load_file(ctx_dft, filepath_dft.c_str(), slot->id, &unused, 0, &n_unused) == 0) {
+                                    throw std::runtime_error("Unable to restore the draft state");
+                                }
+                            }
                         }
 
                         slot->prompt.clear();
