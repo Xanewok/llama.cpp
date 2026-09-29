@@ -2055,6 +2055,26 @@ static void test_backend_top_p_on_top_k_candidates(const test_params & params) {
     printf("backend top-p on top-k candidates test PASSED\n");
 }
 
+static void test_backend_top_p_on_top_p_candidates(const test_params & params) {
+    const std::string prompt = "Hello";
+    const std::vector<float> raw_logits = decode_raw_logits(params, prompt);
+
+    // each top-p after the first sorts the candidates of the one before it
+    const auto add_samplers = [](llama_sampler * chain) {
+        llama_sampler_chain_add(chain, llama_sampler_init_top_k(8));
+        llama_sampler_chain_add(chain, llama_sampler_init_top_p(0.99f, 1));
+        llama_sampler_chain_add(chain, llama_sampler_init_top_p(0.9f, 1));
+    };
+    const sampler_comparison_output output = run_sampler_comparison(
+            params, prompt, raw_logits, add_samplers, [](llama_sampler *) {});
+
+    const sampler_comparison_stats stats = compare_sampler_outputs(
+            "top_k + top_p + top_p", map_logits(output.expected), output.actual);
+    GGML_ASSERT(stats.n_mismatch == 0);
+
+    printf("backend top-p on top-p candidates test PASSED\n");
+}
+
 struct backend_test_case {
     std::string name;
     void (*fn)(const test_params &);
@@ -2083,6 +2103,7 @@ static const backend_test_case BACKEND_TESTS[] = {
     { "top_p",           test_backend_top_p_sampling,          true  },
     { "top_k_greedy",    test_backend_top_k_greedy_sampling,   true  },
     { "top_p_on_top_k",  test_backend_top_p_on_top_k_candidates, true },
+    { "top_p_on_top_p",  test_backend_top_p_on_top_p_candidates, true },
 };
 
 static test_args parse_cli(int argc, char ** argv) {
