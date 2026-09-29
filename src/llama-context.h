@@ -260,6 +260,9 @@ public:
 
     bool set_sampler(llama_seq_id seq_id, llama_sampler * sampler);
 
+    // tensor split: allocate sampling.vocab_ids once; false if that failed
+    bool sampling_init_vocab_ids();
+
 private:
     llm_graph_result * get_gf_res_prev();
 
@@ -329,6 +332,11 @@ private:
 
         // optimization
         std::vector<llama_token> token_ids_full_vocab;
+
+        // tensor split: vocab ids split like the logits, created with the first backend sampler
+        ggml_context_ptr        vocab_ids_ctx;
+        ggml_backend_buffer_ptr vocab_ids_buf;
+        ggml_tensor *           vocab_ids = nullptr;
     };
 
     sampling_info sampling;
