@@ -648,7 +648,8 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
         // whose token and h come from step s-1, so no host read sits between steps. Rows past step 0 of the batch
         // carry only their position and KV slot.
         GGML_ASSERT(n_chain <= (int32_t) n_tokens && ubatch.token);
-        ggml_tensor * tok_embd_w = layer.nextn.embed_tokens ? layer.nextn.embed_tokens : model.tok_embd;
+        ggml_tensor * tok_embd_w = mtp_chain_tok_embd ? mtp_chain_tok_embd :
+                layer.nextn.embed_tokens ? layer.nextn.embed_tokens : model.tok_embd;
 
         auto * inp_chain = build_inp_mtp_chain(n_chain);
 
