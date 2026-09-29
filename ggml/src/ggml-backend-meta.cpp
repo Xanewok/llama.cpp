@@ -2511,7 +2511,11 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
 
         if (n_backends > 1 && i < backend_ctx->n_subgraphs - 1) {
             bool backend_allreduce_success = false;
-            if (backend_ctx->comm_ctx) {
+            // A gather carries vocab ids as F32 and must be bit-exact, but a backend AllReduce may reduce in lower
+            // precision (CUDA rounds F32 through BF16). The generic fallback adds in the tensor's own type.
+            const ggml_cgraph * cgraph_0 = backend_ctx->backend_configs[0].cgraphs[i].cgraph_main;
+            const bool exact = ggml_backend_meta_is_gather(cgraph_0->nodes[cgraph_0->n_nodes - 1]);
+            if (backend_ctx->comm_ctx && !exact) {
                 std::vector<ggml_tensor *> nodes;
                 nodes.reserve(n_backends);
                 for (size_t j = 0; j < n_backends; j++) {
