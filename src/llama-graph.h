@@ -157,6 +157,26 @@ public:
     const int64_t n_embd = 0;
 };
 
+// MTP draft chain (see llama_set_mtp_chain): the step parameters and the positions, laid out per step
+class llm_graph_input_mtp_chain : public llm_graph_input_i {
+public:
+    llm_graph_input_mtp_chain(const float * par, uint32_t n_pos_per_embd, int32_t n_chain) :
+        par(par), n_pos_per_embd(n_pos_per_embd), n_chain(n_chain) {}
+    virtual ~llm_graph_input_mtp_chain() = default;
+
+    void set_input(const llama_ubatch * ubatch) override;
+
+    bool can_reuse(const llm_graph_params & params) override;
+
+    ggml_tensor * u        = nullptr; // F32 [n_chain]
+    ggml_tensor * inv_temp = nullptr; // F32 [1]
+    ggml_tensor * pos      = nullptr; // I32 [n_batch*n_pos_per_embd]: per step, a contiguous [n_pos_per_embd][rows] block
+
+    const float * par; // [LLAMA_MTP_CHAIN_MAX] u, then inv_temp; owned by the context
+    const uint32_t n_pos_per_embd;
+    const int32_t  n_chain;
+};
+
 class llm_graph_input_pos : public llm_graph_input_i {
 public:
     llm_graph_input_pos(uint32_t n_pos_per_embd) : n_pos_per_embd(n_pos_per_embd) {}
@@ -874,6 +894,10 @@ struct llm_graph_params {
             return false;
         }
 
+        if (cparams.mtp_chain != other.cparams.mtp_chain) {
+            return false;
+        }
+
         return
             cparams.embeddings              == other.cparams.embeddings              &&
             cparams.embeddings_nextn        == other.cparams.embeddings_nextn        &&
@@ -892,6 +916,8 @@ struct llm_graph_params {
     // from the per-device top-k candidates (see build_sampling); nullptr/0 otherwise
     ggml_tensor * sampling_vocab_ids = nullptr;
     uint32_t      sampling_n_shards  = 0;
+
+    const float * mtp_chain_par = nullptr; // see llm_graph_input_mtp_chain
 };
 
 struct llm_graph_fused_node {
@@ -946,6 +972,7 @@ public:
     ggml_tensor * t_embd        = nullptr;
     ggml_tensor * t_embd_pooled = nullptr;
     ggml_tensor * t_h_nextn     = nullptr; // [n_embd, n_outputs] hidden state before final output norm
+    ggml_tensor * t_mtp_chain   = nullptr; // [LLAMA_MTP_CHAIN_ROW, n_chain], see llama_get_mtp_chain
 
     std::vector<ggml_tensor *> t_layer_inp;
 
@@ -1043,6 +1070,8 @@ struct llm_graph_context {
 
     ggml_tensor * sampling_vocab_ids;
     uint32_t      sampling_n_shards;
+
+    const float * mtp_chain_par;
 
     const llm_graph_cb & cb_func;
 
@@ -1178,6 +1207,11 @@ struct llm_graph_context {
 
     ggml_tensor * build_inp_embd(ggml_tensor * tok_embd) const;
     ggml_tensor * build_inp_pos() const;
+    llm_graph_input_mtp_chain * build_inp_mtp_chain(int32_t n_chain) const;
+
+    // one MTP chain step's pick from its logits [n_vocab, 1]; returns the token (I32 [1]) and sets *row to the
+    // step's [LLAMA_MTP_CHAIN_ROW] output
+    ggml_tensor * build_mtp_chain_pick(ggml_tensor * logits, llm_graph_input_mtp_chain * inp, int32_t step, ggml_tensor ** row) const;
     ggml_tensor * build_inp_attn_scale() const;
     ggml_tensor * build_inp_out_ids() const;
     ggml_tensor * build_inp_mean() const;

@@ -336,6 +336,7 @@ struct common_params_speculative_draft {
     bool probabilistic = false; // sample the draft and verify by rejection, instead of argmax and match
 
     bool mtp_fuse_catchup = false; // draft-mtp: run the catch-up of a generation batch as part of the next draft's first step
+    bool mtp_chain        = false; // draft-mtp: run the k draft steps as one graph, with no host read between steps
 
     common_params_model mparams;
 
