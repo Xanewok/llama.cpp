@@ -1422,6 +1422,22 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     std::vector<int>                i_last;
     std::vector<std::vector<float>> chain_h;
 
+    // ik_llama.cpp#1736: process() does not catch up a generation batch; the next draft() decodes the rows that
+    // were kept together with its first step. Saves one MTP decode per round and never writes rejected rows.
+    // Requires the single-head mode with its own plain KV cache (qwen35/qwen3next MTP): a draft context that can only
+    // restore full-sequence checkpoints would roll back rows the fused step wrote after the checkpoint.
+    bool fuse_catchup = false;
+
+    struct deferred_catchup {
+        bool                     active = false;
+        llama_pos                pos0   = 0; // position of tokens[0]
+        int32_t                  n_keep = 0; // leading rows that stay: all of them, or 1 + accepted after accept()
+        std::vector<llama_token> tokens;
+        std::vector<float>       h0;         // input h of row 0; row t > 0 takes verify_h[t - 1]
+    };
+
+    std::vector<deferred_catchup> deferred;
+
     common_speculative_impl_draft_mtp(const common_params_speculative & params, uint32_t n_seq)
         : common_speculative_impl(COMMON_SPECULATIVE_TYPE_DRAFT_MTP, n_seq, params.draft.n_max)
         , params(params.draft)
@@ -1500,6 +1516,50 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         verify_h.assign(n_seq, {});
         verify_h_rows.assign(n_seq, 0);
+
+        fuse_catchup = this->params.mtp_fuse_catchup && !is_mem_shared && !chain_heads && llama_n_rs_seq(ctx_dft) == 0;
+        if (this->params.mtp_fuse_catchup && !fuse_catchup) {
+            SPC_WRN("%s", "fused MTP catch-up needs a single MTP head with its own KV cache; not fusing\n");
+        }
+        deferred.assign(n_seq, {});
+    }
+
+    // Adds the deferred rows of seq_id that a batch starting at pos_next builds on: rows at or past pos_next were
+    // rejected or are about to be rewritten. Leaves the deferral inactive.
+    void settle_deferred(llama_seq_id seq_id, llama_pos pos_next) {
+        auto & d = deferred[seq_id];
+        if (!d.active) {
+            return;
+        }
+        d.active = false;
+
+        const int32_t n_add = std::clamp<int32_t>(pos_next - d.pos0, 0, d.n_keep);
+        if (n_add != d.n_keep || pos_next != d.pos0 + d.n_keep) {
+            SPC_DBG("seq_id %d: deferred catch-up at pos %d (%d kept) settled at pos %d, adding %d rows\n",
+                    seq_id, (int) d.pos0, d.n_keep, (int) pos_next, n_add);
+        }
+
+        const size_t row_bytes = (size_t) n_embd * sizeof(float);
+        for (int32_t t = 0; t < n_add; ++t) {
+            const float * h = t == 0 ? d.h0.data() : verify_h[seq_id].data() + (size_t) (t - 1) * n_embd;
+            common_batch_add(batch, d.tokens[t], d.pos0 + t, { seq_id }, false);
+            std::memcpy(batch.embd + (size_t) (batch.n_tokens - 1) * n_embd, h, row_bytes);
+        }
+    }
+
+    // a generation batch: every row of seq_id is an output and the rows are short and contiguous
+    bool can_defer(const llama_batch & batch_in, llama_seq_id seq_id) const {
+        const int32_t beg = i_batch_beg[seq_id];
+        const int32_t end = i_batch_end[seq_id];
+        if (beg < 0 || batch_in.logits == nullptr || end - beg + 1 > params.n_max + 1) {
+            return false;
+        }
+        for (int32_t k = beg; k <= end; ++k) {
+            if (batch_in.seq_id[k][0] != seq_id || !batch_in.logits[k] || batch_in.pos[k] != batch_in.pos[beg] + (k - beg)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     ~common_speculative_impl_draft_mtp() override {
@@ -1581,37 +1641,52 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         if (!is_mem_shared) {
             common_batch_clear(batch);
 
+            std::vector<bool> defer(n_seq, false);
+            if (fuse_catchup) {
+                for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
+                    if (i_batch_beg[seq_id] < 0) {
+                        continue;
+                    }
+                    settle_deferred(seq_id, batch_in.pos[i_batch_beg[seq_id]]);
+                    defer[seq_id] = can_defer(batch_in, seq_id);
+                }
+            }
+
+            // each row pairs its token with the tgt embedding of the row before it, so the tokens of a sequence
+            // must be sequential in the batch, i.e. we cannot have seq_id like this: [0, 0, 0, 1, 1, 0, 1, 1]
+            //                                                                                     ^--- this is a problem
+            // the first row of a sequence takes the pending embedding from a previous run
+            const float * h_tgt = llama_get_embeddings_nextn(ctx_tgt);
+
             for (int k = 0; k < n_tokens; ++k) {
-                common_batch_add(batch, batch_in.token[k], batch_in.pos[k], { batch_in.seq_id[k][0] }, 0);
-            }
-
-            // shift the tgt embeddings to the right by one position
-            // assumes that the tokens in the batch are sequential for each sequence
-            // i.e. we cannot have seq_id like this: [0, 0, 0, 1, 1, 0, 1, 1]
-            //                                                       ^--- this is a problem
-            // TODO:this is generally true, but would be nice to assert it
-            {
-                const float * h_tgt = llama_get_embeddings_nextn(ctx_tgt);
-                std::memcpy(batch.embd + (size_t) 1 * n_embd, h_tgt, row_bytes * (n_tokens-1));
-            }
-
-            // fill the pending embeddings from a previous run
-            auto set_h = [&](int idx, const float * h_row) {
-                std::memcpy(batch.embd + (size_t) idx * n_embd, h_row, row_bytes);
-            };
-
-            for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
-                if (i_batch_beg[seq_id] < 0) {
+                const llama_seq_id seq_id = batch_in.seq_id[k][0];
+                if (defer[seq_id]) {
                     continue;
                 }
+                const float * h = k == i_batch_beg[seq_id] ? pending_h[seq_id].data() : h_tgt + (size_t) (k - 1) * n_embd;
+                common_batch_add(batch, batch_in.token[k], batch_in.pos[k], { seq_id }, 0);
+                std::memcpy(batch.embd + (size_t) (batch.n_tokens - 1) * n_embd, h, row_bytes);
+            }
 
-                set_h(i_batch_beg[seq_id], pending_h[seq_id].data());
+            for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
+                if (!defer[seq_id]) {
+                    continue;
+                }
+                const int32_t beg = i_batch_beg[seq_id];
+                const int32_t end = i_batch_end[seq_id];
+
+                auto & d = deferred[seq_id];
+                d.active = true;
+                d.pos0   = batch_in.pos[beg];
+                d.n_keep = end - beg + 1;
+                d.tokens.assign(batch_in.token + beg, batch_in.token + end + 1);
+                d.h0     = pending_h[seq_id];
             }
 
             auto * mem_dft = llama_get_memory(ctx_dft);
 
             bool ok = true;
-            for (int head = 0; head < n_mtp_layers; ++head) {
+            for (int head = 0; head < n_mtp_layers && batch.n_tokens > 0; ++head) {
                 if (chain_heads) {
                     // ref: https://github.com/ggml-org/llama.cpp/pull/24340/changes#r3413498544
                     for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
@@ -1695,6 +1770,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             if (!dp.result_q) {
                 common_sampler_reset(smpls[seq_id].get());
             }
+
+            // the fused catch-up: the kept rows of the last batch go in front of the first draft step
+            settle_deferred(seq_id, dp.pos0);
 
             common_batch_add(batch, dp.id_last, dp.pos0, { seq_id }, true);
             std::memcpy(batch.embd + (size_t) (batch.n_tokens - 1) * n_embd, pending_h[seq_id].data(), row_bytes);
@@ -1842,6 +1920,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         const int32_t i_h = std::min<int32_t>(n_accepted, n_rows - 1);
         const size_t row_bytes = (size_t) n_embd * sizeof(float);
         std::memcpy(pending_h[seq_id].data(), verify_h[seq_id].data() + (size_t) i_h * n_embd, row_bytes);
+
+        auto & d = deferred[seq_id];
+        if (d.active) {
+            d.n_keep = std::min<int32_t>(n_accepted + 1, (int32_t) d.tokens.size());
+        }
     }
 };
 
