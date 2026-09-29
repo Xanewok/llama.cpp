@@ -886,6 +886,33 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_get_split_state(
             return src_ss[0];
         }
 
+        // Device-local ops for sampling from vocab-split logits. Each of these combinations used to abort, so no
+        // existing graph depends on them. The slices are not a proportional share of the source, so the ratio logic
+        // after the switch must not run.
+        auto is_simple_split = [](const ggml_backend_meta_split_state & ss, int axis) {
+            return ss.axis == axis && ss.n_segments == 1 && ss.nr[0] == 1;
+        };
+        if (tensor->op == GGML_OP_TOP_K && is_simple_split(src_ss[0], GGML_BACKEND_SPLIT_AXIS_0)) {
+            // each device takes the top ne[0]/n_bufs of its own slice; the indices are slice-local
+            GGML_ASSERT(tensor->ne[0] % int64_t(n_bufs) == 0);
+            const int64_t k = tensor->ne[0] / int64_t(n_bufs);
+            ggml_backend_meta_split_state ret = {GGML_BACKEND_SPLIT_AXIS_0, {0}, {1}, 1};
+            for (size_t j = 0; j < n_bufs; j++) {
+                GGML_ASSERT(src_ss[0].ne[j] >= k && "slice smaller than the per-device top-k");
+                ret.ne[j] = k;
+            }
+            return ret;
+        }
+        if (tensor->op == GGML_OP_GET_ROWS && is_simple_split(src_ss[0], GGML_BACKEND_SPLIT_AXIS_1) &&
+                is_simple_split(src_ss[1], GGML_BACKEND_SPLIT_AXIS_0)) {
+            // a split index tensor holds slice-local row indices, as produced by the TOP_K above
+            ggml_backend_meta_split_state ret = {GGML_BACKEND_SPLIT_AXIS_1, {0}, {1}, 1};
+            for (size_t j = 0; j < n_bufs; j++) {
+                ret.ne[j] = src_ss[1].ne[j];
+            }
+            return ret;
+        }
+
         ggml_backend_meta_split_state split_state;
         switch (tensor->op) {
             case GGML_OP_NONE: {
