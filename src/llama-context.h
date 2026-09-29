@@ -309,6 +309,16 @@ private:
     // sets llm_graph_result::t_h_nextn
     buffer_view<float> embd_nextn = {nullptr, 0};
 
+    // env LLAMA_HOST_PROF: host time per decode phase (us): pre (batch, memory), reuse check, build, alloc,
+    // set inputs, compute (async on GPU), post (outputs); per batch size, printed every 128 decodes
+    bool    hprof_on    = false;
+    bool    hprof_rec   = false; // this decode is small enough to count (not prefill)
+    // [min(n_tokens, 8)][pre, reuse-check, build, alloc, set-inputs, compute, post, decodes, built]
+    int64_t hprof[9][9] = {};
+    int     hprof_bkt   = 0;
+    int64_t hprof_n     = 0;
+    int64_t hprof_tc    = 0;
+
     // host buffers for output layer input embeddings, per layer
     // populated when cparams.output_layer_inp[il] is true
     std::vector<buffer_view<float>> embd_layer_inp;

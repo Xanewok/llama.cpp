@@ -117,6 +117,7 @@ llama_context::llama_context(
     cparams.yarn_beta_slow          = params.yarn_beta_slow   >= 0.0f ? params.yarn_beta_slow   : hparams.yarn_beta_slow;
     cparams.embeddings              = params.embeddings;
     cparams.embeddings_nextn        = false;
+    hprof_on = getenv("LLAMA_HOST_PROF") != nullptr;
     cparams.embeddings_nextn_masked = false;
     cparams.offload_kqv             = params.offload_kqv;
     cparams.no_perf                 = params.no_perf;
@@ -1397,6 +1398,15 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         return nullptr;
     }
 
+    int64_t hp_t = hprof_rec ? ggml_time_us() : 0;
+    auto hp_lap = [&](int i) {
+        if (hprof_rec) {
+            const int64_t t = ggml_time_us();
+            hprof[hprof_bkt][i] += t - hp_t;
+            hp_t = t;
+        }
+    };
+
     auto * res = get_gf_res_prev();
     auto * gf  = res->get_gf();
 
@@ -1415,7 +1425,10 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         }
 
         n_reused++;
+        hp_lap(1);
     } else {
+        hp_lap(1);
+        hprof[hprof_bkt][8] += hprof_rec;
         gf_res_prev_active = nullptr;
         res->reset();
 
@@ -1425,6 +1438,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         //const auto t_start_us = ggml_time_us();
 
         gf = model.build_graph(gparams);
+        hp_lap(2);
 
         //LLAMA_LOG_INFO("graph build time: %.3f ms\n", (ggml_time_us() - t_start_us)/1000.0);
 
@@ -1441,6 +1455,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         }
 
         gf_res_prev_active = res;
+        hp_lap(3);
     }
 
     // set the input data for the input tensors
@@ -1453,7 +1468,10 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         //LLAMA_LOG_INFO("graph set inputs time: %.3f ms\n", (ggml_time_us() - t_start_us)/1000.0);
     }
 
+    hp_lap(4);
     const auto status = graph_compute(res->get_gf(), ubatch.n_tokens > 1);
+    hp_lap(5);
+    hprof_tc = hp_t;
     if (status != GGML_STATUS_SUCCESS) {
         LLAMA_LOG_ERROR("%s: failed to compute graph, compute status: %d\n", __func__, status);
         ret = status;
@@ -1705,6 +1723,10 @@ static bool needs_raw_logits(const llama_ubatch & ubatch, const std::map<llama_s
 }
 
 int llama_context::decode(const llama_batch_ext & batch_inp) {
+    const int64_t hp_t0 = hprof_on ? ggml_time_us() : 0;
+    hprof_rec = hprof_on && batch_inp.tokens.size() <= 32;
+    hprof_bkt = std::min<int>((int) batch_inp.tokens.size(), 8);
+
     if (!memory) {
         LLAMA_LOG_DEBUG("%s: cannot decode batches with this context (calling encode() instead)\n", __func__);
         return encode(batch_inp);
@@ -1881,6 +1903,10 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
         }
 
         ggml_status status;
+
+        if (hprof_rec && n_tokens_prev == 0) {
+            hprof[hprof_bkt][0] += ggml_time_us() - hp_t0;
+        }
 
         const auto * res = process_ubatch(ubatch, ctx_type_to_graph_type(cparams.ctx_type), mctx.get(), status);
 
@@ -2090,6 +2116,24 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
 
     // wait for the computation to finish (automatically done when obtaining the model output)
     //synchronize();
+
+    if (hprof_rec) {
+        hprof[hprof_bkt][6] += ggml_time_us() - hprof_tc;
+        hprof[hprof_bkt][7] += 1;
+        if (++hprof_n % 128 == 0) {
+            for (int b = 0; b < 9; ++b) {
+                const int64_t * h = hprof[b];
+                if (!h[7]) {
+                    continue;
+                }
+                const double n = (double) h[7];
+                fprintf(stderr, "host-prof ctx %p (%s) n_tokens %d%s: %lld decodes, %lld built; per decode us: pre %.0f "
+                        "reuse-check %.0f build %.0f alloc %.0f set-inputs %.0f compute %.0f post %.0f\n",
+                        (void *) this, cparams.embeddings_nextn_masked ? "dft" : "tgt", b, b == 8 ? "+" : "",
+                        (long long) h[7], (long long) h[8], h[0]/n, h[1]/n, h[2]/n, h[3]/n, h[4]/n, h[5]/n, h[6]/n);
+            }
+        }
+    }
 
     return 0;
 }
