@@ -21,6 +21,13 @@
 #include <random>
 #include <cinttypes>
 
+// env LLAMA_HOST_PROF: host time of the draft-mtp hooks (us), printed every 128 rounds
+struct spec_hprof {
+    bool    on = getenv("LLAMA_HOST_PROF") != nullptr;
+    int64_t t[6] = {}; // draft wall, draft decode, draft sample, process wall, process decode, draft calls
+};
+static spec_hprof g_spec_hprof;
+
 #define SPC_DBG(fmt, ...) LOG_DBG("spec %12.*s: " fmt, 12, __func__, __VA_ARGS__)
 #define SPC_TRC(fmt, ...) LOG_TRC("spec %12.*s: " fmt, 12, __func__, __VA_ARGS__)
 #define SPC_INF(fmt, ...) LOG_INF("spec %12.*s: " fmt, 12, __func__, __VA_ARGS__)
@@ -1613,6 +1620,16 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     }
 
     bool process(const llama_batch & batch_in) override {
+        auto & hp = g_spec_hprof;
+        const int64_t hp_t0 = hp.on && batch_in.n_tokens <= 32 ? ggml_time_us() : 0;
+        const bool ok = process_impl(batch_in);
+        if (hp_t0) {
+            hp.t[3] += ggml_time_us() - hp_t0;
+        }
+        return ok;
+    }
+
+    bool process_impl(const llama_batch & batch_in) {
         if (batch_in.n_tokens <= 0) {
             return true;
         }
@@ -1707,7 +1724,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     llama_set_nextn_layer_offset(ctx_dft, head);
                 }
 
+                const int64_t hp_t = g_spec_hprof.on && batch_in.n_tokens <= 32 ? ggml_time_us() : 0;
                 const int32_t rc = llama_decode(ctx_dft, batch);
+                if (hp_t) {
+                    g_spec_hprof.t[4] += ggml_time_us() - hp_t;
+                }
                 if (rc != 0) {
                     SPC_ERR("llama_decode(ctx_dft) head=%d failed rc=%d (pos=%d)\n",
                             head, (int) rc, (int) batch_in.pos[0]);
@@ -1803,6 +1824,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             std::memcpy(batch.embd + (size_t) (batch.n_tokens - 1) * n_embd, pending_h[seq_id].data(), row_bytes);
         }
 
+        const int64_t hp_t = g_spec_hprof.on ? ggml_time_us() : 0;
         const int ret = llama_decode(ctx_dft, batch);
         llama_set_mtp_chain(ctx_dft, 0, nullptr, 1.0f);
         if (ret != 0) {
@@ -1812,6 +1834,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         }
 
         const float * out = llama_get_mtp_chain(ctx_dft);
+        if (g_spec_hprof.on) {
+            g_spec_hprof.t[1] += ggml_time_us() - hp_t;
+        }
 
         auto & result = *dp.result;
         for (int32_t s = 0; s < n_chain; ++s) {
@@ -1839,6 +1864,21 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     }
 
     void draft(common_speculative_draft_params_vec & dparams) override {
+        auto & hp = g_spec_hprof;
+        const int64_t hp_t0 = hp.on ? ggml_time_us() : 0;
+        draft_impl(dparams);
+        if (hp.on) {
+            hp.t[0] += ggml_time_us() - hp_t0;
+            if (++hp.t[5] % 128 == 0) {
+                const double n = (double) hp.t[5];
+                LOG_INF("host-prof draft-mtp: %lld rounds; per round us: draft %.0f (decode %.0f, sample %.0f, rest %.0f), "
+                        "process %.0f (decode %.0f, rest %.0f)\n", (long long) hp.t[5],
+                        hp.t[0]/n, hp.t[1]/n, hp.t[2]/n, (hp.t[0] - hp.t[1] - hp.t[2])/n, hp.t[3]/n, hp.t[4]/n, (hp.t[3] - hp.t[4])/n);
+            }
+        }
+    }
+
+    void draft_impl(common_speculative_draft_params_vec & dparams) {
         auto & ctx_dft = params.ctx_dft;
 
         common_batch_clear(batch);
@@ -1909,7 +1949,13 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 llama_set_nextn_layer_offset(ctx_dft, i);
             }
 
+            int64_t hp_t = g_spec_hprof.on ? ggml_time_us() : 0;
             int ret = llama_decode(ctx_dft, batch);
+            if (g_spec_hprof.on) {
+                const int64_t t = ggml_time_us();
+                g_spec_hprof.t[1] += t - hp_t;
+                hp_t = t;
+            }
             if (ret != 0) {
                 SPC_ERR("llama_decode[%d] returned %d\n", i, ret);
                 break;
@@ -1929,6 +1975,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
                 const llama_token id_sampled = common_sampler_sample(smpl, ctx_dft, i_last[seq_id], true);
                 const float * h_row = llama_get_embeddings_nextn_ith(ctx_dft, i_last[seq_id]);
+                if (g_spec_hprof.on) {
+                    const int64_t t = ggml_time_us();
+                    g_spec_hprof.t[2] += t - hp_t;
+                    hp_t = t;
+                }
 
                 const auto * cur_p = common_sampler_get_candidates(smpl, true);
 

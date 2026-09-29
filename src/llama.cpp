@@ -201,6 +201,11 @@ static bool llama_prepare_model_devices(const llama_model_params & params, llama
                 }
                 devs.push_back(dev);
             }
+            // profiling only: env LLAMA_HOST_PROF_CPU_TP splits over the CPU twice, to time the meta backend's host side
+            if (devs.empty() && getenv("LLAMA_HOST_PROF_CPU_TP")) {
+                auto * cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+                devs = { cpu, cpu };
+            }
             if (devs.empty()) {
                 LLAMA_LOG_ERROR("%s: LLAMA_SPLIT_MODE_TENSOR needs >= 1 devices\n", __func__);
                 return false;
