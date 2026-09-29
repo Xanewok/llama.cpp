@@ -3900,6 +3900,10 @@ void llm_graph_context::build_sampling() const {
     if (samplers.empty() || !res->t_logits) {
         return;
     }
+    // no output rows: the meta backend has no split state for empty logits, so nothing can consume them
+    if (sampling_n_shards > 0 && ggml_nelements(res->t_logits) == 0) {
+        return;
+    }
 
     std::array<ggml_tensor *, 2> outs;
     outs[0] = res->t_logits;
