@@ -341,6 +341,19 @@ private:
 
     sampling_info sampling;
 
+    // Rows of the last ubatch whose logits backend sampling made redundant stay in t_logits until a
+    // reader asks for them. Valid only until the next graph compute or reserve on this scheduler.
+    struct logits_deferred_info {
+        ggml_tensor *  t       = nullptr;
+        ggml_backend_t backend = nullptr;
+        int64_t        row0    = 0;
+        int64_t        n       = 0;
+    };
+
+    logits_deferred_info logits_deferred;
+
+    void logits_deferred_fetch(bool sync);
+
     // sequence embeddings output (map of [n_embd] vectors)
     // populated only when pooling_type != LLAMA_POOLING_TYPE_NONE
     std::map<llama_seq_id, std::vector<float>> embd_seq;
