@@ -318,6 +318,15 @@ private:
     std::array<float, LLAMA_MTP_CHAIN_MAX + 1> mtp_chain_par = {};
     std::vector<float> mtp_chain_out;
 
+    // MTP draft chain: a copy of the MTP token embedding table on the output device. With the model's table in host
+    // memory, embedding step s's token on the CPU splits the chain graph at every step, which costs a device->host
+    // sync and a meta-backend subgraph rebuild per step. nullptr: the model's table is used.
+    void mtp_chain_init_tok_embd();
+    bool                    mtp_chain_tok_embd_done = false;
+    ggml_context_ptr        mtp_chain_tok_embd_ctx;
+    ggml_backend_buffer_ptr mtp_chain_tok_embd_buf;
+    ggml_tensor *           mtp_chain_tok_embd = nullptr;
+
     // host buffers for output layer input embeddings, per layer
     // populated when cparams.output_layer_inp[il] is true
     std::vector<buffer_view<float>> embd_layer_inp;
