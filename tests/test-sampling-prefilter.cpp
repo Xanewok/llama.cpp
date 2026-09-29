@@ -1,0 +1,650 @@
+// The top-k prefilter of common_sampler (set_logits) under a codex-like request: a lazy tool-call grammar and the
+// reasoning budget, sampled with grammar_first = false as the server does. Target-side sampling must keep its law
+// in every state: thinking, prose awaiting the grammar trigger, the trigger transition, grammar active (first-draw
+// reject + full-row resample), budget forcing, and the rejection-sampling verify.
+//
+// Rows are real llama_context output rows (so the production entry points run) whose logits are overwritten with
+// synthetic ones. Checks:
+//   law      chi-square of repeated draws against the host law P(x) = c(x) 1[x in G] + (1 - c(G)) c'(x), computed
+//            independently of common_sampler; a deliberately wrong prefilter (the resample restricted to the
+//            unmasked top-k) must fail the same check (negative control)
+//   forcing  the forced token, whatever the logits
+//   seeds    per-seed token streams (single draws, trajectories across the trigger, force and verify); --write
+//            dumps them, --check compares with a dump from another build (old path vs new path). Lifted logits are
+//            distinct: tied candidates may be ordered differently, which keeps the law but not the per-seed draw.
+//
+// usage: test-sampling-prefilter <model.gguf with a Qwen3-Coder style chat template> [--write F | --check F] [n_draws]
+
+#include "chat.h"
+#include "common.h"
+#include "llama.h"
+#include "log.h"
+#include "reasoning-budget.h"
+#include "sampling.h"
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
+#include <map>
+#include <random>
+#include <sstream>
+#include <string>
+#include <vector>
+
+static int n_fail = 0;
+
+#define CHECK(cond, ...) do { if (!(cond)) { fprintf(stderr, "FAIL %s:%d: ", __FILE__, __LINE__); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n"); n_fail++; } } while (0)
+
+// mirrors server-common.cpp (oaicompat params) and server-schema.cpp (trigger and budget fields)
+static common_params_sampling codex_like_params(llama_model * model) {
+    const llama_vocab * vocab = llama_model_get_vocab(model);
+
+    auto tmpls = common_chat_templates_init(model, "");
+
+    common_chat_templates_inputs inputs;
+    inputs.messages = { common_chat_msg{} };
+    inputs.messages[0].role    = "user";
+    inputs.messages[0].content = "List the files in the repository and fix the failing test.";
+    inputs.tools = {
+        { "exec_command", "Runs a shell command and returns its output.",
+          R"({"type":"object","properties":{"cmd":{"type":"string"},"workdir":{"type":"string"},"yield_time_ms":{"type":"number"}},"required":["cmd"]})" },
+        { "apply_patch", "Applies a patch to files in the workspace.",
+          R"({"type":"object","properties":{"input":{"type":"string"}},"required":["input"]})" },
+    };
+    inputs.tool_choice      = COMMON_CHAT_TOOL_CHOICE_AUTO;
+    inputs.reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
+    inputs.enable_thinking  = true;
+
+    const auto cp = common_chat_templates_apply(tmpls.get(), inputs);
+
+    common_params_sampling p;
+    p.top_k = 20;
+    p.top_p = 0.95f;
+    p.min_p = 0.05f;
+    p.temp  = 1.0f;
+    p.seed  = 1234;
+
+    p.grammar      = { COMMON_GRAMMAR_TYPE_TOOL_CALLS, cp.grammar };
+    p.grammar_lazy = cp.grammar_lazy;
+    p.generation_prompt = cp.generation_prompt;
+    for (const auto & t : cp.preserved_tokens) {
+        const auto ids = common_tokenize(vocab, t, false, true);
+        if (ids.size() == 1) {
+            p.preserved_tokens.insert(ids[0]);
+        }
+    }
+    for (const auto & t : cp.grammar_triggers) {
+        if (t.type == COMMON_GRAMMAR_TRIGGER_TYPE_WORD) {
+            const auto ids = common_tokenize(vocab, t.value, false, true);
+            if (ids.size() == 1) {
+                common_grammar_trigger tt;
+                tt.type  = COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN;
+                tt.value = t.value;
+                tt.token = ids[0];
+                p.grammar_triggers.push_back(tt);
+                continue;
+            }
+        }
+        p.grammar_triggers.push_back(t);
+    }
+
+    if (!cp.thinking_end_tags.empty()) {
+        p.reasoning_budget_tokens = -1;
+        p.reasoning_budget_start  = common_tokenize(vocab, cp.thinking_start_tag, false, true);
+        for (const auto & tag : cp.thinking_end_tags) {
+            p.reasoning_budget_end.push_back(common_tokenize(vocab, tag, false, true));
+        }
+        p.reasoning_budget_forced = p.reasoning_budget_end.front();
+    }
+
+    printf("chat format %d, grammar %zu chars, lazy %d, triggers %zu, thinking start '%s', end tags %zu, generation_prompt '%s'\n",
+            (int) cp.format, cp.grammar.size(), (int) cp.grammar_lazy, p.grammar_triggers.size(),
+            cp.thinking_start_tag.c_str(), cp.thinking_end_tags.size(), cp.generation_prompt.c_str());
+
+    return p;
+}
+
+static std::vector<llama_token_data> full_array(const std::vector<float> & logits) {
+    std::vector<llama_token_data> cur(logits.size());
+    for (size_t i = 0; i < logits.size(); ++i) {
+        cur[i] = { (llama_token) i, logits[i], 0.0f };
+    }
+    return cur;
+}
+
+// kept set and probabilities of the chain without its final dist
+static std::vector<llama_token_data> chain_dist(llama_sampler * chain, std::vector<llama_token_data> cur) {
+    llama_token_data_array arr = { cur.data(), cur.size(), -1, false };
+
+    const int32_t n = llama_sampler_chain_n(chain);
+    for (int32_t i = 0; i + 1 < n; ++i) {
+        llama_sampler_apply(llama_sampler_chain_get(chain, i), &arr);
+    }
+
+    std::vector<llama_token_data> res(arr.data, arr.data + arr.size);
+
+    float max_l = -INFINITY;
+    for (const auto & e : res) {
+        max_l = std::max(max_l, e.logit);
+    }
+    double sum = 0.0;
+    for (auto & e : res) {
+        e.p = e.logit == -INFINITY ? 0.0f : expf(e.logit - max_l);
+        sum += e.p;
+    }
+    for (auto & e : res) {
+        e.p /= sum;
+    }
+
+    return res;
+}
+
+static bool grammar_ok(const llama_sampler * grmr, llama_token id) {
+    llama_sampler * g = llama_sampler_clone(grmr);
+    llama_token_data d = { id, 1.0f, 0.0f };
+    llama_token_data_array a = { &d, 1, -1, false };
+    llama_sampler_apply(g, &a);
+    llama_sampler_free(g);
+    return d.logit != -INFINITY;
+}
+
+static std::vector<llama_token_data> masked(const llama_sampler * grmr, std::vector<llama_token_data> cur) {
+    llama_sampler * g = llama_sampler_clone(grmr);
+    llama_token_data_array a = { cur.data(), cur.size(), -1, false };
+    llama_sampler_apply(g, &a);
+    llama_sampler_free(g);
+    return cur;
+}
+
+// the host path's law with grammar_first = false (see common_sampler_sample); grmr == nullptr: no grammar applies
+static std::map<llama_token, double> host_law(llama_sampler * chain, const std::vector<float> & logits, const llama_sampler * grmr) {
+    const auto c = chain_dist(chain, full_array(logits));
+
+    std::map<llama_token, double> P;
+    double cG = 0.0;
+    for (const auto & e : c) {
+        if (e.p > 0 && (!grmr || grammar_ok(grmr, e.id))) {
+            P[e.id] += e.p;
+            cG += e.p;
+        }
+    }
+    if (grmr && cG < 1.0) {
+        for (const auto & e : chain_dist(chain, masked(grmr, full_array(logits)))) {
+            if (e.p > 0) {
+                P[e.id] += (1.0 - cG)*e.p;
+            }
+        }
+    }
+    return P;
+}
+
+// grammar_first = true: the chain on the masked row
+static std::map<llama_token, double> grammar_first_law(llama_sampler * chain, const std::vector<float> & logits, const llama_sampler * grmr) {
+    std::map<llama_token, double> P;
+    for (const auto & e : chain_dist(chain, masked(grmr, full_array(logits)))) {
+        if (e.p > 0) {
+            P[e.id] += e.p;
+        }
+    }
+    return P;
+}
+
+static llama_token draw(const std::vector<llama_token_data> & c, std::mt19937 & rng) {
+    const double u = std::uniform_real_distribution<double>(0.0, 1.0)(rng);
+    double run = 0.0;
+    for (const auto & e : c) {
+        run += e.p;
+        if (run >= u) {
+            return e.id;
+        }
+    }
+    return c.back().id;
+}
+
+// negative control: a prefilter that also serves the resample, i.e. masks only the unmasked top-k
+static llama_token wrong_prefilter_draw(llama_sampler * chain, const std::vector<float> & logits, const llama_sampler * grmr, int32_t k, std::mt19937 & rng) {
+    auto top = full_array(logits);
+    std::partial_sort(top.begin(), top.begin() + k, top.end(), [](const auto & a, const auto & b) { return a.logit > b.logit; });
+    top.resize(k);
+
+    const llama_token x1 = draw(chain_dist(chain, top), rng);
+    if (grammar_ok(grmr, x1)) {
+        return x1;
+    }
+    return draw(chain_dist(chain, masked(grmr, top)), rng);
+}
+
+// chi-square goodness of fit, Wilson-Hilferty; the upper-tail p-value
+static double chi2_p(const std::map<llama_token, int> & obs, const std::map<llama_token, double> & ref, int n) {
+    double chi2 = 0.0;
+    int    df   = -1;
+    double p_other = 0.0;
+    int    o_other = 0;
+    for (const auto & [id, p] : ref) {
+        const auto it = obs.find(id);
+        const int  o  = it == obs.end() ? 0 : it->second;
+        if (p*n < 5.0) {
+            p_other += p;
+            o_other += o;
+            continue;
+        }
+        chi2 += (o - p*n)*(o - p*n)/(p*n);
+        df++;
+    }
+    for (const auto & [id, o] : obs) {
+        if (ref.find(id) == ref.end()) {
+            o_other += o;
+            if (p_other == 0.0) {
+                return 0.0; // a token with zero reference probability was produced
+            }
+        }
+    }
+    if (p_other*n >= 5.0) {
+        chi2 += (o_other - p_other*n)*(o_other - p_other*n)/(p_other*n);
+        df++;
+    }
+    if (df <= 0) {
+        return 1.0;
+    }
+    const double k = df;
+    const double z = (std::cbrt(chi2/k) - (1.0 - 2.0/(9.0*k)))/std::sqrt(2.0/(9.0*k));
+    return 0.5*std::erfc(z/std::sqrt(2.0));
+}
+
+static void accept_text(common_sampler * gs, const llama_vocab * vocab, const std::string & text) {
+    for (auto t : common_tokenize(vocab, text, false, true)) {
+        common_sampler_accept(gs, t, true);
+    }
+}
+
+struct env {
+    llama_model *          model = nullptr;
+    llama_context *        ctx   = nullptr;
+    const llama_vocab *    vocab = nullptr;
+    int32_t                n_vocab = 0;
+    common_params_sampling sparams;
+
+    // a grammar in the state common_sampler's (private) grammar reaches after accept_text(text)
+    llama_sampler * grammar_after(const std::string & text) const {
+        std::vector<const char *> pats;
+        std::vector<std::string>  pat_s;
+        std::vector<llama_token>  toks;
+        for (const auto & t : sparams.grammar_triggers) {
+            if (t.type == COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN) {
+                toks.push_back(t.token);
+            } else if (t.type == COMMON_GRAMMAR_TRIGGER_TYPE_WORD) {
+                pat_s.push_back(regex_escape(t.value));
+            } else {
+                pat_s.push_back(t.value);
+            }
+        }
+        for (const auto & s : pat_s) {
+            pats.push_back(s.c_str());
+        }
+        llama_sampler * g = llama_sampler_init_grammar_lazy_patterns(vocab, common_grammar_value(sparams.grammar).c_str(), "root",
+                pats.data(), pats.size(), toks.data(), toks.size());
+        // common_sampler_accept feeds the grammar only after the thinking block, plus the replayed end tag
+        const auto pos = text.find("</think>");
+        if (pos != std::string::npos) {
+            for (auto t : common_tokenize(vocab, text.substr(pos), false, true)) {
+                llama_sampler_accept(g, t);
+            }
+        }
+        return g;
+    }
+
+    common_sampler * sampler(uint32_t seed, const std::string & text) const {
+        common_params_sampling p = sparams;
+        p.seed = seed;
+        common_sampler * gs = common_sampler_init(model, p);
+        accept_text(gs, vocab, text);
+        return gs;
+    }
+
+    void set_row(int i, const std::vector<float> & logits) const {
+        std::memcpy(llama_get_logits_ith(ctx, i), logits.data(), logits.size()*sizeof(float));
+    }
+};
+
+// logits with the given tokens lifted to the top, the rest N(0, 1.5) noise (max ~7.5 over the vocab)
+static std::vector<float> make_logits(int32_t n_vocab, std::mt19937 & rng, const std::vector<std::pair<llama_token, float>> & lifts) {
+    std::vector<float> l(n_vocab);
+    std::normal_distribution<float> nd(0.0f, 1.5f);
+    for (auto & v : l) {
+        v = nd(rng);
+    }
+    for (const auto & [id, v] : lifts) {
+        l[id] = v;
+    }
+    return l;
+}
+
+static const char * TEXT_THINK   = "I should look at the repo first.";
+static const char * TEXT_PROSE   = "I will inspect the tree.\n</think>\n\nLet me";
+static const char * TEXT_FNAME   = "Checking.\n</think>\n\n<tool_call>\n<function=";
+static const char * TEXT_PVALUE  = "Checking.\n</think>\n\n<tool_call>\n<function=exec_command>\n<parameter=cmd>\nls -la";
+
+int main(int argc, char ** argv) {
+    if (argc < 2) {
+        fprintf(stderr, "usage: %s <model.gguf> [--write F | --check F] [n_draws]\n", argv[0]);
+        return 1;
+    }
+    std::string write_path, check_path;
+    int n_draws = 4000;
+    for (int i = 2; i < argc; ++i) {
+        if (!strcmp(argv[i], "--write") && i + 1 < argc) {
+            write_path = argv[++i];
+        } else if (!strcmp(argv[i], "--check") && i + 1 < argc) {
+            check_path = argv[++i];
+        } else {
+            n_draws = atoi(argv[i]);
+        }
+    }
+    const int n_seeds = 300;
+
+    llama_backend_init();
+    common_log_set_verbosity_thold(-1);
+
+    env E;
+    {
+        auto mparams = llama_model_default_params();
+        mparams.n_gpu_layers = 0;
+        E.model = llama_model_load_from_file(argv[1], mparams);
+        if (!E.model) {
+            fprintf(stderr, "failed to load %s\n", argv[1]);
+            return 1;
+        }
+        auto cparams = llama_context_default_params();
+        cparams.n_ctx     = 256;
+        cparams.n_batch   = 16;
+        cparams.n_ubatch  = 16;
+        cparams.n_threads = 8;
+        cparams.n_threads_batch = 8;
+        E.ctx = llama_init_from_model(E.model, cparams);
+        GGML_ASSERT(E.ctx);
+    }
+    E.vocab   = llama_model_get_vocab(E.model);
+    E.n_vocab = llama_vocab_n_tokens(E.vocab);
+    E.sparams = codex_like_params(E.model);
+    printf("n_vocab %d\n", E.n_vocab);
+    CHECK(E.sparams.grammar_lazy, "expected a lazy tool-call grammar");
+    CHECK(!E.sparams.reasoning_budget_forced.empty(), "expected a reasoning budget");
+
+    // four output rows, as in a k = 3 verify; their logits are overwritten below
+    const int n_rows = 4;
+    {
+        llama_batch batch = llama_batch_init(n_rows, 0, 1);
+        const auto toks = common_tokenize(E.vocab, "a b c d", false, false);
+        for (int i = 0; i < n_rows; ++i) {
+            common_batch_add(batch, toks[i % toks.size()], i, { 0 }, true);
+        }
+        GGML_ASSERT(llama_decode(E.ctx, batch) == 0);
+        llama_synchronize(E.ctx);
+        llama_batch_free(batch);
+    }
+
+    auto tok1 = [&](const char * s) {
+        const auto ids = common_tokenize(E.vocab, s, false, true);
+        GGML_ASSERT(ids.size() == 1);
+        return ids[0];
+    };
+    const llama_token t_tool  = tok1("<tool_call>");
+    const llama_token t_tend  = tok1("</tool_call>");
+    const llama_token t_think_end = tok1("</think>");
+    const llama_token t_eos   = llama_vocab_eot(E.vocab) != LLAMA_TOKEN_NULL ? llama_vocab_eot(E.vocab) : llama_vocab_eos(E.vocab);
+    const llama_token t_exec  = tok1("exec");
+    const llama_token t_apply = tok1("apply");
+    const llama_token t_ls    = tok1("ls");
+    const llama_token t_hello = tok1("Hello");
+    const llama_token t_lt    = tok1("<");
+    const llama_token t_nl    = tok1("\n");
+
+    std::mt19937 rng_logits(42);
+
+    // tokens the grammar rejects at the function-name position, most lifted above "exec" so c(G) is small, and five more
+    // above "apply" so "apply" is outside the unmasked top-20 but inside the masked one
+    std::vector<std::pair<llama_token, float>> lifts_fname = { { t_exec, 9.455f }, { t_apply, 8.2f } };
+    {
+        llama_sampler * g = E.grammar_after(TEXT_FNAME);
+        std::uniform_int_distribution<llama_token> ud(1000, E.n_vocab - 1000);
+        int n_hi = 0, n_lo = 0;
+        while (n_hi < 19 || n_lo < 5) {
+            const llama_token id = ud(rng_logits);
+            if (grammar_ok(g, id) || std::any_of(lifts_fname.begin(), lifts_fname.end(), [&](const auto & e) { return e.first == id; })) {
+                continue;
+            }
+            // distinct values: no tie at the k-th logit, where the chain's own tie-break is unspecified
+            if (n_hi < 19) {
+                lifts_fname.push_back({ id, 9.5f - 0.01f*n_hi++ });
+            } else {
+                lifts_fname.push_back({ id, 8.5f - 0.01f*n_lo++ });
+            }
+        }
+        llama_sampler_free(g);
+    }
+    const std::vector<std::pair<llama_token, float>> lifts_mixed = {
+        // above the noise maximum, so c mixes valid and invalid tokens
+        { t_tool, 9.0f }, { t_think_end, 8.5f }, { t_eos, 9.2f }, { t_exec, 9.5f }, { t_apply, 8.8f },
+        { t_ls, 9.25f }, { t_hello, 9.1f }, { t_lt, 8.6f }, { t_nl, 8.9f }, { t_tend, 8.7f },
+    };
+
+    struct law_case {
+        const char * name;
+        const char * text;
+        bool         grammar_on; // the grammar masks in this state
+        bool         grammar_first;
+        const std::vector<std::pair<llama_token, float>> * lifts;
+    };
+    const std::vector<law_case> cases = {
+        { "thinking (budget counting, grammar gated)",           TEXT_THINK,  false, false, &lifts_mixed },
+        { "prose (lazy grammar awaiting its trigger)",           TEXT_PROSE,  false, false, &lifts_mixed },
+        { "function name (grammar active, most draws rejected)", TEXT_FNAME,  true,  false, &lifts_fname },
+        { "parameter value (grammar active, free text)",         TEXT_PVALUE, true,  false, &lifts_mixed },
+        { "function name, grammar_first",                        TEXT_FNAME,  true,  true,  &lifts_fname },
+        { "prose, grammar_first (grammar awaiting)",             TEXT_PROSE,  false, true,  &lifts_mixed },
+    };
+
+    std::ostringstream seeds_out; // per-seed token streams, compared across builds
+
+    for (const auto & sc : cases) {
+        common_sampler * base = E.sampler(1234, sc.text);
+        llama_sampler * chain = common_sampler_get(base);
+        llama_sampler * g_ref = E.grammar_after(sc.text);
+
+        const auto logits = make_logits(E.n_vocab, rng_logits, *sc.lifts);
+        E.set_row(0, logits);
+
+        const auto P = !sc.grammar_on ? host_law(chain, logits, nullptr)
+                     : sc.grammar_first ? grammar_first_law(chain, logits, g_ref)
+                     : host_law(chain, logits, g_ref);
+
+        double cG = 0.0;
+        for (const auto & e : chain_dist(chain, full_array(logits))) {
+            cG += !sc.grammar_on || grammar_ok(g_ref, e.id) ? e.p : 0.0;
+        }
+
+        std::map<llama_token, int> obs;
+        const auto t0 = std::chrono::steady_clock::now();
+        for (int k = 0; k < n_draws; ++k) {
+            obs[common_sampler_sample(base, E.ctx, 0, sc.grammar_first)]++;
+        }
+        const auto t1 = std::chrono::steady_clock::now();
+        const double p_new = chi2_p(obs, P, n_draws);
+
+        printf("\n[%s]\n  c(G) = %.4f, |supp P| = %zu, chi2 p = %.3g, %.1f us/sample\n", sc.name, cG, P.size(), p_new,
+                std::chrono::duration<double, std::micro>(t1 - t0).count()/n_draws);
+        CHECK(p_new > 1e-4, "sampling deviates from the host law in '%s'", sc.name);
+
+        if (sc.grammar_on && !sc.grammar_first) {
+            std::map<llama_token, int> obs_wrong;
+            std::mt19937 rng(7);
+            for (int k = 0; k < n_draws; ++k) {
+                obs_wrong[wrong_prefilter_draw(chain, logits, g_ref, E.sparams.top_k, rng)]++;
+            }
+            const double p_wrong = chi2_p(obs_wrong, P, n_draws);
+            printf("  negative control (resample masks only the unmasked top-%d): chi2 p = %.3g\n", E.sparams.top_k, p_wrong);
+            if (sc.lifts == &lifts_fname) {
+                CHECK(p_wrong < 1e-6, "the law check does not catch a wrong prefilter in '%s'", sc.name);
+            }
+        }
+
+        // per-seed draws: the same seed must give the same token on the old and the new path
+        seeds_out << "single " << sc.name << ":";
+        for (int s = 0; s < n_seeds; ++s) {
+            common_sampler * gs = E.sampler(1 + s, sc.text);
+            seeds_out << " " << common_sampler_sample(gs, E.ctx, 0, sc.grammar_first);
+            common_sampler_free(gs);
+        }
+        seeds_out << "\n";
+
+        llama_sampler_free(g_ref);
+        common_sampler_free(base);
+    }
+
+    // reasoning budget forcing: the forced tokens, whatever the logits, then the budget is done
+    {
+        common_sampler * gs = E.sampler(99, TEXT_THINK);
+        CHECK(common_sampler_reasoning_budget_force(gs), "could not force the reasoning budget");
+        const auto & forced = E.sparams.reasoning_budget_forced;
+        for (size_t i = 0; i < forced.size(); ++i) {
+            // the forced token far below the top-k: a prefilter here would lose it
+            auto logits = make_logits(E.n_vocab, rng_logits, lifts_mixed);
+            logits[forced[i]] = -5.0f;
+            E.set_row(0, logits);
+            const llama_token id = common_sampler_sample(gs, E.ctx, 0);
+            CHECK(id == forced[i], "forcing step %zu gave %d, expected %d", i, id, forced[i]);
+            common_sampler_accept(gs, id, true);
+        }
+        printf("\n[reasoning budget forcing] %zu forced tokens reproduced\n", forced.size());
+        common_sampler_free(gs);
+    }
+
+    // trajectories over the four rows, from thinking and from prose: the trigger fires on some seeds (row 1 lifts
+    // <tool_call>), rows 2-3 then sample under the active grammar; on the thinking start, the budget is forced at
+    // row 1 on odd seeds
+    {
+        std::vector<std::vector<float>> rows;
+        rows.push_back(make_logits(E.n_vocab, rng_logits, lifts_mixed));
+        rows.push_back(make_logits(E.n_vocab, rng_logits, { { t_tool, 10.0f }, { t_hello, 9.8f }, { t_think_end, 9.6f }, { t_nl, 9.5f } }));
+        rows.push_back(make_logits(E.n_vocab, rng_logits, lifts_mixed));
+        rows.push_back(make_logits(E.n_vocab, rng_logits, lifts_fname));
+        for (int i = 0; i < n_rows; ++i) {
+            E.set_row(i, rows[i]);
+        }
+
+        for (const char * start : { TEXT_PROSE, TEXT_THINK }) {
+            int n_trig = 0;
+            seeds_out << "trajectory " << (start == TEXT_PROSE ? "prose" : "think") << ":";
+            for (int s = 0; s < n_seeds; ++s) {
+                common_sampler * gs = E.sampler(1 + s, start);
+                for (int i = 0; i < n_rows; ++i) {
+                    if (start == TEXT_THINK && i == 1 && (s & 1)) {
+                        common_sampler_reasoning_budget_force(gs);
+                    }
+                    const llama_token id = common_sampler_sample(gs, E.ctx, i);
+                    common_sampler_accept(gs, id, true);
+                    seeds_out << " " << id;
+                    n_trig += id == t_tool;
+                }
+                seeds_out << " |";
+                common_sampler_free(gs);
+            }
+            seeds_out << "\n";
+            printf("\n[trajectory from %s] %d/%d seeds emitted <tool_call>\n", start == TEXT_PROSE ? "prose" : "thinking", n_trig, n_seeds);
+            CHECK(n_trig > 0 && n_trig < n_seeds, "the trigger transition was not exercised");
+        }
+    }
+
+    // rejection-sampling verify of 3 drafts: grammar gated, awaiting, and active
+    {
+        for (const char * start : { TEXT_THINK, TEXT_PROSE, TEXT_FNAME }) {
+            const bool fname = start == TEXT_FNAME;
+            std::vector<std::vector<float>> rows;
+            for (int i = 0; i < n_rows; ++i) {
+                rows.push_back(make_logits(E.n_vocab, rng_logits, fname && i == 0 ? lifts_fname : lifts_mixed));
+                E.set_row(i, rows.back());
+            }
+
+            // a draft proposal over the top of the unmasked chain, valid and invalid tokens alike
+            common_sampler * base = E.sampler(1, start);
+            std::vector<std::vector<llama_token_data>> q(n_rows - 1);
+            for (int i = 0; i < n_rows - 1; ++i) {
+                auto c = chain_dist(common_sampler_get(base), full_array(rows[i]));
+                std::sort(c.begin(), c.end(), [](const auto & a, const auto & b) { return a.p > b.p; });
+                const size_t m = std::min<size_t>(c.size(), 4);
+                for (size_t j = 0; j < m; ++j) {
+                    q[i].push_back({ c[j].id, c[j].logit, 1.0f/m });
+                }
+            }
+
+            llama_sampler * g_ref = E.grammar_after(start);
+            const auto P0 = host_law(common_sampler_get(base), rows[0], fname ? g_ref : nullptr);
+            llama_sampler_free(g_ref);
+            common_sampler_free(base);
+
+            std::mt19937 rng_d(5);
+            std::map<llama_token, int> obs0;
+            int n_acc = 0, n_drafted = 0;
+            const int n_verify = std::min(n_draws, 2000);
+            seeds_out << "verify " << (fname ? "fname" : start == TEXT_PROSE ? "prose" : "think") << ":";
+            for (int s = 0; s < n_verify; ++s) {
+                common_sampler * gs = E.sampler(1000 + s, start);
+                llama_tokens draft(n_rows - 1);
+                for (int i = 0; i < n_rows - 1; ++i) {
+                    draft[i] = q[i][std::uniform_int_distribution<size_t>(0, q[i].size() - 1)(rng_d)].id;
+                }
+                const auto res = common_sampler_sample_and_accept_n_rejection(gs, E.ctx, { 0, 1, 2, 3 }, draft, q);
+                obs0[res[0]]++;
+                n_acc += res.size() - 1;
+                n_drafted += draft.size();
+                if (s < n_seeds) {
+                    for (auto t : res) {
+                        seeds_out << " " << t;
+                    }
+                    seeds_out << " |";
+                }
+                common_sampler_free(gs);
+            }
+            seeds_out << "\n";
+            const double pv = chi2_p(obs0, P0, n_verify);
+            printf("\n[verify, 3 drafts, from %s] first token chi2 p = %.3g, accepted %d/%d\n",
+                    fname ? "function name" : start == TEXT_PROSE ? "prose" : "thinking", pv, n_acc, n_drafted);
+            CHECK(pv > 1e-4, "verify deviates from the host law");
+        }
+    }
+
+    const std::string seeds = seeds_out.str();
+    uint64_t h = 1469598103934665603ull;
+    for (unsigned char ch : seeds) {
+        h = (h ^ ch)*1099511628211ull;
+    }
+    printf("\nper-seed streams: %zu bytes, fnv1a %016llx\n", seeds.size(), (unsigned long long) h);
+    if (!write_path.empty()) {
+        std::ofstream(write_path) << seeds;
+    }
+    if (!check_path.empty()) {
+        std::ifstream f(check_path);
+        std::stringstream ref;
+        ref << f.rdbuf();
+        std::istringstream a(ref.str()), b(seeds);
+        std::string la, lb;
+        int n_diff = 0;
+        while (std::getline(a, la) && std::getline(b, lb)) {
+            if (la != lb) {
+                n_diff++;
+                fprintf(stderr, "differs from %s: %s\n", check_path.c_str(), lb.substr(0, lb.find(':')).c_str());
+            }
+        }
+        CHECK(!ref.str().empty() && n_diff == 0 && ref.str().size() == seeds.size(), "per-seed streams differ from %s", check_path.c_str());
+    }
+
+    llama_free(E.ctx);
+    llama_model_free(E.model);
+
+    printf("\n%s (%d failures)\n", n_fail ? "FAILED" : "OK", n_fail);
+    return n_fail ? 1 : 0;
+}
