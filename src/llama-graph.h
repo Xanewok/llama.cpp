@@ -883,8 +883,15 @@ struct llm_graph_params {
             gtype == other.gtype &&
             cvec  == other.cvec  &&
             loras == other.loras &&
-            cross == other.cross;
+            cross == other.cross &&
+            sampling_vocab_ids == other.sampling_vocab_ids &&
+            sampling_n_shards  == other.sampling_n_shards;
     }
+
+    // tensor split: the logits are split across sampling_n_shards devices by vocab, and backend samplers start
+    // from the per-device top-k candidates (see build_sampling); nullptr/0 otherwise
+    ggml_tensor * sampling_vocab_ids = nullptr;
+    uint32_t      sampling_n_shards  = 0;
 };
 
 struct llm_graph_fused_node {
@@ -1033,6 +1040,9 @@ struct llm_graph_context {
     const llama_prec_policy * prec_policy;
 
     std::map<llama_seq_id, llama_sampler *> samplers;
+
+    ggml_tensor * sampling_vocab_ids;
+    uint32_t      sampling_n_shards;
 
     const llm_graph_cb & cb_func;
 
