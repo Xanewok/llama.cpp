@@ -47,6 +47,20 @@ const char * ggml_backend_meta_split_axis_name(enum ggml_backend_meta_split_axis
     }
 }
 
+// A PAD with no padding is an identity everywhere else; this marker makes the meta backend turn it into an all-gather.
+#define GGML_META_GATHER_PARAM 9
+#define GGML_META_GATHER_MAGIC 0x47415448 // "GATH"
+
+struct ggml_tensor * ggml_backend_meta_gather(struct ggml_context * ctx, struct ggml_tensor * a) {
+    struct ggml_tensor * result = ggml_pad_ext(ctx, a, 0, 0, 0, 0, 0, 0, 0, 0);
+    ggml_set_op_params_i32(result, GGML_META_GATHER_PARAM, GGML_META_GATHER_MAGIC);
+    return result;
+}
+
+static bool ggml_backend_meta_is_gather(const struct ggml_tensor * tensor) {
+    return tensor->op == GGML_OP_PAD && ggml_get_op_params_i32(tensor, GGML_META_GATHER_PARAM) == GGML_META_GATHER_MAGIC;
+}
+
 //
 // meta backend device
 //
@@ -862,6 +876,16 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_get_split_state(
             GGML_ASSERT(src_ss[i].axis != GGML_BACKEND_SPLIT_AXIS_UNKNOWN);
         }
 
+        if (ggml_backend_meta_is_gather(tensor)) {
+            // each device pads its slice into place (see init_tensor), the AllReduce then sums the slices
+            if (src_ss[0].axis >= 0 && src_ss[0].axis < GGML_MAX_DIMS) {
+                GGML_ASSERT(src_ss[0].n_segments == 1 && src_ss[0].nr[0] == 1);
+                return {assume_sync ? GGML_BACKEND_SPLIT_AXIS_MIRRORED : GGML_BACKEND_SPLIT_AXIS_PARTIAL, {0}, {1}, 1};
+            }
+            GGML_ASSERT(src_ss[0].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED);
+            return src_ss[0];
+        }
+
         ggml_backend_meta_split_state split_state;
         switch (tensor->op) {
             case GGML_OP_NONE: {
@@ -1221,6 +1245,18 @@ static enum ggml_status ggml_backend_meta_buffer_init_tensor_impl(ggml_backend_m
         }
         t_ij->flags = tensor->flags;
         memcpy(t_ij->op_params, tensor->op_params, sizeof(tensor->op_params));
+        if (ggml_backend_meta_is_gather(tensor)) {
+            const ggml_backend_meta_split_state ss_src = ggml_backend_meta_get_split_state(tensor->src[0], /*assume_sync =*/ true);
+            const int axis = ss_src.axis;
+            if (axis >= 0 && axis < GGML_MAX_DIMS) {
+                int64_t offset = 0;
+                for (size_t jj = 0; jj < j; jj++) {
+                    offset += ss_src.ne[jj];
+                }
+                ggml_set_op_params_i32(t_ij, 2*axis + 0, int32_t(offset));
+                ggml_set_op_params_i32(t_ij, 2*axis + 1, int32_t(tensor->ne[axis] - offset - ss_src.ne[j]));
+            }
+        }
         ggml_set_name(t_ij, tensor->name);
         t_ij->buffer = simple_buf;
         t_ij->view_src = tensor->view_src;
@@ -2448,7 +2484,11 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
 
         if (n_backends > 1 && i < backend_ctx->n_subgraphs - 1) {
             bool backend_allreduce_success = false;
-            if (backend_ctx->comm_ctx) {
+            // A gather must be bit-exact (it may carry integers as F32), but a backend AllReduce may reduce in lower
+            // precision (the CUDA one rounds F32 through BF16). The generic fallback adds in the tensor's own type.
+            const ggml_cgraph * cgraph_0 = backend_ctx->backend_configs[0].cgraphs[i].cgraph_main;
+            const bool exact = ggml_backend_meta_is_gather(cgraph_0->nodes[cgraph_0->n_nodes - 1]);
+            if (backend_ctx->comm_ctx && !exact) {
                 std::vector<ggml_tensor *> nodes;
                 nodes.reserve(n_backends);
                 for (size_t j = 0; j < n_backends; j++) {
