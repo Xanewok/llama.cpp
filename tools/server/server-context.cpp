@@ -1667,7 +1667,7 @@ private:
                 }
 
                 // fraction of the Longest Common Prefix length with respect to the input prompt length
-                const size_t lcp_len = tokens.get_common_prefix(task.tokens);
+                const size_t lcp_len = tokens.get_common_prefix_resync(task.tokens, vocab).second;
                 const float f_sim_cur = float(lcp_len) / task.tokens.size();
 
                 SLT_TRC(slot, " - checking sim = %.3f (%zu/%zu) > %.3f\n", f_sim_cur, lcp_len, task.tokens.size(), slot_prompt_similarity);
@@ -1859,6 +1859,34 @@ private:
         if (!task.tokens.validate(ctx_tgt)) {
             send_error(task, "Prompt contains invalid tokens", ERROR_TYPE_INVALID_REQUEST);
             return false;
+        }
+
+        // take the cached tokenization of spans that spell the same text: the memory was computed for those.
+        // positions in the task shift by the length change. aLoRA matches tokens, n_cmpl > 1 copies the parent's state
+        if (task.params.cache_prompt && task.type == SERVER_TASK_TYPE_COMPLETION && !lora_all_alora(slot.lora) &&
+                !task.is_parent() && !task.is_child()) {
+            std::vector<std::pair<size_t, int64_t>> shifts;
+            const size_t n_plain = slot.prompt.tokens.get_common_prefix(task.tokens);
+            const size_t n_sync  = slot.prompt.tokens.get_common_prefix_resync(task.tokens, vocab, &task.tokens, &shifts).first;
+            if (!shifts.empty()) {
+                SLT_INF(slot, "prompt tokenization differs from the cache only in spelling, common prefix %zu -> %zu\n", n_plain, n_sync);
+
+                const auto remap = [&](size_t pos) {
+                    for (auto it = shifts.rbegin(); it != shifts.rend(); ++it) {
+                        if (pos >= it->first) {
+                            return pos + it->second;
+                        }
+                    }
+                    return pos;
+                };
+                if (task.params.n_keep > 0) {
+                    const int n_bos = add_bos_token ? 1 : 0; // the context shift keeps n_keep + BOS tokens
+                    task.params.n_keep = remap(task.params.n_keep + n_bos) - n_bos;
+                }
+                for (auto & span : task.params.message_spans.spans) {
+                    span.pos = remap(span.pos);
+                }
+            }
         }
 
         SLT_DBG(slot, "launching slot : %s\n", safe_json_to_str(slot.to_json()).c_str());
