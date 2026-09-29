@@ -50,6 +50,14 @@ struct ggml_cuda_flash_attn_ext_f16_extra_data {
     uintptr_t end;
 };
 
+// K/V over several KV streams (non-unified cache): each stream slice is dense, only the stream stride has a gap.
+// Then one contiguous conversion per stream gives the same values as the strided one, and runs much faster.
+static inline bool ggml_cuda_fa_dense_per_stream(const ggml_tensor * t) {
+    const size_t span = ggml_row_size(t->type, t->ne[0]) + (t->ne[1] - 1)*t->nb[1] + (t->ne[2] - 1)*t->nb[2];
+    return t->ne[3] > 1 && t->nb[0] == ggml_type_size(t->type) &&
+        span == ggml_row_size(t->type, t->ne[0]*t->ne[1]*t->ne[2]);
+}
+
 static inline ggml_cuda_flash_attn_ext_f16_extra_data ggml_cuda_flash_attn_ext_get_f16_extra_data(
         const ggml_tensor * dst, const bool need_f16_K, const bool need_f16_V) {
     GGML_ASSERT(dst->op == GGML_OP_FLASH_ATTN_EXT);
@@ -1036,6 +1044,16 @@ void launch_fattn(
             nb11 = nb11*bs*sizeof(half)/ts;
             nb12 = nb12*bs*sizeof(half)/ts;
             nb13 = nb13*bs*sizeof(half)/ts;
+        } else if (ggml_cuda_fa_dense_per_stream(K)) {
+            to_fp16_cuda_t to_fp16 = ggml_get_to_fp16_cuda(K->type);
+            const int64_t ne_s = K->ne[0]*K->ne[1]*K->ne[2];
+            for (int64_t i3 = 0; i3 < K->ne[3]; ++i3) {
+                to_fp16(K_data + i3*nb13, K_f16 + i3*ne_s, ne_s, main_stream);
+            }
+
+            nb11 = nb11*bs*sizeof(half)/ts;
+            nb12 = nb12*bs*sizeof(half)/ts;
+            nb13 = ne_s*sizeof(half);
         } else {
             GGML_ASSERT(K->nb[0] == ts);
             to_fp16_nc_cuda_t to_fp16 = ggml_get_to_fp16_nc_cuda(K->type);
@@ -1071,6 +1089,16 @@ void launch_fattn(
                 nb21 = nb21*bs*sizeof(half)/ts;
                 nb22 = nb22*bs*sizeof(half)/ts;
                 nb23 = nb23*bs*sizeof(half)/ts;
+            } else if (ggml_cuda_fa_dense_per_stream(V)) {
+                to_fp16_cuda_t to_fp16 = ggml_get_to_fp16_cuda(V->type);
+                const int64_t ne_s = V->ne[0]*V->ne[1]*V->ne[2];
+                for (int64_t i3 = 0; i3 < V->ne[3]; ++i3) {
+                    to_fp16(V_data + i3*nb23, V_f16 + i3*ne_s, ne_s, main_stream);
+                }
+
+                nb21 = nb21*bs*sizeof(half)/ts;
+                nb22 = nb22*bs*sizeof(half)/ts;
+                nb23 = ne_s*sizeof(half);
             } else {
                 GGML_ASSERT(V->nb[0] == ts);
                 to_fp16_nc_cuda_t to_fp16 = ggml_get_to_fp16_nc_cuda(V->type);
