@@ -2032,6 +2032,22 @@ bool llama_model::logits_vocab_split() const {
     return true;
 }
 
+int64_t llama_model::logits_vocab_shard_min() const {
+    if (!logits_vocab_split()) {
+        return 0;
+    }
+    auto ud = get_split_state_ud;
+    const ggml_backend_meta_split_state ss = llama_meta_device_get_split_state(output, &ud);
+    if (ss.n_segments != 1 || ss.nr[0] != 1) {
+        return 0;
+    }
+    int64_t res = INT64_MAX;
+    for (size_t j = 0; j < ud.n_devices; j++) {
+        res = std::min(res, ss.ne[j]);
+    }
+    return res;
+}
+
 std::map<ggml_backend_buffer_type_t, size_t> llama_model::memory_breakdown() const {
     std::map<ggml_backend_buffer_type_t, size_t> ret;
     for (const auto & [ctx, bufs] : pimpl->ctxs_bufs) {
