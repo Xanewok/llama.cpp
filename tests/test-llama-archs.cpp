@@ -11,6 +11,7 @@
 #include "../src/llama-arch.h"
 #include "../src/llama-model-saver.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cmath>
 #include <cstddef>
@@ -94,6 +95,8 @@ static void usage(char ** argv) {
     LOG("  -o, --out <dir>          Save generated test models to <dir> instead of running backend tests\n");
     LOG("  -v <N>                   Set log verbosity level\n");
     LOG("  -b, --backend <backend>  Run only on the given backend device\n");
+    LOG("      --tp-sampling        Check backend sampling under tensor split on two CPU devices, then exit\n");
+    LOG("      --tp-sampling-gpu    The same on the first two GPU devices\n");
     LOG("  -h, --help               Show this help message\n\n");
     LOG("Examples:\n");
     LOG("  %s\n", argv[0]);
@@ -113,7 +116,7 @@ static std::vector<llama_token> get_tokens(const uint32_t n_tokens, const uint32
     return ret;
 }
 
-static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe) {
+static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe, const uint32_t n_vocab_override = 0) {
     gguf_context_ptr ret(gguf_init_empty());
     llama_model_saver ms(arch, ret.get());
     const uint32_t n_ctx = 256;
@@ -167,6 +170,10 @@ static gguf_context_ptr get_gguf_ctx(const llm_arch arch, const bool moe) {
         n_vocab = 3072; // TODO: should be 4096, but user code cannot get `n_vocab_out` yet [TAG_LLAMA_N_VOCAB_OUT]
     } else if (arch == LLM_ARCH_HRM_TEXT) {
         n_layer = 6; // 1 layer per stack x 2 h-cycles x (2 l-cycles + 1) cache slots
+    }
+
+    if (n_vocab_override > 0) {
+        n_vocab = n_vocab_override;
     }
 
     uint32_t n_head_kv = n_head;
@@ -971,6 +978,268 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
     return all_ok ? 0 : 1;
 }
 
+// Backend sampling under SPLIT_MODE_TENSOR against host sampling of the same logits. Each check runs a backend chain
+// on a tensor-split context and compares it with the logits that a twin context on the same model (no backend
+// sampler) copies to the host. The TP forward pass is identical in both, so any difference comes from the sampling
+// graph: the per-device top-k, the vocab id mapping, the candidate gather, the row layout.
+//
+// Covered: ubatches without output rows (MTP catch-up, split prompt), several output rows (draft batches, the k+1
+// verify), the draft chain (top-k only), greedy, the server's default chain (top-k, top-p < 1, min-p, temp, dist)
+// and the distribution of dist.
+//
+// gpu = false runs on two CPU devices, which exchange the candidates through the meta backend's exact generic
+// AllReduce. gpu = true runs on the first two GPUs, where the backend's own AllReduce is used; that is the only way
+// to cover a lossy exchange (the CUDA internal AllReduce rounds F32 through BF16).
+static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu) {
+    std::vector<ggml_backend_dev_t> devs;
+    for (size_t i = 0; i < ggml_backend_dev_count() && devs.size() < 2; i++) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        if (ggml_backend_dev_type(dev) == (gpu ? GGML_BACKEND_DEVICE_TYPE_GPU : GGML_BACKEND_DEVICE_TYPE_CPU)) {
+            devs.push_back(dev);
+        }
+    }
+    if (!gpu && devs.size() == 1) {
+        devs.push_back(devs[0]);
+    }
+    if (devs.size() < 2) {
+        LOG_ERR("%s: need two %s devices, found %zu\n", __func__, gpu ? "GPU" : "CPU", devs.size());
+        return 1;
+    }
+    LOG("%s: devices %s, %s\n", __func__, ggml_backend_dev_name(devs[0]), ggml_backend_dev_name(devs[1]));
+
+    llama_log_set([](ggml_log_level level, const char * text, void * /*user_data*/) {
+        if (level >= GGML_LOG_LEVEL_WARN) {
+            fputs(text, stderr);
+        }
+    }, nullptr);
+
+    // ids up to 40959 have up to 16 significant bits: a BF16 (8-bit) exchange of the candidate ids changes most of
+    // them. With the default 128-token test vocab every id is exact in BF16 and such a bug goes unseen.
+    const uint32_t n_vocab_test = 40960;
+    gguf_context_ptr gguf_ctx = get_gguf_ctx(LLM_ARCH_LLAMA, false, n_vocab_test);
+    tensor_data_params tensor_params = { seed, stdev };
+
+    std::vector<ggml_backend_dev_t> devs_model = devs;
+    devs_model.push_back(nullptr);
+    llama_model_params model_params = llama_model_default_params();
+    model_params.progress_callback = silent_model_load_progress;
+    model_params.devices    = devs_model.data();
+    model_params.split_mode = LLAMA_SPLIT_MODE_TENSOR;
+    llama_model_ptr model(llama_model_init_from_user(gguf_ctx.get(), set_tensor_data, &tensor_params, model_params));
+    if (!model) {
+        throw std::runtime_error("failed to create llama model");
+    }
+
+    const uint32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model.get()));
+    GGML_ASSERT(n_vocab == n_vocab_test);
+
+    const std::vector<llama_token> tokens = get_tokens(48, n_vocab, seed);
+    const int32_t n_rows = 4;                     // output rows at the end of the last ubatch
+    const int32_t i_row0 = 32 - n_rows;           // batch index of the first output row in the second batch
+
+    auto make_ctx = [&](llama_sampler * chain) {
+        llama_context_params ctx_params = llama_context_default_params();
+        ctx_params.n_ctx           = 256;
+        ctx_params.n_batch         = 64;
+        ctx_params.n_ubatch        = 16;
+        ctx_params.n_threads       = 4;
+        ctx_params.n_threads_batch = 4;
+        ctx_params.n_outputs_max_per_seq = n_rows;
+        llama_context_ptr lctx(llama_init_from_model(model.get(), ctx_params));
+        if (!lctx) {
+            throw std::runtime_error("failed to create llama context");
+        }
+        if (chain && !llama_set_sampler(lctx.get(), 0, chain)) {
+            throw std::runtime_error("backend sampler refused under SPLIT_MODE_TENSOR");
+        }
+        return lctx;
+    };
+
+
+    // [0, 16): one ubatch, no outputs; [16, 48): a ubatch without outputs, then one ending in n_rows output rows
+    auto decode = [&](llama_context * lctx) {
+        common_batch batch(lctx);
+        for (uint32_t pos = 0; pos < 16; pos++) {
+            batch.add(tokens[pos], pos, 0, false);
+        }
+        int rc = llama_process(lctx, LLAMA_PROCESS_TYPE_DECODE, batch.get());
+        batch.clear();
+        for (uint32_t pos = 16; pos < tokens.size() && rc == 0; pos++) {
+            batch.add(tokens[pos], pos, 0, pos + n_rows >= tokens.size());
+        }
+        rc = rc == 0 ? llama_process(lctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) : rc;
+        if (rc != 0) {
+            throw std::runtime_error("failed to decode batch");
+        }
+    };
+
+    // host reference: the same TP forward pass, full logits copied out
+    std::vector<std::vector<float>> ref(n_rows);
+    {
+        llama_context_ptr ctx_ref = make_ctx(nullptr);
+        decode(ctx_ref.get());
+        for (int32_t r = 0; r < n_rows; r++) {
+            const float * logits = llama_get_logits_ith(ctx_ref.get(), i_row0 + r);
+            ref[r].assign(logits, logits + n_vocab);
+        }
+    }
+    // the k-th largest logit of a row
+    auto kth = [&](const std::vector<float> & row, int32_t k) {
+        std::vector<float> tmp = row;
+        std::nth_element(tmp.begin(), tmp.begin() + (k - 1), tmp.end(), std::greater<float>());
+        return tmp[k - 1];
+    };
+    // ids and logits must match the host logits; eps only admits ties at the k-th logit
+    auto close = [](float a, float b) { return std::fabs(a - b) <= 1e-4f*(1.0f + std::fabs(b)); };
+    auto valid_id = [&](llama_token id) { return id >= 0 && uint32_t(id) < n_vocab; };
+
+    bool ok = true;
+    auto fail = [&](const char * what, int32_t r, llama_token id, float got, float want) {
+        LOG_ERR("%s: %s: row %d: id %d, logit %f, want %f\n", __func__, what, r, id, got, want);
+        ok = false;
+    };
+
+    const int32_t k = 20;
+
+    // the MTP draft chain: top-k on the backend, the host finishes from the candidates
+    {
+        llama_sampler_ptr chain(llama_sampler_chain_init(llama_sampler_chain_default_params()));
+        llama_sampler_chain_add(chain.get(), llama_sampler_init_top_k(k));
+        llama_context_ptr ctx = make_ctx(chain.get());
+        decode(ctx.get());
+        for (int32_t r = 0; r < n_rows && ok; r++) {
+            const uint32_t      n_got  = llama_get_sampled_candidates_count_ith(ctx.get(), i_row0 + r);
+            const llama_token * ids    = llama_get_sampled_candidates_ith(ctx.get(), i_row0 + r);
+            const float       * values = llama_get_sampled_logits_ith(ctx.get(), i_row0 + r);
+            if (n_got != uint32_t(k) || ids == nullptr || values == nullptr ||
+                    llama_get_sampled_logits_count_ith(ctx.get(), i_row0 + r) != uint32_t(k)) {
+                LOG_ERR("%s: top-k: row %d: expected %d candidates, got %u\n", __func__, r, k, n_got);
+                ok = false;
+                break;
+            }
+            const float thr = kth(ref[r], k);
+            std::vector<llama_token> seen(ids, ids + k);
+            std::sort(seen.begin(), seen.end());
+            if (std::adjacent_find(seen.begin(), seen.end()) != seen.end()) {
+                LOG_ERR("%s: top-k: row %d: duplicate candidate ids\n", __func__, r);
+                ok = false;
+            }
+            for (int32_t i = 0; i < k && ok; i++) {
+                if (!valid_id(ids[i])) {
+                    fail("top-k: id out of range", r, ids[i], values[i], NAN);
+                } else if (!close(values[i], ref[r][ids[i]])) {
+                    fail("top-k: candidate logit differs from the host logit of its id", r, ids[i], values[i], ref[r][ids[i]]);
+                } else if (ref[r][ids[i]] < thr && !close(ref[r][ids[i]], thr)) {
+                    fail("top-k: candidate is not in the host top-k", r, ids[i], ref[r][ids[i]], thr);
+                }
+            }
+        }
+        LOG("%s: top-k candidates, %d rows: %s\n", __func__, n_rows, ok ? "OK" : "FAIL");
+    }
+
+    // greedy after top-k: the argmax indexes the candidates and must be mapped back to a vocab id
+    if (ok) {
+        llama_sampler_ptr chain(llama_sampler_chain_init(llama_sampler_chain_default_params()));
+        llama_sampler_chain_add(chain.get(), llama_sampler_init_top_k(k));
+        llama_sampler_chain_add(chain.get(), llama_sampler_init_greedy());
+        llama_context_ptr ctx = make_ctx(chain.get());
+        decode(ctx.get());
+        for (int32_t r = 0; r < n_rows && ok; r++) {
+            const llama_token id   = llama_get_sampled_token_ith(ctx.get(), i_row0 + r);
+            const float       best = kth(ref[r], 1);
+            if (!valid_id(id) || !close(ref[r][id], best)) {
+                fail("greedy: sampled token is not the host argmax", r, id, valid_id(id) ? ref[r][id] : NAN, best);
+            }
+        }
+        LOG("%s: top-k + greedy, %d rows: %s\n", __func__, n_rows, ok ? "OK" : "FAIL");
+    }
+
+    // the server's default chain; top-p < 1 used to abort the graph build on the candidate shape
+    if (ok) {
+        llama_sampler_ptr chain(llama_sampler_chain_init(llama_sampler_chain_default_params()));
+        llama_sampler_chain_add(chain.get(), llama_sampler_init_top_k(k));
+        llama_sampler_chain_add(chain.get(), llama_sampler_init_top_p(0.95f, 1));
+        llama_sampler_chain_add(chain.get(), llama_sampler_init_min_p(0.05f, 1));
+        llama_sampler_chain_add(chain.get(), llama_sampler_init_temp(1.0f));
+        llama_sampler_chain_add(chain.get(), llama_sampler_init_dist(uint32_t(seed)));
+        llama_context_ptr ctx = make_ctx(chain.get());
+        decode(ctx.get());
+        for (int32_t r = 0; r < n_rows && ok; r++) {
+            const llama_token id  = llama_get_sampled_token_ith(ctx.get(), i_row0 + r);
+            const float       thr = kth(ref[r], k);
+            if (!valid_id(id) || (ref[r][id] < thr && !close(ref[r][id], thr))) {
+                fail("top-k/top-p/min-p/temp/dist: sampled token is not in the host top-k", r, id, valid_id(id) ? ref[r][id] : NAN, thr);
+            }
+        }
+        LOG("%s: top-k + top-p + min-p + temp + dist, %d rows: %s\n", __func__, n_rows, ok ? "OK" : "FAIL");
+    }
+
+    // distribution of dist over the candidates of one row, against the host softmax over its top-k
+    if (ok) {
+        const float temp    = 1.0f;
+        const int   n_draws = 4000;
+
+        llama_sampler_ptr chain(llama_sampler_chain_init(llama_sampler_chain_default_params()));
+        llama_sampler_chain_add(chain.get(), llama_sampler_init_top_k(k));
+        llama_sampler_chain_add(chain.get(), llama_sampler_init_temp(temp));
+        llama_sampler_chain_add(chain.get(), llama_sampler_init_dist(uint32_t(seed)));
+        llama_context_ptr ctx = make_ctx(chain.get());
+        decode(ctx.get());
+
+        const std::vector<float> & row = ref[n_rows - 1];
+        const float thr  = kth(row, k);
+        const float best = kth(row, 1);
+        std::vector<double> want(n_vocab, 0.0);
+        double sum = 0.0;
+        for (uint32_t i = 0; i < n_vocab; i++) {
+            if (row[i] >= thr) {
+                want[i] = std::exp(double(row[i] - best)/temp);
+                sum += want[i];
+            }
+        }
+
+        std::vector<int> count(n_vocab, 0);
+        const llama_pos pos_last = llama_pos(tokens.size() - 1);
+        common_batch batch(ctx.get());
+        for (int d = 0; d < n_draws && ok; d++) {
+            if (d > 0) {
+                // re-decode the last token: same logits, a fresh uniform draw
+                llama_memory_seq_rm(llama_get_memory(ctx.get()), 0, pos_last, -1);
+                batch.clear();
+                batch.add(tokens.back(), pos_last, 0, true);
+                if (llama_process(ctx.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+                    throw std::runtime_error("failed to decode batch");
+                }
+            }
+            const llama_token id = llama_get_sampled_token_ith(ctx.get(), d == 0 ? i_row0 + n_rows - 1 : 0);
+            if (!valid_id(id) || want[id] == 0.0) {
+                fail("dist: sampled token is not in the host top-k", n_rows - 1, id, valid_id(id) ? row[id] : NAN, thr);
+                break;
+            }
+            count[id]++;
+            // commit the draw so the next decode draws a new uniform
+            llama_sampler_accept(chain.get(), id);
+        }
+
+        if (ok) {
+            double tv = 0.0;
+            for (uint32_t i = 0; i < n_vocab; i++) {
+                tv += std::fabs(double(count[i])/n_draws - want[i]/sum);
+            }
+            tv *= 0.5;
+            // sampling noise alone gives about 0.03 for k = 20 and 4000 draws
+            if (tv > 0.08) {
+                LOG_ERR("%s: dist: total variation distance %.3f to the host distribution over %d draws\n", __func__, tv, n_draws);
+                ok = false;
+            }
+            LOG("%s: top-k + temp + dist distribution, %d draws, TV %.3f: %s\n", __func__, n_draws, tv, ok ? "OK" : "FAIL");
+        }
+    }
+
+    LOG("%s: %s\n", __func__, ok ? "OK" : "FAIL");
+    return ok ? 0 : 1;
+}
+
 int main(int argc, char ** argv) {
     // init the logger at max verbosity. filter with a custom callback respecting the user-configure verbosity
     common_log_set_verbosity_thold(LOG_LEVEL_DEBUG);
@@ -983,6 +1252,8 @@ int main(int argc, char ** argv) {
     float stdev = 0.1f;
     std::string out;
     const char * target_backend = nullptr;
+    bool tp_sampling = false;
+    bool tp_sampling_gpu = false;
 
     int verbosity = LOG_LEVEL_ERROR;
 
@@ -1009,6 +1280,11 @@ int main(int argc, char ** argv) {
                 usage(argv);
                 return 1;
             }
+        } else if (strcmp(argv[i], "--tp-sampling") == 0) {
+            tp_sampling = true;
+        } else if (strcmp(argv[i], "--tp-sampling-gpu") == 0) {
+            tp_sampling = true;
+            tp_sampling_gpu = true;
         } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--seed") == 0) {
             if (i + 1 < argc) {
                 seed = std::stoull(argv[++i]);
@@ -1063,6 +1339,9 @@ int main(int argc, char ** argv) {
     LOG_INF("%s: using seed %zu, stdev %f\n", __func__, seed, stdev);
 
     try {
+        if (tp_sampling) {
+            return test_tp_sampling(seed, stdev, tp_sampling_gpu);
+        }
         if (!out.empty()) {
             return save_models(arch_filter, seed, stdev, verbosity, out);
         }
