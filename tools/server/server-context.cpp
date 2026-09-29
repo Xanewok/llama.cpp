@@ -27,6 +27,8 @@
 #include <random>
 #include <utility>
 #include <fstream>
+#include <future>
+#include <mutex>
 
 // fix problem with std::min and std::max
 #if defined(_WIN32)
@@ -925,6 +927,74 @@ static bool add_mtmd_chunk(const server_slot & slot, const mtmd_input_chunk * ch
     return true;
 }
 
+// Host buffers for the target part of context checkpoints (~150 MiB of recurrent state for Qwen3.8 27B).
+// A fresh buffer of that size costs ~80-120 ms of page faults and zeroing on the prompt path, and a follow-up
+// request creates 2-3 checkpoints. Spares are faulted in on a worker thread; erased checkpoints return theirs.
+struct server_ckpt_buffers {
+    static constexpr size_t n_spare = 3;
+    static constexpr size_t n_keep  = 4;
+
+    std::mutex mtx;
+    std::vector<std::vector<uint8_t>> bufs;
+
+    // declared last: its destructor waits for the worker, which uses the members above
+    std::future<void> worker;
+
+    // empty if no spare fits
+    std::vector<uint8_t> take(size_t n) {
+        std::lock_guard<std::mutex> lock(mtx);
+        for (auto it = bufs.begin(); it != bufs.end(); ++it) {
+            if (it->capacity() >= n) {
+                std::vector<uint8_t> res = std::move(*it);
+                bufs.erase(it);
+                return res;
+            }
+        }
+        return {};
+    }
+
+    // leaves buf untouched when the pool is full
+    void give(std::vector<uint8_t> & buf) {
+        if (buf.capacity() == 0) {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(mtx);
+        if (bufs.size() < n_keep) {
+            bufs.push_back(std::move(buf));
+            buf = {};
+        }
+    }
+
+    void refill(size_t n) {
+        if (n == 0 || (worker.valid() && worker.wait_for(std::chrono::seconds(0)) != std::future_status::ready)) {
+            return;
+        }
+        worker = std::async(std::launch::async, [this, n]() {
+            while (true) {
+                std::vector<std::vector<uint8_t>> stale;
+                {
+                    std::lock_guard<std::mutex> lock(mtx);
+                    for (auto it = bufs.begin(); it != bufs.end(); ) {
+                        if (it->capacity() < n) {
+                            stale.push_back(std::move(*it));
+                            it = bufs.erase(it);
+                        } else {
+                            ++it;
+                        }
+                    }
+                    if (bufs.size() >= n_spare) {
+                        return;
+                    }
+                }
+                stale.clear();
+
+                std::vector<uint8_t> buf(n); // the zero-fill faults the pages in
+                give(buf);
+            }
+        });
+    }
+};
+
 //
 // server_context_impl (private implementation)
 //
@@ -1014,6 +1084,8 @@ private:
     int n_empty_consecutive = 0;
 
     std::unique_ptr<server_prompt_cache> prompt_cache;
+
+    server_ckpt_buffers ckpt_bufs;
 
     server_metrics metrics;
 
@@ -2524,6 +2596,7 @@ private:
                 SLT_TRC(slot, "erasing context checkpoint too close to an earlier one (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", size = %.3f MiB)\n",
                         it->pos_min, it->pos_max, it->n_tokens, (float) it->size() / 1024 / 1024);
 
+                ckpt_bufs.give(it->data_tgt);
                 it = slot.prompt.checkpoints.erase(it);
                 continue;
             }
@@ -2539,6 +2612,7 @@ private:
             SLT_WRN(slot, "erasing old context checkpoint (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", size = %.3f MiB)\n",
                     cur.pos_min, cur.pos_max, cur.n_tokens, (float) cur.size() / 1024 / 1024);
 
+            ckpt_bufs.give(slot.prompt.checkpoints.front().data_tgt);
             slot.prompt.checkpoints.erase(slot.prompt.checkpoints.begin());
         }
 
@@ -2548,6 +2622,7 @@ private:
             for (auto it = slot.prompt.checkpoints.begin(); it != slot.prompt.checkpoints.end(); ) {
                 if (it->n_tokens == n_tokens_new) {
                     SLT_TRC(slot, "superseding context checkpoint at n_tokens = %" PRId64 "\n", it->n_tokens);
+                    ckpt_bufs.give(it->data_tgt);
                     it = slot.prompt.checkpoints.erase(it);
                 } else {
                     ++it;
@@ -2564,10 +2639,12 @@ private:
         //       this is not true for SWA models: https://github.com/ggml-org/llama.cpp/pull/24411#issuecomment-4677983225
         cur.update_pos(slot.prompt.n_tokens() - n_tokens_cur, pos_min, pos_max);
 
+        cur.data_tgt = ckpt_bufs.take(llama_state_seq_get_size_ext(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY));
         cur.update_tgt(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
         cur.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
         // stash the draft's speculative state with the checkpoint
         common_speculative_get_state(spec.get(), slot.id, cur.data_spec);
+        ckpt_bufs.refill(cur.data_tgt.size());
 
         SLT_TRC(slot,
                 "created context checkpoint %d of %d (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", size = %.3f MiB)\n",
@@ -3621,6 +3698,7 @@ private:
                                     const auto & cur = *it;
                                     if (cur.pos_max > pos_next) {
                                         SLT_TRC(slot, "erased invalidated context checkpoint (pos_min = %d, pos_max = %d, n_tokens = %" PRId64 ", n_swa = %d, pos_next = %d, size = %.3f MiB)\n", cur.pos_min, cur.pos_max, cur.n_tokens, n_swa, pos_next, (float) cur.size() / 1024 / 1024);
+                                        ckpt_bufs.give(it->data_tgt);
                                         it = slot.prompt.checkpoints.erase(it);
                                     } else {
                                         ++it;
