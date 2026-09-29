@@ -1251,6 +1251,32 @@ void llama_context::set_nextn_layer_offset(int32_t offset) {
     cparams.nextn_layer_offset = offset;
 }
 
+bool llama_context::set_mtp_chain(int32_t n_chain, const float * u, float inv_temp) {
+    if (n_chain <= 0) {
+        cparams.mtp_chain = 0;
+        return true;
+    }
+    if (n_chain > LLAMA_MTP_CHAIN_MAX || model.hparams.n_layer_nextn != 1) {
+        return false;
+    }
+    // under tensor split the steps gather per-device top-k candidates, which needs the vocab id tensor
+    if (model.split_mode() == LLAMA_SPLIT_MODE_TENSOR && (!model.logits_vocab_split() || !sampling_init_vocab_ids())) {
+        return false;
+    }
+
+    std::copy(u, u + n_chain, mtp_chain_par.begin());
+    mtp_chain_par[LLAMA_MTP_CHAIN_MAX] = inv_temp;
+    cparams.mtp_chain = n_chain;
+
+    return true;
+}
+
+const float * llama_context::get_mtp_chain() {
+    synchronize();
+
+    return mtp_chain_out.data();
+}
+
 void llama_context::set_causal_attn(bool value) {
     LLAMA_LOG_DEBUG("%s: value = %d\n", __func__, value);
 
@@ -1783,7 +1809,8 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
 
     // when computing embeddings, all tokens are output
     const bool output_all   = cparams.embeddings;
-    const bool has_samplers = !sampling.samplers.empty();
+    // an MTP chain picks its tokens in the graph; the backend samplers do not run on it
+    const bool has_samplers = !sampling.samplers.empty() && cparams.mtp_chain == 0;
 
     const uint32_t n_seq_max = cparams.kv_unified ? LLAMA_MAX_SEQ : cparams.n_seq_max;
 
@@ -2087,6 +2114,12 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
             copy_tensor_async_rows(res->t_sampled_logits, sampling.logits,     stride, n_outputs_prev, sched.get(), &sampling.logits_count);
             copy_tensor_async_rows(res->t_sampled_probs,  sampling.probs,      stride, n_outputs_prev, sched.get(), &sampling.probs_count);
             copy_tensor_async_rows(res->t_candidates,     sampling.candidates, stride, n_outputs_prev, sched.get(), &sampling.candidates_count);
+        }
+
+        if (res->t_mtp_chain) {
+            ggml_tensor * t = res->t_mtp_chain;
+            mtp_chain_out.resize(ggml_nelements(t));
+            ggml_backend_tensor_get_async(ggml_backend_sched_get_tensor_backend(sched.get(), t), t, mtp_chain_out.data(), 0, ggml_nbytes(t));
         }
 
         n_outputs_prev += n_outputs;
@@ -2621,8 +2654,9 @@ llm_graph_params llama_context::graph_params(
         /*.n_outputs   =*/ n_outputs,
         /*.cb          =*/ graph_get_cb(),
         /*.res         =*/ res,
-        /*.sampling_vocab_ids =*/ sampling.samplers.empty() ? nullptr : sampling.vocab_ids,
-        /*.sampling_n_shards  =*/ sampling.samplers.empty() || !sampling.vocab_ids ? 0 : (uint32_t) model.get_split_state_ud.n_devices,
+        /*.sampling_vocab_ids =*/ sampling.samplers.empty() && !cparams.mtp_chain ? nullptr : sampling.vocab_ids,
+        /*.sampling_n_shards  =*/ (sampling.samplers.empty() && !cparams.mtp_chain) || !sampling.vocab_ids ? 0 : (uint32_t) model.get_split_state_ud.n_devices,
+        /*.mtp_chain_par      =*/ mtp_chain_par.data(),
     };
 }
 
@@ -4056,6 +4090,14 @@ void llama_set_embeddings_layer_inp(llama_context * ctx, uint32_t lid, bool valu
 
 void llama_set_nextn_layer_offset(llama_context * ctx, int32_t offset) {
     ctx->set_nextn_layer_offset(offset);
+}
+
+bool llama_set_mtp_chain(llama_context * ctx, int32_t n_chain, const float * u, float inv_temp) {
+    return ctx->set_mtp_chain(n_chain, u, inv_temp);
+}
+
+const float * llama_get_mtp_chain(llama_context * ctx) {
+    return ctx->get_mtp_chain();
 }
 
 llama_memory_t llama_get_memory(const struct llama_context * ctx) {

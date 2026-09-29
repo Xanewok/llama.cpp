@@ -18,6 +18,7 @@
 #include <cstring>
 #include <iomanip>
 #include <map>
+#include <random>
 #include <cinttypes>
 
 #define SPC_DBG(fmt, ...) LOG_DBG("spec %12.*s: " fmt, 12, __func__, __VA_ARGS__)
@@ -1438,6 +1439,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
     std::vector<deferred_catchup> deferred;
 
+    // --spec-mtp-chain: the draft of a round is one decode (see llama_set_mtp_chain); u draws per sequence
+    std::vector<std::mt19937> chain_rng;
+    std::vector<bool>         chain_seeded;
+    bool                      chain_ok = true;
+
     common_speculative_impl_draft_mtp(const common_params_speculative & params, uint32_t n_seq)
         : common_speculative_impl(COMMON_SPECULATIVE_TYPE_DRAFT_MTP, n_seq, params.draft.n_max)
         , params(params.draft)
@@ -1522,6 +1528,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             SPC_WRN("%s", "fused MTP catch-up needs a single MTP head with its own KV cache; not fusing\n");
         }
         deferred.assign(n_seq, {});
+        chain_rng.resize(n_seq);
+        chain_seeded.assign(n_seq, false);
     }
 
     // Adds the deferred rows of seq_id that a batch starting at pos_next builds on: rows at or past pos_next were
@@ -1585,6 +1593,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
         // reset here rather than per round, or two identical requests differ
         common_sampler_reset(smpls[seq_id].get());
+        chain_seeded[seq_id] = false;
 
         const int32_t N = (int32_t) prompt.size();
         if (N <= 0) {
@@ -1736,6 +1745,99 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         return true;
     }
 
+    // Runs the whole draft of the one drafting sequence as a single decode: the batch already holds the kept rows
+    // and the id_last row; one row per further step is appended. Returns false when the chain cannot run, leaving
+    // the batch as it was for the step-by-step loop.
+    //
+    // Exactness of rejection verification (#27694) needs each drafted token to be drawn from the q recorded for it:
+    // the device draws by inverse CDF at an independent u ~ U[0,1) over the same probabilities it returns as q.
+    bool draft_chain(common_speculative_draft_params_vec & dparams, const std::vector<bool> & drafting) {
+        if (!params.mtp_chain || !chain_ok || chain_heads || is_mem_shared) {
+            return false;
+        }
+
+        auto * ctx_dft = params.ctx_dft;
+
+        llama_seq_id seq_id = 0;
+        while (!drafting[seq_id]) {
+            ++seq_id;
+        }
+        auto & dp = dparams[seq_id];
+
+        int32_t n_chain = std::min<int32_t>(params.n_max, LLAMA_MTP_CHAIN_MAX);
+        if (dp.n_max >= 0) {
+            n_chain = std::min(n_chain, dp.n_max);
+        }
+        // all rows must land in one ubatch
+        if (n_chain < 1 || batch.n_tokens + n_chain - 1 > (int32_t) llama_n_ubatch(ctx_dft)) {
+            return false;
+        }
+
+        const bool  sample   = dp.result_q && dp.temp > 0.0f;
+        const float inv_temp = sample ? 1.0f/dp.temp : 1.0f;
+
+        float u[LLAMA_MTP_CHAIN_MAX] = {};
+        if (sample) {
+            if (!chain_seeded[seq_id]) {
+                chain_rng[seq_id].seed(dp.seed == LLAMA_DEFAULT_SEED ? std::random_device{}() : dp.seed ^ 0x2545f491u);
+                chain_seeded[seq_id] = true;
+            }
+            std::uniform_real_distribution<float> uni(0.0f, 1.0f);
+            for (int32_t s = 0; s < n_chain; ++s) {
+                u[s] = uni(chain_rng[seq_id]);
+            }
+        }
+
+        if (!llama_set_mtp_chain(ctx_dft, n_chain, u, inv_temp)) {
+            SPC_WRN("%s", "MTP draft chain not supported by this context; drafting step by step\n");
+            chain_ok = false;
+            return false;
+        }
+
+        // the graph takes these rows' tokens and h from the previous step; the batch fills in positions and KV slots.
+        // Not outputs: the chain has its own output, and the draft context reserves one output per sequence.
+        const int32_t n_keep = batch.n_tokens;
+        const size_t row_bytes = (size_t) n_embd * sizeof(float);
+        for (int32_t s = 1; s < n_chain; ++s) {
+            common_batch_add(batch, dp.id_last, dp.pos0 + s, { seq_id }, false);
+            std::memcpy(batch.embd + (size_t) (batch.n_tokens - 1) * n_embd, pending_h[seq_id].data(), row_bytes);
+        }
+
+        const int ret = llama_decode(ctx_dft, batch);
+        llama_set_mtp_chain(ctx_dft, 0, nullptr, 1.0f);
+        if (ret != 0) {
+            SPC_ERR("llama_decode (MTP chain of %d) returned %d\n", n_chain, ret);
+            batch.n_tokens = n_keep;
+            return true; // an empty draft, as the step loop leaves it after a failed decode
+        }
+
+        const float * out = llama_get_mtp_chain(ctx_dft);
+
+        auto & result = *dp.result;
+        for (int32_t s = 0; s < n_chain; ++s) {
+            const float * row = out + (size_t) s * LLAMA_MTP_CHAIN_ROW;
+            const float * ids = row + 1;
+            const float * ps  = row + 1 + LLAMA_MTP_CHAIN_TOP_K;
+
+            // p_min is a draft-side stop: truncating on it leaves the verification exact
+            if (ps[0] < params.p_min) {
+                break;
+            }
+
+            result.push_back((llama_token) row[0]);
+
+            if (dp.result_q) {
+                std::vector<llama_token_data> q(LLAMA_MTP_CHAIN_TOP_K);
+                for (int k = 0; k < LLAMA_MTP_CHAIN_TOP_K; ++k) {
+                    q[k] = { (llama_token) ids[k], 0.0f, ps[k] };
+                }
+                dp.result_q->push_back(std::move(q));
+            }
+        }
+
+        return true;
+    }
+
     void draft(common_speculative_draft_params_vec & dparams) override {
         auto & ctx_dft = params.ctx_dft;
 
@@ -1782,6 +1884,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             if (chain_heads) {
                 chain_h[seq_id].assign(pending_h[seq_id].begin(), pending_h[seq_id].end());
             }
+        }
+
+        if (n_drafting == 1 && draft_chain(dparams, drafting)) {
+            n_drafting = 0;
         }
 
         int i = 0;

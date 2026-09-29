@@ -107,6 +107,20 @@ LLAMA_API float * llama_get_embeddings_nextn(struct llama_context * ctx);
 // LLAMA_API float * llama_get_embeddings_ith(struct llama_context * ctx, int32_t i);
 LLAMA_API float * llama_get_embeddings_nextn_ith(struct llama_context * ctx, int32_t i);
 
+// MTP draft chain (single-head MTP, e.g. qwen35): the next llama_decode on this context runs the last n_chain rows of
+// the batch as n_chain sequential draft steps in one graph. Step s > 0 takes its token and h from step s-1 on the
+// device, so the host does not wait between steps; the token and h the batch carries for those rows are ignored.
+// Step s picks by inverse CDF at u[s] over softmax(inv_temp * logits) of its top LLAMA_MTP_CHAIN_TOP_K candidates,
+// sorted by logit, descending (u[s] = 0 picks the argmax). n_chain = 0 turns it off.
+#define LLAMA_MTP_CHAIN_MAX   16
+#define LLAMA_MTP_CHAIN_TOP_K 10
+#define LLAMA_MTP_CHAIN_ROW   (1 + 2*LLAMA_MTP_CHAIN_TOP_K)
+LLAMA_API bool llama_set_mtp_chain(struct llama_context * ctx, int32_t n_chain, const float * u, float inv_temp);
+
+// [n_chain][LLAMA_MTP_CHAIN_ROW] of the last chain decode: the picked token, then the candidate ids, then their
+// probabilities (all as floats, candidates in pick order). Synchronizes.
+LLAMA_API const float * llama_get_mtp_chain(struct llama_context * ctx);
+
 // Set whether the context outputs the input embeddings of a specific layer
 LLAMA_API void llama_set_embeddings_layer_inp(struct llama_context * ctx, uint32_t lid, bool value);
 
