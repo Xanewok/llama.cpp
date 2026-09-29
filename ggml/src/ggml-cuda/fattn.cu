@@ -538,6 +538,15 @@ static bool ggml_cuda_fattn_kv_type_supported(const ggml_type type) {
     }
 }
 
+// Experiment only: GGML_CUDA_FA_VEC_QUANT_MAX_BATCH=2 restores the previous selection, up to 8 uses 4-column tiles.
+static int ggml_cuda_fattn_vec_quant_max_batch() {
+    static const int value = [] {
+        const char * env = getenv("GGML_CUDA_FA_VEC_QUANT_MAX_BATCH");
+        return env ? atoi(env) : 4;
+    }();
+    return value;
+}
+
 static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const ggml_tensor * dst) {
 #ifndef FLASH_ATTN_AVAILABLE
     GGML_UNUSED(device); GGML_UNUSED(dst);
@@ -651,7 +660,7 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
                     // The mma kernel first converts all of K/V to f16, a cost that grows with the context and not with the batch.
                     // Batches of 3-4 (e.g. speculative decoding) need a vector kernel compiled for the K/V types, else they are converted as well.
                     if (Q->ne[1] <= 2 ||
-                            (Q->ne[1] <= 4 && ggml_cuda_get_fattn_vec_case(Q->ne[0], K->type, V->type) != nullptr)) {
+                            (Q->ne[1] <= ggml_cuda_fattn_vec_quant_max_batch() && ggml_cuda_get_fattn_vec_case(Q->ne[0], K->type, V->type) != nullptr)) {
                         return BEST_FATTN_KERNEL_VEC;
                     }
                 } else {
