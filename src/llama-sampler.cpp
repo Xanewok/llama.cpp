@@ -3968,11 +3968,17 @@ static void llama_sampler_logit_bias_backend_apply(
         ggml_set_input(sctx->inp_logit_idxs);
     }
 
-    ggml_tensor * cur = ggml_fill(ctx, data->logits, 0.0f);
+    // the bias is indexed by vocab id, so with candidates build it over the vocab and gather it
+    ggml_tensor * cur = ggml_fill(ctx, data->candidates ? ggml_new_tensor_1d(ctx, GGML_TYPE_F32, sctx->n_vocab) : data->logits, 0.0f);
 
     cur = ggml_reshape_2d(ctx, cur, 1, ggml_nelements(cur));
     cur = ggml_set_rows(ctx, cur, sctx->inp_logit_bias, sctx->inp_logit_idxs);
-    cur = ggml_reshape_1d(ctx, cur, ggml_nelements(cur));
+
+    if (data->candidates) {
+        cur = ggml_get_rows(ctx, cur, ggml_reshape_1d(ctx, data->candidates, ggml_nelements(data->candidates)));
+    }
+
+    cur = ggml_reshape(ctx, cur, data->logits);
 
     data->logits = ggml_add(ctx, data->logits, cur);
 }

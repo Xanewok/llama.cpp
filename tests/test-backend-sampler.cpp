@@ -1428,6 +1428,49 @@ static void test_backend_mixed_sampling(const test_params & params) {
     printf("backend mixed sampling test PASSED\n");
 }
 
+static void test_backend_logit_bias_candidates_sampling(const test_params & params) {
+    const std::string prompt = "Hello";
+    const int32_t k = 8;
+    const float bias = 3.0f;
+
+    const std::vector<float> raw = decode_raw_logits(params, prompt);
+
+    // one biased token is among the top-k, the other is not
+    std::vector<llama_token> order(raw.size());
+    for (size_t i = 0; i < order.size(); ++i) {
+        order[i] = (llama_token) i;
+    }
+    std::partial_sort(order.begin(), order.begin() + k, order.end(), [&](llama_token a, llama_token b) { return raw[a] > raw[b]; });
+    const llama_token in_token  = order[1];
+    const llama_token out_token = order.back();
+
+    const std::vector<llama_logit_bias> logit_bias = { { in_token, bias }, { out_token, bias } };
+
+    // top-k leaves k candidates, top-p leaves the whole vocab as sorted candidates
+    const std::vector<std::pair<const char *, std::function<llama_sampler *()>>> filters = {
+        { "top-k logit-bias", [&]() { return llama_sampler_init_top_k(k); } },
+        { "top-p logit-bias", []() { return llama_sampler_init_top_p(0.5f, 1); } },
+    };
+
+    for (const auto & [name, init_filter] : filters) {
+        const auto add_samplers = [&](llama_sampler * chain) {
+            llama_sampler_chain_add(chain, init_filter());
+            llama_sampler_chain_add(chain, llama_sampler_init_logit_bias(
+                        (int32_t) raw.size(), (int32_t) logit_bias.size(), logit_bias.data()));
+        };
+        const sampler_comparison_output output = run_sampler_comparison(
+                params, prompt, raw, add_samplers, [](llama_sampler *) {});
+
+        const std::unordered_map<llama_token, float> expected = map_logits(output.expected);
+        GGML_ASSERT(expected.at(in_token) > raw[in_token] + 0.5f * bias);
+
+        const sampler_comparison_stats stats = compare_sampler_outputs(name, expected, output.actual);
+        GGML_ASSERT(stats.n_mismatch == 0);
+    }
+
+    printf("backend logit bias on candidates test PASSED\n");
+}
+
 static void test_backend_set_sampler(const test_params & params) {
     const int seq_id = 0;
     const int32_t seed = 88;
@@ -1980,6 +2023,7 @@ struct backend_test_case {
 static const backend_test_case BACKEND_TESTS[] = {
     { "greedy",          test_backend_greedy_sampling,         true  },
     { "logit_bias",      test_backend_logit_bias_sampling,     true  },
+    { "logit_bias_candidates", test_backend_logit_bias_candidates_sampling, true },
     { "penalties",       test_backend_penalties_sampling,      true  },
     { "temp",            test_backend_temp_sampling,           true  },
     { "temp_ext",        test_backend_temp_ext_sampling,       true  },
