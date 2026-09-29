@@ -561,6 +561,23 @@ void ggml_cuda_flash_attn_ext_vec_case(ggml_backend_cuda_context & ctx, ggml_ten
         return;
     }
 
+    // Batches > 2 only get here with quantized K/V (see ggml_cuda_get_best_fattn_kernel), so only those need 4 columns:
+    constexpr bool quantized_KV = type_K != GGML_TYPE_F16 && type_K != GGML_TYPE_BF16 ||
+                                  type_V != GGML_TYPE_F16 && type_V != GGML_TYPE_BF16;
+    if constexpr (quantized_KV) {
+        if (Q->ne[1] > 2) {
+            constexpr int cols_per_block = 4;
+            if (logit_softcap == 0.0f) {
+                constexpr bool use_logit_softcap = false;
+                ggml_cuda_flash_attn_ext_vec_case_impl<D, cols_per_block, type_K, type_V, use_logit_softcap>(ctx, dst);
+            } else {
+                constexpr bool use_logit_softcap = true;
+                ggml_cuda_flash_attn_ext_vec_case_impl<D, cols_per_block, type_K, type_V, use_logit_softcap>(ctx, dst);
+            }
+            return;
+        }
+    }
+
     constexpr int cols_per_block = 2;
     if (logit_softcap == 0.0f) {
         constexpr bool use_logit_softcap = false;
