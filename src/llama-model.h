@@ -624,6 +624,9 @@ struct llama_meta_device_get_split_state_userdata {
 
 struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const struct ggml_tensor * tensor, void * userdata);
 
+// vocab ids 0..n_vocab-1 as F32, split across devices like the logits of output.weight
+#define LLAMA_TENSOR_NAME_OUTPUT_VOCAB_IDS "output_vocab_ids"
+
 struct llama_prec_policy {
     // the key is the weight tensor `res->src[0]`, stores the recommended accumulation type of the op (unused for now)
     // TODO: migrate ad-hoc ggml_prec_set_acc() calls to this container + update apply() to use it
@@ -770,6 +773,9 @@ struct llama_model {
 
     uint32_t n_gpu_layers() const;
     llama_split_mode split_mode() const;
+
+    // tensor split only: every LM head is output.weight split by vocab, so all logits are vocab-split
+    bool logits_vocab_split() const;
 
     std::map<ggml_backend_buffer_type_t, size_t> memory_breakdown() const;
 
