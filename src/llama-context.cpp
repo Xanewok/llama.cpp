@@ -907,7 +907,28 @@ enum llama_pooling_type llama_context::pooling_type() const {
     return cparams.pooling_type;
 }
 
+void llama_context::logits_deferred_fetch(bool sync) {
+    if (!logits_deferred.t) {
+        return;
+    }
+
+    const int64_t n_vocab = model.vocab.n_tokens();
+
+    GGML_ASSERT(logits.data != nullptr);
+    GGML_ASSERT((logits_deferred.row0 + logits_deferred.n)*n_vocab <= (int64_t) logits.size);
+
+    ggml_backend_tensor_get_async(logits_deferred.backend, logits_deferred.t,
+            logits.data + logits_deferred.row0*n_vocab, 0, logits_deferred.n*n_vocab*sizeof(float));
+
+    logits_deferred = {};
+
+    if (sync) {
+        ggml_backend_sched_synchronize(sched.get());
+    }
+}
+
 float * llama_context::get_logits() {
+    logits_deferred_fetch(true);
     output_reorder();
 
     return logits.data;
@@ -943,6 +964,7 @@ int64_t llama_context::output_resolve_row(int32_t i) const {
 }
 
 float * llama_context::get_logits_ith(int32_t i) {
+    logits_deferred_fetch(true);
     output_reorder();
 
     try {
@@ -1446,6 +1468,8 @@ bool llama_context::set_adapter_cvec(
 }
 
 llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, llm_graph_type gtype, llama_memory_context_i * mctx, ggml_status & ret) {
+    logits_deferred = {};
+
     if (mctx && !mctx->apply()) {
         LLAMA_LOG_ERROR("%s: failed to apply memory context\n", __func__);
         ret = GGML_STATUS_FAILED;
@@ -1521,6 +1545,8 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
 }
 
 int llama_context::encode(const llama_batch_ext & batch_inp) {
+    logits_deferred = {};
+
     if (batch_inp.tokens.empty()) {
         LLAMA_LOG_ERROR("%s: n_tokens == 0\n", __func__);
         return -1;
@@ -1760,6 +1786,8 @@ static bool needs_raw_logits(const llama_ubatch & ubatch, const std::map<llama_s
 }
 
 int llama_context::decode(const llama_batch_ext & batch_inp) {
+    logits_deferred = {};
+
     if (!memory) {
         LLAMA_LOG_DEBUG("%s: cannot decode batches with this context (calling encode() instead)\n", __func__);
         return encode(batch_inp);
@@ -1917,6 +1945,9 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
     int64_t n_tokens_prev  = 0;
 
     do {
+        // the next compute reuses the buffers holding the previous ubatch's logits
+        logits_deferred_fetch(false);
+
         const auto & ubatch = mctx->get_ubatch();
 
         // count the outputs in this ubatch
@@ -1996,6 +2027,16 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
                 GGML_ASSERT((n_outputs_prev + n_outputs)*n_vocab <= (int64_t) logits.size);
                 ggml_backend_tensor_get_async(backend_res, t_logits, logits_out, 0, n_outputs*n_vocab*sizeof(float));
             }
+        } else if (logits.data && t_logits && n_outputs > 0 && has_samplers) {
+            GGML_ASSERT((n_outputs_prev + n_outputs)*n_vocab <= (int64_t) logits.size);
+
+            logits_deferred = {
+                /*.t       =*/ t_logits,
+                /*.backend =*/ ggml_backend_sched_get_tensor_backend(sched.get(), t_logits),
+                /*.row0    =*/ n_outputs_prev,
+                /*.n       =*/ n_outputs,
+            };
+            GGML_ASSERT(logits_deferred.backend != nullptr);
         }
 
         // extract embeddings
@@ -2134,6 +2175,9 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
                 // remember the swaps and apply them lazily upon logits/embeddings access
                 output_swaps.push_back({ i, j_min });
             }
+
+            // deferred rows are addressed before the swaps, so land them before any reader applies those
+            logits_deferred_fetch(false);
 
             std::fill(output_ids.begin(), output_ids.end(), -1);
 
@@ -2551,6 +2595,8 @@ ggml_cgraph * llama_context::graph_reserve(
         LLAMA_LOG_DEBUG("%s: making n_tokens a multiple of n_seqs - n_tokens = %u, n_seqs = %u, n_outputs = %u\n", __func__, n_tokens, n_seqs, n_outputs);
     }
 
+    logits_deferred = {};
+
     ggml_backend_sched_reset(sched.get());
 
     // when the scheduler is reset, we cannot reuse old graphs, so we reset the previous graph results
@@ -2629,6 +2675,8 @@ llm_graph_params llama_context::graph_params(
 ggml_status llama_context::graph_compute(
             ggml_cgraph * gf,
                    bool   batched) {
+    logits_deferred = {};
+
     int n_threads        = batched ? cparams.n_threads_batch : cparams.n_threads;
     ggml_threadpool_t tp = batched ? threadpool_batch        : threadpool;
 
