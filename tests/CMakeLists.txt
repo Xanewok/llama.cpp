@@ -207,6 +207,14 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
         FIXTURES_SETUP generate-models
     )
 
+    # Test backend sampling under SPLIT_MODE_TENSOR on two CPU devices
+    llama_test(
+        test-llama-archs
+        NAME test-tp-backend-sampling
+        LABEL main
+        ARGS --tp-sampling -s 42
+    )
+
     # Test recurrent-state rollback across all architectures, using the generated dummy models
     llama_test(
         test-recurrent-state-rollback
