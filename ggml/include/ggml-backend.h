@@ -407,6 +407,10 @@ extern "C" {
     GGML_API ggml_backend_dev_t ggml_backend_meta_device(
         ggml_backend_dev_t * devs, size_t n_devs, ggml_backend_meta_get_split_state_t get_split_state, void * get_split_state_ud);
 
+    // all-gather: on a meta backend a split tensor becomes MIRRORED, bit-exact (a sum of zero-padded slices);
+    // elsewhere an identity copy
+    GGML_API struct ggml_tensor * ggml_backend_meta_gather(struct ggml_context * ctx, struct ggml_tensor * a);
+
     //
     // Utils
     //
