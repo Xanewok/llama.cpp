@@ -209,6 +209,13 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
     )
 
     llama_test(
+        test-llama-archs
+        NAME test-tp-backend-sampling
+        LABEL main
+        ARGS --tp-sampling -s 42
+    )
+
+    llama_test(
         test-recurrent-state-rollback
         LABEL main
         ARGS -m "${MODEL_DIR}/qwen35-dense.gguf"

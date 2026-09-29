@@ -11,6 +11,7 @@
 #include "../src/llama-arch.h"
 #include "../src/llama-model-saver.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cmath>
 #include <cstddef>
@@ -94,6 +95,7 @@ static void usage(char ** argv) {
     LOG("  -o, --out <dir>          Save generated test models to <dir> instead of running backend tests\n");
     LOG("  -v <N>                   Set log verbosity level\n");
     LOG("  -b, --backend <backend>  Run only on the given backend device\n");
+    LOG("      --tp-sampling        Check backend sampling under tensor split on two CPU devices, then exit\n");
     LOG("  -h, --help               Show this help message\n\n");
     LOG("Examples:\n");
     LOG("  %s\n", argv[0]);
@@ -908,6 +910,114 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
     return all_ok ? 0 : 1;
 }
 
+// Backend sampling under SPLIT_MODE_TENSOR, with two CPU devices standing in for two GPUs. Covers ubatches without
+// output rows (an MTP catch-up decode, a prompt split over several ubatches): their logits have no elements, so the
+// meta backend cannot derive a split state for the candidate graph that build_sampling would put on them.
+static int test_tp_sampling(const size_t seed, const float stdev) {
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+
+    llama_log_set([](ggml_log_level level, const char * text, void * /*user_data*/) {
+        if (level >= GGML_LOG_LEVEL_WARN) {
+            fputs(text, stderr);
+        }
+    }, nullptr);
+
+    gguf_context_ptr gguf_ctx = get_gguf_ctx(LLM_ARCH_LLAMA, false);
+    tensor_data_params tensor_params = { seed, stdev };
+
+    auto make = [&](std::vector<ggml_backend_dev_t> devs, llama_split_mode split_mode) {
+        devs.push_back(nullptr);
+        llama_model_params model_params = llama_model_default_params();
+        model_params.progress_callback = silent_model_load_progress;
+        model_params.devices    = devs.data();
+        model_params.split_mode = split_mode;
+        llama_model_ptr model(llama_model_init_from_user(gguf_ctx.get(), set_tensor_data, &tensor_params, model_params));
+        if (!model) {
+            throw std::runtime_error("failed to create llama model");
+        }
+
+        llama_context_params ctx_params = llama_context_default_params();
+        ctx_params.n_ctx           = 256;
+        ctx_params.n_batch         = 64;
+        ctx_params.n_ubatch        = 16;
+        ctx_params.n_threads       = 4;
+        ctx_params.n_threads_batch = 4;
+        llama_context_ptr lctx(llama_init_from_model(model.get(), ctx_params));
+        if (!lctx) {
+            throw std::runtime_error("failed to create llama context");
+        }
+        return std::make_pair(std::move(model), std::move(lctx));
+    };
+
+    auto [model_ref, ctx_ref] = make({ cpu },      LLAMA_SPLIT_MODE_LAYER);
+    auto [model_tp,  ctx_tp]  = make({ cpu, cpu }, LLAMA_SPLIT_MODE_TENSOR);
+
+    llama_sampler_ptr chain(llama_sampler_chain_init(llama_sampler_chain_default_params()));
+    // the MTP draft chain: the CPU finishes sampling from the candidates
+    const int32_t k = 4;
+    llama_sampler_chain_add(chain.get(), llama_sampler_init_top_k(k));
+    if (!llama_set_sampler(ctx_tp.get(), 0, chain.get())) {
+        LOG_ERR("%s: backend sampler refused under SPLIT_MODE_TENSOR\n", __func__);
+        return 1;
+    }
+
+    const uint32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model_ref.get()));
+    const std::vector<llama_token> tokens = get_tokens(48, n_vocab, seed);
+
+    // [0, 16): one ubatch, no outputs; [16, 48): a ubatch without outputs, then one whose last row is the output
+    auto decode = [&](llama_context * lctx) {
+        llama_batch batch = llama_batch_init(64, 0, 1);
+        for (uint32_t pos = 0; pos < 16; pos++) {
+            common_batch_add(batch, tokens[pos], pos, {0}, false);
+        }
+        int rc = llama_decode(lctx, batch);
+        common_batch_clear(batch);
+        for (uint32_t pos = 16; pos < tokens.size() && rc == 0; pos++) {
+            common_batch_add(batch, tokens[pos], pos, {0}, pos + 1 == tokens.size());
+        }
+        rc = rc == 0 ? llama_decode(lctx, batch) : rc;
+        llama_batch_free(batch);
+        if (rc != 0) {
+            throw std::runtime_error("failed to decode batch");
+        }
+    };
+    decode(ctx_ref.get());
+    decode(ctx_tp.get());
+
+    const float * logits = llama_get_logits_ith(ctx_ref.get(), -1);
+    std::vector<llama_token> want(n_vocab);
+    for (uint32_t i = 0; i < n_vocab; i++) {
+        want[i] = i;
+    }
+    std::partial_sort(want.begin(), want.begin() + k, want.end(), [&](llama_token a, llama_token b) { return logits[a] > logits[b]; });
+    want.resize(k);
+
+    const uint32_t      n_got  = llama_get_sampled_candidates_count_ith(ctx_tp.get(), -1);
+    const llama_token * ids    = llama_get_sampled_candidates_ith(ctx_tp.get(), -1);
+    const float       * values = llama_get_sampled_logits_ith(ctx_tp.get(), -1);
+    if (n_got != uint32_t(k) || ids == nullptr || values == nullptr ||
+            llama_get_sampled_logits_count_ith(ctx_tp.get(), -1) != uint32_t(k)) {
+        LOG_ERR("%s: expected %d backend candidates, got %u\n", __func__, k, n_got);
+        return 1;
+    }
+    std::vector<llama_token> got(ids, ids + k);
+    std::sort(want.begin(), want.end());
+    std::sort(got.begin(), got.end());
+    if (got != want) {
+        LOG_ERR("%s: backend candidates under SPLIT_MODE_TENSOR differ from the top-%d of the reference logits\n", __func__, k);
+        return 1;
+    }
+    for (int32_t i = 0; i < k; i++) {
+        if (std::fabs(values[i] - logits[ids[i]]) > 1e-3f*(1.0f + std::fabs(logits[ids[i]]))) {
+            LOG_ERR("%s: candidate %d has logit %f, expected %f\n", __func__, ids[i], values[i], logits[ids[i]]);
+            return 1;
+        }
+    }
+    LOG("%s: OK\n", __func__);
+    return 0;
+}
+
 int main(int argc, char ** argv) {
     // init the logger at max verbosity. filter with a custom callback respecting the user-configure verbosity
     common_log_set_verbosity_thold(LOG_LEVEL_DEBUG);
@@ -920,6 +1030,7 @@ int main(int argc, char ** argv) {
     float stdev = 0.1f;
     std::string out;
     const char * target_backend = nullptr;
+    bool tp_sampling = false;
 
     int verbosity = LOG_LEVEL_ERROR;
 
@@ -946,6 +1057,8 @@ int main(int argc, char ** argv) {
                 usage(argv);
                 return 1;
             }
+        } else if (strcmp(argv[i], "--tp-sampling") == 0) {
+            tp_sampling = true;
         } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--seed") == 0) {
             if (i + 1 < argc) {
                 seed = std::stoull(argv[++i]);
@@ -1000,6 +1113,9 @@ int main(int argc, char ** argv) {
     LOG_INF("%s: using seed %zu, stdev %f\n", __func__, seed, stdev);
 
     try {
+        if (tp_sampling) {
+            return test_tp_sampling(seed, stdev);
+        }
         if (!out.empty()) {
             return save_models(arch_filter, seed, stdev, verbosity, out);
         }
