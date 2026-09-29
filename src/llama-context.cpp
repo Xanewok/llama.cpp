@@ -21,6 +21,10 @@
 #include <string>
 #include <unordered_map>
 
+// per-device candidates for backend sampling under tensor split are n_devices * k; keep the gather small
+#define LLAMA_TP_SAMPLING_TOP_K_MAX     256
+#define LLAMA_TP_SAMPLING_TOP_K_MAX_STR "256"
+
 //
 // llama_context
 //
@@ -1285,16 +1289,25 @@ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
     LLAMA_LOG_DEBUG("%s: seq_id = %d, sampler = %p\n", __func__, (int) seq_id, (void *) sampler);
 
     if (sampler && model.split_mode() == LLAMA_SPLIT_MODE_TENSOR) {
-        static bool warned = false;
-        if (!warned) {
-            LLAMA_LOG_WARN("%s: backend sampling not supported with SPLIT_MODE_TENSOR; using CPU\n", __func__);
-            warned = true;
+        // must be decided before backend_init: once initialized, the chain skips its backend prefix on the CPU
+        const char * reason = nullptr;
+        const int32_t k = llama_sampler_chain_leading_top_k(sampler);
+        if (!model.logits_vocab_split()) {
+            reason = "logits split by vocab over output.weight (no replicated or tied LM head)";
+        } else if (k <= 0 || k > LLAMA_TP_SAMPLING_TOP_K_MAX) {
+            reason = "a sampler chain whose first active sampler is top-k with 1 <= k <= " LLAMA_TP_SAMPLING_TOP_K_MAX_STR;
+        } else if (!sampling_init_vocab_ids()) {
+            reason = "the vocab id tensor, which failed to allocate";
         }
-        if (sampling.samplers.count(seq_id) > 0) {
-            sched_need_reserve = true;
+
+        if (reason) {
+            LLAMA_LOG_WARN("%s: seq_id = %d: backend sampling with SPLIT_MODE_TENSOR needs %s; using CPU\n", __func__, (int) seq_id, reason);
+            if (sampling.samplers.count(seq_id) > 0) {
+                sched_need_reserve = true;
+            }
+            sampling.samplers.erase(seq_id);
+            return false;
         }
-        sampling.samplers.erase(seq_id);
-        return false;
     }
 
     const bool can_offload =
@@ -1330,6 +1343,45 @@ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
     sampling.samplers.erase(seq_id);
 
     sched_need_reserve = true;
+
+    return true;
+}
+
+bool llama_context::sampling_init_vocab_ids() {
+    if (sampling.vocab_ids) {
+        return true;
+    }
+
+    const int64_t n_vocab = model.vocab.n_tokens();
+    GGML_ASSERT(n_vocab <= (1 << 24) && "vocab ids are stored as F32");
+
+    ggml_init_params params = {
+        /*.mem_size   =*/ ggml_tensor_overhead(),
+        /*.mem_buffer =*/ nullptr,
+        /*.no_alloc   =*/ true,
+    };
+    ggml_context_ptr ctx { ggml_init(params) };
+    if (!ctx) {
+        return false;
+    }
+
+    ggml_tensor * t = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, n_vocab);
+    ggml_set_name(t, LLAMA_TENSOR_NAME_OUTPUT_VOCAB_IDS);
+
+    ggml_backend_buffer_ptr buf { ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), ggml_backend_dev_buffer_type(model.dev_output())) };
+    if (!buf) {
+        return false;
+    }
+
+    std::vector<float> ids(n_vocab);
+    for (int64_t i = 0; i < n_vocab; ++i) {
+        ids[i] = (float) i;
+    }
+    ggml_backend_tensor_set(t, ids.data(), 0, ggml_nbytes(t));
+
+    sampling.vocab_ids_ctx = std::move(ctx);
+    sampling.vocab_ids_buf = std::move(buf);
+    sampling.vocab_ids     = t;
 
     return true;
 }
@@ -2413,6 +2465,10 @@ uint32_t llama_context::graph_max_nodes(uint32_t n_tokens) const {
     if (n_sampling_outputs_max > 1) {
         res += (n_sampling_outputs_max - 1) * n_sampling_nodes_max;
     }
+    if (sampling.vocab_ids && !sampling.samplers.empty()) {
+        // candidate gather, plus a view and a cast per output row
+        res += 16 + 4*n_sampling_outputs_max;
+    }
     return res;
 }
 
@@ -2565,6 +2621,8 @@ llm_graph_params llama_context::graph_params(
         /*.n_outputs   =*/ n_outputs,
         /*.cb          =*/ graph_get_cb(),
         /*.res         =*/ res,
+        /*.sampling_vocab_ids =*/ sampling.samplers.empty() ? nullptr : sampling.vocab_ids,
+        /*.sampling_n_shards  =*/ sampling.samplers.empty() || !sampling.vocab_ids ? 0 : (uint32_t) model.get_split_state_ud.n_devices,
     };
 }
 
