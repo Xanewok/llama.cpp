@@ -867,6 +867,14 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
             }
         }
 
+        // without other devices, split over two instances of the CPU device
+        if (target_backend == nullptr && devices_meta.empty()) {
+            ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+            if (cpu != nullptr) {
+                devices_meta = {cpu, cpu};
+            }
+        }
+
         if (target_backend == nullptr) {
             dev_configs.emplace_back(devices_meta, "Meta", LLAMA_SPLIT_MODE_TENSOR);
         }
