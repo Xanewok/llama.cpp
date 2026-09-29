@@ -1331,6 +1331,45 @@ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
     return true;
 }
 
+bool llama_context::sampling_init_vocab_ids() {
+    if (sampling.vocab_ids) {
+        return true;
+    }
+
+    const int64_t n_vocab = model.vocab.n_tokens();
+    GGML_ASSERT(n_vocab <= (1 << 24) && "vocab ids are stored as F32");
+
+    ggml_init_params params = {
+        /*.mem_size   =*/ ggml_tensor_overhead(),
+        /*.mem_buffer =*/ nullptr,
+        /*.no_alloc   =*/ true,
+    };
+    ggml_context_ptr ctx { ggml_init(params) };
+    if (!ctx) {
+        return false;
+    }
+
+    ggml_tensor * t = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, n_vocab);
+    ggml_set_name(t, LLAMA_TENSOR_NAME_OUTPUT_VOCAB_IDS);
+
+    ggml_backend_buffer_ptr buf { ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), ggml_backend_dev_buffer_type(model.dev_output())) };
+    if (!buf) {
+        return false;
+    }
+
+    std::vector<float> ids(n_vocab);
+    for (int64_t i = 0; i < n_vocab; ++i) {
+        ids[i] = (float) i;
+    }
+    ggml_backend_tensor_set(t, ids.data(), 0, ggml_nbytes(t));
+
+    sampling.vocab_ids_ctx = std::move(ctx);
+    sampling.vocab_ids_buf = std::move(buf);
+    sampling.vocab_ids     = t;
+
+    return true;
+}
+
 void llama_context::set_adapters_lora(llama_adapter_lora ** adapters, size_t n_adapters, float * scales) {
     LLAMA_LOG_DEBUG("%s: adapters = %p\n", __func__, (void *) adapters);
 
@@ -2410,6 +2449,10 @@ uint32_t llama_context::graph_max_nodes(uint32_t n_tokens) const {
     if (n_sampling_outputs_max > 1) {
         res += (n_sampling_outputs_max - 1) * n_sampling_nodes_max;
     }
+    if (sampling.vocab_ids && !sampling.samplers.empty()) {
+        // candidate gather, plus a view and a cast per output row
+        res += 16 + 4*n_sampling_outputs_max;
+    }
     return res;
 }
 
@@ -2562,6 +2605,8 @@ llm_graph_params llama_context::graph_params(
         /*.n_outputs   =*/ n_outputs,
         /*.cb          =*/ graph_get_cb(),
         /*.res         =*/ res,
+        /*.sampling_vocab_ids =*/ sampling.samplers.empty() ? nullptr : sampling.vocab_ids,
+        /*.sampling_n_shards  =*/ sampling.samplers.empty() || !sampling.vocab_ids ? 0 : (uint32_t) model.get_split_state_ud.n_devices,
     };
 }
 
