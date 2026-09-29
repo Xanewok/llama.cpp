@@ -51,11 +51,29 @@ struct ggml_cuda_flash_attn_ext_f16_extra_data {
 };
 
 // K/V over several KV streams (non-unified cache): each stream slice is dense, only the stream stride has a gap.
-// Then one contiguous conversion per stream gives the same values as the strided one, and runs much faster.
+// Then one contiguous conversion per stream gives the same values as the strided one (for q8_0 bit for bit; the
+// q4/q5 kernels may differ in the sign of a zero), and runs much faster.
+// Dense: dims 1 and 2 tile ne[1]*ne[2] packed rows in either order (FA gets heads and KV rows permuted), streams do
+// not overlap, and every stream starts 16-byte aligned (the contiguous kernels load through int/vector pointers).
 static inline bool ggml_cuda_fa_dense_per_stream(const ggml_tensor * t) {
-    const size_t span = ggml_row_size(t->type, t->ne[0]) + (t->ne[1] - 1)*t->nb[1] + (t->ne[2] - 1)*t->nb[2];
-    return t->ne[3] > 1 && t->nb[0] == ggml_type_size(t->type) &&
-        span == ggml_row_size(t->type, t->ne[0]*t->ne[1]*t->ne[2]);
+    if (t->ne[3] <= 1 || t->nb[0] != ggml_type_size(t->type)) {
+        return false;
+    }
+    int lo = 1, hi = 2;
+    if (t->nb[lo] > t->nb[hi]) {
+        std::swap(lo, hi);
+    }
+    size_t expect = ggml_row_size(t->type, t->ne[0]);
+    for (const int d : { lo, hi }) {
+        if (t->ne[d] == 1) {
+            continue;
+        }
+        if (t->nb[d] != expect) {
+            return false;
+        }
+        expect *= t->ne[d];
+    }
+    return t->nb[3] >= expect && t->nb[3] % 16 == 0 && (uintptr_t) t->data % 16 == 0;
 }
 
 static inline ggml_cuda_flash_attn_ext_f16_extra_data ggml_cuda_flash_attn_ext_get_f16_extra_data(
