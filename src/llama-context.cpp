@@ -1298,6 +1298,9 @@ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
             reason = "logits split by vocab over output.weight (no replicated or tied LM head)";
         } else if (k <= 0 || k > LLAMA_TP_SAMPLING_TOP_K_MAX) {
             reason = "a sampler chain whose first active sampler is top-k with 1 <= k <= " LLAMA_TP_SAMPLING_TOP_K_MAX_STR;
+        } else if (model.logits_vocab_shard_min() < k) {
+            // each device takes the top k of its own vocab slice
+            reason = "every device's vocab slice (one plain segment) to hold at least top-k rows";
         } else if (!sampling_init_vocab_ids()) {
             reason = "the vocab id tensor, which failed to allocate";
         }
