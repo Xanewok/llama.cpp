@@ -648,7 +648,10 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
                 }
             } else {
                 if (cc >= GGML_CUDA_CC_ADA_LOVELACE) {
-                    if (Q->ne[1] <= 2) {
+                    // The mma kernel first converts all of K/V to f16, a cost that grows with the context and not with the batch.
+                    // Batches of 3-4 (e.g. speculative decoding) need a vector kernel compiled for the K/V types, else they are converted as well.
+                    if (Q->ne[1] <= 2 ||
+                            (Q->ne[1] <= 4 && ggml_cuda_get_fattn_vec_case(Q->ne[0], K->type, V->type) != nullptr)) {
                         return BEST_FATTN_KERNEL_VEC;
                     }
                 } else {
