@@ -1236,6 +1236,24 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
         }
     }
 
+    // a device whose vocab slice is smaller than top-k: the sampler is refused (host sampling), not an abort
+    if (ok) {
+        const float split[2] = { 1.0f, 0.0004f };
+        llama_model_params mp = model_params;
+        mp.tensor_split = split;
+        llama_model_ptr model_uneven(llama_model_init_from_user(gguf_ctx.get(), set_tensor_data, &tensor_params, mp));
+        GGML_ASSERT(model_uneven);
+        llama_context_params ctx_params = llama_context_default_params();
+        ctx_params.n_ctx = 256;
+        llama_context_ptr lctx(llama_init_from_model(model_uneven.get(), ctx_params));
+        GGML_ASSERT(lctx);
+        llama_sampler_ptr chain(llama_sampler_chain_init(llama_sampler_chain_default_params()));
+        llama_sampler_chain_add(chain.get(), llama_sampler_init_top_k(k));
+        const bool accepted = llama_set_sampler(lctx.get(), 0, chain.get());
+        LOG("%s: vocab slice smaller than top-k: sampler %s\n", __func__, accepted ? "accepted (FAIL)" : "refused, OK");
+        ok = !accepted;
+    }
+
     LOG("%s: %s\n", __func__, ok ? "OK" : "FAIL");
     return ok ? 0 : 1;
 }
