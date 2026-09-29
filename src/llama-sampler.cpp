@@ -1086,6 +1086,13 @@ static void llama_sampler_greedy_backend_apply(
     struct ggml_tensor * curl = ggml_argmax(ctx, logits);
     ggml_set_name(curl, "greedy_argmax");
 
+    // the argmax indexes the candidates, not the vocab, once an earlier sampler (or tensor split) narrowed them
+    if (data->candidates) {
+        struct ggml_tensor * candidates_rows = ggml_reshape_2d(ctx, data->candidates, 1, ggml_nelements(data->candidates));
+        curl = ggml_get_rows(ctx, candidates_rows, curl);
+        ggml_set_name(curl, "greedy_sampled_token");
+    }
+
     data->sampled = curl;
 }
 
@@ -1487,8 +1494,9 @@ static void llama_sampler_top_k_backend_apply(
     ggml_set_name(top_k, "top_k");
 
     if (data->candidates) {
-        struct ggml_tensor * candidates_rows = ggml_reshape_2d(ctx, data->candidates, 1, data->candidates->ne[0]);
-        data->candidates = ggml_get_rows(ctx, candidates_rows, top_k);
+        // flat, like top_k itself: later samplers (top-p) treat the candidates as one row
+        struct ggml_tensor * candidates_rows = ggml_reshape_2d(ctx, data->candidates, 1, ggml_nelements(data->candidates));
+        data->candidates = ggml_reshape_1d(ctx, ggml_get_rows(ctx, candidates_rows, top_k), sctx->k);
         ggml_set_name(data->candidates, "top_k_candidates");
     } else {
         data->candidates = top_k;
