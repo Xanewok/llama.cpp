@@ -892,6 +892,25 @@ uint32_t llama_sampler_backend_n_nodes(const llama_sampler * sampler) {
     return chain->n_nodes;
 }
 
+static bool llama_sampler_is_empty(const llama_sampler * smpl);
+static int32_t llama_sampler_top_k_value(const llama_sampler * smpl);
+
+int32_t llama_sampler_chain_leading_top_k(const llama_sampler * sampler) {
+    if (sampler == nullptr || sampler->iface != &llama_sampler_chain_i) {
+        return -1;
+    }
+
+    const auto * chain = (const llama_sampler_chain *) sampler->ctx;
+    for (const auto & entry : chain->samplers) {
+        if (llama_sampler_is_empty(entry.ptr)) {
+            continue;
+        }
+        return llama_sampler_top_k_value(entry.ptr);
+    }
+
+    return -1;
+}
+
 llama_token llama_sampler_sample(struct llama_sampler * smpl, struct llama_context * ctx, int32_t idx) {
     const llama_token   sampled_token  = llama_get_sampled_token_ith     (ctx, idx);
     const float *       sampled_probs  = llama_get_sampled_probs_ith     (ctx, idx);
@@ -4382,4 +4401,15 @@ void llama_perf_sampler_reset(struct llama_sampler * chain) {
 
     ctx->t_sample_us = 0;
     ctx->n_sample    = 0;
+}
+
+static bool llama_sampler_is_empty(const llama_sampler * smpl) {
+    return smpl->iface == &llama_sampler_empty_i;
+}
+
+static int32_t llama_sampler_top_k_value(const llama_sampler * smpl) {
+    if (smpl->iface != &llama_sampler_top_k_i) {
+        return -1;
+    }
+    return ((const llama_sampler_top_k *) smpl->ctx)->k;
 }
