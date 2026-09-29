@@ -130,6 +130,48 @@ def test_slot_restore_legacy_token_list():
 
 
 
+def test_slot_restore_draft(tmp_path):
+    global server
+    server = ServerPreset.stories15m_moe()
+    server.model_draft = download_file("https://huggingface.co/ggml-org/tiny-llamas/resolve/main/stories15M-q4_0.gguf")
+    server.spec_type = "draft-simple"
+    server.spec_draft_n_min = 4
+    server.spec_draft_n_max = 8
+    server.fa = "off"
+    server.slot_save_path = str(tmp_path)
+    server.start()
+
+    def run(prompt):
+        res = server.make_request("POST", "/completion", data={
+            "prompt": prompt,
+            "id_slot": 0,
+            "cache_prompt": True,
+            "n_predict": 48,
+        })
+        assert res.status_code == 200
+        timings = res.body["timings"]
+        return timings["draft_n"], timings["draft_n_accepted"], timings["prompt_n"], res.body["content"]
+
+    prompt = "Once upon a time, there was a little girl named Lily. She loved to play in the garden with her cat. One day,"
+    other  = "The quick brown fox jumps over the lazy dog. Then a very different story begins in a faraway castle where a dragon"
+
+    run(prompt)
+    res = server.make_request("POST", "/slots/0?action=save", data={"filename": "slot0.bin"})
+    assert res.status_code == 200
+
+    # same slot state, same draft state
+    expected = run(prompt)
+    assert expected[0] > 0
+
+    # leave another prompt in the draft context, then restore the saved slot
+    run(other)
+    res = server.make_request("POST", "/slots/0?action=restore", data={"filename": "slot0.bin"})
+    assert res.status_code == 200
+
+    # the draft context must have been restored along with the target
+    assert run(prompt) == expected
+
+
 def test_slot_erase():
     global server
     server.start()
