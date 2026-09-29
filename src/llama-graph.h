@@ -909,7 +909,8 @@ struct llm_graph_params {
             loras == other.loras &&
             cross == other.cross &&
             sampling_vocab_ids == other.sampling_vocab_ids &&
-            sampling_n_shards  == other.sampling_n_shards;
+            sampling_n_shards  == other.sampling_n_shards  &&
+            mtp_chain_tok_embd == other.mtp_chain_tok_embd;
     }
 
     // tensor split: the logits are split across sampling_n_shards devices by vocab, and backend samplers start
@@ -918,6 +919,9 @@ struct llm_graph_params {
     uint32_t      sampling_n_shards  = 0;
 
     const float * mtp_chain_par = nullptr; // see llm_graph_input_mtp_chain
+
+    // MTP chain: the token embedding table the steps read, when the context keeps its own copy; nullptr otherwise
+    ggml_tensor * mtp_chain_tok_embd = nullptr;
 };
 
 struct llm_graph_fused_node {
@@ -1072,6 +1076,7 @@ struct llm_graph_context {
     uint32_t      sampling_n_shards;
 
     const float * mtp_chain_par;
+    ggml_tensor * mtp_chain_tok_embd;
 
     const llm_graph_cb & cb_func;
 

@@ -1521,6 +1521,15 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         }
         this->n_max = this->params.n_max;
 
+        // the first enable of the chain copies the token table to the device (~0.3 s for 644 MiB x 2): do it at load,
+        // or the first request pays for it
+        if (this->params.mtp_chain && !chain_heads && !is_mem_shared) {
+            const float u0 = 0.0f;
+            if (llama_set_mtp_chain(ctx_dft, 1, &u0, 1.0f)) {
+                llama_set_mtp_chain(ctx_dft, 0, nullptr, 1.0f);
+            }
+        }
+
         pending_h.assign(n_seq, std::vector<float>(n_embd, 0.0f));
 
         i_last.assign(n_seq, -1);

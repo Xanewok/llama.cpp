@@ -735,6 +735,9 @@ struct llama_model {
     // statically allocated context for assigning
     struct llama_meta_device_get_split_state_userdata get_split_state_ud;
 
+    // tensor split: the devices under the meta device; empty otherwise
+    std::vector<ggml_backend_dev_t> devices_tp;
+
     int64_t t_load_us  = 0;
     int64_t t_start_us = 0;
 

@@ -1257,7 +1257,8 @@ bool llama_context::set_mtp_chain(int32_t n_chain, const float * u, float inv_te
         cparams.mtp_chain = 0;
         return true;
     }
-    if (n_chain > LLAMA_MTP_CHAIN_MAX || model.hparams.n_layer_nextn != 1) {
+    // only qwen35's graph_mtp builds the chain; elsewhere the decode would return no chain output
+    if (n_chain > LLAMA_MTP_CHAIN_MAX || model.hparams.n_layer_nextn != 1 || model.arch != LLM_ARCH_QWEN35) {
         return false;
     }
     // under tensor split the steps gather per-device top-k candidates, which needs the vocab id tensor
@@ -1265,11 +1266,98 @@ bool llama_context::set_mtp_chain(int32_t n_chain, const float * u, float inv_te
         return false;
     }
 
+    if (!mtp_chain_tok_embd_done) {
+        mtp_chain_tok_embd_done = true;
+        mtp_chain_init_tok_embd();
+    }
+
     std::copy(u, u + n_chain, mtp_chain_par.begin());
     mtp_chain_par[LLAMA_MTP_CHAIN_MAX] = inv_temp;
     cparams.mtp_chain = n_chain;
 
     return true;
+}
+
+void llama_context::mtp_chain_init_tok_embd() {
+    const auto & layer = model.layers[model.hparams.n_layer()];
+    const ggml_tensor * src = layer.nextn.embed_tokens ? layer.nextn.embed_tokens : model.tok_embd;
+
+    ggml_backend_buffer_type_t buft = ggml_backend_dev_buffer_type(model.dev_output());
+
+    // testing only: copy into host memory too, so that CPU runs take this path
+    static const bool force = getenv("LLAMA_MTP_CHAIN_EMBD_COPY") != nullptr;
+
+    // src->data must be the plain row layout (not a repacked CPU buffer), which is what an is-host buffer holds
+    if (src == nullptr || src->buffer == nullptr || !ggml_backend_buffer_is_host(src->buffer) ||
+            (ggml_backend_buft_is_host(buft) && !force)) {
+        return;
+    }
+
+    const double mib = ggml_nbytes(src)/1024.0/1024.0;
+
+    ggml_init_params params = {
+        /*.mem_size   =*/ 3*ggml_tensor_overhead(),
+        /*.mem_buffer =*/ nullptr,
+        /*.no_alloc   =*/ true,
+    };
+
+    // a table type the device cannot get_rows would move the op, and the table with it, back to the CPU every decode
+    {
+        ggml_context_ptr ctx_op { ggml_init(params) };
+        if (!ctx_op) {
+            return;
+        }
+        ggml_tensor * op = ggml_get_rows(ctx_op.get(), ggml_new_tensor(ctx_op.get(), src->type, GGML_MAX_DIMS, src->ne),
+                ggml_new_tensor_1d(ctx_op.get(), GGML_TYPE_I32, 1));
+        if (!ggml_backend_dev_supports_op(model.dev_output(), op)) {
+            LLAMA_LOG_WARN("%s: %s cannot get_rows %s; the MTP chain embeds on the host\n",
+                    __func__, ggml_backend_dev_name(model.dev_output()), ggml_type_name(src->type));
+            return;
+        }
+    }
+
+    // the meta allocator aborts when a device is out of memory, and a mirrored table needs its whole size on each
+    // device; the headroom is for compute buffers that grow later
+    std::vector<ggml_backend_dev_t> devs = model.devices_tp;
+    if (devs.empty() && !ggml_backend_buft_is_host(buft)) {
+        devs.push_back(model.dev_output());
+    }
+    for (ggml_backend_dev_t dev : devs) {
+        size_t free = 0;
+        size_t total = 0;
+        ggml_backend_dev_memory(dev, &free, &total);
+        if (free < ggml_nbytes(src) + (size_t(256) << 20)) {
+            LLAMA_LOG_WARN("%s: %s has %.1f MiB free, too little for the MTP chain's token embeddings (%.1f MiB); "
+                    "embedding on the host\n", __func__, ggml_backend_dev_name(dev), free/1024.0/1024.0, mib);
+            return;
+        }
+    }
+
+    ggml_context_ptr ctx { ggml_init(params) };
+    if (!ctx) {
+        return;
+    }
+
+    ggml_tensor * t = ggml_new_tensor(ctx.get(), src->type, GGML_MAX_DIMS, src->ne);
+    // the name decides the tensor-split state: an unlisted name is mirrored, a whole table per device
+    ggml_set_name(t, "mtp_chain_tok_embd");
+
+    ggml_backend_buffer_ptr buf { ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), buft) };
+    if (!buf) {
+        LLAMA_LOG_WARN("%s: no room for the MTP chain's token embeddings (%.1f MiB) on %s; embedding on the host\n",
+                __func__, mib, ggml_backend_buft_name(buft));
+        return;
+    }
+    ggml_backend_buffer_set_usage(buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+    ggml_backend_tensor_set(t, src->data, 0, ggml_nbytes(src));
+
+    // a warning so that it shows at the default log level: it costs this much memory on every device
+    LLAMA_LOG_WARN("%s: MTP chain token embeddings copied to %s (%.1f MiB per device)\n",
+            __func__, ggml_backend_buft_name(buft), mib);
+
+    mtp_chain_tok_embd_ctx = std::move(ctx);
+    mtp_chain_tok_embd_buf = std::move(buf);
+    mtp_chain_tok_embd     = t;
 }
 
 const float * llama_context::get_mtp_chain() {
@@ -2701,6 +2789,7 @@ llm_graph_params llama_context::graph_params(
         /*.sampling_vocab_ids =*/ sampling.samplers.empty() && !cparams.mtp_chain ? nullptr : sampling.vocab_ids,
         /*.sampling_n_shards  =*/ (sampling.samplers.empty() && !cparams.mtp_chain) || !sampling.vocab_ids ? 0 : (uint32_t) model.get_split_state_ud.n_devices,
         /*.mtp_chain_par      =*/ mtp_chain_par.data(),
+        /*.mtp_chain_tok_embd =*/ mtp_chain_tok_embd,
     };
 }
 

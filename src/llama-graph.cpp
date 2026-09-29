@@ -1531,6 +1531,7 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
     sampling_vocab_ids(params.sampling_vocab_ids),
     sampling_n_shards(params.sampling_n_shards),
     mtp_chain_par(params.mtp_chain_par),
+    mtp_chain_tok_embd(params.mtp_chain_tok_embd),
     cb_func          (params.cb),
     res              (params.res),
     ctx0             (res->get_ctx()),
