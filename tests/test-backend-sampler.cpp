@@ -15,6 +15,7 @@
 #include <functional>
 #include <map>
 #include <random>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -1396,6 +1397,37 @@ static void test_backend_penalties_sampling(const test_params & params) {
 
 // This test verifies that it is possible to have two different backend samplers,
 // one that uses the backend dist sampler, and another that uses CPU dist sampler.
+static void test_backend_min_keep_sampling(const test_params & params) {
+    const std::string prompt = "Hello";
+    const size_t min_keep = 5;
+
+    const std::vector<float> raw = decode_raw_logits(params, prompt);
+
+    const std::vector<std::pair<const char *, std::function<llama_sampler *(size_t)>>> samplers = {
+        { "top-p", [](size_t min_keep) { return llama_sampler_init_top_p(0.01f, min_keep); } },
+        { "min-p", [](size_t min_keep) { return llama_sampler_init_min_p(0.99f, min_keep); } },
+    };
+
+    for (const auto & [name, init] : samplers) {
+        // without min_keep the filter keeps fewer tokens
+        llama_sampler_ptr cpu_sampler(init(0));
+        GGML_ASSERT(apply_cpu_sampler(raw, cpu_sampler.get()).size() < min_keep);
+
+        const auto add_samplers = [&](llama_sampler * chain) {
+            llama_sampler_chain_add(chain, init(min_keep));
+        };
+        const sampler_comparison_output output = run_sampler_comparison(
+                params, prompt, raw, add_samplers, [](llama_sampler *) {});
+        GGML_ASSERT(output.expected.size() >= min_keep);
+
+        const sampler_comparison_stats stats = compare_sampler_outputs(
+                name, map_logits(output.expected), output.actual);
+        GGML_ASSERT(stats.n_mismatch == 0);
+    }
+
+    printf("backend min_keep sampling test PASSED\n");
+}
+
 static void test_backend_mixed_sampling(const test_params & params) {
     struct llama_sampler_chain_params chain_params_0 = llama_sampler_chain_default_params();
     llama_sampler_ptr sampler_chain_0(llama_sampler_chain_init(chain_params_0));
@@ -2019,6 +2051,7 @@ static const backend_test_case BACKEND_TESTS[] = {
     { "min_p",           test_backend_min_p_sampling,          true  },
     { "cpu_mixed",       test_backend_cpu_mixed_batch,         true  },
     { "top_p",           test_backend_top_p_sampling,          true  },
+    { "min_keep",        test_backend_min_keep_sampling,       true  },
 };
 
 static test_args parse_cli(int argc, char ** argv) {
