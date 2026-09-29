@@ -34,6 +34,10 @@
 #   define NOMINMAX
 #endif
 #include <windows.h>
+#include <process.h>
+#define getpid _getpid
+#else
+#include <unistd.h>
 #endif
 
 constexpr int HTTP_POLLING_SECONDS = 1;
@@ -107,6 +111,70 @@ enum slot_state {
 };
 
 struct server_slot; // forward declaration
+
+// LLAMA_SPEC_ACCLOG=<prefix>: JSONL of every speculative round to <prefix>.<pid>.jsonl. Measurement only: it must
+// never influence sampling, batching or slot state.
+//   r  round:    pos = tokens generated before the round, d = drafted, a = accepted drafts; emits a+1 tokens
+//   x  restore:  a checkpoint restore that only observes (d, a); emits nothing, the following p round emits
+//   p  replay:   emits a+1 tokens after a restore; its d/a are not draft statistics
+//   e  request end: task, n_prompt (task tokens), n_new (tokens prefilled), n_gen, ids = every generated token
+//   c  prompt cache: task, n_past = LCP of the cached tokens and the new prompt, n_old/n_new = their lengths, and both
+//      token windows [np0, np0+len); n_past < n_old means the cache diverged inside the previously cached tokens
+class spec_acclog {
+    FILE * f = nullptr;
+public:
+    spec_acclog() {
+        const char * prefix = getenv("LLAMA_SPEC_ACCLOG");
+        if (!prefix || !*prefix) {
+            return;
+        }
+        const std::string path = std::string(prefix) + "." + std::to_string((long) getpid()) + ".jsonl";
+        f = fopen(path.c_str(), "w");
+        if (!f) {
+            SRV_WRN("LLAMA_SPEC_ACCLOG: cannot open %s\n", path.c_str());
+            return;
+        }
+        setvbuf(f, nullptr, _IOLBF, 1 << 16);
+        fprintf(f, "{\"k\":\"h\",\"pid\":%ld,\"us\":%" PRId64 "}\n", (long) getpid(), (int64_t) ggml_time_us());
+    }
+    ~spec_acclog() { if (f) fclose(f); }
+    spec_acclog(const spec_acclog &) = delete;
+    spec_acclog & operator=(const spec_acclog &) = delete;
+
+    bool on() const { return f != nullptr; }
+
+    void round(char kind, int task, int pos, size_t d, size_t a) const {
+        fprintf(f, "{\"k\":\"%c\",\"task\":%d,\"pos\":%d,\"d\":%zu,\"a\":%zu,\"us\":%" PRId64 "}\n",
+                kind, task, pos, d, a, (int64_t) ggml_time_us());
+    }
+
+    void cache(int task, int n_past, int n_old, int n_new, int np0, const llama_tokens & o, const llama_tokens & n) const {
+        fprintf(f, "{\"k\":\"c\",\"task\":%d,\"n_past\":%d,\"n_old\":%d,\"n_new\":%d,\"np0\":%d,\"old\":[", task, n_past, n_old, n_new, np0);
+        for (size_t i = 0; i < o.size(); ++i) {
+            fprintf(f, i ? ",%d" : "%d", (int) o[i]);
+        }
+        fputs("],\"new\":[", f);
+        for (size_t i = 0; i < n.size(); ++i) {
+            fprintf(f, i ? ",%d" : "%d", (int) n[i]);
+        }
+        fputs("]}\n", f);
+    }
+
+    void end(int task, int n_prompt, int n_new, int n_gen, const llama_tokens & ids) const {
+        fprintf(f, "{\"k\":\"e\",\"task\":%d,\"n_prompt\":%d,\"n_new\":%d,\"n_gen\":%d,\"us\":%" PRId64 ",\"ids\":[",
+                task, n_prompt, n_new, n_gen, (int64_t) ggml_time_us());
+        for (size_t i = 0; i < ids.size(); ++i) {
+            fprintf(f, i ? ",%d" : "%d", (int) ids[i]);
+        }
+        fputs("]}\n", f);
+    }
+};
+
+static const spec_acclog & acclog() {
+    static const spec_acclog l;
+    return l;
+}
+
 
 struct server_batch {
     common_batch view; // the rendered sub-batch [off, off + n_tokens), see render()
@@ -238,6 +306,7 @@ struct server_slot {
     std::string  generated_text;
     std::string  debug_generated_text;
     llama_tokens generated_tokens;
+    llama_tokens acclog_ids; // all generated tokens; filled only under LLAMA_SPEC_ACCLOG
     size_t n_sent_text = 0; // number of sent text character (i.e. handle partial UTF-8 on streaming)
 
     std::vector<completion_token_output> generated_token_probs;
@@ -344,6 +413,7 @@ struct server_slot {
             spec_ckpt.clear();
         }
         generated_tokens.clear();
+        acclog_ids.clear();
         generated_token_probs.clear();
         json_schema = json();
 
@@ -1285,6 +1355,10 @@ private:
             };
 
             slot.callback_on_reset = [this](const server_slot & slot) {
+                if (acclog().on()) {
+                    acclog().end(slot.task->id, (int) slot.task->n_tokens(), (int) slot.stats.n_prompt_processed,
+                                 (int) slot.stats.n_gen, slot.acclog_ids);
+                }
                 // flush the generated token stats before reset()
                 if (slot.stats.n_gen > 0) {
                     metrics_on_prediction(slot);
@@ -1815,6 +1889,9 @@ private:
         // remember which tokens were sampled - used for repetition penalties during sampling
         const std::string token_str = result.text_to_send;
         slot.sampled = result.tok;
+        if (acclog().on()) {
+            slot.acclog_ids.push_back(result.tok);
+        }
 
         slot.generated_text += token_str;
         if (slot.task->params.return_tokens) {
@@ -3284,6 +3361,17 @@ private:
                                     GGML_ABORT("pos_min == -1, but n_past > 0 - should not happen: https://github.com/ggml-org/llama.cpp/pull/13833#discussion_r2116181237");
                                 }
 
+                                if (acclog().on()) {
+                                    const int np0 = std::max<int>(n_past - 8, 0);
+                                    const int np1 = std::min<int>(n_past + 10, std::min(slot.prompt.tokens.size(), slot.task->tokens.size()));
+                                    llama_tokens tok_old, tok_new;
+                                    for (int i = np0; i < np1; i++) {
+                                        tok_old.push_back(slot.prompt.tokens[i]);
+                                        tok_new.push_back(slot.task->tokens[i]);
+                                    }
+                                    acclog().cache(slot.task->id, n_past, (int) slot.prompt.tokens.size(), (int) slot.task->tokens.size(), np0, tok_old, tok_new);
+                                }
+
                                 // when the prompt prefix does not match, print the tokens around the mismatch
                                 // this is useful for debugging prompt caching
                                 if (slots_debug) {
@@ -3916,6 +4004,9 @@ private:
                         }
 
                         // partial acceptance is not supported by the context -> truncate the draft and restore the state
+                        if (acclog().on()) {
+                            acclog().round('x', slot.task->id, (int) slot.stats.n_gen, n_draft, accepted.size() - 1);
+                        }
                         slot.spec_is_replay = true;
                         slot.spec_draft = std::move(accepted);
 
@@ -3952,6 +4043,9 @@ private:
             size_t n_accepted = ids.size() - 1;
             if (slot.spec_is_replay && n_accepted > 0) {
                 n_accepted--;
+            }
+            if (acclog().on()) {
+                acclog().round(slot.spec_is_replay ? 'p' : 'r', slot.task->id, (int) slot.stats.n_gen, n_draft, ids.size() - 1);
             }
             slot.spec_is_replay = false;
 
