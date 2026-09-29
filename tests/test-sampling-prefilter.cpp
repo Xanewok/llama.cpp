@@ -616,6 +616,57 @@ int main(int argc, char ** argv) {
         }
     }
 
+    // ties: the chain must get the candidates, in the order, that its own partial sort of the full row gives, also
+    // with ties inside the top k or at the k-th place (the prefilter then falls back to the full row). Not part of
+    // the per-seed streams, which stay comparable with builds before the tie fallback.
+    {
+        std::uniform_int_distribution<llama_token> ud(1000, E.n_vocab - 1000);
+        std::vector<llama_token> t;
+        while (t.size() < 24) {
+            const llama_token id = ud(rng_logits);
+            if (std::find(t.begin(), t.end(), id) == t.end()) {
+                t.push_back(id);
+            }
+        }
+        struct tie_case {
+            const char * name;
+            std::vector<std::pair<llama_token, float>> lifts;
+        };
+        std::vector<tie_case> tcases;
+        // p ~ 0.9 for the top token and ~0.05 for each of a tied pair: top-p 0.95 cuts inside the pair
+        tcases.push_back({ "tied pair cut by top-p", { { t[0], 30.0f }, { t[1], 27.11f }, { t[2], 27.11f } } });
+        {
+            // six groups of three equal logits, then three more equal at places 19..21 (k = 20)
+            std::vector<std::pair<llama_token, float>> l;
+            for (int i = 0; i < 18; ++i) {
+                l.push_back({ t[i], 12.0f - 0.25f*(i/3) });
+            }
+            for (int i = 18; i < 21; ++i) {
+                l.push_back({ t[i], 10.0f });
+            }
+            tcases.push_back({ "tie groups inside the top k and at the k-th place", l });
+        }
+        for (const auto & tc : tcases) {
+            const auto logits = make_logits(E.n_vocab, rng_logits, tc.lifts);
+            E.set_row(0, logits);
+            int n_diff = 0;
+            for (uint32_t seed = 1; seed <= 20; ++seed) {
+                common_sampler * gs = E.sampler(seed, TEXT_THINK);
+                const auto ref = chain_dist(common_sampler_get(gs), full_array(logits));
+                common_sampler_sample(gs, E.ctx, 0);
+                const auto * cp = common_sampler_get_candidates(gs, true);
+                bool same = cp->size == ref.size();
+                for (size_t i = 0; same && i < ref.size(); ++i) {
+                    same = cp->data[i].id == ref[i].id && std::fabs(cp->data[i].p - ref[i].p) < 1e-6f;
+                }
+                n_diff += !same;
+                common_sampler_free(gs);
+            }
+            printf("\n[ties: %s] candidates differ from the full-row chain in %d of 20 draws\n", tc.name, n_diff);
+            CHECK(n_diff == 0, "tied candidates differ from the full-row chain (%s)", tc.name);
+        }
+    }
+
     const std::string seeds = seeds_out.str();
     uint64_t h = 1469598103934665603ull;
     for (unsigned char ch : seeds) {

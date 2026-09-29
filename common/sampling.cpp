@@ -155,16 +155,14 @@ struct common_sampler {
             for (uint32_t i = 0; i < sampled_logits_count; i++) {
                 cur[i] = llama_token_data{sampled_ids[i], sampled_logits[i], 0.0f};
             }
-        } else if (prefilter && prefilter_k > 0 && prefilter_k < n_vocab) {
-            const auto * logits = llama_get_logits_ith(ctx, idx);
-            GGML_ASSERT(logits != nullptr);
-            top_k_select(logits, n_vocab);
         } else {
             const auto * logits = llama_get_logits_ith(ctx, idx);
             GGML_ASSERT(logits != nullptr);
-            cur.resize(n_vocab);
-            for (llama_token token_id = 0; token_id < n_vocab; token_id++) {
-                cur[token_id] = llama_token_data{token_id, logits[token_id], 0.0f};
+            if (!(prefilter && prefilter_k > 0 && prefilter_k < n_vocab && top_k_select(logits, n_vocab))) {
+                cur.resize(n_vocab);
+                for (llama_token token_id = 0; token_id < n_vocab; token_id++) {
+                    cur[token_id] = llama_token_data{token_id, logits[token_id], 0.0f};
+                }
             }
         }
 
@@ -179,14 +177,17 @@ struct common_sampler {
 
     // > 0: set_logits keeps only the top prefilter_k logits of the full vocab, in one pass. Valid only while every
     // sampler ahead of top-k in the chain is a no-op or the logit bias (see common_sampler_prefilter_k), and the
-    // reasoning budget and grammar leave the row alone: the chain then gets the candidate set its own top-k would
-    // keep (up to exact ties at the k-th logit), without filling and sorting an n_vocab-entry array.
+    // reasoning budget and grammar leave the row alone: the chain then gets the candidates its own top-k would keep,
+    // in the same order, without filling and sorting an n_vocab-entry array.
     int32_t prefilter_k = 0;
     std::vector<llama_logit_bias> prefilter_bias; // the chain's logit bias, by token
 
-    // raw logits go into cur, as the chain's logit bias adds the bias itself; selection is on the biased logit
-    void top_k_select(const float * logits, const int n_vocab) {
-        const size_t k = prefilter_k;
+    // raw logits go into cur, as the chain's logit bias adds the bias itself; selection is on the biased logit.
+    // Returns false, leaving cur to be refilled, when a tie among the k + 1 best could make the chain's own
+    // partial sort keep or order tied tokens differently: without ties the top k and their order are unique.
+    // Every logit left out is <= the (k + 1)-th kept, so a tie at the k-th place shows up among the k + 1.
+    bool top_k_select(const float * logits, const int n_vocab) {
+        const size_t k = (size_t) prefilter_k + 1;
         cur.clear();
         cur.reserve(k);
 
@@ -241,9 +242,18 @@ struct common_sampler {
             }
         }
 
+        std::sort(cur.begin(), cur.end(), greater); // best first
+        for (size_t i = 1; i < cur.size(); ++i) {
+            if (!(cur[i - 1].p > cur[i].p)) {
+                return false;
+            }
+        }
+        cur.pop_back();
+
         for (auto & c : cur) {
             c.p = 0.0f;
         }
+        return true;
     }
 };
 
