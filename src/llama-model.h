@@ -776,6 +776,8 @@ struct llama_model {
 
     // tensor split only: every LM head is output.weight split by vocab, so all logits are vocab-split
     bool logits_vocab_split() const;
+    // the fewest vocab rows of the logits on one device when vocab-split in one plain segment, else 0
+    int64_t logits_vocab_shard_min() const;
 
     std::map<ggml_backend_buffer_type_t, size_t> memory_breakdown() const;
 
