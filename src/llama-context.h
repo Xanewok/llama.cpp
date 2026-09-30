@@ -347,6 +347,15 @@ private:
 
     sampling_info sampling;
 
+    // The last ubatch can keep fallback logits on the device until a reader or another compute needs them.
+    struct logits_deferred_info {
+        ggml_tensor * t = nullptr;
+        int64_t row0 = 0;
+        int64_t n = 0;
+    };
+    logits_deferred_info logits_deferred;
+    void logits_deferred_fetch();
+
     // sequence embeddings output (map of [n_embd] vectors)
     // populated only when pooling_type != LLAMA_POOLING_TYPE_NONE
     std::map<llama_seq_id, std::vector<float>> embd_seq;
