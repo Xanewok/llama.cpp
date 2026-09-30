@@ -863,6 +863,8 @@ struct ggml_backend_sched {
     size_t context_buffer_size;
 
     bool op_offload;
+    bool input_batch_disable;
+    bool input_upload_profile;
 
     int debug;
 
@@ -1718,8 +1720,9 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
             }
         }
 
+        const int64_t upload_start = sched->input_upload_profile ? ggml_time_us() : 0;
         input_transfers.clear();
-        for (int input_id = 0; input_id < split->n_inputs; ++input_id) {
+        for (int input_id = 0; !sched->input_batch_disable && input_id < split->n_inputs; ++input_id) {
             ggml_tensor * input = split->inputs[input_id];
             if ((input->flags & GGML_TENSOR_FLAG_INPUT) && ggml_backend_buffer_is_host(input->buffer)) {
                 ggml_tensor * input_cpy = tensor_copy(input, split_backend_id, sched->cur_copy);
@@ -1738,6 +1741,8 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
             }
             ggml_backend_tensor_set_batch(input_transfers.data(), input_transfers.size());
         }
+        int64_t upload_us = sched->input_upload_profile ? ggml_time_us() - upload_start : 0;
+        size_t n_uploads = input_transfers.size();
 
         // copy the input tensors to the split backend
         for (int input_id = 0; input_id < split->n_inputs; input_id++) {
@@ -1746,9 +1751,10 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
             struct ggml_tensor * input_cpy = tensor_copy(input, split_backend_id, sched->cur_copy);
 
             if (input->flags & GGML_TENSOR_FLAG_INPUT) {
-                if (ggml_backend_buffer_is_host(input->buffer)) {
+                if (!sched->input_batch_disable && ggml_backend_buffer_is_host(input->buffer)) {
                     continue;
                 }
+                const int64_t copy_start = sched->input_upload_profile ? ggml_time_us() : 0;
                 // inputs from the user must be copied immediately to prevent the user overwriting the data before the copy is done
                 if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
                     ggml_backend_event_synchronize(sched->events[split_backend_id][sched->cur_copy]);
@@ -1756,6 +1762,10 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
                     ggml_backend_synchronize(split_backend);
                 }
                 ggml_backend_tensor_copy(input, input_cpy);
+                if (sched->input_upload_profile && ggml_backend_buffer_is_host(input->buffer) && ggml_nbytes(input) > 0) {
+                    upload_us += ggml_time_us() - copy_start;
+                    ++n_uploads;
+                }
             } else {
                 // wait for the split backend to finish using the input before overwriting it
                 if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
@@ -1869,6 +1879,11 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
             }
         }
 
+        if (sched->input_upload_profile && n_uploads > 0) {
+            fprintf(stderr, "input_upload: backend=%s mode=%s tensors=%zu us=%lld\n", ggml_backend_name(split_backend),
+                sched->input_batch_disable ? "base" : "batch", n_uploads, (long long) upload_us);
+        }
+
         if (!sched->callback_eval) {
             enum ggml_status ec = ggml_backend_graph_compute_async(split_backend, &split->graph);
             if (ec != GGML_STATUS_SUCCESS) {
@@ -1943,6 +1958,8 @@ ggml_backend_sched_t ggml_backend_sched_new(
     sched->debug_realloc = GGML_SCHED_DEBUG_REALLOC ? atoi(GGML_SCHED_DEBUG_REALLOC) : sched->debug_realloc;
 
     sched->n_backends = n_backends;
+    sched->input_batch_disable = getenv("GGML_INPUT_BATCH_DISABLE") != nullptr;
+    sched->input_upload_profile = getenv("GGML_INPUT_UPLOAD_PROFILE") != nullptr;
     sched->n_copies = parallel ? GGML_SCHED_MAX_COPIES : 1;
 
     // initialize hash table

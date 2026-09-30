@@ -1503,7 +1503,13 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         //const auto t_start_us = ggml_time_us();
 
         // FIXME this call causes a crash if any model inputs were not used in the graph and were therefore not allocated
+        const bool input_profile = getenv("GGML_INPUT_UPLOAD_PROFILE") != nullptr;
+        const int64_t input_start = input_profile ? ggml_time_us() : 0;
         res->set_inputs(&ubatch);
+        if (input_profile) {
+            fprintf(stderr, "input_fill: tokens=%u outputs=%u type=%d us=%lld\n", ubatch.n_tokens, n_outputs, (int) gtype,
+                (long long) (ggml_time_us() - input_start));
+        }
 
         //LLAMA_LOG_INFO("graph set inputs time: %.3f ms\n", (ggml_time_us() - t_start_us)/1000.0);
     }

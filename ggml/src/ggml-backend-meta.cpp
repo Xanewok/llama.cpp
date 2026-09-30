@@ -1729,6 +1729,9 @@ static void ggml_backend_meta_buffer_set_tensor_batch(ggml_backend_buffer_t buff
     for (size_t i = 0; i < n_transfers; ++i) {
         const auto state = ggml_backend_meta_get_split_state(transfers[i].tensor, /*assume_sync =*/ false);
         if (state.axis != GGML_BACKEND_SPLIT_AXIS_MIRRORED) {
+            if (getenv("GGML_INPUT_UPLOAD_TRACE")) {
+                fprintf(stderr, "input_meta: fallback=%s axis=%d\n", transfers[i].tensor->name, (int) state.axis);
+            }
             for (size_t j = 0; j < n_transfers; ++j) {
                 const auto & transfer = transfers[j];
                 ggml_backend_meta_buffer_set_tensor(buffer, transfer.tensor, transfer.data, transfer.offset, transfer.size);
@@ -1737,6 +1740,9 @@ static void ggml_backend_meta_buffer_set_tensor_batch(ggml_backend_buffer_t buff
         }
     }
     std::vector<ggml_backend_tensor_transfer> simple_transfers(n_transfers);
+    if (getenv("GGML_INPUT_UPLOAD_TRACE")) {
+        fprintf(stderr, "input_meta: mirrored=%zu devices=%zu\n", n_transfers, ggml_backend_meta_buffer_n_bufs(buffer));
+    }
     for (size_t j = 0; j < ggml_backend_meta_buffer_n_bufs(buffer); ++j) {
         for (size_t i = 0; i < n_transfers; ++i) {
             simple_transfers[i] = transfers[i];
