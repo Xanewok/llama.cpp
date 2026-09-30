@@ -3876,6 +3876,9 @@ void llm_graph_context::build_sampling() const {
                 cand_ids   = ggml_cast(ctx0, ggml_view_1d(ctx0, cand, n_cand, rows[i] * cand->nb[2] + cand->nb[1]), GGML_TYPE_I32);
             } else {
                 logits_seq = ggml_view_1d(ctx0, logits_t, logits_t->ne[0], rows[i] * logits_t->nb[1]);
+                if (sampling_vocab_ids) {
+                    cand_ids = ggml_cast(ctx0, sampling_vocab_ids, GGML_TYPE_I32);
+                }
             }
             ggml_format_name(logits_seq, "logits_seq_%d_%u", seq_id, i);
 
