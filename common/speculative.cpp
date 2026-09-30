@@ -10,6 +10,7 @@
 #include "ngram-mod.h"
 #include "sampling.h"
 
+#include "ggml-host-prof.h" // DO NOT MERGE
 #include "../src/llama-ext.h" // staging API: llama_set_embeddings_nextn / llama_get_embeddings_nextn_ith (used by MTP)
 
 #include <algorithm>
@@ -1707,7 +1708,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 llama_set_nextn_layer_offset(ctx_dft, i);
             }
 
+            const int64_t hp_d = ggml_host_prof_now();
             int ret = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
+            ggml_host_prof_add(i == 0 ? "spec.mtp.D1_process" : "spec.mtp.Dn_process", hp_d);
             if (ret != 0) {
                 SPC_ERR("llama_process[%d] returned %d\n", i, ret);
                 break;
@@ -1725,7 +1728,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
                 auto * smpl = smpls[seq_id].get();
 
+                const int64_t hp_t = ggml_host_prof_now();
                 const llama_token id_sampled = common_sampler_sample(smpl, ctx_dft, i_last[seq_id], true);
+                ggml_host_prof_add("spec.mtp.draft_sample", hp_t);
                 const float * h_row = llama_get_embeddings_nextn_ith(ctx_dft, i_last[seq_id]);
 
                 const auto * cur_p = common_sampler_get_candidates(smpl, true);

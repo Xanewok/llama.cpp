@@ -12,6 +12,7 @@
 #include "llama-ext.h"
 #include "llama-sampler.h"
 #include "llama.h"
+#include "ggml-host-prof.h" // DO NOT MERGE
 
 #include <cinttypes>
 #include <cmath>
@@ -1442,12 +1443,24 @@ bool llama_context::set_adapter_cvec(
     return res;
 }
 
+
+// DO NOT MERGE: host profiling names
+static std::string hp_name(const llama_cparams & cp, const char * phase, int n_tokens, int n_outputs) {
+    char buf[96];
+    snprintf(buf, sizeof(buf), "%s.t%do%d.%s", cp.ctx_type == LLAMA_CONTEXT_TYPE_MTP ? "mtp" : "tgt", n_tokens, n_outputs, phase);
+    return buf;
+}
+
 llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, llm_graph_type gtype, llama_memory_context_i * mctx, ggml_status & ret) {
     if (mctx && !mctx->apply()) {
         LLAMA_LOG_ERROR("%s: failed to apply memory context\n", __func__);
         ret = GGML_STATUS_FAILED;
         return nullptr;
     }
+
+    const int64_t hp_t0 = ggml_host_prof_now();
+    const bool hp = hp_t0 != 0;
+    const int hp_nt = ubatch.n_tokens, hp_no = n_outputs;
 
     // the new graph parameters
     // in order to correctly reuse a graph, it's full topology has to be uniquely determined by these parameters
@@ -1478,6 +1491,12 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
             victim_same_shape = same_shape;
         }
     }
+    const bool hp_reuse = entry != nullptr;
+    if (hp) {
+        ggml_host_prof_add(hp_name(cparams, "ub.reuse_check", hp_nt, hp_no).c_str(), hp_t0);
+        ggml_host_prof_count(hp_name(cparams, hp_reuse ? "ub.REUSED" : "ub.REBUILT", hp_nt, hp_no).c_str());
+    }
+    int64_t hp_t1 = ggml_host_prof_now();
     if (entry) {
         //LLAMA_LOG_DEBUG("%s: reusing previous graph\n", __func__);
 
@@ -1503,6 +1522,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         //const auto t_start_us = ggml_time_us();
 
         auto * gf = model.build_graph(gparams);
+        if (hp) { ggml_host_prof_add(hp_name(cparams, "ub.build", hp_nt, hp_no).c_str(), hp_t1); hp_t1 = ggml_host_prof_now(); }
 
         //LLAMA_LOG_INFO("graph build time: %.3f ms\n", (ggml_time_us() - t_start_us)/1000.0);
 
@@ -1517,12 +1537,15 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
             ret = GGML_STATUS_ALLOC_FAILED;
             return nullptr;
         }
+
+        if (hp) { ggml_host_prof_add(hp_name(cparams, "ub.alloc", hp_nt, hp_no).c_str(), hp_t1); }
     }
     entry->last_use = ++gf_cache_tick;
     sched_cur = entry->sched_gf;
     auto * res = entry->res.get();
 
     // set the input data for the input tensors
+    hp_t1 = ggml_host_prof_now();
     {
         //const auto t_start_us = ggml_time_us();
 
@@ -1532,7 +1555,9 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         //LLAMA_LOG_INFO("graph set inputs time: %.3f ms\n", (ggml_time_us() - t_start_us)/1000.0);
     }
 
+    if (hp) { ggml_host_prof_add(hp_name(cparams, "ub.set_inputs", hp_nt, hp_no).c_str(), hp_t1); hp_t1 = ggml_host_prof_now(); }
     const auto status = graph_compute(res->get_gf(), ubatch.n_tokens > 1, sched_cur);
+    if (hp) { ggml_host_prof_add(hp_name(cparams, "ub.compute", hp_nt, hp_no).c_str(), hp_t1); ggml_host_prof_add(hp_name(cparams, "ub.total", hp_nt, hp_no).c_str(), hp_t0); }
     if (status != GGML_STATUS_SUCCESS) {
         LLAMA_LOG_ERROR("%s: failed to compute graph, compute status: %d\n", __func__, status);
         ret = status;
@@ -1839,6 +1864,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
         }
     }
 
+    const int64_t hp_d0 = ggml_host_prof_now();
     if (!balloc->init(batch_inp, vocab, output_all)) {
         LLAMA_LOG_ERROR("%s: failed to initialize batch\n", __func__);
         return -1;
@@ -1936,6 +1962,8 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
     for (const auto & entry : sampling.samplers) {
         llama_sampler_backend_begin(entry.second);
     }
+    if (hp_d0) { ggml_host_prof_add(hp_name(cparams, "decode.pre", (int) n_tokens_all, (int) n_outputs_all).c_str(), hp_d0); }
+    int64_t hp_d1 = 0;
 
     int64_t n_outputs_prev = 0;
     int64_t n_tokens_prev  = 0;
@@ -2115,6 +2143,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
 
         n_outputs_prev += n_outputs;
         n_tokens_prev  += ubatch.n_tokens;
+        hp_d1 = ggml_host_prof_now();
     } while (mctx->next());
 
     // set to total number of outputs in the batch, for use in llama_get_logits_ith
@@ -2169,6 +2198,11 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
 
     // wait for the computation to finish (automatically done when obtaining the model output)
     //synchronize();
+
+    if (hp_d0) {
+        ggml_host_prof_add(hp_name(cparams, "decode.post", (int) n_tokens_all, (int) n_outputs_all).c_str(), hp_d1);
+        ggml_host_prof_add(hp_name(cparams, "decode.total", (int) n_tokens_all, (int) n_outputs_all).c_str(), hp_d0);
+    }
 
     return 0;
 }

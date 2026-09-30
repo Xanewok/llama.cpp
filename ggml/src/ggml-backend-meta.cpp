@@ -1,6 +1,7 @@
 #include "ggml.h"
 #include "ggml-impl.h"
 #include "ggml-backend.h"
+#include "ggml-host-prof.h" // DO NOT MERGE
 #include "ggml-backend-impl.h"
 #include "ggml-alloc.h"
 #include "ggml-cpp.h"
@@ -603,7 +604,15 @@ static void ggml_backend_meta_rematerialize(ggml_tensor * tensor);
 static struct ggml_tensor * ggml_backend_meta_buffer_simple_tensor(const struct ggml_tensor * tensor, size_t index, int * container_out = nullptr) {
     ggml_tensor * ret = ggml_backend_meta_buffer_simple_tensor_find(tensor, index, container_out);
     if (ret == nullptr && tensor->data != nullptr) {
+        if (getenv("GGML_META_REMAT_DEBUG")) { // DO NOT MERGE
+            ggml_backend_meta_buffer_context * bc = (ggml_backend_meta_buffer_context *) tensor->buffer->context;
+            auto it = bc->stc_compute_owner.find(tensor);
+            fprintf(stderr, "REMAT %s op=%s buf=%llu owner=%d index=%d next=%d pool=%zu usage=%d view_src=%p\n", tensor->name, ggml_op_desc(tensor),
+                (unsigned long long) bc->id, it == bc->stc_compute_owner.end() ? -2 : it->second, bc->stc_compute_index, bc->stc_compute_index_next,
+                bc->stc_compute.size(), (int) tensor->buffer->usage, (void *) tensor->view_src);
+        }
         ggml_backend_meta_rematerialize(const_cast<ggml_tensor *>(tensor));
+        ggml_host_prof_count("meta.REMATERIALIZE"); // DO NOT MERGE
         ret = ggml_backend_meta_buffer_simple_tensor_find(tensor, index, container_out);
     }
     return ret;
@@ -1484,6 +1493,7 @@ static enum ggml_status ggml_backend_meta_buffer_init_tensor_impl(ggml_backend_m
 }
 
 static enum ggml_status ggml_backend_meta_buffer_init_tensor(ggml_backend_buffer_t buffer, ggml_tensor * tensor) {
+    ggml_host_prof_count("meta.init_tensor");
     GGML_ASSERT(ggml_backend_buffer_is_meta(buffer));
     ggml_backend_meta_buffer_context * buf_ctx = (ggml_backend_meta_buffer_context *) buffer->context;
     buf_ctx->stc_compute_index = buf_ctx->stc_compute_index_next;
@@ -2213,7 +2223,9 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
         assert(needs_rebuild);
     }
 
+    const int64_t hp_m0 = ggml_host_prof_now();
     if (needs_rebuild) {
+        ggml_host_prof_count("meta.REBUILD");
         // A graph computed right after its allocation (ggml_backend_sched) has all its non-static slices in the current
         // compute container of their buffers, which the new plan pins. A graph computed again after other graphs were
         // allocated is detected by its nodes (stale below) and pins the actual container of every tensor instead.
@@ -2582,6 +2594,7 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
         }
     }
 
+    if (needs_rebuild) { ggml_host_prof_add("meta.rebuild", hp_m0); } else { ggml_host_prof_count("meta.REUSED"); }
     plan->last_use = ++backend_ctx->plan_tick;
     const size_t n_subgraphs = plan->cgraphs[0].size();
     size_t iga = 0; // i graph aux

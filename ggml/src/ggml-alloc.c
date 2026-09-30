@@ -1,4 +1,5 @@
 #include "ggml-alloc.h"
+#include "ggml-host-prof.h" // DO NOT MERGE
 #include "ggml-backend-impl.h"
 #include "ggml.h"
 #include "ggml-impl.h"
@@ -1054,14 +1055,20 @@ static bool ggml_gallocr_needs_realloc(ggml_gallocr_t galloc, struct ggml_cgraph
 }
 
 bool ggml_gallocr_alloc_graph(ggml_gallocr_t galloc, struct ggml_cgraph * graph) {
-    if (ggml_gallocr_needs_realloc(galloc, graph)) {
+    int64_t hp_t = ggml_host_prof_now();
+    const bool hp_nr = ggml_gallocr_needs_realloc(galloc, graph);
+    ggml_host_prof_add("galloc.needs_realloc_check", hp_t);
+    if (hp_nr) {
+        ggml_host_prof_count("galloc.NEEDS_REALLOC");
         if (galloc->n_buffers == 1) {
 #ifndef NDEBUG
             GGML_LOG_DEBUG("%s: reallocating buffers automatically\n", __func__);
 #endif
+            hp_t = ggml_host_prof_now();
             if (!ggml_gallocr_reserve(galloc, graph)) {
                 return false;
             }
+            ggml_host_prof_add("galloc.auto_reserve", hp_t);
         } else {
 #ifndef NDEBUG
             GGML_LOG_DEBUG("%s: cannot reallocate multi buffer graph automatically, call reserve\n", __func__);
@@ -1070,6 +1077,7 @@ bool ggml_gallocr_alloc_graph(ggml_gallocr_t galloc, struct ggml_cgraph * graph)
         }
     }
 
+    hp_t = ggml_host_prof_now();
     // reset buffers
     for (int i = 0; i < galloc->n_buffers; i++) {
         if (galloc->buffers[i] != NULL) {
@@ -1102,6 +1110,7 @@ bool ggml_gallocr_alloc_graph(ggml_gallocr_t galloc, struct ggml_cgraph * graph)
         }
         ggml_gallocr_init_tensor(galloc, node, &node_alloc->dst);
     }
+    ggml_host_prof_add("galloc.init_tensors", hp_t);
 
     return true;
 }

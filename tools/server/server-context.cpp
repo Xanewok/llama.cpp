@@ -1,3 +1,4 @@
+#include "ggml-host-prof.h" // DO NOT MERGE
 #include "server-context.h"
 #include "server-chat.h"
 #include "server-common.h"
@@ -2915,7 +2916,10 @@ private:
     };
 #endif
 
+    int64_t hp_us_end = 0; // DO NOT MERGE
     void update_slots() {
+        if (hp_us_end) { ggml_host_prof_add("srv.between_update_slots", hp_us_end); hp_us_end = 0; }
+        struct hp_end_guard { int64_t & t; ~hp_end_guard() { t = ggml_host_prof_now(); } } hp_guard { hp_us_end };
 #ifdef DEBUG_TIMINGS
         static int64_t t_prev = 0;
         int64_t t_start = ggml_time_us();
@@ -2958,7 +2962,9 @@ private:
 
         try {
             scoped_timer t(t_pre_decode, n_pre_decode);
+            const int64_t hp_t = ggml_host_prof_now();
             pre_decode();
+            ggml_host_prof_add("srv.pre_decode", hp_t);
         } catch (const std::exception & e) {
             SRV_ERR("pre_decode() failed: %s\n", e.what());
             abort_all_slots("pre_decode() failed: " + std::string(e.what()));
@@ -3020,7 +3026,9 @@ private:
 
             try {
                 scoped_timer t(t_post_decode, n_post_decode);
+                const int64_t hp_t = ggml_host_prof_now();
                 post_decode(n_tokens, off);
+                ggml_host_prof_add("srv.post_decode", hp_t);
             } catch (const std::exception & e) {
                 SRV_ERR("post_decode() failed: %s\n", e.what());
                 abort_all_slots("post_decode() failed: " + std::string(e.what()));
@@ -3173,9 +3181,11 @@ private:
 
         // generate the actual drafts (if any)
         if (!drafting.empty()) {
+            const int64_t hp_t = ggml_host_prof_now();
             queue_tasks.yield_to_queue([&]() {
                 common_speculative_draft(spec.get());
             });
+            ggml_host_prof_add("srv.spec_draft", hp_t);
         }
 
         // make checkpoints if needed
@@ -3812,12 +3822,14 @@ private:
         // yield to the queue, so we can still handle metrics tasks while decoding
         // note: the sync is done here too, so that the wait is also covered by the yield
         int ret = 0;
+        const int64_t hp_tv = ggml_host_prof_now();
         queue_tasks.yield_to_queue([&]() {
             ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
             if (ret == 0 && has_output) {
                 llama_synchronize(ctx_tgt);
             }
         });
+        ggml_host_prof_add("srv.tgt_decode_sync", hp_tv);
 
         if (ret != 0) {
             {
@@ -3877,9 +3889,11 @@ private:
         //       ref: https://github.com/ggml-org/llama.cpp/pull/22728#issuecomment-4400925384
         if (spec) {
             bool ok = true;
+            const int64_t hp_t = ggml_host_prof_now();
             queue_tasks.yield_to_queue([&]() {
                 ok = common_speculative_process(spec.get(), batch.view);
             });
+            ggml_host_prof_add("srv.spec_process", hp_t);
 
             if (!ok) {
                 SRV_ERR("%s", "failed to process speculative batch\n");
@@ -4041,8 +4055,10 @@ private:
             GGML_ASSERT(n_draft > 0);
 
             // verify and try to accept the draft
+            const int64_t hp_tv = ggml_host_prof_now();
             {
                 common_sampler_ptr smpl_save(common_sampler_clone(slot.smpl.get()));
+                ggml_host_prof_add("srv.verify.clone", hp_tv);
 
                 GGML_ASSERT(slot.spec_i_batch.size() == n_draft + 1);
                 GGML_ASSERT(slot.spec_draft_q.empty() || (slot.spec_draft_q.size() == slot.spec_draft.size()));
@@ -4065,6 +4081,7 @@ private:
                     accepted = common_sampler_sample_and_accept_n(slot.smpl.get(), slot.ctx_tgt, slot.spec_i_batch, slot.spec_draft);
                 }
                 slot.spec_i_batch.clear();
+                ggml_host_prof_add("srv.verify.sample_accept", hp_tv);
 
                 GGML_ASSERT(accepted.size() >= 1);
 
@@ -4143,6 +4160,9 @@ private:
             SLT_DBG(slot, "add accepted tokens: sampled=%d, ids.size=%zu, n_draft=%zu\n", slot.sampled, ids.size(), n_draft);
 
             slot.mem.seq_rm(slot.id, slot.prompt.tokens.pos_next(), -1);
+            ggml_host_prof_add("srv.verify.to_tokens", hp_tv);
+            const int64_t hp_tp = ggml_host_prof_now();
+            struct hp_tok_guard { int64_t t; ~hp_tok_guard() { ggml_host_prof_add("srv.process_tokens", t); } } hp_tg { hp_tp };
 
             for (size_t i = 0; i < ids.size(); ++i) {
                 completion_token_output result;

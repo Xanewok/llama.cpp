@@ -9,6 +9,7 @@
 #endif
 
 #include "ggml-backend.h"
+#include "ggml-host-prof.h" // DO NOT MERGE
 #include "ggml-backend-impl.h"
 #include "ggml-alloc.h"
 #include "ggml-impl.h"
@@ -1653,10 +1654,13 @@ static bool ggml_backend_sched_alloc_splits(ggml_backend_sched_t sched) {
             ggml_backend_synchronize(sched->backends[i]);
         }
 
+        ggml_host_prof_count(backend_ids_changed ? "sched.REALLOC_backend_ids" : "sched.REALLOC_shape");
+        const int64_t hp_r = ggml_host_prof_now();
         if (!ggml_gallocr_reserve_n(sched->galloc, &sched->graph, sched->node_backend_ids, sched->leaf_backend_ids)) {
             GGML_LOG_ERROR("%s: failed to reserve graph buffers\n", __func__);
             return false;
         }
+        ggml_host_prof_add("sched.reserve_n", hp_r);
         if (!ggml_gallocr_alloc_graph(sched->galloc, &sched->graph)) {
             GGML_LOG_ERROR("%s: failed to allocate graph\n", __func__);
             return false;
@@ -2058,11 +2062,14 @@ bool ggml_backend_sched_alloc_graph(ggml_backend_sched_t sched, struct ggml_cgra
     sched->cur_copy = sched->next_copy;
     sched->next_copy = (sched->next_copy + 1) % sched->n_copies;
 
+    int64_t hp_t = ggml_host_prof_now();
     ggml_backend_sched_split_graph(sched, graph);
+    ggml_host_prof_add("sched.split_graph", hp_t); hp_t = ggml_host_prof_now();
 
     if (!ggml_backend_sched_alloc_splits(sched)) {
         return false;
     }
+    ggml_host_prof_add("sched.alloc_splits", hp_t);
 
     sched->is_alloc        = true;
     sched->alloc_graph_uid = graph->uid;
