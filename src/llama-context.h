@@ -235,6 +235,8 @@ private:
     uint32_t output_reserve(int32_t n_outputs);
 
     void output_reorder();
+    void expand_draft_logits();
+    bool has_draft_vocab() const;
 
     // map the output row index `i` to batch index
     int64_t output_resolve_row(int32_t i) const;
@@ -308,6 +310,8 @@ private:
 
     // decode output (2-dimensional array: [n_outputs][n_vocab])
     buffer_view<float> logits = {nullptr, 0};
+    buffer_view<float> draft_logits = {nullptr, 0};
+    std::vector<uint8_t> draft_logits_pending;
 
     // embeddings output (2-dimensional array: [n_outputs][n_embd])
     // populated only when pooling_type == LLAMA_POOLING_TYPE_NONE
