@@ -1,3 +1,4 @@
+#include "ggml-round-trace.h"
 #include "sampling.h"
 
 #include "common.h"
@@ -794,6 +795,7 @@ llama_token common_sampler_sample(struct common_sampler * gsmpl, struct llama_co
 }
 
 llama_token common_sampler_sample_row(struct common_sampler * gsmpl, const common_sampler_row & row, bool grammar_first) {
+    ggml_round_trace_scope trace_sampling("sampling");
 
     // start measuring sampling time after the llama_context synchronization in order to not measure any ongoing async operations
     const auto tm = gsmpl->tm();
@@ -937,6 +939,7 @@ std::vector<llama_token> common_sampler_sample_and_accept_n_rejection(struct com
 }
 
 std::vector<llama_token> common_sampler_sample_and_accept_n_rejection_rows(struct common_sampler * gsmpl, const std::function<common_sampler_row(size_t)> & row_at, const llama_tokens & draft, const std::vector<std::vector<llama_token_data>> & draft_q, bool grammar_first) {
+    ggml_round_trace_scope trace_sampling("sampling");
     GGML_ASSERT(draft_q.size() == draft.size() && "draft_q must have one entry per draft token");
 
     std::vector<llama_token> result;
