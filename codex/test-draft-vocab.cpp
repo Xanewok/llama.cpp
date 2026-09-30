@@ -18,6 +18,8 @@ static void require(bool ok, const char * message) {
     }
 }
 
+static bool check_deferred = false;
+
 static std::vector<std::vector<float>> run(llama_model * model, bool mtp, bool backend, int steps) {
     const int nv = llama_vocab_n_tokens(llama_model_get_vocab(model));
     const int ne = llama_model_n_embd(model);
@@ -79,11 +81,29 @@ static std::vector<std::vector<float>> run(llama_model * model, bool mtp, bool b
                 require(std::equal(rows.back().begin(), rows.back().end(), llama_get_logits_ith(ctx, r)), "second logits read changed row");
             }
         }
+        if (backend && check_deferred) {
+            const float * raw = llama_get_logits(ctx);
+            require(raw, "deferred raw logits missing");
+            std::vector<bool> in_subset(nv, false);
+            for (llama_token id : model->draft_vocab_ids) {
+                in_subset[id] = true;
+            }
+            for (int r = 0; r < nr; ++r) {
+                const auto & candidates = rows[rows.size() - nr + r];
+                for (int id = 0; id < nv; ++id) {
+                    const bool inside = in_subset[id];
+                    require(inside ? std::isfinite(raw[r*nv + id]) : raw[r*nv + id] == -INFINITY, "deferred row mask wrong");
+                    if (candidates[id] != -INFINITY) {
+                        require(candidates[id] == raw[r*nv + id], "deferred candidate logit wrong");
+                    }
+                }
+            }
+        }
         if (step > 0) {
             elapsed += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         }
     }
-    std::printf("M: %s %s %s %.6f ms/draft-step (%d steady steps; host+compute+readback)\n",
+    std::printf("M: %s %s %s %.6f ms/decode-step (%d steady steps; host+compute+readback)\n",
             model->draft_output ? "subset" : "full", mtp ? "MTP" : "target", backend ? "backend" : "host", elapsed / (steps - 1), steps - 1);
     llama_batch_ext_free(batch);
     if (backend) {
@@ -100,6 +120,7 @@ int main(int argc, char ** argv) {
     const bool tp = argc > 2 && std::string(argv[2]) == "tp";
     const int steps = argc > 3 ? std::atoi(argv[3]) : 9;
     require(steps > 1, "need steady steps");
+    check_deferred = argc > 4 && std::string(argv[4]) == "deferred";
     llama_log_set([](ggml_log_level level, const char * message, void *) { if (level >= GGML_LOG_LEVEL_WARN) std::fputs(message, stderr); }, nullptr);
     llama_backend_init();
     auto mp = llama_model_default_params();
@@ -179,6 +200,36 @@ int main(int argc, char ** argv) {
         require(count == 10, "backend candidate ids collided");
     }
     std::printf("M: target bit identity, subset logits, outside mask, backend top-k, multi-ubatch reads PASS; max logit error %.9g; mapping negative control detected\n", max_error);
+    const llama_token small_ids[] = {17, 40037};
+    mp.draft_vocab_ids = small_ids;
+    mp.n_draft_vocab = 1;
+    if (tp) {
+        require(!llama_model_load_from_file(argv[1], mp), "empty TP shard must be rejected");
+        mp.n_draft_vocab = 2;
+    }
+    llama_model * tiny = llama_model_load_from_file(argv[1], mp);
+    require(tiny, "small subset failed to load");
+    auto cp = llama_context_default_params();
+    cp.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
+    cp.n_ctx = 128;
+    cp.n_batch = cp.n_ubatch = 8;
+    cp.n_threads = cp.n_threads_batch = tp ? 4 : 8;
+    llama_context * tiny_ctx = llama_init_from_model(tiny, cp);
+    require(tiny_ctx, "small context failed to load");
+    llama_sampler * top = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    llama_sampler_chain_add(top, llama_sampler_init_top_k(10));
+    require(!llama_set_sampler(tiny_ctx, 0, top), "small subset must use host top-k");
+    llama_sampler_free(top);
+    llama_free(tiny_ctx);
+    const auto tiny_rows = run(tiny, true, false, 2);
+    for (const auto & row : tiny_rows) {
+        for (int id = 0; id < nv; ++id) {
+            const bool inside = id == small_ids[0] || (tp && id == small_ids[1]);
+            require(inside ? std::isfinite(row[id]) : row[id] == -INFINITY, "small subset escaped support");
+        }
+    }
+    std::puts(tp ? "M: two-token subset uses host fallback; empty TP partition rejected" : "M: one-token subset uses host fallback and preserves its support");
+    llama_model_free(tiny);
     llama_model_free(sub);
     llama_model_free(full);
     llama_backend_free();
