@@ -7,13 +7,10 @@ import subprocess
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 root = pathlib.Path(__file__).resolve().parent.parent
-sp = pathlib.Path("/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad")
-up = sp / "queue/build/stack-gpu/resync-fmq"
-subprocess.run(["sha256sum", "-c", "--quiet", "SHA256SUMS"], cwd=up / "bin", check=True)
+subprocess.run(["git", "diff", "--quiet", "HEAD", "--", "src", "ggml", "include", "common", "tools"], cwd=root, check=True)
 revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
 for arm, source, description in (
-    ("up", up / "bin", (up / "SOURCE").read_text()),
-    ("patch", root / "build-cuda/bin", revision + " topic/backend-verify-sampling; CUDA 13.2, NCCL off, sm_120\n"),
+    ("patch", root / "build-cuda/bin", revision + " topic/verify-prefill; CUDA 13.2, NCCL off, sm_120\n"),
 ):
     dest = root / "codex/frozen" / arm / "bin"
     if dest.exists():

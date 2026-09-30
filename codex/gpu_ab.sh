@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 T0=$SECONDS
 SP=/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad
-UP_DIR=${UP_DIR:-$ROOT/codex/frozen/up/bin}
+UP_DIR=${UP_DIR:-$HOME/repos/llama.cpp-backend-verify-sampling/codex/frozen/patch/bin}
 PATCH_DIR=${PATCH_DIR:-$ROOT/codex/frozen/patch/bin}
 MODEL=${MODEL:-$HOME/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf}
 TEMPLATE=${TEMPLATE:-$HOME/repos/qwen38-eval/results/session2/pair-5060ti-2060s/campaign-swift-fullsuite-20260915/swift-iq4-xs/attempts/66ebeeaec6a7043b-01/chat-template.jinja}
@@ -18,13 +18,13 @@ ARMS=(up patch patch up)
 CMD=(-m "$MODEL" -np 1 -fa on --spec-type draft-mtp --spec-draft-n-max 3 --spec-draft-n-min 0 --spec-draft-p-min 0
      -b 2048 -ub 128 --jinja --temp 1 --top-k 20 --top-p 0.95 --min-p 0.05 --host 127.0.0.1 --port "$PORT"
      -c 32768 -ctk q8_0 -ctv q8_0 -ngl 99 --spec-draft-type-k f16 --spec-draft-type-v f16 -sm tensor --tensor-split 50,50
-     --chat-template-file "$TEMPLATE" --metrics --spec-draft-sampling probabilistic -t 8)
+     --chat-template-file "$TEMPLATE" --metrics --spec-draft-sampling probabilistic --backend-sampling -t 8 -tb 8)
 
 if [[ ${DRY_RUN:-1} == 1 ]]; then
     export CUDA_VISIBLE_DEVICES=""
     for arm in "${ARMS[@]}"; do
         printf 'DRY_RUN: %s/verify-ab %s\n' "$([[ $arm == up ]] && echo "$UP_DIR" || echo "$PATCH_DIR")" "${CMD[*]}"
-        printf 'DRY_RUN: %s target sampling; warm-up, tool seed 1, think seed 1\n' "$([[ $arm == up ]] && echo host || echo candidates)"
+        printf 'DRY_RUN: backend target sampling; warm-up, tool seed 1, think seed 1\n'
     done
     exit 0
 fi
@@ -39,6 +39,7 @@ for dir in "$UP_DIR" "$PATCH_DIR"; do
     (cd "$dir" && sha256sum -c --quiet SHA256SUMS)
     head -1 "$dir/../SOURCE"
 done
+rg -q "^60c8cbfb2" "$UP_DIR/../SOURCE" || { echo "Up must be the frozen clean backend-verify implementation"; exit 6; }
 [[ $(stat -c %s "$MODEL") == 15475951296 && -f $TEMPLATE && -f $SMOKE ]] || exit 6
 sha256sum "$MODEL" "$TEMPLATE" "$SMOKE" > "$OUT/input.sha256"
 PID=
@@ -98,10 +99,9 @@ for arm in "${ARMS[@]}"; do
     NBOOT[$arm]=$((NBOOT[$arm] + 1))
     tag=$arm-${NBOOT[$arm]}
     dir=$UP_DIR
-    extra=()
-    if [[ $arm == patch ]]; then dir=$PATCH_DIR; extra=(--backend-sampling); fi
+    if [[ $arm == patch ]]; then dir=$PATCH_DIR; fi
     (cd "$dir" && sha256sum -c --quiet SHA256SUMS)
-    nice -n 19 "$dir/verify-ab" "${CMD[@]}" "${extra[@]}" > "$OUT/$tag.server.log" 2>&1 &
+    nice -n 19 "$dir/verify-ab" "${CMD[@]}" > "$OUT/$tag.server.log" 2>&1 &
     PID=$!
     healthy=0
     for ((poll=0; poll<300; ++poll)); do
@@ -124,15 +124,24 @@ out = pathlib.Path(sys.argv[1])
 for req in ("tool", "think"):
     runs = {a: [json.loads((out / f"{a}-{i}-{req}.json").read_text()) for i in (1, 2)] for a in ("up", "patch")}
     assert len({r["sha256"] for rs in runs.values() for r in rs}) == 1, f"{req}: seed identity FAILED"
+    assert len({r["timings"]["prompt_n"] for rs in runs.values() for r in rs}) == 1, f"{req}: prompt sizes differ"
+    assert all(r["timings"]["cache_n"] == 0 for rs in runs.values() for r in rs), f"{req}: prompt cache used"
     values = {}
+    prompts = {}
     for arm, rs in runs.items():
         values[arm] = []
+        prompts[arm] = []
         for r in rs:
             t = r["timings"]
             assert t["draft_n"] > 0, "no speculative rounds"
             values[arm].append(t["predicted_ms"] / (t["draft_n"] / 3))
+            prompts[arm].append(t["prompt_ms"])
             print(f"M: {arm} {req} timings={t}")
+        print(f"D: {arm} {req} mean prompt_ms={statistics.mean(prompts[arm]):.3f}; M: boots={prompts[arm]}")
         print(f"D: {arm} {req} us/round={statistics.mean(values[arm])*1000:.1f}, two boots, draft_n/3 proxy")
+    prompt_delta = statistics.mean(prompts["patch"]) - statistics.mean(prompts["up"])
+    prompt_percent = 100*prompt_delta/statistics.mean(prompts["up"])
+    print(f"D: {req} patch-up prompt_ms={prompt_delta:.3f} ({prompt_percent:.2f}%)")
     delta = statistics.mean(values["patch"]) - statistics.mean(values["up"])
     print(f"D: {req} patch-up={delta*1000:.1f} us/round; M: seed identity passed")
 PY

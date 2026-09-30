@@ -1,88 +1,111 @@
-# Backend candidates for rejection verify
+# Backend verify sampling: prompt reservation regression
 
-Labels: M = measured or observed; D = derived; G = estimate. Build and sampling configuration values are literal settings, not measurements.
+Labels: M = measured/observed; D = derived, including source inference; G = guess. Configuration values are literal settings.
+
+Read-only `SP`: `/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad`.
 
 ## Conclusion
 
-Implemented on `topic/backend-verify-sampling`, base `68d99c67d`, implementation commit `60c8cbfb2`. Enable target `--backend-sampling`; eligible requests now use a separate backend top-K chain even with grammar or reasoning budget. The host keeps the original probability chain, RNG, grammar transitions and rejection verification. Defaults remain opt-in.
+Confirmed unnecessary scheduler reconstruction at each backend-sampled request. Slot reset detaches the sampler and request launch attaches a fresh chain; both previously forced `sched_reserve`. This reconstructs the scheduler, frees its compute buffers, and reserves prompt/generation/prompt graphs inside the next prompt timer.
 
-M: CPU seed and probability identity, real Qwen3.5-4B forward outputs, Meta(CPU,CPU) TP candidates, deferred logits and CUDA compilation pass. GPU execution and GPU speed are unmeasured. Queue `codex/gpu_ab.sh` for that decision.
+The fix retains scheduler capacity, invalidates sampler graph bindings on attachment/removal/refusal, and requests a full reservation only when the sampler node budget grows. Sampling and rejection algorithms are unchanged. The first attachment can still incur reservation; warm-up absorbs that startup path in the A/B.
 
-## Design and exactness
+D, high confidence: this lifecycle is the strongest source-supported explanation for the supplied GPU prompt regression. M: CPU controls expose the reservation and fail when it is restored. GPU attribution and gain remain unmeasured. CPU forward timings are too variable to reproduce the GPU slowdown or quantify it.
 
-- `common/sampling.cpp:561`: reuse the existing prefilter eligibility check. The candidate path requires positive top-K below the TP limit, an inactive prefix and no logit biases or model suppression. Other grammar/budget configurations retain the host path.
-- `common/sampling.cpp:592`: attach a separate top-K-only chain. D: configured target K=20 requests K+1=21 candidates per output row. Backend sampling consumes no RNG draws. `common/common.cpp:1295` and `tools/server/server-context.cpp:1913` use this chain; the original chain remains on the host.
-- `common/sampling.cpp:154`: require finite, strictly decreasing logits through K+1. This certifies unique top-K membership and order, including the cutoff. A tie or failed certificate fetches the full row before the original host selection. Without ties, the host chain sees exactly its original top-K, so probabilities and RNG consumption are bit-identical.
-- `common/sampling.cpp:811` and `:866`: budget FORCING, grammar-first sampling and a rejected first draw fetch the full row. The grammar-first retry is never confined to unmasked candidates. A valid forced or grammar token can lie outside the backend top-K.
-- `common/sampling.cpp:936`: rejection verification retains its original acceptance and residual algorithm. Grammar checks occur after each accepted token, so an accepted draft can activate a lazy grammar within the verify batch. Its target law remains `c(x)*1[x in G] + (1-c(G))*c'(x)`, where `c'` is the full-row grammar-first chain. Masking the backend top-K before the first draw would change that law.
-- `src/llama-context.cpp:913` and `:2019`: retain the final microbatch's full logits on the device. A fallback reads that microbatch once; a subsequent microbatch reads older pending outputs before buffer reuse. Reordering and graph/memory invalidation materialize pending rows first. A new decode discards the old outputs.
-- `src/llama-context.cpp:4047`: `llama_get_logits_ith` now follows its documented full-vocabulary contract. Previously it returned packed candidate logits with a backend sampler. The TP full-row test caught this during implementation. Packed values remain available through `llama_get_sampled_logits_ith`.
+## Source evidence and design
 
-D: full logits already have output lifetime and host allocation, so this adds no full-logit device buffer. A fallback copies the entire pending microbatch rather than one row. D: a four-row Swift fallback transfers 3.973 MB; the normal candidate output transfers 672 bytes of IDs and logits, excluding existing MTP hidden-state transfers.
+- `tools/server/server-context.cpp:389` detaches at slot reset; `:1913` attaches the next request chain; `:3274` starts the prompt clock before the first decode.
+- `src/llama-context.cpp:1879` calls `sched_reserve` before processing microbatches. `:643` reconstructs graph arenas and the scheduler; `:679`, `:701`, `:726` reserve prompt/generation/prompt graphs. D: CUDA buffer release/allocation adds a backend-specific cost beyond CPU reservation time.
+- `src/llama-graph.cpp:3793` already returns before adding sampler inputs/tensors for empty TP logits. Zero-output prompt microbatches therefore build no TP top-K/gather work. This is not the regression cause in this tensor-split configuration.
+- `src/llama-context.cpp:2013` and `:2025` gate full-logit extraction/deferred retention on positive output count. No zero-output microbatch copy or retention occurs. `logits_deferred_fetch` does nothing without pending outputs.
+- `src/llama-graph.h:850` checks output count before sampler/output-position comparisons. Candidate top-K has no changing RNG inputs. M, supplied: GPU boot logs have identical graph reuse counts between arms.
+- The final output-producing microbatch still runs top-K/gather; its GPU cost is unmeasured. This fix neither bypasses its sampling nor moves reservation into decode timing.
 
-## Evidence
+`src/llama-context.cpp:1347` invalidates `gf_res_prev_active` even if an allocator recycles the sampler pointer. The next `process_ubatch` rebuilds the selected graph and sampler input bindings. `:1349` compares `graph_max_nodes` against retained arena capacity, preserving other pending reservation reasons.
 
-All execution used `CUDA_VISIBLE_DEVICES=''`, `nice -n 19`, and CPU thread limits at or below the requested limit. No server process, GPU binary, GPU query or external network request ran. Linked-worktree commits required approved Git metadata access outside the worktree; all source, build and artifact files are inside this worktree.
+Changed tensor shapes remain supported by `ggml/src/ggml-backend.cpp:1627`: allocation/backend changes trigger synchronization and buffer reservation before compute. This introduces no multi-graph cache, scheduler family or meta plan cache. Candidate certification, probabilities, RNG draws, grammar transitions, rejection verification and deferred-logit lifetimes are unchanged; the exactness argument at `60c8cbfb2` still applies.
 
-M: `tests/test-llama-archs.cpp:1039`, `--tp-sampling -s 1`, exit 0:
+The supplied GPU inputs were read-only: `SP/codex/bv-ab/*.server.log` and `SP/codex/bv-chain.log`. M, supplied: tool prompts contain 602 tokens, think prompts contain 638 tokens, and output digests match. GPU timing observations come from the parent, not execution here.
 
-- Four output rows on Meta(CPU,CPU), each with 64 matching seeds; backend returns K+1 logits and no token draw.
-- Deferred full logits match the same TP forward pass bit-for-bit, including outputs spanning two microbatches.
-- Existing greedy, full backend chain and distribution checks pass. Existing distribution control: 4000 draws, TV=0.022. Undersized vocab-shard fallback passes.
+## CPU evidence
 
-M: `codex/verify.cpp`, via `bash codex/run_verify.sh`, exit 0 (`codex/verify-final.log`):
+Model: `~/models/Qwen3.5-4B-UD-Q4_K_XL.gguf`, MTP weights loaded, target context only, unmasked NextN embeddings, context/batch 2048, microbatch 128, F16 KV, eight CPU threads. One model/context is reused; memory clears between identical 602-token prompts, with one final output. Arms: off/on/on/off. The final harness detaches the sampler before each request, matching server reset. Reservation and forward time are reported separately and summed.
 
-- 256 seed identities with exact IDs, logits and probabilities. Changed candidate logits alter 243 seed outcomes.
-- Candidate chi-square versus host probabilities: 10000 draws, statistic 22.359, df=18, approximate p=0.216006. Changed-logit control: statistic 143144.438, approximate p=0, rejected by the same threshold.
-- 128 all-accepted four-row rejection rounds and 128 off-support residual rounds are seed-identical.
-- 32 grammar-rejection cases fetch a valid token outside top-K; 32 grammar-active verify rounds match. Lazy trigger, grammar-first, FORCING, tie fallback, ineligible prefixes, clone and copy pass.
-- `VERIFY_NEGATIVE_CONTROL=1 .../verify-sampling MODEL` exits 1 with `FAIL: seed or distribution mismatch` (`codex/negative-control.log`). This corrupts the actual candidate input before the identity check.
+`codex/profile.patch` is opt-in instrumentation, absent from production. `host_us` measures memory apply + graph reuse/build/allocation + input setup; `compute_us` measures `graph_compute` + synchronization, including scheduler/meta work and CPU operators. Graph counts include non-compute nodes. Single-CPU graphs keep inactive top-K metadata, uncomputed by `ggml_build_forward_select` (`ggml/src/ggml.c:7323`); TP returns before constructing it.
 
-M: `bash codex/run_verify.sh --decode`, exit 0 (`codex/model-verify.log`): Qwen3.5-4B `Qwen3.5-4B-UD-Q4_K_XL.gguf`, CPU forward pass, four output rows x 64 seeds with exact probabilities and bit-identical full logits.
+M: complete real-model prefill runs return bit-identical full logits. M: TP with this MTP GGUF is refused because it loads a separate MTP head (`src/llama-model.cpp:2008`); the run stopped rather than silently measuring host sampling. Synthetic Meta(CPU,CPU) tests cover TP candidates.
 
-M: existing `test-sampling` passes (`codex/test-sampling.log`). `test-sampling-prefilter MODEL --write codex/prefilter-seeds.txt 4000` passes with zero failures (`codex/prefilter.log`): real Codex tool grammar in thinking, prose, function-name and parameter-value states, grammar-first, forcing, trigger trajectories and rejection verify. Its wrong truncated-resample control fails the function-name law check (approximate p=3.38e-89); the per-seed stream hash is `e97ea9873285a3f9`. This suite checks the host law independently; the candidate/host equivalence tests above check the new fast path.
+Before-fix measurements:
 
-M: CPU build and CUDA server build exit 0 (`codex/build-final-{cpu,cuda}.log`). CUDA configuration matches the base build's architecture, NCCL, FA quant set, graphs, native CPU and BLAS settings.
+| Run/arm | Reserve ms (M) | Forward ms (M) |
+|---|---:|---:|
+| off, first | 0.001 | 42428.862 |
+| on, first | 23.296 | 37599.725 |
+| on, repeated | 7.581 | 39095.812 |
+| off, last | 65.905 | 36812.102 |
 
-Commands:
+After-fix measurements, including server-style detach/reattach:
+
+| Run/arm | Reserve ms (M) | Forward ms (M) |
+|---|---:|---:|
+| off, first | 0.000 | 9897.482 |
+| on, first attachment | 7.094 | 8505.663 |
+| on, repeated | 0.001 | 10809.695 |
+| off, last | 0.000 | 9604.080 |
+
+Before-fix per-microbatch means across two runs per arm (D, from M timings):
+
+| Microbatch | Host off us (D) | Host on us (D) | Compute off ms (D) | Compute on ms (D) |
+|---|---:|---:|---:|---:|
+| first 128 tokens | 5483.5 | 10400.5 | 4396.458 | 5874.533 |
+| second 128 tokens | 2040.5 | 1402.0 | 4867.280 | 5448.403 |
+| third 128 tokens | 1824.5 | 2435.5 | 10922.805 | 9089.427 |
+| fourth 128 tokens | 143.0 | 118.5 | 12521.494 | 10642.495 |
+| final 90 tokens, one output | 14013.0 | 6116.5 | 6874.068 | 7245.639 |
+
+M: single-CPU graphs have 1879 nodes off and 1885 on, including one inactive top-K node. Raw before/after measurements: `codex/prefill-measurements.tsv`; local logs: `codex/prefill-{before,after}-single.log`.
+
+System load was uncontrolled. CPU compute varies substantially and does not reproduce the supplied GPU slowdown. The discriminating result is scheduler reconstruction, not those forward-time comparisons.
+
+## Verification
+
+Implementation commits: `ffa868b88` (attachment capacity), `846f3b4ff` (detach/refusal lifecycle).
+
+M: CPU build and CUDA server build pass. `codex/tp-final.log` passes sampler detach/host decode/reattach with changed top-K, seed identity, deferred full rows spanning microbatches, greedy/full chains, distribution and undersized-shard fallback. `test-sampling` passes.
+
+M: `codex/verify-final.log` passes candidate/host seed and probability identity, chi-square with corrupt-logit control, rejection verification, grammar/lazy trigger, grammar-first, FORCING, tie fallback, prefix eligibility and clone/copy. `codex/model-verify-final.log` passes real Qwen3.5 CPU forward outputs and full logits, four output rows with 64 matching seeds each. `VERIFY_NEGATIVE_CONTROL=1` exits 1 with `FAIL: seed or distribution mismatch`.
+
+M: new regression test fails on the original implementation (`codex/prefill-negative-control.log`, exit 255), and on attachment-only retention with the old detach path (`codex/detach-negative-control.log`, exit 255). The final implementation passes both the no-reservation assertion and changed-K candidate/seed checks. Those controls compiled the new test against the old CPU library before rebuilding it.
+
+M: the inherited grammar prefilter suite passes with zero failures and the unchanged stream hash `e97ea9873285a3f9` (`codex/prefilter-final.log`). Its truncated-resample control is rejected by the host-law check.
+
+Commands, all with `CUDA_VISIBLE_DEVICES=''`, `OMP_NUM_THREADS=8`, `TMPDIR=$PWD/build-tmp` and `nice -n 19`:
 
 ```sh
-CUDA_VISIBLE_DEVICES='' TMPDIR=$PWD/build-tmp nice -n 19 cmake -B build-cpu -DGGML_CUDA=OFF -DGGML_CCACHE=OFF -DLLAMA_BUILD_TESTS=ON
-CUDA_VISIBLE_DEVICES='' TMPDIR=$PWD/build-tmp nice -n 19 cmake --build build-cpu --target test-llama-archs test-sampling test-sampling-prefilter llama-server -j8
-CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=8 nice -n 19 build-cpu/bin/test-llama-archs --tp-sampling -s 1
-CUDA_VISIBLE_DEVICES='' nice -n 19 bash codex/run_verify.sh --decode
-CUDA_VISIBLE_DEVICES='' TMPDIR=$PWD/build-tmp nice -n 19 cmake -B build-cuda -DGGML_CUDA=ON -DGGML_CCACHE=OFF -DCUDAToolkit_ROOT=/usr/local/cuda-13.2 -DGGML_CUDA_NCCL=OFF -DCMAKE_CUDA_ARCHITECTURES=120 -DLLAMA_BUILD_TESTS=OFF
-CUDA_VISIBLE_DEVICES='' TMPDIR=$PWD/build-tmp nice -n 19 cmake --build build-cuda --target llama-server -j8
+cmake -B build-cpu -DGGML_CUDA=OFF -DGGML_CCACHE=OFF -DLLAMA_BUILD_TESTS=ON
+cmake --build build-cpu --target test-llama-archs test-sampling test-sampling-prefilter -j8
+build-cpu/bin/test-llama-archs --tp-sampling -s 1
+build-cpu/bin/test-sampling
+bash codex/run_verify.sh
+bash codex/run_verify.sh --decode
+build-cpu/bin/test-sampling-prefilter ~/models/Qwen3.5-4B-UD-Q4_K_XL.gguf --write codex/prefilter-seeds.txt 4000
+VERIFY_NEGATIVE_CONTROL=1 build-cpu/bin/verify-sampling ~/models/Qwen3.5-4B-UD-Q4_K_XL.gguf
+cmake -B build-cuda -DGGML_CUDA=ON -DGGML_CCACHE=OFF -DCUDAToolkit_ROOT=/usr/local/cuda-13.2 -DGGML_CUDA_NCCL=OFF -DCMAKE_CUDA_ARCHITECTURES=120 -DLLAMA_BUILD_TESTS=OFF '-DGGML_CUDA_FA_QUANTS=q4_0-q4_0;q8_0-q8_0;f16-f16;bf16-bf16'
+cmake --build build-cuda --target llama-server -j8
 ```
 
-## CPU host time
+CPU profiling: apply `codex/profile.patch`, rebuild CPU target `llama` with `-j8`, run `VERIFY_PREFILL_PROFILE=1 bash codex/run_prefill.sh`, then reverse the patch and rebuild. Before-fix data used the original implementation; after-fix data used the final detach/reattach lifecycle. All timing rows include opt-in instrumentation. The profiling patch must never enter the frozen CUDA image.
 
-M: synthetic logits with the real Qwen vocabulary, vocab=248320, nice 19, sequential timing phases, 2000 rounds per arm. These timings exclude forward decode, device top-K, transfer/synchronization and server work. They compare the base host prefilter with the new candidate path, not a full-vocab sort baseline.
+No GPU tool, CUDA executable, GPU query, network request or process named `llama-server` ran. Source/build/artifact writes stay in this worktree; commits update only `topic/verify-prefill`, using its linked shared Git metadata directory.
 
-| Host work, us/round | Full row (M) | Candidates (M) | Difference (D) |
-|---|---:|---:|---:|
-| Four row chains, final run | 278.469 | 2.500 | -275.969 |
-| All-accepted rejection verify, final run | 264.679 | 2.746 | -261.933 |
-| All-accepted rejection verify, preceding run | 273.219 | 2.808 | -270.411 |
+## GPU A/B and remaining uncertainty
 
-M: earlier chain runs ranged from 271.882 to 527.878 us/round for full rows and from 2.500 to 2.589 for candidates. Host load was uncontrolled; do not translate these CPU timings into GPU gain. The supplied Patch A report attributes about 0.46 ms/round exposed target sampling (M/D); whether the backend top-K and gather recover that time is unknown.
+`codex/gpu_ab.sh` defaults to a GPU-free dry run. Up: existing frozen `60c8cbfb2` at `~/repos/llama.cpp-backend-verify-sampling/codex/frozen/patch/bin`. Patch: this worktree's frozen fix. Both enable target backend sampling and retain probabilistic MTP and backend draft sampling.
 
-## Codex coverage
+Boots: up/patch/patch/up. Per boot: warm-up, tool (`follow`, seed 1, 384 max tokens, thinking off), think (`follow`, seed 1, 1024 max tokens, thinking on), matching the parent requests. Output includes measured prompt timings, derived prompt deltas, and `predicted_ms / (draft_n/3)` decode-round proxies. It checks manifests, input hashes, up revision, GPU/port activity, Xid, wall budget and exact child PID cleanup; it rejects mismatched outputs/prompt lengths, cache use and zero drafts.
 
-D: `SP/grammar-committee/r3-workload-payoff.txt:36` derives 19.5% grammar-active rounds and 80.5% inactive rounds from token mix and acceptance. With the default eligible chain, finite distinct top logits and no budget forcing, the inactive share uses candidates even though grammar/budget objects exist. Active grammar also uses candidates when its first draw is valid; its rejection-verify mask operates on the original target support.
+M: `codex/freeze.py` froze the clean implementation at `846f3b4ff` into `codex/frozen/patch/bin` with renamed `verify-ab`, local libraries, `$ORIGIN` RUNPATH, `SOURCE` and verified `SHA256SUMS`. The clean CUDA rebuild passes (`codex/build-clean-cuda.log`); neither frozen executable was run.
 
-M, supplied report: zero first-draw grammar rejects in 2043 sampled positions. G: coverage can approach all eligible rounds on that traffic, but a numerical overall fast-round fraction is unmeasured. The inactive share is a conditional coverage estimate, not an observed hit rate for this patch. Ties, forcing, grammar-first, unsupported prefixes and backend refusal reduce coverage.
+M: shell syntax/default dry run pass; summary self-test recovers fixture deltas and rejects four negative controls (`codex/gpu-ab-selftest.log`). No wet run occurred. Parent-only command: `nice -n 19 env RUN_GPU_AB=1 DRY_RUN=0 bash codex/gpu_ab.sh`.
 
-## GPU A/B and open items
-
-M: `bash -n codex/gpu_ab.sh` and its default dry run pass. Its summary recovers D: -1000 us/round from synthetic fixtures and fails mismatched-output and zero-draft controls (`codex/gpu-ab-selftest.log`). `codex/freeze.py` created `codex/frozen/{up,patch}/bin`, each with `verify-ab`, local libraries, `$ORIGIN` RUNPATH, `SHA256SUMS` and a parent `SOURCE`. The up image comes from the checked frozen base; the patch image contains the implementation commit. Neither image was executed.
-
-Parent command, GPU execution explicitly enabled:
-
-```sh
-nice -n 19 env RUN_GPU_AB=1 DRY_RUN=0 bash codex/gpu_ab.sh
-```
-
-The script boots up/patch/patch/up. Up uses host target sampling; patch adds `--backend-sampling`; both retain probabilistic MTP and backend draft sampling. Each boot runs warm-up, tool and think requests with the same seed. It verifies manifests and input hashes, refuses busy GPUs/port or another server, checks Xid, enforces a wall budget and stops only its exact child PID. Both executable names are `verify-ab`. It fails on output digest mismatch. Reported time per round uses `draft_n/3`, a D proxy that can include partial final rounds.
-
-Open: GPU speed and seed identity; actual fallback/fast-round rate; GPU asynchronous lifetime behavior, pipeline parallelism and reordered multi-sequence outputs. CPU and Meta CPU tests cover synchronous lifetime and split microbatches. Integration with Patch A's separate scheduler/cache prototype is untested; its review identified sampler ownership defects. The full-row accessor behavior change may affect consumers relying on its former undocumented packed prefix. No issue/PR submission or remote action was performed.
+GPU prompt recovery and decode-round neutrality remain unverified. Initial attachment/budget growth still reserve. Retained capacity tracks the largest sampler budget until another scheduler reservation; removal does not shrink it. Shape changes may still reallocate buffers. GPU asynchronous behavior and pipeline parallelism remain untested; this stack uses tensor split.
