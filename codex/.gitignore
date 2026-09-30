@@ -1,0 +1,7 @@
+/cpu-results/*.bin
+/cpu-results/*.log
+/frozen/*/bin/*
+!/frozen/*/bin/SHA256SUMS
+/runs/
+/__pycache__/
+/cpu-results-*/
