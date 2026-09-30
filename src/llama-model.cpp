@@ -1959,6 +1959,14 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
         }
         draft_output = ggml_new_tensor_2d(ctx.get(), head->type, head->ne[0], draft_vocab_ids.size());
         ggml_set_name(draft_output, LLAMA_TENSOR_NAME_DRAFT_OUTPUT);
+        if (params.split_mode == LLAMA_SPLIT_MODE_TENSOR) {
+            const auto ss = llama_meta_device_get_split_state(draft_output, &get_split_state_ud);
+            for (size_t j = 0; j < get_split_state_ud.n_devices; ++j) {
+                if (ss.ne[j] == 0) {
+                    throw std::invalid_argument("reduced draft vocabulary leaves an empty tensor-parallel shard");
+                }
+            }
+        }
         auto * buft = ggml_backend_dev_buffer_type(dev_output());
         ggml_backend_buffer_ptr buf { ml.no_alloc ? ggml_backend_buft_alloc_buffer(buft, 0) :
                 ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), buft) };
