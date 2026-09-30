@@ -1,0 +1,8 @@
+*.bin
+*.log
+/check-inputs
+/check-pipeline
+/frozen/
+/gpu-ab-*/
+/cpu-summary.txt
+/__pycache__/
