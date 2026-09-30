@@ -115,8 +115,8 @@ LLAMA_API float * llama_get_embeddings_nextn_ith(struct llama_context * ctx, int
 #define LLAMA_MTP_CHAIN_ROW   (1 + 3*LLAMA_MTP_CHAIN_TOP_K)
 LLAMA_API bool llama_set_mtp_chain(struct llama_context * ctx, int32_t n_chain, const float * u, float inv_temp);
 
-// [n_chain][LLAMA_MTP_CHAIN_ROW] of the last chain decode: the picked token, then the candidate ids, then their logits and
-// probabilities (all as floats, candidates in pick order). Synchronizes.
+// Last output: [n_chain][LLAMA_MTP_CHAIN_ROW] rows of picked token, candidate IDs, logits and probabilities as F32. Synchronizes.
+// For seeded equivalence, validate device picks with the host sampler before recording q.
 LLAMA_API const float * llama_get_mtp_chain(struct llama_context * ctx);
 
 // Peek at the next dist uniforms without advancing the sampler RNG.
