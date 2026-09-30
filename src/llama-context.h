@@ -119,6 +119,9 @@ struct llama_context {
     void set_embeddings_nextn(bool value, bool masked);
     void set_embeddings_layer_inp(uint32_t lid, bool enable);
     void set_nextn_layer_offset(int32_t offset);
+    bool set_mtp_chain(int32_t n_chain, const float * u, float inv_temp);
+    const float * get_mtp_chain();
+    bool mtp_chain_init_embeddings();
     void set_causal_attn(bool value);
     void set_warmup(bool value);
 
@@ -315,6 +318,13 @@ private:
     // populated only when cparams.embeddings_nextn is enabled and the model graph
     // sets llm_graph_result::t_h_nextn
     buffer_view<float> embd_nextn = {nullptr, 0};
+
+    std::array<float, LLAMA_MTP_CHAIN_MAX + 1> mtp_chain_par = {};
+    std::vector<float> mtp_chain_out;
+    ggml_context_ptr mtp_chain_ctx;
+    ggml_backend_buffer_ptr mtp_chain_buf;
+    ggml_tensor * mtp_chain_tok_embd = nullptr;
+    ggml_tensor * mtp_chain_indices = nullptr;
 
     // host buffers for output layer input embeddings, per layer
     // populated when cparams.output_layer_inp[il] is true

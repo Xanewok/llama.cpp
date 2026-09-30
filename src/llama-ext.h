@@ -107,6 +107,21 @@ LLAMA_API float * llama_get_embeddings_nextn(struct llama_context * ctx);
 // LLAMA_API float * llama_get_embeddings_ith(struct llama_context * ctx, int32_t i);
 LLAMA_API float * llama_get_embeddings_nextn_ith(struct llama_context * ctx, int32_t i);
 
+// Qwen3.5 subset MTP: decode exactly n_chain contiguous rows of sequence 0 in one graph, with flash attention.
+// Step s > 0 takes its token and h from step s-1. The batch supplies only its position and KV slot.
+// Picks use inverse CDF at u[s] over the top-k subset softmax. n_chain = 0 disables the chain.
+#define LLAMA_MTP_CHAIN_MAX   16
+#define LLAMA_MTP_CHAIN_TOP_K 10
+#define LLAMA_MTP_CHAIN_ROW   (1 + 3*LLAMA_MTP_CHAIN_TOP_K)
+LLAMA_API bool llama_set_mtp_chain(struct llama_context * ctx, int32_t n_chain, const float * u, float inv_temp);
+
+// [n_chain][LLAMA_MTP_CHAIN_ROW] of the last chain decode: the picked token, then the candidate ids, then their logits and
+// probabilities (all as floats, candidates in pick order). Synchronizes.
+LLAMA_API const float * llama_get_mtp_chain(struct llama_context * ctx);
+
+// Peek at the next dist uniforms without advancing the sampler RNG.
+LLAMA_API bool llama_sampler_dist_get_uniforms(const struct llama_sampler * sampler, float * u, int32_t n);
+
 // Set whether the context outputs the input embeddings of a specific layer
 LLAMA_API void llama_set_embeddings_layer_inp(struct llama_context * ctx, uint32_t lid, bool value);
 

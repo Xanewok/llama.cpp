@@ -1,4 +1,5 @@
 #include "llama-sampler.h"
+#include "llama-ext.h"
 
 #include "llama-impl.h"
 #include "llama-vocab.h"
@@ -1440,6 +1441,29 @@ void llama_sampler_backend_begin(llama_sampler * sampler) {
             ctx->n_backend_draws_committed = 0;
         }
     }
+}
+
+bool llama_sampler_dist_get_uniforms(const llama_sampler * sampler, float * u, int32_t n) {
+    if (!sampler || !u || n < 0) {
+        return false;
+    }
+    if (sampler->iface == &llama_sampler_chain_i) {
+        auto * chain = (llama_sampler_chain *) sampler->ctx;
+        if (chain->samplers.empty()) {
+            return false;
+        }
+        return llama_sampler_dist_get_uniforms(chain->samplers.back().ptr, u, n);
+    }
+    if (sampler->iface != &llama_sampler_dist_i) {
+        return false;
+    }
+    const auto * ctx = (const llama_sampler_dist *) sampler->ctx;
+    auto rng = ctx->rng;
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    for (int32_t i = 0; i < n; ++i) {
+        u[i] = float(dist(rng));
+    }
+    return true;
 }
 
 // top-k

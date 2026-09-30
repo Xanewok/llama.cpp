@@ -1275,6 +1275,92 @@ void llama_context::set_nextn_layer_offset(int32_t offset) {
     cparams.nextn_layer_offset = offset;
 }
 
+bool llama_context::set_mtp_chain(int32_t n_chain, const float * u, float inv_temp) {
+    if (n_chain == 0) {
+        cparams.mtp_chain = 0;
+        return true;
+    }
+    if (n_chain < 0 || n_chain > LLAMA_MTP_CHAIN_MAX || !u || !std::isfinite(inv_temp) || inv_temp <= 0 ||
+            model.arch != LLM_ARCH_QWEN35 || cparams.ctx_type != LLAMA_CONTEXT_TYPE_MTP ||
+            model.hparams.n_layer_nextn != 1 || !has_draft_vocab() || !cparams.flash_attn ||
+            model.draft_vocab_ids.size() < LLAMA_MTP_CHAIN_TOP_K ||
+            (model.split_mode() == LLAMA_SPLIT_MODE_TENSOR &&
+             (!model.logits_vocab_split(true) || model.logits_vocab_shard_min(true) < LLAMA_MTP_CHAIN_TOP_K))) {
+        return false;
+    }
+    for (int32_t i = 0; i < n_chain; ++i) {
+        if (!std::isfinite(u[i]) || u[i] < 0 || u[i] > 1) {
+            return false;
+        }
+    }
+    if (!sampling_init_vocab_ids() || !mtp_chain_init_embeddings()) {
+        return false;
+    }
+    std::copy(u, u + n_chain, mtp_chain_par.begin());
+    mtp_chain_par[LLAMA_MTP_CHAIN_MAX] = inv_temp;
+    cparams.mtp_chain = n_chain;
+    return true;
+}
+
+bool llama_context::mtp_chain_init_embeddings() {
+    if (mtp_chain_tok_embd) {
+        return true;
+    }
+    const auto & layer = model.layers.back();
+    ggml_tensor * src = layer.nextn.embed_tokens ? layer.nextn.embed_tokens : model.tok_embd;
+    if (!src || !src->data || !ggml_backend_buffer_is_host(src->buffer)) {
+        return false;
+    }
+    const size_t row_bytes = ggml_row_size(src->type, src->ne[0]);
+    const size_t bytes = row_bytes*model.draft_vocab_ids.size();
+    ggml_init_params params = { 4*ggml_tensor_overhead(), nullptr, true };
+    ggml_context_ptr ctx { ggml_init(params) };
+    if (!ctx) {
+        return false;
+    }
+    ggml_tensor * table = ggml_new_tensor_2d(ctx.get(), src->type, src->ne[0], model.draft_vocab_ids.size());
+    // Unlisted weight names are mirrored by the meta backend.
+    ggml_set_name(table, "mtp_chain_tok_embd");
+    ggml_tensor * indices = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, model.draft_vocab_ids.size());
+    ggml_set_name(indices, LLAMA_TENSOR_NAME_DRAFT_VOCAB_IDS);
+    ggml_tensor * op = ggml_get_rows(ctx.get(), table, ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I32, 1));
+    if (!ggml_backend_dev_supports_op(model.dev_output(), op)) {
+        return false;
+    }
+    ggml_context_ptr weights { ggml_init({2*ggml_tensor_overhead(), nullptr, true}) };
+    if (!weights) {
+        return false;
+    }
+    table = ggml_dup_tensor(weights.get(), table);
+    ggml_set_name(table, "mtp_chain_tok_embd");
+    indices = ggml_dup_tensor(weights.get(), indices);
+    ggml_set_name(indices, LLAMA_TENSOR_NAME_DRAFT_VOCAB_IDS);
+    ggml_backend_buffer_ptr buf { ggml_backend_alloc_ctx_tensors_from_buft(weights.get(), ggml_backend_dev_buffer_type(model.dev_output())) };
+    if (!buf) {
+        return false;
+    }
+    std::vector<uint8_t> rows(bytes);
+    std::vector<float> ids(model.draft_vocab_ids.size());
+    for (size_t i = 0; i < ids.size(); ++i) {
+        ggml_backend_tensor_get(src, rows.data() + i*row_bytes, size_t(model.draft_vocab_ids[i])*row_bytes, row_bytes);
+        ids[i] = float(i);
+    }
+    ggml_backend_tensor_set(table, rows.data(), 0, rows.size());
+    ggml_backend_tensor_set(indices, ids.data(), 0, ids.size()*sizeof(float));
+    ggml_backend_buffer_set_usage(buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+    mtp_chain_ctx = std::move(weights);
+    mtp_chain_buf = std::move(buf);
+    mtp_chain_tok_embd = table;
+    mtp_chain_indices = indices;
+    LLAMA_LOG_WARN("%s: subset embeddings: %zu bytes per device, compact indices: %zu bytes total\n", __func__, bytes, ids.size()*sizeof(float));
+    return true;
+}
+
+const float * llama_context::get_mtp_chain() {
+    synchronize();
+    return mtp_chain_out.data();
+}
+
 void llama_context::set_causal_attn(bool value) {
     LLAMA_LOG_DEBUG("%s: value = %d\n", __func__, value);
 
@@ -1847,7 +1933,17 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
 
     // when computing embeddings, all tokens are output
     const bool output_all   = cparams.embeddings;
-    const bool has_samplers = !sampling.samplers.empty();
+    const bool has_samplers = !sampling.samplers.empty() && cparams.mtp_chain == 0;
+    if (cparams.mtp_chain) {
+        if ((int32_t) batch_inp.tokens.size() != cparams.mtp_chain || batch_inp.tokens.size() > cparams.n_ubatch) {
+            return -1;
+        }
+        for (const auto & token : batch_inp.tokens) {
+            if (token.id == LLAMA_TOKEN_NULL || token.seq_ids.size() != 1 || !token.seq_ids.count(0) || !token.has_embd) {
+                return -1;
+            }
+        }
+    }
 
     const uint32_t n_seq_max = cparams.kv_unified ? LLAMA_MAX_SEQ : cparams.n_seq_max;
 
@@ -2160,6 +2256,12 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
             copy_tensor_async_rows(res->t_sampled_logits, sampling.logits,     stride, n_outputs_prev, sched.get(), &sampling.logits_count);
             copy_tensor_async_rows(res->t_sampled_probs,  sampling.probs,      stride, n_outputs_prev, sched.get(), &sampling.probs_count);
             copy_tensor_async_rows(res->t_candidates,     sampling.candidates, stride, n_outputs_prev, sched.get(), &sampling.candidates_count);
+        }
+
+        if (res->t_mtp_chain) {
+            ggml_tensor * t = res->t_mtp_chain;
+            mtp_chain_out.resize(ggml_nelements(t));
+            ggml_backend_tensor_get_async(ggml_backend_sched_get_tensor_backend(sched.get(), t), t, mtp_chain_out.data(), 0, ggml_nbytes(t));
         }
 
         n_outputs_prev += n_outputs;
@@ -2657,7 +2759,10 @@ ggml_cgraph * llama_context::graph_reserve(
 
     auto * res = gf_res_reserve.get();
 
+    const int32_t save_chain = cparams.mtp_chain;
+    cparams.mtp_chain = 0;
     const auto gparams = graph_params(res, ubatch, mctx, ctx_type_to_graph_type(cparams.ctx_type));
+    cparams.mtp_chain = save_chain;
 
     res->reset();
 
@@ -2704,8 +2809,11 @@ llm_graph_params llama_context::graph_params(
         /*.n_outputs   =*/ n_outputs,
         /*.cb          =*/ graph_get_cb(),
         /*.res         =*/ res,
-        /*.sampling_vocab_ids =*/ sampling.samplers.empty() ? nullptr : sampling.vocab_ids,
-        /*.sampling_n_shards  =*/ sampling.samplers.empty() || !sampling.vocab_ids || model.split_mode() != LLAMA_SPLIT_MODE_TENSOR ? 0 : (uint32_t) model.get_split_state_ud.n_devices,
+        /*.sampling_vocab_ids =*/ sampling.samplers.empty() && !cparams.mtp_chain ? nullptr : sampling.vocab_ids,
+        /*.sampling_n_shards  =*/ (sampling.samplers.empty() && !cparams.mtp_chain) || !sampling.vocab_ids || model.split_mode() != LLAMA_SPLIT_MODE_TENSOR ? 0 : (uint32_t) model.get_split_state_ud.n_devices,
+        /*.mtp_chain_par      =*/ mtp_chain_par.data(),
+        /*.mtp_chain_tok_embd =*/ mtp_chain_tok_embd,
+        /*.mtp_chain_indices  =*/ mtp_chain_indices,
     };
 }
 
@@ -4132,6 +4240,14 @@ void llama_set_embeddings_layer_inp(llama_context * ctx, uint32_t lid, bool valu
 
 void llama_set_nextn_layer_offset(llama_context * ctx, int32_t offset) {
     ctx->set_nextn_layer_offset(offset);
+}
+
+bool llama_set_mtp_chain(llama_context * ctx, int32_t n_chain, const float * u, float inv_temp) {
+    return ctx->set_mtp_chain(n_chain, u, inv_temp);
+}
+
+const float * llama_get_mtp_chain(llama_context * ctx) {
+    return ctx->get_mtp_chain();
 }
 
 llama_memory_t llama_get_memory(const struct llama_context * ctx) {
