@@ -723,12 +723,19 @@ struct ggml_backend_cuda_buffer_context {
     void * dev_ptr = nullptr;
     std::string name;
 
+    std::mutex input_mutex;
+    ggml_backend_buffer_t input_staging = nullptr;
+    std::vector<void *> input_dsts;
+    std::vector<const void *> input_srcs;
+    std::vector<size_t> input_sizes;
+
     ggml_backend_cuda_buffer_context(int device, void * dev_ptr) :
         device(device), dev_ptr(dev_ptr),
         name(GGML_CUDA_NAME + std::to_string(device)) {
     }
 
     ~ggml_backend_cuda_buffer_context() {
+        ggml_backend_buffer_free(input_staging);
         CUDA_CHECK(cudaFree(dev_ptr));
     }
 };
@@ -791,6 +798,71 @@ static void ggml_backend_cuda_buffer_get_tensor(ggml_backend_buffer_t buffer, co
     ggml_cuda_set_device(ctx->device);
     CUDA_CHECK(cudaMemcpyAsync(data, (const char *) tensor->data + offset, size, cudaMemcpyDeviceToHost, cudaStreamPerThread));
     CUDA_CHECK(cudaStreamSynchronize(cudaStreamPerThread));
+}
+
+static void ggml_backend_cuda_buffer_set_tensor_batch(ggml_backend_buffer_t buffer, const ggml_backend_tensor_transfer * transfers, size_t n_transfers) {
+    auto * ctx = (ggml_backend_cuda_buffer_context *) buffer->context;
+    std::lock_guard<std::mutex> lock(ctx->input_mutex);
+    ggml_cuda_set_device(ctx->device);
+    size_t total = 0;
+    for (size_t i = 0; i < n_transfers; ++i) {
+        GGML_ASSERT(transfers[i].size <= SIZE_MAX - total);
+        total += transfers[i].size;
+    }
+    if (total == 0) {
+        return;
+    }
+    if (!ctx->input_staging || ggml_backend_buffer_get_size(ctx->input_staging) < total) {
+        ggml_backend_buffer_free(ctx->input_staging);
+        ctx->input_staging = ggml_backend_buft_alloc_buffer(ggml_backend_cuda_host_buffer_type(), total);
+        if (!ctx->input_staging) {
+            for (size_t i = 0; i < n_transfers; ++i) {
+                const auto & transfer = transfers[i];
+                ggml_backend_tensor_set(transfer.tensor, transfer.data, transfer.offset, transfer.size);
+            }
+            return;
+        }
+    }
+    ctx->input_dsts.clear();
+    ctx->input_srcs.clear();
+    ctx->input_sizes.clear();
+    char * staging = (char *) ggml_backend_buffer_get_base(ctx->input_staging);
+    size_t offset = 0;
+    bool overlap = false;
+    for (size_t i = 0; i < n_transfers; ++i) {
+        const auto & transfer = transfers[i];
+        if (transfer.size == 0) {
+            continue;
+        }
+        void * dst = (char *) transfer.tensor->data + transfer.offset;
+        for (size_t j = 0; j < ctx->input_dsts.size(); ++j) {
+            const uintptr_t a = (uintptr_t) dst;
+            const uintptr_t b = (uintptr_t) ctx->input_dsts[j];
+            overlap |= a < b + ctx->input_sizes[j] && b < a + transfer.size;
+        }
+        memcpy(staging + offset, transfer.data, transfer.size);
+        ctx->input_dsts.push_back(dst);
+        ctx->input_srcs.push_back(staging + offset);
+        ctx->input_sizes.push_back(transfer.size);
+        offset += transfer.size;
+    }
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA) && CUDART_VERSION >= 13000
+    // CUDA batch copies are unordered; overlapping destinations require ordered copies.
+    if (!overlap) {
+        cudaMemcpyAttributes attrs = {};
+        attrs.srcAccessOrder = cudaMemcpySrcAccessOrderStream;
+        size_t attrs_index = 0;
+        CUDA_CHECK(cudaMemcpyBatchAsync(ctx->input_dsts.data(), ctx->input_srcs.data(), ctx->input_sizes.data(),
+            ctx->input_dsts.size(), &attrs, &attrs_index, 1, cudaStreamPerThread));
+    } else
+#endif
+    {
+        for (size_t i = 0; i < ctx->input_dsts.size(); ++i) {
+            CUDA_CHECK(cudaMemcpyAsync(ctx->input_dsts[i], ctx->input_srcs[i], ctx->input_sizes[i], cudaMemcpyHostToDevice, cudaStreamPerThread));
+        }
+    }
+    CUDA_CHECK(cudaStreamSynchronize(cudaStreamPerThread));
+    GGML_UNUSED(overlap);
 }
 
 static void ggml_backend_cuda_buffer_set_tensor_2d(ggml_backend_buffer_t buffer, struct ggml_tensor * tensor, const void * data,
@@ -858,6 +930,7 @@ static const ggml_backend_buffer_i ggml_backend_cuda_buffer_interface = {
     /* .cpy_tensor      = */ ggml_backend_cuda_buffer_cpy_tensor,
     /* .clear           = */ ggml_backend_cuda_buffer_clear,
     /* .reset           = */ NULL,
+    /* .set_tensor_batch = */ ggml_backend_cuda_buffer_set_tensor_batch,
 };
 
 // cuda buffer type
