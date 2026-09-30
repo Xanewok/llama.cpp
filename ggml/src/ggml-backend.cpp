@@ -783,9 +783,23 @@ struct ggml_backend_sched_split {
     struct ggml_cgraph graph;
 };
 
+// State of the graph allocator shared by a scheduler and the schedulers created from it with ggml_backend_sched_new_shared.
+struct ggml_backend_sched_alloc_state {
+    int refcount;
+    ggml_gallocr_t galloc;
+    // backend ids of the nodes/leafs the galloc plan was last reserved or allocated with
+    int * plan_node_backend_ids; // [nodes_size]
+    int * plan_leaf_backend_ids; // [nodes_size]
+};
+
 struct ggml_backend_sched {
     bool is_reset; // true if the scheduler has been reset since the last graph split
     bool is_alloc;
+
+    struct ggml_backend_sched_alloc_state * alloc_state;
+    size_t graph_size;
+    uint64_t alloc_graph_uid;
+    uint64_t alloc_epoch;
 
     int n_backends;
 
@@ -800,9 +814,6 @@ struct ggml_backend_sched {
 
     int * node_backend_ids; // [graph_size]
     int * leaf_backend_ids; // [graph_size]
-
-    int * prev_node_backend_ids; // [graph_size]
-    int * prev_leaf_backend_ids; // [graph_size]
 
     // copy of the graph with modified inputs
     struct ggml_cgraph graph;
@@ -1444,17 +1455,6 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
         }
     }
 
-    // swap node_backend_ids and leaf _backend_ids with prevs
-    {
-        int * tmp = sched->node_backend_ids;
-        sched->node_backend_ids = sched->prev_node_backend_ids;
-        sched->prev_node_backend_ids = tmp;
-
-        tmp = sched->leaf_backend_ids;
-        sched->leaf_backend_ids = sched->prev_leaf_backend_ids;
-        sched->prev_leaf_backend_ids = tmp;
-    }
-
     // optimize the split graphs and collect the allocation dependencies added by the backends
     // this needs to happen before we make graph_copy, so they are in sync
     // TODO: this may create many small allocations in the scheduler, restructure to use a flat array
@@ -1604,19 +1604,26 @@ void ggml_backend_sched_split_graph(ggml_backend_sched_t sched, struct ggml_cgra
     }
 }
 
+static void ggml_backend_sched_save_plan_ids(ggml_backend_sched_t sched) {
+    memcpy(sched->alloc_state->plan_node_backend_ids, sched->node_backend_ids, sched->graph.n_nodes*sizeof(int));
+    memcpy(sched->alloc_state->plan_leaf_backend_ids, sched->leaf_backend_ids, sched->graph.n_leafs*sizeof(int));
+}
+
 static bool ggml_backend_sched_alloc_splits(ggml_backend_sched_t sched) {
+    const int * plan_node_ids = sched->alloc_state->plan_node_backend_ids;
+    const int * plan_leaf_ids = sched->alloc_state->plan_leaf_backend_ids;
     bool backend_ids_changed = false;
     for (int i = 0; i < sched->graph.n_nodes; i++) {
-        if (sched->node_backend_ids[i] != sched->prev_node_backend_ids[i] &&
-            sched->bufts[sched->node_backend_ids[i]] != sched->bufts[sched->prev_node_backend_ids[i]]) {
+        if (sched->node_backend_ids[i] != plan_node_ids[i] &&
+            sched->bufts[sched->node_backend_ids[i]] != sched->bufts[plan_node_ids[i]]) {
             backend_ids_changed = true;
             break;
         }
     }
     if (!backend_ids_changed) {
         for (int i = 0; i < sched->graph.n_leafs; i++) {
-            if (sched->leaf_backend_ids[i] != sched->prev_leaf_backend_ids[i] &&
-                sched->bufts[sched->leaf_backend_ids[i]] != sched->bufts[sched->prev_leaf_backend_ids[i]]) {
+            if (sched->leaf_backend_ids[i] != plan_leaf_ids[i] &&
+                sched->bufts[sched->leaf_backend_ids[i]] != sched->bufts[plan_leaf_ids[i]]) {
                 backend_ids_changed = true;
                 break;
             }
@@ -1655,6 +1662,7 @@ static bool ggml_backend_sched_alloc_splits(ggml_backend_sched_t sched) {
             return false;
         }
     }
+    ggml_backend_sched_save_plan_ids(sched);
 
     return true;
 }
@@ -1897,8 +1905,7 @@ ggml_backend_sched_t ggml_backend_sched_new(
     const size_t nodes_size = graph_size + ggml_sched_max_splits*GGML_SCHED_MAX_SPLIT_INPUTS*2;
     sched->node_backend_ids = (int *) calloc(nodes_size, sizeof(sched->node_backend_ids[0]));
     sched->leaf_backend_ids = (int *) calloc(nodes_size, sizeof(sched->leaf_backend_ids[0]));
-    sched->prev_node_backend_ids = (int *) calloc(nodes_size, sizeof(sched->prev_node_backend_ids[0]));
-    sched->prev_leaf_backend_ids = (int *) calloc(nodes_size, sizeof(sched->prev_leaf_backend_ids[0]));
+    sched->graph_size = graph_size;
 
     sched->debug_graph_size = 0;
     sched->debug_prev_graph_size = 0;
@@ -1928,9 +1935,42 @@ ggml_backend_sched_t ggml_backend_sched_new(
     sched->galloc = ggml_gallocr_new_n(sched->bufts, n_backends);
     sched->op_offload = op_offload;
 
+    sched->alloc_state = (ggml_backend_sched_alloc_state *) calloc(1, sizeof(ggml_backend_sched_alloc_state));
+    sched->alloc_state->refcount = 1;
+    sched->alloc_state->galloc   = sched->galloc;
+    sched->alloc_state->plan_node_backend_ids = (int *) calloc(nodes_size, sizeof(int));
+    sched->alloc_state->plan_leaf_backend_ids = (int *) calloc(nodes_size, sizeof(int));
+
     ggml_backend_sched_reset(sched);
 
     return sched;
+}
+
+ggml_backend_sched_t ggml_backend_sched_new_shared(ggml_backend_sched_t parent) {
+    GGML_ASSERT(parent);
+    if (parent->n_copies > 1) {
+        return NULL;
+    }
+    ggml_backend_sched_t sched = ggml_backend_sched_new(
+        parent->backends, parent->bufts, parent->n_backends, parent->graph_size, /*parallel =*/ false, parent->op_offload);
+
+    ggml_gallocr_free(sched->alloc_state->galloc);
+    free(sched->alloc_state->plan_node_backend_ids);
+    free(sched->alloc_state->plan_leaf_backend_ids);
+    free(sched->alloc_state);
+
+    sched->alloc_state = parent->alloc_state;
+    sched->alloc_state->refcount++;
+    sched->galloc = sched->alloc_state->galloc;
+    sched->callback_eval           = parent->callback_eval;
+    sched->callback_eval_user_data = parent->callback_eval_user_data;
+    return sched;
+}
+
+bool ggml_backend_sched_graph_is_alloc(ggml_backend_sched_t sched, const struct ggml_cgraph * graph) {
+    GGML_ASSERT(sched);
+    return sched->is_alloc && graph->uid != 0 && sched->alloc_graph_uid == graph->uid &&
+        sched->alloc_epoch == ggml_gallocr_get_epoch(sched->galloc);
 }
 
 void ggml_backend_sched_free(ggml_backend_sched_t sched) {
@@ -1942,7 +1982,12 @@ void ggml_backend_sched_free(ggml_backend_sched_t sched) {
             ggml_backend_event_free(sched->events[b][c]);
         }
     }
-    ggml_gallocr_free(sched->galloc);
+    if (--sched->alloc_state->refcount == 0) {
+        ggml_gallocr_free(sched->alloc_state->galloc);
+        free(sched->alloc_state->plan_node_backend_ids);
+        free(sched->alloc_state->plan_leaf_backend_ids);
+        free(sched->alloc_state);
+    }
     ggml_free(sched->ctx);
     ggml_hash_set_free(&sched->hash_set);
     for (int i = 0; i < sched->splits_capacity; i++) {
@@ -1954,8 +1999,6 @@ void ggml_backend_sched_free(ggml_backend_sched_t sched) {
     free(sched->hv_tensor_copies);
     free(sched->node_backend_ids);
     free(sched->leaf_backend_ids);
-    free(sched->prev_node_backend_ids);
-    free(sched->prev_leaf_backend_ids);
     free(sched->context_buffer);
     free(sched->graph.nodes);
     free(sched->graph.leafs);
@@ -1986,6 +2029,7 @@ void ggml_backend_sched_reserve_size(ggml_backend_sched_t sched, struct ggml_cgr
     ggml_backend_sched_split_graph(sched, measure_graph);
 
     ggml_gallocr_reserve_n_size(sched->galloc, &sched->graph, sched->node_backend_ids, sched->leaf_backend_ids, sizes);
+    ggml_backend_sched_save_plan_ids(sched);
 }
 
 bool ggml_backend_sched_reserve(ggml_backend_sched_t sched, struct ggml_cgraph * measure_graph) {
@@ -1999,6 +2043,7 @@ bool ggml_backend_sched_reserve(ggml_backend_sched_t sched, struct ggml_cgraph *
     if (!ggml_gallocr_reserve_n(sched->galloc, &sched->graph, sched->node_backend_ids, sched->leaf_backend_ids)) {
         return false;
     }
+    ggml_backend_sched_save_plan_ids(sched);
 
     ggml_backend_sched_reset(sched);
 
@@ -2019,7 +2064,9 @@ bool ggml_backend_sched_alloc_graph(ggml_backend_sched_t sched, struct ggml_cgra
         return false;
     }
 
-    sched->is_alloc = true;
+    sched->is_alloc        = true;
+    sched->alloc_graph_uid = graph->uid;
+    sched->alloc_epoch     = ggml_gallocr_get_epoch(sched->galloc);
 
     return true;
 }

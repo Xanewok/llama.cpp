@@ -493,6 +493,9 @@ struct ggml_gallocr {
 
     struct leaf_alloc * leaf_allocs; // [n_leafs]
     int n_leafs;
+
+    // tensors allocated at a given epoch keep valid addresses while the epoch is unchanged
+    uint64_t epoch;
 };
 
 ggml_gallocr_t ggml_gallocr_new_n(ggml_backend_buffer_type_t * bufts, int n_bufs) {
@@ -824,6 +827,7 @@ static void ggml_gallocr_alloc_graph_impl(ggml_gallocr_t galloc, struct ggml_cgr
 
 static bool ggml_gallocr_reserve_n_impl(
         ggml_gallocr_t galloc, struct ggml_cgraph * graph, const int * node_buffer_ids, const int * leaf_buffer_ids, bool no_alloc) {
+    galloc->epoch++;
     size_t min_hash_size = graph->n_nodes + graph->n_leafs;
     // add 25% margin to avoid hash collisions
     min_hash_size += min_hash_size / 4;
@@ -1069,6 +1073,11 @@ bool ggml_gallocr_alloc_graph(ggml_gallocr_t galloc, struct ggml_cgraph * graph)
     // reset buffers
     for (int i = 0; i < galloc->n_buffers; i++) {
         if (galloc->buffers[i] != NULL) {
+            for (int c = 0; c < GGML_VBUFFER_MAX_CHUNKS && galloc->buffers[i]->chunks[c]; ++c) {
+                if (!ggml_backend_buffer_reset_is_noop(galloc->buffers[i]->chunks[c])) {
+                    galloc->epoch++;
+                }
+            }
             ggml_vbuffer_reset(galloc->buffers[i]);
         }
     }
@@ -1095,6 +1104,10 @@ bool ggml_gallocr_alloc_graph(ggml_gallocr_t galloc, struct ggml_cgraph * graph)
     }
 
     return true;
+}
+
+uint64_t ggml_gallocr_get_epoch(ggml_gallocr_t galloc) {
+    return galloc->epoch;
 }
 
 size_t ggml_gallocr_get_buffer_size(ggml_gallocr_t galloc, int buffer_id) {

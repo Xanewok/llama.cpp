@@ -319,6 +319,15 @@ extern "C" {
     GGML_API ggml_backend_sched_t ggml_backend_sched_new(ggml_backend_t * backends, ggml_backend_buffer_type_t * bufts, int n_backends, size_t graph_size, bool parallel, bool op_offload);
     GGML_API void                 ggml_backend_sched_free(ggml_backend_sched_t sched);
 
+    // A scheduler with its own graph split that allocates from the compute buffers of parent (no extra device memory).
+    // Graphs allocated by schedulers of one family stay allocated side by side; see ggml_backend_sched_graph_is_alloc.
+    // They must not be computed concurrently. Returns NULL if parent uses pipeline parallelism.
+    GGML_API ggml_backend_sched_t ggml_backend_sched_new_shared(ggml_backend_sched_t parent);
+
+    // true if graph is allocated on sched and the addresses of its tensors are still valid, i.e. it can be computed again
+    // with only new input data; false after sched was reset or any scheduler of its family re-planned the compute buffers
+    GGML_API bool                 ggml_backend_sched_graph_is_alloc(ggml_backend_sched_t sched, const struct ggml_cgraph * graph);
+
     // Initialize backend buffers from a measure graph
     GGML_API void                 ggml_backend_sched_reserve_size(ggml_backend_sched_t sched, struct ggml_cgraph * measure_graph, size_t * sizes);
     GGML_API bool                 ggml_backend_sched_reserve(ggml_backend_sched_t sched, struct ggml_cgraph * measure_graph); // returns success

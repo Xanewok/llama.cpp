@@ -98,6 +98,9 @@ extern "C" {
     GGML_API bool ggml_backend_buffer_is_meta(ggml_backend_buffer_t buf);
     GGML_API bool ggml_backend_buft_is_meta  (ggml_backend_buffer_type_t buft);
 
+    // false if ggml_backend_buffer_reset may invalidate tensors that were initialized in the buffer
+    GGML_API bool ggml_backend_buffer_reset_is_noop(ggml_backend_buffer_t buf);
+
     GGML_API size_t         ggml_backend_meta_n_backends    (ggml_backend_t meta_backend);
     GGML_API ggml_backend_t ggml_backend_meta_simple_backend(ggml_backend_t meta_backend, size_t index);
 
