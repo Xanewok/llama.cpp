@@ -539,7 +539,6 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
 
     auto * inp_attn = build_attn_inp_kv();
 
-    // one MTP block over the rows of tok_embd/h_embd; returns h_nextn (after the head norm)
     auto mtp_block = [&](ggml_tensor * tok_embd, ggml_tensor * h_embd, ggml_tensor * pos, llm_graph_input_attn_kv * attn) {
         const int64_t n_rows = tok_embd->ne[1];
 
