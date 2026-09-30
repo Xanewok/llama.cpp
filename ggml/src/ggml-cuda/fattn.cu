@@ -151,12 +151,58 @@ bool ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(const int cc, const ggml_
 #endif // !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
 }
 
+// The q8_0 instances require the dense, aligned ncols2 == 8 pipeline.
+static bool ggml_cuda_flash_attn_ext_mma_q8_0_supported(const int cc, const ggml_tensor * dst) {
+#if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
+    GGML_UNUSED_VARS(cc, dst);
+    return false;
+#else
+    const ggml_tensor * Q = dst->src[0];
+    const ggml_tensor * K = dst->src[1];
+    const ggml_tensor * V = dst->src[2];
+
+    float logit_softcap;
+    memcpy(&logit_softcap, (const float *) dst->op_params + 2, sizeof(float));
+
+    if (!GGML_CUDA_CC_IS_NVIDIA(cc) || !turing_mma_available(cc) || !cp_async_available(cc)) {
+        return false;
+    }
+    if (K->type != GGML_TYPE_Q8_0 || V->type != GGML_TYPE_Q8_0 || K->ne[0] != 256 || V->ne[0] != 256) {
+        return false;
+    }
+    if (Q->ne[1] < 3 || Q->ne[1] > 8 || logit_softcap != 0.0f) {
+        return false;
+    }
+    // the kernel stages raw rows with 16 byte copies
+    for (const ggml_tensor * t : { K, V }) {
+        if (!ggml_cuda_is_aligned(t, 16)) {
+            return false;
+        }
+    }
+    // the sparse variants gather f16 rows
+    return !ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(cc, dst, 1, 8) &&
+           !ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(cc, dst, 8, 8);
+#endif // defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
+}
+
 template <int DKQ, int DV, int ncols2>
 static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
     const ggml_tensor * Q = dst->src[0];
 
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+    if constexpr (ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, 4, ncols2) &&
+                  ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, 8, ncols2)) {
+        if (ggml_cuda_flash_attn_ext_mma_q8_0_supported(cc, dst)) {
+            if (Q->ne[1] <= 4) {
+                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 4, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
+            } else {
+                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 8, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
+            }
+            return;
+        }
+    }
+
     if constexpr (ggml_cuda_flash_attn_ext_mma_f16_may_use_sparse(DKQ, DV, 1, ncols2)) {
         // a sparse variant at the full tile width gathers the union of its queries once, prefer it for large batches
         constexpr bool has_wide_sparse = ggml_cuda_flash_attn_ext_mma_f16_may_use_sparse(DKQ, DV, 64/ncols2, ncols2);
