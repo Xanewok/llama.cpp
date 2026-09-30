@@ -328,18 +328,85 @@ static const char * TEXT_PROSE   = "I will inspect the tree.\n</think>\n\nLet me
 static const char * TEXT_FNAME   = "Checking.\n</think>\n\n<tool_call>\n<function=";
 static const char * TEXT_PVALUE  = "Checking.\n</think>\n\n<tool_call>\n<function=exec_command>\n<parameter=cmd>\nls -la";
 
+static std::string test_draft_vocab_rejection(env & E) {
+    const llama_token a = 17, b = 40037, c = 200001;
+    GGML_ASSERT(c < E.n_vocab);
+    common_params_sampling params;
+    params.top_k = 20;
+    params.top_p = 0.95f;
+    params.min_p = 0.05f;
+    params.temp = 1.0f;
+    params.no_perf = true;
+    common_sampler_ptr base(common_sampler_init(E.model, params));
+    std::vector<llama_token_data> subset = {{a, std::log(0.8f), 0}, {b, std::log(0.2f), 0}};
+    const auto q = chain_dist(common_sampler_get(base.get()), subset);
+    double sum = 0;
+    for (const auto & e : q) {
+        CHECK(e.id == a || e.id == b, "draft escaped subset");
+        sum += e.p;
+    }
+    CHECK(std::fabs(sum - 1.0) < 1e-6, "draft q is not normalized: %.9f", sum);
+    std::vector<float> row(E.n_vocab, -INFINITY);
+    row[a] = std::log(0.2f);
+    row[b] = std::log(0.3f);
+    row[c] = std::log(0.5f);
+    E.set_row(0, row);
+    E.set_row(1, row);
+    const std::map<llama_token, double> want = {{a, 0.2}, {b, 0.3}, {c, 0.5}};
+    std::map<llama_token, int> observed, broken;
+    std::mt19937 proposal_rng(91);
+    std::vector<double> weights;
+    for (const auto & e : q) {
+        weights.push_back(e.p);
+    }
+    std::discrete_distribution<size_t> draw(weights.begin(), weights.end());
+    std::ostringstream seeds;
+    const int n = 20000;
+    for (int i = 0; i < n; ++i) {
+        const llama_tokens draft = {q[draw(proposal_rng)].id};
+        for (bool bad : {false, true}) {
+            params.seed = 1000 + i;
+            common_sampler_ptr target(common_sampler_init(E.model, params));
+            auto recorded = q;
+            if (bad) {
+                // The proposal is normalized on the subset; recording full-vocab mass breaks verification.
+                for (auto & e : recorded) {
+                    e.p *= 0.1f;
+                }
+            }
+            const auto result = common_sampler_sample_and_accept_n_rejection(target.get(), E.ctx, {0, 1}, draft, {recorded});
+            (bad ? broken : observed)[result[0]]++;
+            if (!bad && i < 300) {
+                for (llama_token id : result) {
+                    seeds << id << ' ';
+                }
+                seeds << '|';
+            }
+        }
+    }
+    const double good_p = chi2_p(observed, want, n);
+    const double bad_p = chi2_p(broken, want, n);
+    printf("M: subset q sum=%.9f; verify chi2 p=%.6g; negative-control p=%.6g, %d draws\n", sum, good_p, bad_p, n);
+    CHECK(good_p > 1e-4, "subset verify law differs from target");
+    CHECK(bad_p < 1e-6, "wrong recorded q escaped the negative control");
+    return seeds.str();
+}
+
 int main(int argc, char ** argv) {
     if (argc < 2) {
         fprintf(stderr, "usage: %s <model.gguf> [--write F | --check F] [n_draws]\n", argv[0]);
         return 1;
     }
     std::string write_path, check_path;
+    bool draft_vocab_only = false;
     int n_draws = 4000;
     for (int i = 2; i < argc; ++i) {
         if (!strcmp(argv[i], "--write") && i + 1 < argc) {
             write_path = argv[++i];
         } else if (!strcmp(argv[i], "--check") && i + 1 < argc) {
             check_path = argv[++i];
+        } else if (!strcmp(argv[i], "--draft-vocab-only")) {
+            draft_vocab_only = true;
         } else {
             n_draws = atoi(argv[i]);
         }
@@ -385,6 +452,23 @@ int main(int argc, char ** argv) {
         GGML_ASSERT(llama_decode(E.ctx, batch) == 0);
         llama_synchronize(E.ctx);
         llama_batch_free(batch);
+    }
+
+    if (draft_vocab_only) {
+        const std::string seeds = test_draft_vocab_rejection(E);
+        if (!write_path.empty()) {
+            std::ofstream(write_path) << seeds;
+        }
+        if (!check_path.empty()) {
+            std::ifstream ref(check_path);
+            std::ostringstream contents;
+            contents << ref.rdbuf();
+            CHECK(ref && contents.str() == seeds, "subset verify seed identity failed");
+        }
+        llama_free(E.ctx);
+        llama_model_free(E.model);
+        llama_backend_free();
+        return n_fail ? 1 : 0;
     }
 
     auto tok1 = [&](const char * s) {

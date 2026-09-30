@@ -2605,6 +2605,10 @@ common_speculative_init_result::common_speculative_init_result(
 
     auto mparams = common_model_params_to_llama(params);
     auto cparams = common_context_params_to_llama(params);
+    if (has_draft) {
+        mparams.draft_vocab_ids = params.speculative.draft.vocab_ids.data();
+        mparams.n_draft_vocab = params.speculative.draft.vocab_ids.size();
+    }
 
     if (spec_mtp) {
         cparams.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
