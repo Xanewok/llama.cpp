@@ -37,7 +37,15 @@ static bool observe(ggml_tensor * t, bool ask, void * data) {
     if (pick) {
         ++p.picks;
         if (p.corrupt_pick) {
-            float wrong = -1;
+            auto * rows = t->src[0];
+            require(rows && rows->op == GGML_OP_GET_ROWS, "unexpected pick graph");
+            auto * index = rows->src[1];
+            int32_t wrong_index;
+            ggml_backend_tensor_get(index, &wrong_index, 0, sizeof(wrong_index));
+            wrong_index = (wrong_index + 1) % LLAMA_MTP_CHAIN_TOP_K;
+            ggml_backend_tensor_set(index, &wrong_index, 0, sizeof(wrong_index));
+            float wrong;
+            ggml_backend_tensor_get(rows->src[0], &wrong, size_t(wrong_index)*sizeof(float), sizeof(wrong));
             ggml_backend_tensor_set(t, &wrong, 0, sizeof(wrong));
         }
     }
