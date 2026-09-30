@@ -1491,7 +1491,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         }
         if (this->params.mtp_chain) {
             const float u = 0.0f;
-            if (n_seq != 1 || chain_heads || is_mem_shared || !this->params.probabilistic ||
+            if (chain_heads || is_mem_shared || !this->params.probabilistic ||
                     !this->params.backend_sampling || !backend_chains[0] || this->params.n_max < 1 ||
                     this->params.n_max > LLAMA_MTP_CHAIN_MAX || this->params.n_max > (int32_t) llama_n_ubatch(ctx_dft) ||
                     !llama_set_mtp_chain(ctx_dft, 1, &u, 1.0f)) {
@@ -1658,19 +1658,20 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         return true;
     }
 
-    bool draft_chain(common_speculative_draft_params_vec & dparams) {
-        if (!params.mtp_chain || !params.backend_sampling || n_seq != 1 || chain_heads || is_mem_shared ||
+    bool draft_chain(common_speculative_draft_params_vec & dparams, const std::vector<bool> & drafting) {
+        if (!params.mtp_chain || !params.backend_sampling || chain_heads || is_mem_shared ||
                 params.n_max < 1 || params.n_max > LLAMA_MTP_CHAIN_MAX ||
-                params.n_max > (int32_t) llama_n_ubatch(params.ctx_dft) || !backend_chains[0]) {
+                params.n_max > (int32_t) llama_n_ubatch(params.ctx_dft)) {
             return false;
         }
-        auto & dp = dparams[0];
-        if (!dp.result_q || dp.temp <= 0 || !std::isfinite(dp.temp) || !dp.result->empty() || !dp.result_q->empty()) {
+        const llama_seq_id seq_id = std::find(drafting.begin(), drafting.end(), true) - drafting.begin();
+        auto & dp = dparams[seq_id];
+        if (!backend_chains[seq_id] || !dp.result_q || dp.temp <= 0 || !std::isfinite(dp.temp) || !dp.result->empty() || !dp.result_q->empty()) {
             return false;
         }
         const int32_t n_chain = params.n_max;
         auto * ctx = params.ctx_dft;
-        common_sampler_ptr saved { common_sampler_clone(smpls[0].get()) };
+        common_sampler_ptr saved { common_sampler_clone(smpls[seq_id].get()) };
         float u[LLAMA_MTP_CHAIN_MAX];
         if (!llama_sampler_dist_get_uniforms(common_sampler_get(saved.get()), u, n_chain) ||
                 !llama_set_mtp_chain(ctx, n_chain, u, 1.0f/dp.temp)) {
@@ -1679,8 +1680,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             return false;
         }
         for (int32_t step = 1; step < n_chain; ++step) {
-            const int idx = batch.add(dp.id_last, dp.pos0 + step, 0, false);
-            batch.set_embd(idx, { pending_h[0].data(), 1, (size_t) n_embd });
+            const int idx = batch.add(dp.id_last, dp.pos0 + step, seq_id, false);
+            batch.set_embd(idx, { pending_h[seq_id].data(), 1, (size_t) n_embd });
         }
         const int ret = llama_process(ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get());
         llama_set_mtp_chain(ctx, 0, nullptr, 1.0f);
@@ -1698,8 +1699,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 candidates.cand_ids = ids;
                 candidates.cand_logits = row + 1 + LLAMA_MTP_CHAIN_TOP_K;
                 candidates.n_cand = LLAMA_MTP_CHAIN_TOP_K;
-                const llama_token id = common_sampler_sample_row(smpls[0].get(), candidates, true);
-                const auto * q = common_sampler_get_candidates(smpls[0].get(), true);
+                const llama_token id = common_sampler_sample_row(smpls[seq_id].get(), candidates, true);
+                const auto * q = common_sampler_get_candidates(smpls[seq_id].get(), true);
                 if (q->data[0].p < params.p_min) {
                     break;
                 }
@@ -1707,7 +1708,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     exact = false;
                     break;
                 }
-                common_sampler_accept(smpls[0].get(), id, true);
+                common_sampler_accept(smpls[seq_id].get(), id, true);
                 dp.result->push_back(id);
                 dp.result_q->emplace_back(q->data, q->data + q->size);
             }
@@ -1716,16 +1717,16 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             return true;
         }
         // A rounded device CDF can cross a draw boundary. Replay with the original RNG and KV prefix.
-        common_sampler_copy(saved.get(), smpls[0].get());
+        common_sampler_copy(saved.get(), smpls[seq_id].get());
         dp.result->clear();
         dp.result_q->clear();
-        if (!llama_memory_seq_rm(llama_get_memory(ctx), 0, dp.pos0, -1)) {
+        if (!llama_memory_seq_rm(llama_get_memory(ctx), seq_id, dp.pos0, -1)) {
             throw std::runtime_error("cannot roll back MTP chain KV");
         }
         batch.clear();
-        const int idx = batch.add(dp.id_last, dp.pos0, 0, true);
-        batch.set_embd(idx, { pending_h[0].data(), 1, (size_t) n_embd });
-        i_last[0] = idx;
+        const int idx = batch.add(dp.id_last, dp.pos0, seq_id, true);
+        batch.set_embd(idx, { pending_h[seq_id].data(), 1, (size_t) n_embd });
+        i_last[seq_id] = idx;
         return false;
     }
 
@@ -1772,7 +1773,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             }
         }
 
-        if (n_drafting == 1 && draft_chain(dparams)) {
+        if (n_drafting == 1 && draft_chain(dparams, drafting)) {
             n_drafting = 0;
         }
 

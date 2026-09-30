@@ -107,7 +107,7 @@ LLAMA_API float * llama_get_embeddings_nextn(struct llama_context * ctx);
 // LLAMA_API float * llama_get_embeddings_ith(struct llama_context * ctx, int32_t i);
 LLAMA_API float * llama_get_embeddings_nextn_ith(struct llama_context * ctx, int32_t i);
 
-// Qwen3.5 subset MTP: decode exactly n_chain contiguous rows of sequence 0 in one graph, with flash attention.
+// Qwen3.5 subset MTP: decode exactly n_chain contiguous rows of one sequence in one graph, with flash attention.
 // Step s > 0 takes its token and h from step s-1. The batch supplies only its position and KV slot.
 // Picks use inverse CDF at u[s] over the top-k subset softmax. n_chain = 0 disables the chain.
 #define LLAMA_MTP_CHAIN_MAX   16

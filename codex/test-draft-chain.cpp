@@ -56,11 +56,24 @@ struct draft_result {
 };
 
 static draft_result draft(common_speculative * spec, llama_context * ctx, const llama_tokens & prompt,
-                          uint32_t seed, float temp, int round) {
+                          uint32_t seed, float temp, int round, llama_seq_id seq_id, bool parallel) {
     llama_synchronize(ctx);
     const int before = llama_perf_context(ctx).n_p_eval;
     draft_result r;
-    auto & dp = common_speculative_get_draft_params(spec, 0);
+    draft_result other;
+    if (parallel) {
+        auto & dp = common_speculative_get_draft_params(spec, 0);
+        dp.drafting = true;
+        dp.n_max = -1;
+        dp.pos0 = prompt.size();
+        dp.id_last = 101;
+        dp.prompt = &prompt;
+        dp.result = &other.tokens;
+        dp.result_q = &other.q;
+        dp.seed = seed;
+        dp.temp = temp;
+    }
+    auto & dp = common_speculative_get_draft_params(spec, seq_id);
     dp.drafting = true;
     dp.n_max = round == 2 ? 2 : -1;
     dp.pos0 = prompt.size();
@@ -72,7 +85,9 @@ static draft_result draft(common_speculative * spec, llama_context * ctx, const 
     dp.temp = temp;
     auto start = std::chrono::steady_clock::now();
     common_speculative_draft(spec);
-    r.used_chain = llama_perf_context(ctx).n_p_eval > before;
+    r.used_chain = !parallel && llama_perf_context(ctx).n_p_eval > before;
+    r.tokens.insert(r.tokens.end(), other.tokens.begin(), other.tokens.end());
+    r.q.insert(r.q.end(), other.q.begin(), other.q.end());
     r.ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
     return r;
 }
@@ -88,7 +103,7 @@ static bool equal(const draft_result & a, const draft_result & b, bool verbose =
         for (size_t i = 0; i < a.q[r].size(); ++i) {
             const auto & x = a.q[r][i];
             const auto & y = b.q[r][i];
-            if (x.id != y.id || x.logit != y.logit || x.p != y.p) {
+            if (x.id != y.id || std::memcmp(&x.logit, &y.logit, sizeof(float)) || std::memcmp(&x.p, &y.p, sizeof(float))) {
                 if (verbose) std::fprintf(stderr, "q mismatch row=%zu i=%zu ids=%d/%d logits=%.9g/%.9g p=%.9g/%.9g\n",
                              r, i, x.id, y.id, x.logit, y.logit, x.p, y.p);
                 return false;
@@ -119,11 +134,16 @@ static llama_tokens verify(llama_model * model, const draft_result & d, uint32_t
 }
 
 static int run(int argc, char ** argv) {
-    require(argc >= 2, "usage: test-draft-chain MODEL [single|tp] [seeds] [normal|wrong-pick|wrong-embedding]");
+    require(argc >= 2, "usage: test-draft-chain MODEL [single|tp] [seeds] [normal|wrong-pick|wrong-embedding|parallel] [slots]");
     require(std::getenv("CUDA_VISIBLE_DEVICES") && !*std::getenv("CUDA_VISIBLE_DEVICES"), "CPU-only guard");
     const bool tp = argc > 2 && std::string(argv[2]) == "tp";
     const int seeds = argc > 3 ? std::atoi(argv[3]) : 40;
     const std::string control = argc > 4 ? argv[4] : "normal";
+    const int n_seq = argc > 5 ? std::atoi(argv[5]) : 1;
+    require(n_seq == 1 || n_seq == 2, "need one or two slots");
+    const llama_seq_id seq_id = n_seq - 1;
+    const bool parallel = control == "parallel";
+    require(!parallel || n_seq == 2, "parallel control needs two slots");
     llama_log_set([](ggml_log_level level, const char * message, void *) {
         if (level >= GGML_LOG_LEVEL_WARN) { std::fputs(message, stderr); }
     }, nullptr);
@@ -148,6 +168,7 @@ static int run(int argc, char ** argv) {
     require(model, "model load failed");
     auto cp = llama_context_default_params();
     cp.n_ctx = 256;
+    cp.n_seq_max = n_seq;
     cp.n_batch = cp.n_ubatch = 32;
     cp.n_threads = cp.n_threads_batch = tp ? 4 : 8;
     cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
@@ -156,7 +177,10 @@ static int run(int argc, char ** argv) {
     require(target, "target init failed");
     llama_set_embeddings_nextn(target, true, false);
     llama_tokens prompt = {100, 101, 102, 103};
-    common_batch prefill = common_batch_get_one(target, prompt);
+    common_batch prefill(target);
+    for (int slot = 0; slot < n_seq; ++slot) {
+        for (size_t i = 0; i < prompt.size(); ++i) { prefill.add(prompt[i], i, slot, i == prompt.size() - 1); }
+    }
     require(llama_process(target, LLAMA_PROCESS_TYPE_DECODE, prefill.get()) == 0, "prefill failed");
     probe stats;
     stats.corrupt_pick = control == "wrong-pick";
@@ -178,10 +202,10 @@ static int run(int argc, char ** argv) {
             params.draft.n_max = k;
             params.draft.p_min = p_min;
             params.draft.probabilistic = true;
-            common_speculative_ptr a {common_speculative_init(params, 1)};
+            common_speculative_ptr a {common_speculative_init(params, n_seq)};
             params.draft.ctx_dft = chain;
             params.draft.mtp_chain = true;
-            common_speculative_ptr b {common_speculative_init(params, 1)};
+            common_speculative_ptr b {common_speculative_init(params, n_seq)};
             double a_ms = 0, b_ms = 0;
             int n = 0;
             for (int seed = 1; seed <= seeds; ++seed) {
@@ -189,13 +213,17 @@ static int run(int argc, char ** argv) {
                 llama_memory_clear(llama_get_memory(plain), true);
                 llama_memory_clear(llama_get_memory(chain), true);
                 require(common_speculative_process(a.get(), prefill) && common_speculative_process(b.get(), prefill), "catch-up failed");
-                common_speculative_begin(a.get(), 0, prompt);
-                common_speculative_begin(b.get(), 0, prompt);
+                common_speculative_begin(a.get(), seq_id, prompt);
+                common_speculative_begin(b.get(), seq_id, prompt);
                 for (int round = 0; round < 3; ++round) {
-                    require(llama_memory_seq_rm(llama_get_memory(plain), 0, prompt.size(), -1), "plain trim failed");
-                    require(llama_memory_seq_rm(llama_get_memory(chain), 0, prompt.size(), -1), "chain trim failed");
-                    auto x = draft(a.get(), plain, prompt, seed, temp, round);
-                    auto y = draft(b.get(), chain, prompt, seed, temp, round);
+                    require(llama_memory_seq_rm(llama_get_memory(plain), seq_id, prompt.size(), -1), "plain trim failed");
+                    require(llama_memory_seq_rm(llama_get_memory(chain), seq_id, prompt.size(), -1), "chain trim failed");
+                    if (parallel) {
+                        require(llama_memory_seq_rm(llama_get_memory(plain), 0, prompt.size(), -1), "plain other trim failed");
+                        require(llama_memory_seq_rm(llama_get_memory(chain), 0, prompt.size(), -1), "chain other trim failed");
+                    }
+                    auto x = draft(a.get(), plain, prompt, seed, temp, round, seq_id, parallel);
+                    auto y = draft(b.get(), chain, prompt, seed, temp, round, seq_id, parallel);
                     require(equal(x, y), "draft tokens/q differ");
                     require(verify(model, x, seed) == verify(model, y, seed), "verification outputs differ");
                     auto wrong = y;
@@ -213,8 +241,8 @@ static int run(int argc, char ** argv) {
             std::fflush(stdout);
         }
     }
-    require(chained == compared, "chain did not execute in every round");
-    require(control == "normal" || stats.picks > 0, "fault injector did not run");
+    require(parallel ? chained == 0 && stats.picks == 0 : chained == compared, "wrong chain/fallback mode");
+    require(control == "normal" || parallel || stats.picks > 0, "fault injector did not run");
     std::printf("M: %d compared rounds, %d chain decodes, %d observed fault-injection picks; %s control\n", compared, chained, stats.picks, control.c_str());
     llama_free(chain);
     llama_free(plain);
