@@ -1622,6 +1622,8 @@ struct llama_model_params common_model_params_to_llama(common_params & params) {
     mparams.progress_callback           = params.load_progress_callback;
     mparams.progress_callback_user_data = params.load_progress_callback_user_data;
     mparams.no_alloc                    = params.no_alloc;
+    mparams.draft_vocab_ids             = params.speculative.draft.vocab_ids.data();
+    mparams.n_draft_vocab               = params.speculative.has_dft() ? 0 : params.speculative.draft.vocab_ids.size();
     mparams.load_mtp                    = std::find(params.speculative.types.begin(), params.speculative.types.end(), COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != params.speculative.types.end();
 
     return mparams;

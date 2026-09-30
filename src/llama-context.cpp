@@ -1298,6 +1298,29 @@ void llama_context::set_warmup(bool value) {
     //sched_need_reserve = true;
 }
 
+bool llama_context::has_draft_vocab() const {
+    return cparams.ctx_type == LLAMA_CONTEXT_TYPE_MTP && model.draft_output;
+}
+
+void llama_context::expand_draft_logits() {
+    if (!has_draft_vocab()) {
+        return;
+    }
+    const auto & ids = model.draft_vocab_ids;
+    for (uint32_t i = 0; i < n_outputs; ++i) {
+        if (!draft_logits_pending[i]) {
+            continue;
+        }
+        float * dst = logits.data + size_t(i) * model.vocab.n_tokens();
+        const float * row = draft_logits.data + size_t(i) * ids.size();
+        std::fill_n(dst, model.vocab.n_tokens(), -INFINITY);
+        for (size_t j = 0; j < ids.size(); ++j) {
+            dst[ids[j]] = row[j];
+        }
+        draft_logits_pending[i] = false;
+    }
+}
+
 bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
     if (!sampler && sampling.samplers.count(seq_id) == 0) {
         return true;
@@ -1305,15 +1328,19 @@ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
 
     LLAMA_LOG_DEBUG("%s: seq_id = %d, sampler = %p\n", __func__, (int) seq_id, (void *) sampler);
 
+    if (sampler && has_draft_vocab() && !sampling_init_vocab_ids()) {
+        return false;
+    }
+
     if (sampler && model.split_mode() == LLAMA_SPLIT_MODE_TENSOR) {
         // must be decided before backend_init: once initialized, the chain skips its backend prefix on the CPU
         const char * reason = nullptr;
         const int32_t k = llama_sampler_chain_leading_top_k(sampler);
-        if (!model.logits_vocab_split()) {
+        if (!model.logits_vocab_split(has_draft_vocab())) {
             reason = "logits split by vocab over output.weight (no replicated or tied LM head)";
         } else if (k <= 0 || k > LLAMA_TP_SAMPLING_TOP_K_MAX) {
             reason = "a sampler chain whose first active sampler is top-k with 1 <= k <= " LLAMA_TP_SAMPLING_TOP_K_MAX_STR;
-        } else if (model.logits_vocab_shard_min() < k) {
+        } else if (model.logits_vocab_shard_min(has_draft_vocab()) < k) {
             // each device takes the top k of its own vocab slice
             reason = "every device's vocab slice (one plain segment) to hold at least top-k rows";
         } else if (!sampling_init_vocab_ids()) {
@@ -1372,8 +1399,8 @@ bool llama_context::sampling_init_vocab_ids() {
         return true;
     }
 
-    const int64_t n_vocab = model.vocab.n_tokens();
-    GGML_ASSERT(n_vocab <= (1 << 24) && "vocab ids are stored as F32");
+    const int64_t n_vocab = has_draft_vocab() ? model.draft_vocab_ids.size() : model.vocab.n_tokens();
+    GGML_ASSERT(model.vocab.n_tokens() <= (1 << 24) && "vocab ids are stored as F32");
 
     ggml_init_params params = {
         /*.mem_size   =*/ ggml_tensor_overhead(),
@@ -1386,7 +1413,7 @@ bool llama_context::sampling_init_vocab_ids() {
     }
 
     ggml_tensor * t = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, n_vocab);
-    ggml_set_name(t, LLAMA_TENSOR_NAME_OUTPUT_VOCAB_IDS);
+    ggml_set_name(t, has_draft_vocab() ? LLAMA_TENSOR_NAME_DRAFT_VOCAB_IDS : LLAMA_TENSOR_NAME_OUTPUT_VOCAB_IDS);
 
     ggml_backend_buffer_ptr buf { ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), ggml_backend_dev_buffer_type(model.dev_output())) };
     if (!buf) {
@@ -1395,7 +1422,7 @@ bool llama_context::sampling_init_vocab_ids() {
 
     std::vector<float> ids(n_vocab);
     for (int64_t i = 0; i < n_vocab; ++i) {
-        ids[i] = (float) i;
+        ids[i] = (float) (has_draft_vocab() ? model.draft_vocab_ids[i] : i);
     }
     ggml_backend_tensor_set(t, ids.data(), 0, ggml_nbytes(t));
 
@@ -2017,7 +2044,14 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
             if (n_outputs) {
                 GGML_ASSERT( n_outputs_prev + n_outputs <= n_outputs_all);
                 GGML_ASSERT((n_outputs_prev + n_outputs)*n_vocab <= (int64_t) logits.size);
-                ggml_backend_tensor_get_async(backend_res, t_logits, logits_out, 0, n_outputs*n_vocab*sizeof(float));
+                if (has_draft_vocab()) {
+                    const size_t n_draft = model.draft_vocab_ids.size();
+                    ggml_backend_tensor_get_async(backend_res, t_logits, draft_logits.data + n_outputs_prev*n_draft,
+                            0, n_outputs*n_draft*sizeof(float));
+                    std::fill_n(draft_logits_pending.data() + n_outputs_prev, n_outputs, true);
+                } else {
+                    ggml_backend_tensor_get_async(backend_res, t_logits, logits_out, 0, n_outputs*n_vocab*sizeof(float));
+                }
             }
         } else if (logits.data && t_logits && n_outputs > 0) {
             logits_deferred = { t_logits, n_outputs_prev, n_outputs };
@@ -2204,6 +2238,7 @@ uint32_t llama_context::output_reserve(int32_t n_outputs) {
     size_t embd_layer_inp_float_count = 0;
 
     logits.size     = has_logits     ? n_vocab*n_outputs_max     : 0;
+    draft_logits.size = has_draft_vocab() ? model.draft_vocab_ids.size()*n_outputs_max : 0;
     embd.size       = has_embd       ? n_embd_out*n_outputs_max  : 0;
     embd_nextn.size = has_embd_nextn ? n_embd_out*n_outputs_max  : 0;
 
@@ -2233,7 +2268,7 @@ uint32_t llama_context::output_reserve(int32_t n_outputs) {
 
     const size_t prev_size = buf_output ? ggml_backend_buffer_get_size(buf_output.get()) : 0;
     const size_t new_size  =
-        (logits.size + embd.size + embd_nextn.size + embd_layer_inp_float_count + backend_float_count) * sizeof(float) +
+        (logits.size + draft_logits.size + embd.size + embd_nextn.size + embd_layer_inp_float_count + backend_float_count) * sizeof(float) +
         (                                                                         backend_token_count) * sizeof(llama_token);
 
     // alloc only when more than the current capacity is required
@@ -2278,6 +2313,8 @@ uint32_t llama_context::output_reserve(int32_t n_outputs) {
 
     logits = has_logits ? buffer_view<float>{output_base, logits.size} : buffer_view<float>{nullptr, 0};
     offset += logits.size * sizeof(float);
+    draft_logits.data = has_draft_vocab() ? (float *) (base + offset) : nullptr;
+    offset += draft_logits.size * sizeof(float);
 
     embd = has_embd ? buffer_view<float>{(float *) (base + offset), embd.size} : buffer_view<float>{nullptr, 0};
     offset += embd.size * sizeof(float);
@@ -2330,6 +2367,8 @@ uint32_t llama_context::output_reserve(int32_t n_outputs) {
         sampling.candidates_count.clear();
     }
 
+    draft_logits_pending.assign(has_draft_vocab() ? n_outputs_max : 0, false);
+
     // set all ids as invalid (negative)
     std::fill(output_ids.begin(), output_ids.end(), -1);
 
@@ -2372,6 +2411,7 @@ void llama_context::output_reorder() {
     if (!output_swaps.empty()) {
         logits_deferred_fetch();
     }
+    expand_draft_logits();
     const uint64_t n_vocab     = model.vocab.n_tokens();
     const uint64_t n_embd      = model.hparams.n_embd;
     const uint64_t n_embd_out  = model.hparams.n_embd_out();
@@ -2651,7 +2691,7 @@ llm_graph_params llama_context::graph_params(
         /*.cb          =*/ graph_get_cb(),
         /*.res         =*/ res,
         /*.sampling_vocab_ids =*/ sampling.samplers.empty() ? nullptr : sampling.vocab_ids,
-        /*.sampling_n_shards  =*/ sampling.samplers.empty() || !sampling.vocab_ids ? 0 : (uint32_t) model.get_split_state_ud.n_devices,
+        /*.sampling_n_shards  =*/ sampling.samplers.empty() || !sampling.vocab_ids || model.split_mode() != LLAMA_SPLIT_MODE_TENSOR ? 0 : (uint32_t) model.get_split_state_ud.n_devices,
     };
 }
 
