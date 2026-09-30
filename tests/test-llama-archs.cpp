@@ -1091,11 +1091,15 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
     }
     LOG("%s: devices %s, %s\n", __func__, ggml_backend_dev_name(devs[0]), ggml_backend_dev_name(devs[1]));
 
-    llama_log_set([](ggml_log_level level, const char * text, void * /*user_data*/) {
+    int n_reserves = 0;
+    llama_log_set([](ggml_log_level level, const char * text, void * user_data) {
+        if (std::strstr(text, "sched_reserve: reserving ...")) {
+            ++*static_cast<int *>(user_data);
+        }
         if (level >= GGML_LOG_LEVEL_WARN) {
             fputs(text, stderr);
         }
-    }, nullptr);
+    }, &n_reserves);
 
     // ids up to 40959 have up to 16 significant bits: a BF16 (8-bit) exchange of the candidate ids changes most of
     // them. With the default 128-token test vocab every id is exact in BF16 and such a bug goes unseen.
@@ -1197,9 +1201,22 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
         common_sampler_ptr backend(common_sampler_init(model.get(), params));
         llama_context_ptr ctx = make_ctx(common_sampler_get_backend(backend.get()));
         decode(ctx.get());
+        const int n_reserves_before = n_reserves;
+        params.top_k = k - 3;
+        common_sampler_ptr replacement(common_sampler_init(model.get(), params));
+        if (!llama_set_sampler(ctx.get(), 0, common_sampler_get_backend(replacement.get()))) {
+            throw std::runtime_error("replacement backend sampler refused");
+        }
+        backend = std::move(replacement);
+        llama_memory_clear(llama_get_memory(ctx.get()), true);
+        decode(ctx.get());
+        if (n_reserves != n_reserves_before) {
+            throw std::runtime_error("same-budget sampler replacement rebuilt the scheduler");
+        }
+        LOG("%s: same-budget sampler replacement retains the scheduler: OK\n", __func__);
         for (int32_t r = 0; r < n_rows; ++r) {
             const uint32_t count = llama_get_sampled_candidates_count_ith(ctx.get(), i_row0 + r);
-            if (count != uint32_t(k + 1) || llama_get_sampled_token_ith(ctx.get(), i_row0 + r) != LLAMA_TOKEN_NULL) {
+            if (count != uint32_t(params.top_k + 1) || llama_get_sampled_token_ith(ctx.get(), i_row0 + r) != LLAMA_TOKEN_NULL) {
                 throw std::runtime_error("verify candidate chain did not return k+1 logits without a draw");
             }
             for (uint32_t s = 0; s < 64; ++s) {
@@ -1405,6 +1422,7 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
         ok = !accepted;
     }
 
+    llama_log_set(nullptr, nullptr);
     LOG("%s: %s\n", __func__, ok ? "OK" : "FAIL");
     return ok ? 0 : 1;
 }
