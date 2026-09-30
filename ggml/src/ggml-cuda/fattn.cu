@@ -166,6 +166,14 @@ static bool ggml_cuda_flash_attn_ext_mma_q8_0_supported(const int cc, const ggml
     float logit_softcap;
     memcpy(&logit_softcap, (const float *) dst->op_params + 2, sizeof(float));
 
+    // DO NOT MERGE: A/B knob, GGML_CUDA_FA_MMA_Q8_0=0 restores the f16 copy
+    static const bool enabled = [] {
+        const char * e = getenv("GGML_CUDA_FA_MMA_Q8_0");
+        return e == nullptr || atoi(e) != 0;
+    }();
+    if (!enabled) {
+        return false;
+    }
     if (!GGML_CUDA_CC_IS_NVIDIA(cc) || !turing_mma_available(cc) || !cp_async_available(cc)) {
         return false;
     }
