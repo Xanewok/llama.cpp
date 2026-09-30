@@ -620,6 +620,8 @@ void llama_context::sched_reserve() {
         return;
     }
 
+    logits_deferred_fetch();
+
     sched_need_reserve = false;
 
     LLAMA_LOG_INFO("%s: reserving ...\n", __func__);
@@ -844,6 +846,7 @@ llama_memory_t llama_context::get_memory() const {
 }
 
 bool llama_context::memory_update(bool optimize) {
+    logits_deferred_fetch();
     if (!memory) {
         return false;
     }
@@ -907,7 +910,23 @@ enum llama_pooling_type llama_context::pooling_type() const {
     return cparams.pooling_type;
 }
 
+void llama_context::logits_deferred_fetch() {
+    if (!logits_deferred.t) {
+        return;
+    }
+    synchronize();
+    const int64_t n_vocab = model.vocab.n_tokens();
+    GGML_ASSERT(logits.data && (logits_deferred.row0 + logits_deferred.n)*n_vocab <= (int64_t) logits.size);
+    auto * backend = ggml_backend_sched_get_tensor_backend(sched.get(), logits_deferred.t);
+    GGML_ASSERT(backend != nullptr);
+    ggml_backend_tensor_get_async(backend, logits_deferred.t, logits.data + logits_deferred.row0*n_vocab,
+            0, logits_deferred.n*n_vocab*sizeof(float));
+    synchronize();
+    logits_deferred = {};
+}
+
 float * llama_context::get_logits() {
+    logits_deferred_fetch();
     output_reorder();
 
     return logits.data;
@@ -943,6 +962,7 @@ int64_t llama_context::output_resolve_row(int32_t i) const {
 }
 
 float * llama_context::get_logits_ith(int32_t i) {
+    logits_deferred_fetch();
     output_reorder();
 
     try {
@@ -1446,6 +1466,7 @@ bool llama_context::set_adapter_cvec(
 }
 
 llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, llm_graph_type gtype, llama_memory_context_i * mctx, ggml_status & ret) {
+    logits_deferred_fetch();
     if (mctx && !mctx->apply()) {
         LLAMA_LOG_ERROR("%s: failed to apply memory context\n", __func__);
         ret = GGML_STATUS_FAILED;
@@ -1521,6 +1542,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
 }
 
 int llama_context::encode(const llama_batch_ext & batch_inp) {
+    logits_deferred = {};
     if (batch_inp.tokens.empty()) {
         LLAMA_LOG_ERROR("%s: n_tokens == 0\n", __func__);
         return -1;
@@ -1760,6 +1782,7 @@ static bool needs_raw_logits(const llama_ubatch & ubatch, const std::map<llama_s
 }
 
 int llama_context::decode(const llama_batch_ext & batch_inp) {
+    logits_deferred = {};
     if (!memory) {
         LLAMA_LOG_DEBUG("%s: cannot decode batches with this context (calling encode() instead)\n", __func__);
         return encode(batch_inp);
@@ -1996,6 +2019,8 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
                 GGML_ASSERT((n_outputs_prev + n_outputs)*n_vocab <= (int64_t) logits.size);
                 ggml_backend_tensor_get_async(backend_res, t_logits, logits_out, 0, n_outputs*n_vocab*sizeof(float));
             }
+        } else if (logits.data && t_logits && n_outputs > 0) {
+            logits_deferred = { t_logits, n_outputs_prev, n_outputs };
         }
 
         // extract embeddings
@@ -2344,6 +2369,9 @@ void llama_context::extract_layer_inputs(const llm_graph_result * res, size_t to
 }
 
 void llama_context::output_reorder() {
+    if (!output_swaps.empty()) {
+        logits_deferred_fetch();
+    }
     const uint64_t n_vocab     = model.vocab.n_tokens();
     const uint64_t n_embd      = model.hparams.n_embd;
     const uint64_t n_embd_out  = model.hparams.n_embd_out();
@@ -2543,6 +2571,7 @@ static void ubatch_prepare_reserve(
 
 ggml_cgraph * llama_context::graph_reserve(
         uint32_t n_tokens, uint32_t n_seqs, uint32_t n_outputs, const llama_memory_context_i * mctx, bool split_only, size_t * sizes) {
+    logits_deferred_fetch();
     LLAMA_LOG_DEBUG("%s: reserving a graph for ubatch with n_tokens = %4u, n_seqs = %2u, n_outputs = %4u\n", __func__, n_tokens, n_seqs, n_outputs);
     GGML_ASSERT(n_outputs >= 1);
 
@@ -2629,6 +2658,7 @@ llm_graph_params llama_context::graph_params(
 ggml_status llama_context::graph_compute(
             ggml_cgraph * gf,
                    bool   batched) {
+    logits_deferred_fetch();
     int n_threads        = batched ? cparams.n_threads_batch : cparams.n_threads;
     ggml_threadpool_t tp = batched ? threadpool_batch        : threadpool;
 
@@ -4017,15 +4047,7 @@ float * llama_get_logits(llama_context * ctx) {
 float * llama_get_logits_ith(llama_context * ctx, int32_t i) {
     ctx->synchronize();
 
-    float * res = nullptr;
-
-    res = ctx->get_sampled_logits_ith(i);
-
-    if (!res) {
-        res = ctx->get_logits_ith(i);
-    }
-
-    return res;
+    return ctx->get_logits_ith(i);
 }
 
 float * llama_get_embeddings(llama_context * ctx) {
