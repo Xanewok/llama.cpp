@@ -1,0 +1,5 @@
+/PROMPT.md
+/*.log
+/frozen/
+/gpu-ab-results/
+/prefilter-seeds.txt
