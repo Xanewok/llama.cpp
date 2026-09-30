@@ -1,0 +1,227 @@
+{
+  "inventory": [
+    {
+      "path": "/home/xanewok/repos/draft-anatomy/REPORT.md",
+      "sha256": "f8ff42baba598e903941f57374f227a9ea45787429315215615d6715501bcf4a",
+      "lines_M": 159
+    },
+    {
+      "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/gpu-sampling/REPORT.md",
+      "sha256": "fa3149d69f359901d256bfa02e07542015e362819a7fe79bd2faed43c0d016c0",
+      "lines_M": 139
+    },
+    {
+      "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/gpu-sampling/items/96b-attrib.md",
+      "sha256": "00b1f7c718237bf5206b09ed7f3b3f1b263b6ceca7d8ce8badf0d755e7e36b83",
+      "lines_M": 305
+    },
+    {
+      "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/patchA/REPORT.md",
+      "sha256": "7c6c2b4738cfaa7ecc463bf60839f9a14681167c169ccb4d0b50793036af5bb4",
+      "lines_M": 78
+    },
+    {
+      "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/codex-reviews/patchA.txt",
+      "sha256": "f1285b97b71a960415589a6dfda39a5c22aabd0d14973844ce0064239264aa3b",
+      "lines_M": 10474
+    },
+    {
+      "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/codex/chain-ab.log",
+      "sha256": "275b5da1f7995d10b0c4d0cce2b693b7bf2c14c4b0b5a00e856d040a4a2c1e0c",
+      "lines_M": 55
+    },
+    {
+      "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/queue/logs/99-patchA-graph-cache-ab.log",
+      "sha256": "93bbae465c1a19f7cec270dc753faec6b2b0f7ae6c66b36d631fd4bdbe0a93ce",
+      "lines_M": 29
+    },
+    {
+      "path": "/home/xanewok/repos/llama.cpp-draft-chain/codex/REPORT.md",
+      "sha256": "5de4ce36d43ed4f37e7f3e7dc20bb6042517fb6472b0699359d188c60ff96929",
+      "lines_M": 88
+    },
+    {
+      "path": "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/mtp/speculator.py",
+      "sha256": "926d6c9ffdb368c971647911a60493820d056ce236fcae9d94a42fa2e006255d",
+      "lines_M": 59
+    },
+    {
+      "path": "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/autoregressive/speculator.py",
+      "sha256": "5b97f54e20ddf65b98e939832d050745f67ef43cfa145786da300f1a8322e3c6",
+      "lines_M": 1006
+    },
+    {
+      "path": "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/autoregressive/cudagraph_utils.py",
+      "sha256": "13392ef0a9ed59eb9c2b2bad43d7c61beb212a8805849e46b5130c230275d0a5",
+      "lines_M": 71
+    },
+    {
+      "path": "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/speculator.py",
+      "sha256": "3a1ab15bf8b20918852eb835fe9755046e99dcbac6ba6ca3d414949fc8bc695a",
+      "lines_M": 536
+    },
+    {
+      "path": "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/rejection_sampler.py",
+      "sha256": "030db5bfca162cc1f305112f299de5d6d61c59d3ed0807fee46575441ca4086d",
+      "lines_M": 328
+    },
+    {
+      "path": "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py",
+      "sha256": "214b61fa0abe88573beb779872c035b3954e5651a85bd438d99ee5905d3a62ec",
+      "lines_M": 1283
+    },
+    {
+      "path": "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/sample/gumbel.py",
+      "sha256": "3ec1df510bdad13e8b0a457b5b67c98affdf6e57369e56cb471246cc8f40dd34",
+      "lines_M": 306
+    },
+    {
+      "path": "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/async_utils.py",
+      "sha256": "77e17a4570ead2be30ae9b00888cf077a3b873018c12ca0549b853bfda02c1ba",
+      "lines_M": 266
+    },
+    {
+      "path": "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/model_runner.py",
+      "sha256": "66e7d8c0afffe0f5250b9c5e0e2f683d8db0da1cc94924e13ba497a7a43f4e37",
+      "lines_M": 2372
+    },
+    {
+      "path": "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/block_table.py",
+      "sha256": "61c004315d5af7e7eae4e2a9e6be92ea82c520327690a7f55a73bb9ce95f520a",
+      "lines_M": 353
+    },
+    {
+      "path": "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/engine/core.py",
+      "sha256": "abae9180c2bfd3855e9008d0282468a04919d48c218c004968f5550f0ce64d1f",
+      "lines_M": 2660
+    },
+    {
+      "path": "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/attention/backends/flash_attn.py",
+      "sha256": "2b55f23f68ea07324e1696e343576a1757fc9ef2b4437c48e99a0523a17c76fe",
+      "lines_M": 2216
+    },
+    {
+      "path": "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/model_executor/models/qwen3_5_mtp.py",
+      "sha256": "9d26896ae3e3e5e1f8f2f921268d382221eb4d0b2cfcde2175045d1f89e82f91",
+      "lines_M": 372
+    },
+    {
+      "path": "/home/xanewok/repos/qwen38-weekend/llama.cpp-stack2/common/speculative.cpp",
+      "sha256": "b9ecc569eec4b8e6c946e5750bf6d85d7cf767cab2e8571e3df29bd2eadd747c",
+      "lines_M": 3082
+    },
+    {
+      "path": "/home/xanewok/repos/qwen38-weekend/llama.cpp-stack2/common/sampling.cpp",
+      "sha256": "9b59f9316524708ea8ae77a100f52b79507bf8b20ca3c9a643941903342294d7",
+      "lines_M": 1252
+    },
+    {
+      "path": "/home/xanewok/repos/qwen38-weekend/llama.cpp-stack2/common/log.cpp",
+      "sha256": "f4aceb372997848c94d6f2c304fec042d02a08bd55aa3016688c04915eab07b3",
+      "lines_M": 547
+    },
+    {
+      "path": "/home/xanewok/repos/qwen38-weekend/llama.cpp-stack2/common/log.h",
+      "sha256": "82aa52b47261d380a54a23f96276b64b08898a041c1c666a713e2cffb6d8e003",
+      "lines_M": 146
+    },
+    {
+      "path": "/home/xanewok/repos/qwen38-weekend/llama.cpp-stack2/src/llama-context.cpp",
+      "sha256": "897db9595bc6461c6f880dac73a01e6ed5775a85d862bc8486dfddb4cb0727fb",
+      "lines_M": 4590
+    },
+    {
+      "path": "/home/xanewok/repos/qwen38-weekend/llama.cpp-stack2/src/llama-graph.cpp",
+      "sha256": "a15d83238087f9fc326bc8da373f65598abef080896650ae3a598a29a0a2dfa1",
+      "lines_M": 3972
+    },
+    {
+      "path": "/home/xanewok/repos/qwen38-weekend/llama.cpp-stack2/src/models/qwen35.cpp",
+      "sha256": "ddd9928036d8f06e90caf3f3c181378b61addee7da07711affb703c1e98765fa",
+      "lines_M": 650
+    },
+    {
+      "path": "/home/xanewok/repos/qwen38-weekend/llama.cpp-stack2/ggml/src/ggml-backend-meta.cpp",
+      "sha256": "2fd57420e8e389efa70961df199b473d0ec191afed97ea8ad0d7f7f623a770e4",
+      "lines_M": 2607
+    },
+    {
+      "path": "/home/xanewok/repos/qwen38-weekend/llama.cpp-stack2/ggml/src/ggml-cuda/allreduce.cu",
+      "sha256": "45c54239613dedd015a2d6f514844c877587015bd8d3af6492069eb0fa40bc7f",
+      "lines_M": 977
+    },
+    {
+      "path": "/home/xanewok/repos/qwen38-weekend/llama.cpp-stack2/ggml/src/ggml-cuda/ggml-cuda.cu",
+      "sha256": "e2d0bec3a9383065f42028b0572022e41462e73722633414478140375a216b32",
+      "lines_M": 5952
+    },
+    {
+      "path": "/home/xanewok/repos/qwen38-weekend/llama.cpp-stack2/tools/server/server-context.cpp",
+      "sha256": "f7ef58b4a8184e1e5632143d0b4db0132897cc5d458b30b210d0df9a5ada64e7",
+      "lines_M": 5725
+    },
+    {
+      "path": "/home/xanewok/repos/llama.cpp-draft-chain/common/speculative.cpp",
+      "sha256": "1e9d65ea4584b6ef61f0b7ac31e7f794675291cb58a5caa42af41850b1c424e7",
+      "lines_M": 3171
+    },
+    {
+      "path": "/home/xanewok/repos/llama.cpp-draft-chain/src/llama-context.cpp",
+      "sha256": "598020a4db45f02f4cdc60e20bf7db0d06e1274510ea131686c7b20d72396b33",
+      "lines_M": 4703
+    },
+    {
+      "path": "/home/xanewok/repos/llama.cpp-draft-chain/src/llama-graph.cpp",
+      "sha256": "cda9bca0c3cb3ecd2508dd7465089093104d4a2cae0ca8eed2c5b0de6063a08e",
+      "lines_M": 4075
+    },
+    {
+      "path": "/home/xanewok/repos/llama.cpp-draft-chain/src/models/qwen35.cpp",
+      "sha256": "6734c8fa5f643abac60ea7da9c484aafc9b06c49718a3b4cca461fda96e5642d",
+      "lines_M": 719
+    },
+    {
+      "path": "/home/xanewok/repos/llama.cpp-draft-chain/src/llama-sampler.cpp",
+      "sha256": "0baf52e06c6c2dc1de55393c93b8c8e5af31fd9e77ef00d1890a85c0854ca287",
+      "lines_M": 4438
+    }
+  ],
+  "chain_deltas": [
+    {
+      "k": 3,
+      "request": "tool",
+      "delta_ms_round_D": 1.140273
+    },
+    {
+      "k": 4,
+      "request": "tool",
+      "delta_ms_round_D": 2.027708
+    },
+    {
+      "k": 5,
+      "request": "tool",
+      "delta_ms_round_D": 1.8881
+    },
+    {
+      "k": 3,
+      "request": "think",
+      "delta_ms_round_D": 1.606604
+    },
+    {
+      "k": 4,
+      "request": "think",
+      "delta_ms_round_D": 2.148625
+    },
+    {
+      "k": 5,
+      "request": "think",
+      "delta_ms_round_D": 2.1325
+    }
+  ],
+  "chain_long_identity_M": "failed",
+  "patchA_vs_disabled_delta_ms_round_D": {
+    "think": -0.45,
+    "tool": -0.18
+  },
+  "limits": "Printed means are rounded; no post-subset nsys attribution or new GPU execution."
+}
