@@ -10,6 +10,7 @@
 // TODO: replace with #include "llama-ext.h" in the future
 #include "../src/llama-arch.h"
 #include "../src/llama-model-saver.h"
+#include "../ggml/src/ggml-backend-impl.h"
 
 #include <algorithm>
 #include <cinttypes>
@@ -97,6 +98,7 @@ static void usage(char ** argv) {
     LOG("  -b, --backend <backend>  Run only on the given backend device\n");
     LOG("      --tp-sampling        Check backend sampling under tensor split on two CPU devices, then exit\n");
     LOG("      --tp-sampling-gpu    The same on the first two GPU devices\n");
+    LOG("      --input-upload       Check batch upload ordering and fallback, then exit\n");
     LOG("  -h, --help               Show this help message\n\n");
     LOG("Examples:\n");
     LOG("  %s\n", argv[0]);
@@ -1210,6 +1212,54 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
     return ok ? 0 : 1;
 }
 
+static int upload_calls;
+static bool upload_drop_last;
+
+static void test_upload_batch(ggml_backend_buffer_t buffer, const ggml_backend_tensor_transfer * transfers, size_t n) {
+    ++upload_calls;
+    for (size_t i = 0; i < n - size_t(upload_drop_last); ++i) {
+        const auto & transfer = transfers[i];
+        buffer->iface.set_tensor(buffer, transfer.tensor, transfer.data, transfer.offset, transfer.size);
+    }
+}
+
+static int test_input_upload() {
+    ggml_init_params params = { 4*ggml_tensor_overhead(), nullptr, true };
+    ggml_context_ptr ctx(ggml_init(params));
+    ggml_tensor * a = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I32, 4);
+    ggml_tensor * b = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I32, 4);
+    ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), ggml_backend_cpu_buffer_type()));
+    GGML_ASSERT(buffer);
+    const int32_t first[] = { 1, 2, 3, 4 };
+    const int32_t last[] = { 8, 9 };
+    const int32_t want_a[] = { 1, 8, 9, 4 };
+    const ggml_backend_tensor_transfer transfers[] = {
+        { a, nullptr, 0, 0 },
+        { a, first, 0, sizeof(first) },
+        { b, first, 0, sizeof(first) },
+        { a, last, sizeof(int32_t), sizeof(last) },
+    };
+    auto matches = [&]() {
+        int32_t got_a[4], got_b[4];
+        ggml_backend_tensor_get(a, got_a, 0, sizeof(got_a));
+        ggml_backend_tensor_get(b, got_b, 0, sizeof(got_b));
+        return memcmp(got_a, want_a, sizeof(got_a)) == 0 && memcmp(got_b, first, sizeof(got_b)) == 0;
+    };
+    ggml_backend_tensor_set_batch(transfers, 4);
+    bool ok = matches();
+    buffer->iface.set_tensor_batch = test_upload_batch;
+    ggml_backend_buffer_clear(buffer.get(), 0);
+    ggml_backend_tensor_set_batch(transfers, 4);
+    ok &= matches() && upload_calls == 1;
+    upload_drop_last = true;
+    ggml_backend_buffer_clear(buffer.get(), 0);
+    ggml_backend_tensor_set_batch(transfers, 4);
+    ok &= !matches();
+    upload_drop_last = false;
+    LOG("%s: ordering, fallback, dropped-transfer negative control: %s\n", __func__, ok ? "OK" : "FAIL");
+    return ok ? 0 : 1;
+}
+
 int main(int argc, char ** argv) {
     // init the logger at max verbosity. filter with a custom callback respecting the user-configure verbosity
     common_log_set_verbosity_thold(LOG_LEVEL_DEBUG);
@@ -1224,6 +1274,7 @@ int main(int argc, char ** argv) {
     const char * target_backend = nullptr;
     bool tp_sampling = false;
     bool tp_sampling_gpu = false;
+    bool input_upload = false;
 
     int verbosity = LOG_LEVEL_ERROR;
 
@@ -1252,6 +1303,8 @@ int main(int argc, char ** argv) {
             }
         } else if (strcmp(argv[i], "--tp-sampling") == 0) {
             tp_sampling = true;
+        } else if (strcmp(argv[i], "--input-upload") == 0) {
+            input_upload = true;
         } else if (strcmp(argv[i], "--tp-sampling-gpu") == 0) {
             tp_sampling = true;
             tp_sampling_gpu = true;
@@ -1309,6 +1362,9 @@ int main(int argc, char ** argv) {
     LOG_INF("%s: using seed %zu, stdev %f\n", __func__, seed, stdev);
 
     try {
+        if (input_upload) {
+            return test_input_upload();
+        }
         if (tp_sampling) {
             return test_tp_sampling(seed, stdev, tp_sampling_gpu);
         }
