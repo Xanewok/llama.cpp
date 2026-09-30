@@ -1,0 +1,3 @@
+dfeef79179c2aa86994c9e369b5fa925b6f58a6a
+DO NOT MERGE: LLAMA_ROUND_TRACE; CUDA 13.2; arch 120 (CMake 120a); NCCL off; Release; compile only.
+FA q4_0-q4_0;q8_0-q8_0;f16-f16;bf16-bf16; ccache off; prebuilt UI/app/UI/MTMD off; -j8.

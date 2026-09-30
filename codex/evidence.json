@@ -1,0 +1,46 @@
+[
+  {
+    "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/gpu-sampling/REPORT.md",
+    "sha256": "fa3149d69f359901d256bfa02e07542015e362819a7fe79bd2faed43c0d016c0"
+  },
+  {
+    "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/gpu-sampling/items/96b-attrib.md",
+    "sha256": "00b1f7c718237bf5206b09ed7f3b3f1b263b6ceca7d8ce8badf0d755e7e36b83"
+  },
+  {
+    "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/patchA/REPORT.md",
+    "sha256": "7c6c2b4738cfaa7ecc463bf60839f9a14681167c169ccb4d0b50793036af5bb4"
+  },
+  {
+    "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/codex-reviews/patchA.txt",
+    "sha256": "f1285b97b71a960415589a6dfda39a5c22aabd0d14973844ce0064239264aa3b"
+  },
+  {
+    "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/patchA/run_cpu.sh",
+    "sha256": "23e53df0be0a5fb9b9a8b7459fa3c5b1e98c768c44cba1c0c00ebe662a57b053"
+  },
+  {
+    "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/queue/done/99-patchA-graph-cache-ab.sh",
+    "sha256": "cdd9ded44b17d90e0b3328365e2d24cc1e4a14116a69da7879b374997ea8cfc8"
+  },
+  {
+    "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/queue/done/99-gpu-sampling-b-nsys.sh",
+    "sha256": "251bc43f4d19dbcec571c5e0f915d8bbe297dddc66f9e59e0cb6bf1b7ad50bdc"
+  },
+  {
+    "path": "/home/xanewok/repos/left-out/llama.cpp/codex/REPORT.md",
+    "sha256": "a54acb00f992e80327bf5ad4dea290bd562a1248c8d30cbbe9a6ec185995f8b2"
+  },
+  {
+    "path": "/home/xanewok/repos/draft-anatomy/codex/REPORT.md",
+    "sha256": "f8ff42baba598e903941f57374f227a9ea45787429315215615d6715501bcf4a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-weekend/run_weekend.sh",
+    "sha256": "30a76b7e47dbfefcfb5c045dc71a6527fd0c3f6be61fad2b4d04c6673883001d"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-weekend/codex/weekend_common.py",
+    "sha256": "5884ca6e7c24cc3419e7925101b3720ac0485b4576bfb09f8f3003050a75120f"
+  }
+]

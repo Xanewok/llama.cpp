@@ -1,0 +1,50 @@
+[
+  {
+    "meta": 0,
+    "arm": "up",
+    "bytes_M": 6953160,
+    "sha256": "29cfcb6376b6d9a4b213e6d62b811fafba3e07f2fff6e65806cbb16ecee2e916",
+    "wall_s_M": 23.49965,
+    "tokens_M": 48
+  },
+  {
+    "meta": 0,
+    "arm": "off",
+    "bytes_M": 6953160,
+    "sha256": "29cfcb6376b6d9a4b213e6d62b811fafba3e07f2fff6e65806cbb16ecee2e916",
+    "wall_s_M": 10.382491,
+    "tokens_M": 48
+  },
+  {
+    "meta": 0,
+    "arm": "on",
+    "bytes_M": 6953160,
+    "sha256": "29cfcb6376b6d9a4b213e6d62b811fafba3e07f2fff6e65806cbb16ecee2e916",
+    "wall_s_M": 10.306313,
+    "tokens_M": 48
+  },
+  {
+    "meta": 1,
+    "arm": "up",
+    "bytes_M": 6953160,
+    "sha256": "ea6c93c51c7b7ca218fe8a0660d04239ee36793bfa014e0d876ac5caeeebf38f",
+    "wall_s_M": 13.292355,
+    "tokens_M": 48
+  },
+  {
+    "meta": 1,
+    "arm": "off",
+    "bytes_M": 6953160,
+    "sha256": "ea6c93c51c7b7ca218fe8a0660d04239ee36793bfa014e0d876ac5caeeebf38f",
+    "wall_s_M": 13.260421,
+    "tokens_M": 48
+  },
+  {
+    "meta": 1,
+    "arm": "on",
+    "bytes_M": 6953160,
+    "sha256": "ea6c93c51c7b7ca218fe8a0660d04239ee36793bfa014e0d876ac5caeeebf38f",
+    "wall_s_M": 13.305656,
+    "tokens_M": 48
+  }
+]
