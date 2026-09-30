@@ -1932,7 +1932,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
             return -1;
         }
         for (const auto & token : batch_inp.tokens) {
-            if (token.id == LLAMA_TOKEN_NULL || token.seq_ids.size() != 1 || !token.seq_ids.count(0) || !token.has_embd) {
+            if (token.id == LLAMA_TOKEN_NULL || token.seq_ids.size() != 1 || token.seq_ids != batch_inp.tokens.front().seq_ids || !token.has_embd) {
                 return -1;
             }
         }
