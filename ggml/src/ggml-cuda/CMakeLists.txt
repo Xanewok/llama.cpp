@@ -71,6 +71,11 @@ if (CUDAToolkit_FOUND)
 
     enable_language(CUDA)
 
+    # DO NOT MERGE: host NVTX ranges share the JSONL phase identity.
+    target_include_directories(ggml-base PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+    target_compile_definitions(ggml-base PRIVATE GGML_ROUND_TRACE_NVTX)
+    target_link_libraries(ggml-base PRIVATE ${CMAKE_DL_LIBS})
+
     if (GGML_CUDA_CCCL_VERSION)
         include(FetchContent)
 
