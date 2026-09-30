@@ -97,6 +97,7 @@ static void usage(char ** argv) {
     LOG("  -b, --backend <backend>  Run only on the given backend device\n");
     LOG("      --tp-sampling        Check backend sampling under tensor split on two CPU devices, then exit\n");
     LOG("      --tp-sampling-gpu    The same on the first two GPU devices\n");
+    LOG("      --graph-reuse        Check graph reuse across ubatches of alternating shapes on CPU, then exit\n");
     LOG("  -h, --help               Show this help message\n\n");
     LOG("Examples:\n");
     LOG("  %s\n", argv[0]);
@@ -915,6 +916,164 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
     return all_ok ? 0 : 1;
 }
 
+// Graph cache: ubatches of alternating shapes must reuse their graphs and give bit-identical logits to a context that
+// rebuilds every graph. The sequence is the speculative round of the server: MTP catch-up (4 tokens, no outputs) or
+// target verify (4 tokens, 4 outputs), then 1-token draft steps with an output. With two cache entries every round
+// after the first reuses all of its graphs; with one entry only the repeated draft steps do.
+//
+// Under SPLIT_MODE_TENSOR the meta backend keeps a plan per graph. GGML_META_PLAN_CACHE=1 leaves it a single plan,
+// so every reused graph finds its plan evicted and its slices recycled; the results must not change.
+//
+// Negative control: a reference fed one different token must differ from the tested run from that position on and
+// match it before, which shows that the comparison is aligned and can fail.
+static int test_graph_reuse(const size_t seed, const float stdev) {
+    ggml_backend_dev_t dev_cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(dev_cpu != nullptr);
+
+    llama_log_set([](ggml_log_level level, const char * text, void * /*user_data*/) {
+        if (level >= GGML_LOG_LEVEL_ERROR) {
+            fputs(text, stderr);
+        }
+    }, nullptr);
+
+    struct step {
+        uint32_t n_tokens;
+        bool     all_outputs;
+    };
+    const int n_rounds = 10;
+    std::vector<step> steps;
+    steps.push_back({8, false});
+    for (int r = 0; r < 2*n_rounds; r++) {
+        steps.push_back({4, r >= n_rounds}); // catch-up, then verify
+        for (int d = 0; d < 3; d++) {
+            steps.push_back({1, true});
+        }
+    }
+    // P, then C (miss), D (miss, evicts P), D, D; later rounds hit. V (miss, evicts C), D, D, D; later rounds hit.
+    const int32_t n_reused_k2 = (2 + 4*(n_rounds - 1)) + (3 + 4*(n_rounds - 1));
+    const int32_t n_reused_k1 = 2*n_rounds + 2*n_rounds;
+
+    struct env_var {
+        const char * name;
+        const char * value;
+    };
+    struct run_result {
+        std::vector<std::vector<float>> rows; // [output row][n_vocab]
+        std::vector<uint32_t>           pos;  // position of each output row
+        int32_t                         n_reused;
+    };
+
+    bool ok = true;
+    const llm_arch archs[] = { LLM_ARCH_LLAMA, LLM_ARCH_QWEN35 };
+    for (const llm_arch arch : archs) {
+        for (const bool tp : { false, true }) {
+            if (tp && !llm_arch_supports_sm_tensor(arch)) {
+                continue;
+            }
+            gguf_context_ptr gguf_ctx = get_gguf_ctx(arch, false);
+            tensor_data_params tensor_params = { seed, stdev };
+            std::vector<ggml_backend_dev_t> devs_model = tp ? std::vector<ggml_backend_dev_t>{ dev_cpu, dev_cpu, nullptr }
+                                                            : std::vector<ggml_backend_dev_t>{ dev_cpu, nullptr };
+            llama_model_params model_params = llama_model_default_params();
+            model_params.progress_callback = silent_model_load_progress;
+            model_params.devices    = devs_model.data();
+            model_params.split_mode = tp ? LLAMA_SPLIT_MODE_TENSOR : LLAMA_SPLIT_MODE_LAYER;
+            llama_model_ptr model(llama_model_init_from_user(gguf_ctx.get(), set_tensor_data, &tensor_params, model_params));
+            if (!model) {
+                throw std::runtime_error("failed to create llama model");
+            }
+            const uint32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model.get()));
+            const std::vector<llama_token> tokens = get_tokens(256, n_vocab, seed);
+
+            auto run = [&](const std::vector<env_var> & env, const std::vector<llama_token> & toks) {
+                for (const auto & e : env) {
+                    setenv(e.name, e.value, 1);
+                }
+                llama_context_params ctx_params = llama_context_default_params();
+                ctx_params.n_ctx           = 256;
+                ctx_params.n_batch         = 64;
+                ctx_params.n_ubatch        = 64;
+                ctx_params.n_threads       = 2;
+                ctx_params.n_threads_batch = 2;
+                llama_context_ptr lctx(llama_init_from_model(model.get(), ctx_params));
+                for (const auto & e : env) {
+                    unsetenv(e.name);
+                }
+                if (!lctx) {
+                    throw std::runtime_error("failed to create llama context");
+                }
+                run_result res;
+                llama_batch batch = llama_batch_init(64, 0, 1);
+                uint32_t pos = 0;
+                for (const step & st : steps) {
+                    common_batch_clear(batch);
+                    for (uint32_t i = 0; i < st.n_tokens; i++) {
+                        common_batch_add(batch, toks[pos + i], pos + i, {0}, st.all_outputs || (st.n_tokens > 1 && i + 1 == st.n_tokens && pos == 0));
+                    }
+                    if (llama_decode(lctx.get(), batch) != 0) {
+                        llama_batch_free(batch);
+                        throw std::runtime_error("failed to decode batch");
+                    }
+                    for (uint32_t i = 0; i < st.n_tokens; i++) {
+                        if (batch.logits[i]) {
+                            const float * logits = llama_get_logits_ith(lctx.get(), i);
+                            res.rows.emplace_back(logits, logits + n_vocab);
+                            res.pos.push_back(pos + i);
+                        }
+                    }
+                    pos += st.n_tokens;
+                }
+                llama_batch_free(batch);
+                res.n_reused = llama_perf_context(lctx.get()).n_reused;
+                return res;
+            };
+            auto first_diff = [&](const run_result & a, const run_result & b) -> int {
+                GGML_ASSERT(a.rows.size() == b.rows.size());
+                for (size_t r = 0; r < a.rows.size(); r++) {
+                    if (memcmp(a.rows[r].data(), b.rows[r].data(), n_vocab*sizeof(float)) != 0) {
+                        return int(r);
+                    }
+                }
+                return -1;
+            };
+
+            const char * name = tp ? "Meta(CPU,CPU)" : "CPU";
+            const run_result ref = run({{"LLAMA_GRAPH_REUSE_DISABLE", "1"}}, tokens);
+            auto check = [&](const char * what, const run_result & got, const int32_t n_reused_want) {
+                const int d = first_diff(ref, got);
+                const bool pass = d < 0 && (n_reused_want < 0 || got.n_reused == n_reused_want);
+                LOG("test_graph_reuse: %-8s %-14s %-34s reused %3d (want %3d), %s: %s\n", llm_arch_name(arch), name, what,
+                    got.n_reused, n_reused_want, d < 0 ? "bit-identical" : "logits differ", pass ? "OK" : "FAIL");
+                ok = ok && pass;
+            };
+            if (ref.n_reused != 0) {
+                LOG_ERR("%s: reuse disabled but %d graphs reused\n", __func__, ref.n_reused);
+                ok = false;
+            }
+            check("cache 2", run({}, tokens), n_reused_k2);
+            check("cache 1", run({{"LLAMA_GRAPH_CACHE_SIZE", "1"}}, tokens), n_reused_k1);
+            if (tp) {
+                check("cache 2, meta plan cache 1", run({{"GGML_META_PLAN_CACHE", "1"}}, tokens), n_reused_k2);
+            }
+
+            // negative control
+            const uint32_t pos_perturb = 100;
+            std::vector<llama_token> tokens_perturbed = tokens;
+            tokens_perturbed[pos_perturb] = (tokens[pos_perturb] + 1) % n_vocab;
+            const run_result got = run({}, tokens);
+            const run_result ref_perturbed = run({{"LLAMA_GRAPH_REUSE_DISABLE", "1"}}, tokens_perturbed);
+            const int d = first_diff(ref_perturbed, got);
+            const bool pass = d >= 0 && got.pos[d] >= pos_perturb && (d == 0 || got.pos[d - 1] < pos_perturb);
+            LOG("test_graph_reuse: %-8s %-14s %-34s first differing row at pos %d: %s\n", llm_arch_name(arch), name,
+                "control: perturbed reference", d >= 0 ? int(got.pos[d]) : -1, pass ? "OK" : "FAIL");
+            ok = ok && pass;
+        }
+    }
+    LOG("%s: %s\n", __func__, ok ? "OK" : "FAIL");
+    return ok ? 0 : 1;
+}
+
+
 // Backend sampling under SPLIT_MODE_TENSOR against host sampling of the same logits. Each check runs a backend chain
 // on a tensor-split context and compares it with the logits that a twin context on the same model (no backend
 // sampler) copies to the host. The TP forward pass is identical in both, so any difference comes from the sampling
@@ -1211,6 +1370,7 @@ int main(int argc, char ** argv) {
     const char * target_backend = nullptr;
     bool tp_sampling = false;
     bool tp_sampling_gpu = false;
+    bool graph_reuse = false;
 
     int verbosity = LOG_LEVEL_ERROR;
 
@@ -1239,6 +1399,8 @@ int main(int argc, char ** argv) {
             }
         } else if (strcmp(argv[i], "--tp-sampling") == 0) {
             tp_sampling = true;
+        } else if (strcmp(argv[i], "--graph-reuse") == 0) {
+            graph_reuse = true;
         } else if (strcmp(argv[i], "--tp-sampling-gpu") == 0) {
             tp_sampling = true;
             tp_sampling_gpu = true;
@@ -1298,6 +1460,9 @@ int main(int argc, char ** argv) {
     try {
         if (tp_sampling) {
             return test_tp_sampling(seed, stdev, tp_sampling_gpu);
+        }
+        if (graph_reuse) {
+            return test_graph_reuse(seed, stdev);
         }
         if (!out.empty()) {
             return save_models(arch_filter, seed, stdev, verbosity, out);

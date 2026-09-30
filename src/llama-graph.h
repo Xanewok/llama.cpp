@@ -938,6 +938,7 @@ public:
     const std::vector<llm_graph_fused_node> & get_fused_nodes() const { return fused_nodes; }
 
     void set_params(const llm_graph_params & params);
+    const llm_graph_params & get_params() const { return params; }
 
     // important graph nodes
     ggml_tensor * t_inp_tokens  = nullptr;

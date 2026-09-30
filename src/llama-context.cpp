@@ -287,6 +287,11 @@ llama_context::llama_context(
         if (graph_reuse_disable) {
             LLAMA_LOG_WARN("%s: graph reuse disabled\n", __func__);
         }
+
+        const char * LLAMA_GRAPH_CACHE_SIZE = getenv("LLAMA_GRAPH_CACHE_SIZE");
+        if (LLAMA_GRAPH_CACHE_SIZE) {
+            gf_cache_size = std::max(1, atoi(LLAMA_GRAPH_CACHE_SIZE));
+        }
     }
 
     // ref: https://github.com/ggml-org/llama.cpp/pull/17046#discussion_r2503085732
@@ -635,11 +640,8 @@ void llama_context::sched_reserve() {
 
     LLAMA_LOG_DEBUG("%s: max_nodes = %zu\n", __func__, max_nodes);
 
-    for (auto & res : gf_res_prev) {
-        res.reset();
-    }
+    gf_cache.clear();
     gf_res_reserve.reset(new llm_graph_result(max_nodes));
-    gf_res_prev_active = nullptr;
 
     sched.reset(ggml_backend_sched_new(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes, cparams.pipeline_parallel, cparams.op_offload));
 
@@ -870,12 +872,7 @@ bool llama_context::memory_update(bool optimize) {
 
         // reset the previous graph results to make sure that they won't be reused
         // TODO: make mctx->apply() report if a graph reserve is needed, then reset graph results only if the memory module reset the scheduler
-        for (auto & res : gf_res_prev) {
-            if (res) {
-                res->reset();
-            }
-        }
-        gf_res_prev_active = nullptr;
+        graph_cache_reset();
 
         if (!mctx->apply()) {
             LLAMA_LOG_ERROR("%s: failed to apply memory update\n", __func__);
@@ -1452,34 +1449,60 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         return nullptr;
     }
 
-    auto * res = get_gf_res_prev();
-    auto * gf  = res->get_gf();
-
     // the new graph parameters
     // in order to correctly reuse a graph, it's full topology has to be uniquely determined by these parameters
-    const auto gparams = graph_params(res, ubatch, mctx, gtype);
+    auto gparams = graph_params(nullptr, ubatch, mctx, gtype);
 
-    if (!graph_reuse_disable && gf_res_prev_active == res && res->can_reuse(gparams)) {
+    // A hit needs a graph that is still allocated (its scheduler was not reset and no scheduler of the family
+    // re-planned the shared compute buffers) and whose parameters match. On a miss the victim is an entry of the same
+    // shape if any, so that a shape keeps its arena (and its CUDA graph keys), else the least recently used one.
+    graph_cache_entry * entry = nullptr;
+    graph_cache_entry * victim = nullptr;
+    bool victim_same_shape = false;
+    for (size_t i = 0; i < gf_cache_size; i++) {
+        graph_cache_entry & e = graph_cache_get(i);
+        if (e.sched_gf == nullptr) {
+            break; // no shared schedulers (pipeline parallelism)
+        }
+        gparams.res   = e.res.get();
+        gparams.sched = e.sched_gf;
+        if (!graph_reuse_disable && ggml_backend_sched_graph_is_alloc(e.sched_gf, e.res->get_gf()) && e.res->can_reuse(gparams)) {
+            entry = &e;
+            break;
+        }
+        const auto & p = e.res->get_params();
+        const bool same_shape = p.ubatch.n_tokens == ubatch.n_tokens && p.n_outputs == n_outputs;
+        if (victim == nullptr || (same_shape && !victim_same_shape) ||
+                (same_shape == victim_same_shape && e.last_use < victim->last_use)) {
+            victim = &e;
+            victim_same_shape = same_shape;
+        }
+    }
+    if (entry) {
         //LLAMA_LOG_DEBUG("%s: reusing previous graph\n", __func__);
 
         // with pipeline parallelism, the previous graph_compute_async may still be running
         // on the GPU. we must synchronize before set_inputs to avoid overwriting input tensors
         // that the previous compute is still reading.
         if (cparams.pipeline_parallel) {
-            ggml_backend_sched_synchronize(sched.get());
+            ggml_backend_sched_synchronize(entry->sched_gf);
         }
 
         n_reused++;
     } else {
-        gf_res_prev_active = nullptr;
-        res->reset();
+        entry = victim;
+        entry->res->reset();
 
-        ggml_backend_sched_reset(sched.get());
-        ggml_backend_sched_set_eval_callback(sched.get(), cparams.cb_eval, cparams.cb_eval_user_data);
+        ggml_backend_sched_reset(entry->sched_gf);
+        ggml_backend_sched_set_eval_callback(entry->sched_gf, cparams.cb_eval, cparams.cb_eval_user_data);
+
+        gparams.res   = entry->res.get();
+        gparams.sched = entry->sched_gf;
+        sched_cur     = entry->sched_gf;
 
         //const auto t_start_us = ggml_time_us();
 
-        gf = model.build_graph(gparams);
+        auto * gf = model.build_graph(gparams);
 
         //LLAMA_LOG_INFO("graph build time: %.3f ms\n", (ggml_time_us() - t_start_us)/1000.0);
 
@@ -1489,14 +1512,15 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
             return nullptr;
         }
 
-        if (!ggml_backend_sched_alloc_graph(sched.get(), gf)) {
+        if (!ggml_backend_sched_alloc_graph(entry->sched_gf, gf)) {
             LLAMA_LOG_ERROR("%s: failed to allocate graph\n", __func__);
             ret = GGML_STATUS_ALLOC_FAILED;
             return nullptr;
         }
-
-        gf_res_prev_active = res;
     }
+    entry->last_use = ++gf_cache_tick;
+    sched_cur = entry->sched_gf;
+    auto * res = entry->res.get();
 
     // set the input data for the input tensors
     {
@@ -1508,7 +1532,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         //LLAMA_LOG_INFO("graph set inputs time: %.3f ms\n", (ggml_time_us() - t_start_us)/1000.0);
     }
 
-    const auto status = graph_compute(res->get_gf(), ubatch.n_tokens > 1);
+    const auto status = graph_compute(res->get_gf(), ubatch.n_tokens > 1, sched_cur);
     if (status != GGML_STATUS_SUCCESS) {
         LLAMA_LOG_ERROR("%s: failed to compute graph, compute status: %d\n", __func__, status);
         ret = status;
@@ -1606,7 +1630,7 @@ int llama_context::encode(const llama_batch_ext & batch_inp) {
 
     // extract logits
     if (logits.data && t_logits) {
-        ggml_backend_t backend_res = ggml_backend_sched_get_tensor_backend(sched.get(), t_logits);
+        ggml_backend_t backend_res = ggml_backend_sched_get_tensor_backend(sched_cur, t_logits);
         GGML_ASSERT(backend_res != nullptr);
         GGML_ASSERT(logits.data != nullptr);
 
@@ -1615,7 +1639,7 @@ int llama_context::encode(const llama_batch_ext & batch_inp) {
 
     // extract embeddings
     if (embd.data && t_embd) {
-        ggml_backend_t backend_embd = ggml_backend_sched_get_tensor_backend(sched.get(), t_embd);
+        ggml_backend_t backend_embd = ggml_backend_sched_get_tensor_backend(sched_cur, t_embd);
         GGML_ASSERT(backend_embd != nullptr);
 
         switch (cparams.pooling_type) {
@@ -1670,7 +1694,7 @@ int llama_context::encode(const llama_batch_ext & batch_inp) {
 
     // extract nextn embeddings (hidden state before the final output norm)
     if (embd_nextn.data && t_h_nextn && cparams.pooling_type == LLAMA_POOLING_TYPE_NONE) {
-        ggml_backend_t backend_h = ggml_backend_sched_get_tensor_backend(sched.get(), t_h_nextn);
+        ggml_backend_t backend_h = ggml_backend_sched_get_tensor_backend(sched_cur, t_h_nextn);
         GGML_ASSERT(backend_h != nullptr);
 
         const uint32_t n_embd = hparams.n_embd_out();
@@ -1985,7 +2009,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
 
         // extract logits
         if (logits.data && t_logits && n_outputs > 0 && needs_raw_logits(ubatch, sampling.samplers)) {
-            ggml_backend_t backend_res = ggml_backend_sched_get_tensor_backend(sched.get(), t_logits);
+            ggml_backend_t backend_res = ggml_backend_sched_get_tensor_backend(sched_cur, t_logits);
             GGML_ASSERT(backend_res != nullptr);
             GGML_ASSERT(logits.data != nullptr);
 
@@ -2000,7 +2024,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
 
         // extract embeddings
         if (embd.data && t_embd && n_outputs > 0) {
-            ggml_backend_t backend_embd = ggml_backend_sched_get_tensor_backend(sched.get(), t_embd);
+            ggml_backend_t backend_embd = ggml_backend_sched_get_tensor_backend(sched_cur, t_embd);
             GGML_ASSERT(backend_embd != nullptr);
 
             switch (cparams.pooling_type) {
@@ -2068,7 +2092,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
             const int64_t offset = masked ? n_outputs_prev  : n_tokens_prev;
 
             if (embd_nextn.data && t_h_nextn && n_rows > 0 && cparams.pooling_type == LLAMA_POOLING_TYPE_NONE) {
-                ggml_backend_t backend_h = ggml_backend_sched_get_tensor_backend(sched.get(), t_h_nextn);
+                ggml_backend_t backend_h = ggml_backend_sched_get_tensor_backend(sched_cur, t_h_nextn);
                 GGML_ASSERT(backend_h != nullptr);
 
                 const uint32_t n_embd  = hparams.n_embd_out();
@@ -2083,10 +2107,10 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
             const auto stride = n_vocab;
 
             // async copy the sampling data from the backend to the host
-            copy_tensor_async_rows(res->t_sampled,        sampling.sampled,    1,      n_outputs_prev, sched.get());
-            copy_tensor_async_rows(res->t_sampled_logits, sampling.logits,     stride, n_outputs_prev, sched.get(), &sampling.logits_count);
-            copy_tensor_async_rows(res->t_sampled_probs,  sampling.probs,      stride, n_outputs_prev, sched.get(), &sampling.probs_count);
-            copy_tensor_async_rows(res->t_candidates,     sampling.candidates, stride, n_outputs_prev, sched.get(), &sampling.candidates_count);
+            copy_tensor_async_rows(res->t_sampled,        sampling.sampled,    1,      n_outputs_prev, sched_cur);
+            copy_tensor_async_rows(res->t_sampled_logits, sampling.logits,     stride, n_outputs_prev, sched_cur, &sampling.logits_count);
+            copy_tensor_async_rows(res->t_sampled_probs,  sampling.probs,      stride, n_outputs_prev, sched_cur, &sampling.probs_count);
+            copy_tensor_async_rows(res->t_candidates,     sampling.candidates, stride, n_outputs_prev, sched_cur, &sampling.candidates_count);
         }
 
         n_outputs_prev += n_outputs;
@@ -2337,7 +2361,7 @@ void llama_context::extract_layer_inputs(const llm_graph_result * res, size_t to
         const size_t dst_offset = token_offset * row_floats;
         GGML_ASSERT(dst_offset + nfloats <= embd_layer_inp[il].size);
 
-        ggml_backend_t backend = ggml_backend_sched_get_tensor_backend(sched.get(), t);
+        ggml_backend_t backend = ggml_backend_sched_get_tensor_backend(sched_cur, t);
         GGML_ASSERT(backend != nullptr);
         ggml_backend_tensor_get_async(backend, t, embd_layer_inp[il].data + dst_offset, 0, nbytes);
     }
@@ -2476,12 +2500,33 @@ llm_graph_result * llama_context::get_gf_res_reserve() const {
     return static_cast<llm_graph_result *>(gf_res_reserve.get());
 }
 
-llm_graph_result * llama_context::get_gf_res_prev() {
-    auto & res = gf_res_prev[n_outputs > 0];
-    if (!res) {
-        res.reset(new llm_graph_result(gf_res_reserve->get_max_nodes()));
+llama_context::graph_cache_entry & llama_context::graph_cache_get(size_t i) {
+    GGML_ASSERT(i < gf_cache_size);
+    if (gf_cache.size() < gf_cache_size) {
+        gf_cache.resize(gf_cache_size); // once: callers hold pointers to entries
     }
-    return res.get();
+    graph_cache_entry & e = gf_cache[i];
+    if (!e.res) {
+        e.res.reset(new llm_graph_result(gf_res_reserve->get_max_nodes()));
+        if (i == 0) {
+            e.sched_gf = sched.get();
+        } else {
+            e.sched_own.reset(ggml_backend_sched_new_shared(sched.get()));
+            e.sched_gf = e.sched_own.get();
+        }
+    }
+    return e;
+}
+
+void llama_context::graph_cache_reset() {
+    for (auto & e : gf_cache) {
+        if (e.res) {
+            e.res->reset();
+        }
+        if (e.sched_gf) {
+            ggml_backend_sched_reset(e.sched_gf);
+        }
+    }
 }
 
 // pack sampler outputs into as few sequences as possible before using sequences without samplers
@@ -2554,12 +2599,8 @@ ggml_cgraph * llama_context::graph_reserve(
     ggml_backend_sched_reset(sched.get());
 
     // when the scheduler is reset, we cannot reuse old graphs, so we reset the previous graph results
-    for (auto & res : gf_res_prev) {
-        if (res) {
-            res->reset();
-        }
-    }
-    gf_res_prev_active = nullptr;
+    graph_cache_reset();
+    sched_cur = sched.get();
 
     // store the n_outputs as it is, and restore it afterwards
     // TODO: not sure if needed, might simplify in the future by removing this
@@ -2610,7 +2651,7 @@ llm_graph_params llama_context::graph_params(
         /*.cparams     =*/ cparams,
         /*.ubatch      =*/ ubatch,
         /*.gtype       =*/ gtype,
-        /*.sched       =*/ sched.get(),
+        /*.sched       =*/ sched_cur ? sched_cur : sched.get(),
         /*.backend_cpu =*/ backend_cpu,
         /*.cvec        =*/ cvec.get(),
         /*.loras       =*/ loras.get(),
@@ -2628,7 +2669,8 @@ llm_graph_params llama_context::graph_params(
 
 ggml_status llama_context::graph_compute(
             ggml_cgraph * gf,
-                   bool   batched) {
+                   bool   batched,
+    ggml_backend_sched_t   sched_gf) {
     int n_threads        = batched ? cparams.n_threads_batch : cparams.n_threads;
     ggml_threadpool_t tp = batched ? threadpool_batch        : threadpool;
 
@@ -2645,7 +2687,7 @@ ggml_status llama_context::graph_compute(
         set_n_threads_fn.second(set_n_threads_fn.first, n_threads);
     }
 
-    auto status = ggml_backend_sched_graph_compute_async(sched.get(), gf);
+    auto status = ggml_backend_sched_graph_compute_async(sched_gf ? sched_gf : sched.get(), gf);
     if (status != GGML_STATUS_SUCCESS) {
         LLAMA_LOG_ERROR("%s: ggml_backend_sched_graph_compute_async failed with error %d\n", __func__, status);
     }
@@ -2673,7 +2715,7 @@ llm_graph_cb llama_context::graph_get_cb() const {
                 for (const auto & backend : backends) {
                     if (ggml_backend_get_device(backend.get()) == dev_layer) {
                         if (ggml_backend_supports_op(backend.get(), cur)) {
-                            ggml_backend_sched_set_tensor_backend(sched.get(), cur, backend.get());
+                            ggml_backend_sched_set_tensor_backend(sched_cur ? sched_cur : sched.get(), cur, backend.get());
                         }
                     }
                 }
@@ -3668,12 +3710,12 @@ void llama_context::opt_epoch_iter(
                 break;
             }
 
-            auto * res = get_gf_res_prev();
+            // the optimizer graph is allocated outside sched, so the next decode must rebuild
+            graph_cache_reset();
+            sched_cur = sched.get();
+            auto * res = graph_cache_get(0).res.get();
 
             const auto gparams = graph_params(res, ubatch, mctx.get(), ctx_type_to_graph_type(cparams.ctx_type));
-
-            // the optimizer graph is allocated outside sched, so the next decode must rebuild
-            gf_res_prev_active = nullptr;
             res->reset();
 
             auto * gf = model.build_graph(gparams);

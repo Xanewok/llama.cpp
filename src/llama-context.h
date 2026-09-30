@@ -252,7 +252,8 @@ public:
     llm_graph_result * get_gf_res_reserve() const;
 
     // returns the result of ggml_backend_sched_graph_compute_async execution
-    ggml_status graph_compute(ggml_cgraph * gf, bool batched);
+    // gf must be allocated on sched_gf (nullptr: the context scheduler, see get_sched)
+    ggml_status graph_compute(ggml_cgraph * gf, bool batched, ggml_backend_sched_t sched_gf = nullptr);
 
     // reserve a graph with a dummy ubatch of the specified size
     ggml_cgraph * graph_reserve(
@@ -264,7 +265,18 @@ public:
     bool sampling_init_vocab_ids();
 
 private:
-    llm_graph_result * get_gf_res_prev();
+    // Graph cache: each entry keeps a built graph allocated on its own scheduler so that ubatches of alternating shapes
+    // (e.g. MTP catch-up and draft steps) reuse their graphs. Entry 0 uses the context scheduler, the others
+    // schedulers created with ggml_backend_sched_new_shared that allocate from the same compute buffers.
+    struct graph_cache_entry {
+        llm_graph_result_ptr   res;
+        ggml_backend_sched_ptr sched_own;
+        ggml_backend_sched_t   sched_gf = nullptr;
+        uint64_t               last_use = 0;
+    };
+
+    graph_cache_entry & graph_cache_get(size_t i);
+    void graph_cache_reset();
 
     llm_graph_params graph_params(
                         llm_graph_result * res,
@@ -382,11 +394,15 @@ private:
     std::vector<ggml_backend_buffer_type_t> backend_buft;
     std::vector<size_t>                     backend_buf_exp_size; // expected buffer sizes
 
-    // Separate arenas give batches with and without outputs distinct CUDA graph cache keys.
-    std::array<llm_graph_result_ptr, 2> gf_res_prev;
+    // Separate arenas give graphs of different shapes distinct CUDA graph cache keys.
+    std::vector<graph_cache_entry> gf_cache;
+    uint64_t gf_cache_tick = 0;
+    // env: LLAMA_GRAPH_CACHE_SIZE
+    size_t gf_cache_size = 2;
     llm_graph_result_ptr gf_res_reserve;
 
-    llm_graph_result * gf_res_prev_active = nullptr;
+    // scheduler of the graph built or computed last; graph outputs and tensor backends are looked up through it
+    ggml_backend_sched_t sched_cur = nullptr;
 
     // host buffer for the model output (logits and embeddings)
     ggml_backend_buffer_ptr buf_output;
