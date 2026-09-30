@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+unset PYTHONOPTIMIZE LD_PRELOAD LD_LIBRARY_PATH
+ROOT=$(cd "$(dirname "$0")" && pwd)
+export CUDA_VISIBLE_DEVICES="" PYTHONDONTWRITEBYTECODE=1
+export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8 RAYON_NUM_THREADS=8
+export TOKENIZERS_PARALLELISM=false CARGO_BUILD_JOBS=8 UV_OFFLINE=1 HF_HUB_OFFLINE=1
+export TMPDIR="$ROOT/build-tmp"
+export DRY_RUN=${DRY_RUN:-1}
+exec nice -n 19 python3 "$ROOT/codex/weekend.py"
