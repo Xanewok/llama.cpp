@@ -1,3 +1,4 @@
+#include "ggml-round-trace.h"
 #include "ggml.h"
 #include "ggml-impl.h"
 #include "ggml-backend.h"
@@ -2073,6 +2074,7 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
     }
 
     if (needs_rebuild) {
+        ggml_round_trace_scope trace_plan("meta_build");
         std::set<ggml_backend_buffer_t> used_buffers;
         for (int i = 0; i < cgraph->n_leafs; i++) {
             if (ggml_backend_buffer_is_meta(cgraph->leafs[i]->buffer)) {

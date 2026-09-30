@@ -1,3 +1,4 @@
+#include "ggml-round-trace.h"
 #include "llama-context.h"
 
 #include "ggml.h"
@@ -1525,6 +1526,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
     const auto gparams = graph_params(res, ubatch, mctx, gtype);
 
     if (!graph_reuse_disable && gf_res_prev_active == res && res->can_reuse(gparams)) {
+        ggml_round_trace_count("graph_hit");
         //LLAMA_LOG_DEBUG("%s: reusing previous graph\n", __func__);
 
         // with pipeline parallelism, the previous graph_compute_async may still be running
@@ -1536,6 +1538,8 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
 
         n_reused++;
     } else {
+        ggml_round_trace_count("graph_miss");
+        ggml_round_trace_scope trace_build("llama_build");
         gf_res_prev_active = nullptr;
         res->reset();
 

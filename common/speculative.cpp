@@ -1,3 +1,4 @@
+#include "ggml-round-trace.h"
 #include "speculative.h"
 
 #include "common.h"
@@ -1607,7 +1608,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     llama_set_nextn_layer_offset(ctx_dft, head);
                 }
 
+                ggml_round_trace_begin("C", batch.size());
                 const int32_t rc = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
+                ggml_round_trace_end(rc);
                 if (rc != 0) {
                     SPC_ERR("llama_process(ctx_dft) head=%d failed rc=%d (pos=%d)\n",
                             head, (int) rc, (int) batch_in.tokens[0].pos[0]);
@@ -1707,7 +1710,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 llama_set_nextn_layer_offset(ctx_dft, i);
             }
 
+            const std::string trace_phase = ggml_round_trace_enabled() ? "D" + std::to_string(i + 1) : "";
+            ggml_round_trace_begin(trace_phase.c_str(), batch.size());
             int ret = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
+            ggml_round_trace_end(ret);
             if (ret != 0) {
                 SPC_ERR("llama_process[%d] returned %d\n", i, ret);
                 break;
