@@ -1,4 +1,5 @@
 #include "llama-graph.h"
+#include "llama-ext.h"
 
 #include "llama-impl.h"
 #include "llama-model.h"
@@ -152,6 +153,26 @@ bool llm_graph_input_pos::can_reuse(const llm_graph_params & params) {
     res &= pos->ne[0] == params.ubatch.n_tokens*n_pos_per_embd;
 
     return res;
+}
+
+void llm_graph_input_mtp_chain::set_input(const llama_ubatch * ubatch) {
+    GGML_ASSERT((int32_t) ubatch->n_tokens == n_chain);
+    ggml_backend_tensor_set(u, par, 0, n_chain*sizeof(float));
+    ggml_backend_tensor_set(inv_temp, par + LLAMA_MTP_CHAIN_MAX, 0, sizeof(float));
+    std::vector<llama_pos> positions(n_chain*n_pos_per_embd);
+    for (int32_t step = 0; step < n_chain; ++step) {
+        for (uint32_t d = 0; d < n_pos_per_embd; ++d) {
+            positions[step*n_pos_per_embd + d] = ubatch->token && n_pos_per_embd == 4
+                ? (d < 3 ? ubatch->pos[step] : 0)
+                : ubatch->pos[d*n_chain + step];
+        }
+    }
+    ggml_backend_tensor_set(pos, positions.data(), 0, positions.size()*sizeof(llama_pos));
+}
+
+bool llm_graph_input_mtp_chain::can_reuse(const llm_graph_params & params) {
+    return params.cparams.mtp_chain == n_chain && params.mtp_chain_par == par &&
+           pos->ne[0] == (int64_t) params.ubatch.n_tokens*n_pos_per_embd;
 }
 
 void llm_graph_input_attn_temp::set_input(const llama_ubatch * ubatch) {
@@ -1326,6 +1347,7 @@ void llm_graph_result::reset() {
     t_embd        = nullptr;
     t_embd_pooled = nullptr;
     t_h_nextn     = nullptr;
+    t_mtp_chain   = nullptr;
 
     t_layer_inp.resize(LLAMA_MAX_LAYERS + 1);
     std::fill(t_layer_inp.begin(), t_layer_inp.end(), nullptr);
@@ -1368,6 +1390,9 @@ void llm_graph_result::set_outputs(const llm_graph_params & params) {
     }
     if (t_embd_pooled != nullptr) {
         ggml_set_output(t_embd_pooled);
+    }
+    if (t_mtp_chain != nullptr) {
+        ggml_set_output(t_mtp_chain);
     }
     if (t_h_nextn != nullptr) {
         ggml_set_output(t_h_nextn);
@@ -1493,6 +1518,9 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
     samplers         (params.samplers),
     sampling_vocab_ids(params.sampling_vocab_ids),
     sampling_n_shards(params.sampling_n_shards),
+    mtp_chain_par(params.mtp_chain_par),
+    mtp_chain_tok_embd(params.mtp_chain_tok_embd),
+    mtp_chain_indices(params.mtp_chain_indices),
     cb_func          (params.cb),
     res              (params.res),
     ctx0             (res->get_ctx()),
@@ -2471,6 +2499,81 @@ ggml_tensor * llm_graph_context::build_inp_pos() const {
     res->add_input(std::move(inp));
 
     return cur;
+}
+
+llm_graph_input_mtp_chain * llm_graph_context::build_inp_mtp_chain(int32_t n_chain) const {
+    GGML_ASSERT(mtp_chain_par != nullptr && n_chain > 0 && n_chain <= LLAMA_MTP_CHAIN_MAX);
+
+    auto inp = std::make_unique<llm_graph_input_mtp_chain>(mtp_chain_par, hparams.n_pos_per_embd(), n_chain);
+
+    inp->u = ggml_new_tensor_1d(ctx0, GGML_TYPE_F32, n_chain);
+    ggml_set_input(inp->u);
+    ggml_set_name(inp->u, "mtp_chain_u");
+
+    inp->inv_temp = ggml_new_tensor_1d(ctx0, GGML_TYPE_F32, 1);
+    ggml_set_input(inp->inv_temp);
+    ggml_set_name(inp->inv_temp, "mtp_chain_inv_temp");
+
+    inp->pos = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, (int64_t) n_tokens*hparams.n_pos_per_embd());
+    ggml_set_input(inp->pos);
+    ggml_set_name(inp->pos, "mtp_chain_pos");
+
+    return (llm_graph_input_mtp_chain *) res->add_input(std::move(inp));
+}
+
+ggml_tensor * llm_graph_context::build_mtp_chain_pick(ggml_tensor * logits, llm_graph_input_mtp_chain * inp, int32_t step, ggml_tensor ** row) const {
+    const int64_t K       = LLAMA_MTP_CHAIN_TOP_K;
+    const int64_t n_vocab = logits->ne[0];
+    GGML_ASSERT(logits->ne[1] == 1);
+
+    // candidates: logits and vocab ids (F32), exactly as build_sampling gathers them under tensor split
+    ggml_tensor * vals = nullptr;
+    ggml_tensor * ids  = nullptr;
+    ggml_tensor * compact = nullptr;
+    int64_t n_cand = 0;
+    if (sampling_n_shards > 0) {
+        GGML_ASSERT(sampling_vocab_ids != nullptr && sampling_vocab_ids->ne[0] == n_vocab);
+        n_cand = K*sampling_n_shards;
+
+        ggml_tensor * idx = ggml_top_k(ctx0, logits, n_cand);
+        vals = ggml_get_rows(ctx0, ggml_reshape_3d(ctx0, logits, 1, n_vocab, 1), idx);
+        ids  = ggml_get_rows(ctx0,
+                ggml_repeat_4d(ctx0, ggml_reshape_3d(ctx0, sampling_vocab_ids, 1, n_vocab, 1), 1, n_vocab, 1, 1), idx);
+
+        compact = ggml_get_rows(ctx0, ggml_reshape_3d(ctx0, mtp_chain_indices, 1, n_vocab, 1), idx);
+        ggml_tensor * cand = ggml_backend_meta_gather(ctx0, ggml_concat(ctx0,
+                ggml_concat(ctx0, ggml_reshape_3d(ctx0, vals, n_cand, 1, 1), ggml_reshape_3d(ctx0, ids, n_cand, 1, 1), 1),
+                ggml_reshape_3d(ctx0, compact, n_cand, 1, 1), 1));
+        vals = ggml_view_1d(ctx0, cand, n_cand, 0);
+        ids  = ggml_view_1d(ctx0, cand, n_cand, cand->nb[1]);
+        compact = ggml_view_1d(ctx0, cand, n_cand, 2*cand->nb[1]);
+    } else {
+        n_cand = K;
+
+        ggml_tensor * idx = ggml_top_k(ctx0, logits, K);
+        vals = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, ggml_reshape_3d(ctx0, logits, 1, n_vocab, 1), idx), K);
+        compact = ggml_cast(ctx0, ggml_reshape_1d(ctx0, idx, K), GGML_TYPE_F32);
+        ids = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, ggml_reshape_2d(ctx0, sampling_vocab_ids, 1, n_vocab), idx), K);
+    }
+
+    // sorted by logit, descending, so that u = 0 picks the argmax
+    ggml_tensor * order = ggml_argsort_top_k(ctx0, vals, K);
+    ggml_tensor * sv = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, ggml_reshape_2d(ctx0, vals, 1, n_cand), order), K);
+    ggml_tensor * si = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, ggml_reshape_2d(ctx0, ids,  1, n_cand), order), K);
+
+    ggml_tensor * sc = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, ggml_reshape_2d(ctx0, compact, 1, n_cand), order), K);
+
+    // Validate device picks with the host sampler before recording q.
+    ggml_tensor * probs = ggml_soft_max(ctx0, ggml_mul(ctx0, sv, inp->inv_temp));
+    ggml_tensor * u     = ggml_view_1d(ctx0, inp->u, 1, step*ggml_element_size(inp->u));
+    ggml_tensor * above = ggml_sum(ctx0, ggml_step(ctx0, ggml_sub(ctx0, ggml_cumsum(ctx0, probs), u)));
+    ggml_tensor * pick  = ggml_cast(ctx0, ggml_scale_bias(ctx0, ggml_clamp(ctx0, above, 1.0f, K), -1.0f, K), GGML_TYPE_I32);
+    ggml_tensor * tok_f = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, ggml_reshape_2d(ctx0, si, 1, K), pick), 1);
+    ggml_format_name(tok_f, "mtp_chain_tok_%d", step);
+
+    *row = ggml_reshape_2d(ctx0, ggml_concat(ctx0, ggml_concat(ctx0, ggml_concat(ctx0, tok_f, si, 0), sv, 0), probs, 0), LLAMA_MTP_CHAIN_ROW, 1);
+
+    return ggml_cast(ctx0, ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, ggml_reshape_2d(ctx0, sc, 1, K), pick), 1), GGML_TYPE_I32);
 }
 
 ggml_tensor * llm_graph_context::build_inp_attn_scale() const {
