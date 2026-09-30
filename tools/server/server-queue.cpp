@@ -1,3 +1,4 @@
+#include "ggml-round-trace.h"
 #include "server-task.h"
 #include "server-queue.h"
 
@@ -276,6 +277,7 @@ void server_queue::yield_to_queue(std::function<void()> && work) {
 }
 
 void server_queue::start_loop(int64_t idle_sleep_ms) {
+    struct trace_flush_guard { ~trace_flush_guard() { ggml_round_trace_flush(); } } trace_guard;
     running = true;
     time_last_task = ggml_time_ms();
 

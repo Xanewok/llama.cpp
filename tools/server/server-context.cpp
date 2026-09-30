@@ -1,3 +1,4 @@
+#include "ggml-round-trace.h"
 #include "server-context.h"
 #include "server-chat.h"
 #include "server-common.h"
@@ -4267,7 +4268,9 @@ private:
         // note: the sync is done here too, so that the wait is also covered by the yield
         int ret = 0;
         queue_tasks.yield_to_queue([&]() {
+            ggml_round_trace_begin("V", batch.view.size());
             ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
+            ggml_round_trace_end(ret);
             if (ret == 0 && has_output) {
                 llama_synchronize(ctx_tgt);
             }
