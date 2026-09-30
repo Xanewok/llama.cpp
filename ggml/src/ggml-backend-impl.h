@@ -47,6 +47,16 @@ extern "C" {
     // Backend buffer
     //
 
+    struct ggml_backend_tensor_transfer {
+        struct ggml_tensor * tensor;
+        const void * data;
+        size_t offset;
+        size_t size;
+    };
+
+    // Host sources must remain valid until this call returns. Transfers complete in list order.
+    GGML_API void ggml_backend_tensor_set_batch(const struct ggml_backend_tensor_transfer * transfers, size_t n_transfers);
+
     struct ggml_backend_buffer_i {
         // (optional) free the buffer
         void         (*free_buffer)  (ggml_backend_buffer_t buffer);
@@ -68,6 +78,8 @@ extern "C" {
         void         (*clear)        (ggml_backend_buffer_t buffer, uint8_t value);
         // (optional) reset any internal state due to tensor initialization, such as tensor extras
         void         (*reset)        (ggml_backend_buffer_t buffer);
+        // (optional) synchronous batch upload; must preserve overlapping writes
+        void         (*set_tensor_batch)(ggml_backend_buffer_t buffer, const struct ggml_backend_tensor_transfer * transfers, size_t n_transfers);
     };
 
     struct ggml_backend_buffer {
