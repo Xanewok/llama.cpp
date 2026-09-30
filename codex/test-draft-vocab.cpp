@@ -29,7 +29,7 @@ static std::vector<std::vector<float>> run(llama_model * model, bool mtp, bool b
     cp.n_batch = 8;
     cp.n_ubatch = 2;
     cp.n_outputs_max_per_seq = 4;
-    cp.n_threads = model->devices.size() > 1 ? 4 : 8;
+    cp.n_threads = model->get_split_state_ud.n_devices > 1 ? 4 : 8;
     cp.n_threads_batch = cp.n_threads;
     llama_context * ctx = llama_init_from_model(model, cp);
     require(ctx, "context load failed");
@@ -38,6 +38,12 @@ static std::vector<std::vector<float>> run(llama_model * model, bool mtp, bool b
     if (backend) {
         require(llama_set_sampler(ctx, 0, chain), "backend sampling refused");
     }
+    llama_sampler * finish = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    llama_sampler_chain_add(finish, llama_sampler_init_top_k(10));
+    llama_sampler_chain_add(finish, llama_sampler_init_top_p(0.95f, 1));
+    llama_sampler_chain_add(finish, llama_sampler_init_min_p(0.05f, 1));
+    llama_sampler_chain_add(finish, llama_sampler_init_temp(1.0f));
+    llama_sampler_chain_add(finish, llama_sampler_init_dist(1));
     auto * batch = llama_batch_ext_init(ctx);
     std::vector<float> hidden(ne);
     for (int i = 0; i < ne; ++i) {
@@ -81,6 +87,36 @@ static std::vector<std::vector<float>> run(llama_model * model, bool mtp, bool b
                 require(std::equal(rows.back().begin(), rows.back().end(), llama_get_logits_ith(ctx, r)), "second logits read changed row");
             }
         }
+        if (mtp) {
+            for (int r = 0; r < nr; ++r) {
+                std::vector<llama_token_data> proposal;
+                if (backend) {
+                    const auto * ids = llama_get_sampled_candidates_ith(ctx, r);
+                    const auto * values = llama_get_sampled_logits_ith(ctx, r);
+                    const auto n = llama_get_sampled_logits_count_ith(ctx, r);
+                    for (uint32_t i = 0; i < n; ++i) {
+                        proposal.push_back({ids[i], values[i], 0});
+                    }
+                } else {
+                    const auto & values = rows[rows.size() - nr + r];
+                    for (int id = 0; id < nv; ++id) {
+                        proposal.push_back({id, values[id], 0});
+                    }
+                }
+                llama_token_data_array q = {proposal.data(), proposal.size(), -1, false};
+                llama_sampler_apply(finish, &q);
+                double sum = 0;
+                for (size_t i = 0; i < q.size; ++i) {
+                    sum += q.data[i].p;
+                    if (model->draft_output && q.data[i].p > 0) {
+                        require(std::find(model->draft_vocab_ids.begin(), model->draft_vocab_ids.end(), q.data[i].id) != model->draft_vocab_ids.end(), "recorded q escaped subset");
+                    }
+                }
+                require(std::fabs(sum - 1.0) < 1e-6, "real draft q is not normalized");
+                require(q.selected >= 0 && size_t(q.selected) < q.size && q.data[q.selected].p > 0, "draft sampled a zero-mass token");
+                llama_sampler_accept(finish, q.data[q.selected].id);
+            }
+        }
         if (backend && check_deferred) {
             const float * raw = llama_get_logits(ctx);
             require(raw, "deferred raw logits missing");
@@ -111,6 +147,7 @@ static std::vector<std::vector<float>> run(llama_model * model, bool mtp, bool b
     }
     llama_free(ctx);
     llama_sampler_free(chain);
+    llama_sampler_free(finish);
     return rows;
 }
 
@@ -199,7 +236,7 @@ int main(int argc, char ** argv) {
         }
         require(count == 10, "backend candidate ids collided");
     }
-    std::printf("M: target bit identity, subset logits, outside mask, backend top-k, multi-ubatch reads PASS; max logit error %.9g; mapping negative control detected\n", max_error);
+    std::printf("M: target bit identity, subset logits, normalized q, outside mask, backend top-k, multi-ubatch reads PASS; max logit error %.9g; mapping negative control detected\n", max_error);
     const llama_token small_ids[] = {17, 40037};
     mp.draft_vocab_ids = small_ids;
     mp.n_draft_vocab = 1;
