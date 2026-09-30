@@ -4207,6 +4207,11 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_DRAFT_BACKEND_SAMPLING"));
     add_opt(common_arg(
+        {"--spec-mtp-chain"}, {"--no-spec-mtp-chain"},
+        "run single-sequence Qwen3.5 MTP subset drafts in one graph (default: disabled)",
+        [](common_params & params, bool value) { params.speculative.draft.mtp_chain = value; }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_MTP_CHAIN"));
+    add_opt(common_arg(
         {"--spec-draft-vocab"}, "FILE",
         "JSON array of token ids for a reduced Qwen3.5 MTP draft head (default: full vocabulary)",
         [](common_params & params, const std::string & value) {
