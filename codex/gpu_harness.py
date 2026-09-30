@@ -89,6 +89,9 @@ class Harness:
         self.binary = None
         self.env = dict(os.environ, OMP_NUM_THREADS="8", OPENBLAS_NUM_THREADS="8", MKL_NUM_THREADS="8",
                         PYTHONDONTWRITEBYTECODE="1")
+        (out / "tmp").mkdir()
+        self.env["TMPDIR"] = str(out / "tmp")
+        self.env["CUDA_CACHE_PATH"] = str(out / "cuda-cache")
         self.env.pop("LD_PRELOAD", None)
         self.env.pop("LLAMA_ROUND_TRACE", None)
 

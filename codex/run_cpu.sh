@@ -3,7 +3,8 @@ set -euo pipefail
 renice 19 $$ >/dev/null
 cd "$(dirname "$0")/.."
 export CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8
-export PYTHONDONTWRITEBYTECODE=1
+export PYTHONDONTWRITEBYTECODE=1 TMPDIR="$PWD/build-tmp"
+mkdir -p "$TMPDIR"
 MODEL=${MODEL:-$HOME/models/Qwen3.5-4B-UD-Q4_K_XL.gguf}
 export CPU_OUT=${CPU_OUT:-codex/cpu-results-$(date +%Y%m%d-%H%M%S)}
 case "$(realpath -m "$CPU_OUT")" in "$PWD"/codex/*) ;; *) echo "CPU_OUT must be inside codex" >&2; exit 1;; esac
