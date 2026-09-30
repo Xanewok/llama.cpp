@@ -1,0 +1,10 @@
+/build*/
+/frozen/
+/llama.cpp-stack2/
+/results/
+/runtime/
+/weekend.log
+/weekend.lock
+/codex/.git/
+/codex/*.log
+/codex/__pycache__/
