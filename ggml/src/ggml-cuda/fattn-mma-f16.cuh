@@ -917,7 +917,16 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
         }
 
 #if defined(TURING_MMA_AVAILABLE)
-        if constexpr (cols_per_warp == 8) {
+        if constexpr (std::is_same_v<decltype(T_C_VKQ::x), float[T_C_VKQ::ne]>) {
+            // Same column per element as the half2 tiles, which pack 2 floats per element.
+#pragma unroll
+            for (int i = 0; i < (cols_per_warp == 8 ? DV/T_C_VKQ::I : DV/T_C_VKQ::J); ++i) {
+#pragma unroll
+                for (int l = 0; l < T_C_VKQ::ne; ++l) {
+                    VKQ_C[i].x[l] *= KQ_max_scale[cols_per_warp == 8 ? (l % 2)*(cols_per_thread - 1) : (l/2) % 2];
+                }
+            }
+        } else if constexpr (cols_per_warp == 8) {
             const half2 KQ_max_scale_h2 = make_half2(KQ_max_scale[0], KQ_max_scale[cols_per_thread - 1]);
 #pragma unroll
             for (int i = 0; i < DV/T_C_VKQ::I; ++i) {
@@ -1081,13 +1090,25 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
 }
 
 #if defined(TURING_MMA_AVAILABLE)
+#ifdef GGML_CUDA_FA_F32_ACC
+// From DKQ 256 the f32 tiles spill and the 256/64x1 kernel reads out of bounds; those head sizes keep half2.
+static constexpr bool fattn_mma_f32_VKQ(const int DKQ) {
+    return DKQ < 256;
+}
+#else
+static constexpr bool fattn_mma_f32_VKQ(const int /*DKQ*/) {
+    return false;
+}
+#endif // GGML_CUDA_FA_F32_ACC
+template<int DKQ> using fattn_mma_T_C_VKQ_wide = std::conditional_t<fattn_mma_f32_VKQ(DKQ), tile<16, 16, float>, tile<16, 8, half2>>;
+template<int DKQ> using fattn_mma_T_C_VKQ_thin = std::conditional_t<fattn_mma_f32_VKQ(DKQ), tile<16,  8, float>, tile<16, 4, half2>>;
 template<int DKQ, int ncols> struct mma_tile_sizes {
     using T_A_KQ  = tile<16,  8, half2>; // row-major
     using T_B_KQ  = tile<16,  8, half2>; // column-major
     using T_C_KQ  = tile<16, 16, float>; // column-major
     using T_A_VKQ = tile<16,  8, half2>; // row-major
     using T_B_VKQ = tile<16,  8, half2>; // column-major
-    using T_C_VKQ = tile<16,  8, half2>; // column-major
+    using T_C_VKQ = fattn_mma_T_C_VKQ_wide<DKQ>; // column-major
 };
 // If there are only 8 columns, use thinner B tiles to avoid wasting compute:
 template<int DKQ> struct mma_tile_sizes<DKQ, 8> {
@@ -1096,7 +1117,7 @@ template<int DKQ> struct mma_tile_sizes<DKQ, 8> {
     using T_C_KQ  = tile<16,  8, float>; // row-major
     using T_A_VKQ = tile<16,  8, half2>; // row-major
     using T_B_VKQ = tile< 8,  8, half2>; // column-major
-    using T_C_VKQ = tile<16,  4, half2>; // row-major
+    using T_C_VKQ = fattn_mma_T_C_VKQ_thin<DKQ>; // row-major
 };
 // For very large head sizes, use thinner B tiles to reduce register pressure:
 template<> struct mma_tile_sizes<256, 16> {
@@ -1105,7 +1126,7 @@ template<> struct mma_tile_sizes<256, 16> {
     using T_C_KQ  = tile<16,  8, float>; // row-major
     using T_A_VKQ = tile<16,  8, half2>; // row-major
     using T_B_VKQ = tile< 8,  8, half2>; // column-major
-    using T_C_VKQ = tile<16,  4, half2>; // row-major
+    using T_C_VKQ = fattn_mma_T_C_VKQ_thin<256>; // row-major
 };
 template<> struct mma_tile_sizes<512, 16> {
     using T_A_KQ  = tile<16,  8, half2>; // row-major
@@ -1113,7 +1134,7 @@ template<> struct mma_tile_sizes<512, 16> {
     using T_C_KQ  = tile<16,  8, float>; // row-major
     using T_A_VKQ = tile<16,  8, half2>; // row-major
     using T_B_VKQ = tile< 8,  8, half2>; // column-major
-    using T_C_VKQ = tile<16,  4, half2>; // row-major
+    using T_C_VKQ = fattn_mma_T_C_VKQ_thin<512>; // row-major
 };
 template<> struct mma_tile_sizes<512, 32> {
     using T_A_KQ  = tile<16,  8, half2>; // row-major
@@ -1121,7 +1142,7 @@ template<> struct mma_tile_sizes<512, 32> {
     using T_C_KQ  = tile<16,  8, float>; // row-major
     using T_A_VKQ = tile<16,  8, half2>; // row-major
     using T_B_VKQ = tile< 8,  8, half2>; // column-major
-    using T_C_VKQ = tile<16,  4, half2>; // row-major
+    using T_C_VKQ = fattn_mma_T_C_VKQ_thin<512>; // row-major
 };
 #elif defined(AMD_WMMA_AVAILABLE)
 #ifdef RDNA3
@@ -1263,7 +1284,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
 
     T_B_KQ    Q_B[(Q_in_reg ? DKQ/(2*T_B_KQ::J) : 1)];
 #if defined(TURING_MMA_AVAILABLE)
-    T_C_VKQ VKQ_C[cols_per_warp == 8 ? DV/T_C_VKQ::I : DV/(2*T_C_VKQ::J)];
+    T_C_VKQ VKQ_C[cols_per_warp == 8 ? DV/T_C_VKQ::I : DV/((std::is_same_v<decltype(T_C_VKQ::x), float[T_C_VKQ::ne]> ? 1 : 2)*T_C_VKQ::J)];
 #elif defined(AMD_WMMA_AVAILABLE) && defined(RDNA3)
     T_C_VKQ VKQ_C[DV % 32 != 0       ? DV/T_C_VKQ::J : DV/(2*T_C_VKQ::J)];
 #elif defined(AMD_MFMA_AVAILABLE)
@@ -1454,7 +1475,16 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
         }
 
 #if defined(TURING_MMA_AVAILABLE)
-        if constexpr (cols_per_warp == 8) {
+        if constexpr (std::is_same_v<decltype(T_C_VKQ::x), float[T_C_VKQ::ne]>) {
+            // Same column per element as the half2 tiles, which pack 2 floats per element.
+#pragma unroll
+            for (int i = 0; i < (cols_per_warp == 8 ? DV/T_C_VKQ::I : DV/T_C_VKQ::J); ++i) {
+#pragma unroll
+                for (int l = 0; l < T_C_VKQ::ne; ++l) {
+                    VKQ_C[i].x[l] *= KQ_max_scale[cols_per_warp == 8 ? (l % 2)*(cols_per_thread - 1) : (l/2) % 2];
+                }
+            }
+        } else if constexpr (cols_per_warp == 8) {
             const half2 KQ_max_scale_h2 = make_half2(KQ_max_scale[0], KQ_max_scale[cols_per_thread - 1]);
 #pragma unroll
             for (int i = 0; i < DV/T_C_VKQ::I; ++i) {
@@ -1509,6 +1539,27 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
 #endif // defined(TURING_MMA_AVAILABLE)
     }
 
+#if defined(TURING_MMA_AVAILABLE)
+    if constexpr (std::is_same_v<decltype(T_C_VKQ::x), float[T_C_VKQ::ne]>) {
+        // The combination below stores VKQ as half. Divide by KQ_rowsum and move it into KQ_max so that the stored values are <= max |V|.
+        float KQ_rowsum_inv[cols_per_thread];
+#pragma unroll
+        for (int col = 0; col < cols_per_thread; ++col) {
+            const bool nonzero = KQ_rowsum[col] > 0.0f;
+            KQ_rowsum_inv[col] = nonzero ? 1.0f/KQ_rowsum[col] : 1.0f;
+            KQ_max[col]       += nonzero ? logf(KQ_rowsum[col]) : 0.0f;
+            KQ_rowsum[col]     = nonzero ? 1.0f : KQ_rowsum[col];
+        }
+#pragma unroll
+        for (int i = 0; i < (cols_per_warp == 8 ? DV/T_C_VKQ::I : DV/T_C_VKQ::J); ++i) {
+#pragma unroll
+            for (int l = 0; l < T_C_VKQ::ne; ++l) {
+                VKQ_C[i].x[l] *= KQ_rowsum_inv[cols_per_warp == 8 ? (l % 2)*(cols_per_thread - 1) : (l/2) % 2];
+            }
+        }
+    }
+#endif // defined(TURING_MMA_AVAILABLE)
+
     // Combine VKQ accumulator values if np > 1.
     // It's also faster to do small writes to shared memory, then large write to VRAM than to do small writes to VRAM.
     // So also write VKQ accumulators to shared memory in column-major format if np == 1.
@@ -1516,16 +1567,19 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
     constexpr int tile_stride = nbatch_combine + 4;
     static_assert((DV/2) % nbatch_combine == 0, "bad nbatch_combine");
 
+    // On NVIDIA, f32 VKQ tiles have the half2 layout with 2 floats per half2 element:
+    using T_C_VKQ_h2 = std::conditional_t<std::is_same_v<decltype(T_C_VKQ::x), float[T_C_VKQ::ne]>, tile<T_C_VKQ::I, T_C_VKQ::J/2, half2>, T_C_VKQ>;
+
     if constexpr (cols_per_warp == 8) {
-        const int jc_cwmo = (threadIdx.x % (2*T_C_VKQ::J)) / T_C_VKQ::J; // jc combine write meta offset
-        const int jc_cwm = threadIdx.y*(2*T_C_VKQ::J) + 2*T_C_VKQ::get_j(-1) + jc_cwmo; // jc combine write meta
+        const int jc_cwmo = (threadIdx.x % (2*T_C_VKQ_h2::J)) / T_C_VKQ_h2::J; // jc combine write meta offset
+        const int jc_cwm = threadIdx.y*(2*T_C_VKQ_h2::J) + 2*T_C_VKQ_h2::get_j(-1) + jc_cwmo; // jc combine write meta
         const float2 KQ_cmr = make_float2(KQ_max[jc_cwmo], KQ_rowsum[jc_cwmo]); // KQ combine max rowsum
 
         if constexpr (swz) {
             __syncthreads();
         }
 
-        if (((!needs_fixup && !is_fixup) || np > 1) && threadIdx.x < 2*T_C_VKQ::J) {
+        if (((!needs_fixup && !is_fixup) || np > 1) && threadIdx.x < 2*T_C_VKQ_h2::J) {
             // Use the 16 bytes of padding in each row to store the meta data: KQ max, KQ rowsum, KQ max scale.
             ((float2 *) tile_Q)[jc_cwm*(tile_stride/2) + nbatch_combine/2] = KQ_cmr;
         }
@@ -1548,7 +1602,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
         // KQ_cmr = KQ combine max rowsum
         // Use the 16 bytes of padding in each Q column to store the meta data: KQ max, KQ rowsum, KQ max scale.
 #if defined(TURING_MMA_AVAILABLE)
-        const int jc_cwm = threadIdx.y*cols_per_warp + T_C_VKQ::get_i(threadIdx.x % 4);
+        const int jc_cwm = threadIdx.y*cols_per_warp + T_C_VKQ_h2::get_i(threadIdx.x % 4);
         const float2 KQ_cmr = make_float2(KQ_max[threadIdx.x % cols_per_thread], KQ_rowsum[threadIdx.x % cols_per_thread]);
         const bool thread_should_write = threadIdx.x % 4 < cols_per_thread;
 #elif defined(AMD_WMMA_AVAILABLE) || defined(AMD_MFMA_AVAILABLE)
@@ -1660,11 +1714,22 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
 #pragma unroll
     for (int k00 = 0; k00 < DV/2; k00 += nbatch_combine) {
         if constexpr (cols_per_warp == 8) {
-            static_assert(std::is_same_v<decltype(T_C_VKQ::x), half2[T_C_VKQ::ne]>, "bad VKQ type");
             const int jc_cwd = threadIdx.y*T_B_KQ::I + T_B_KQ::get_i(-1); // jc combine write data
 #pragma unroll
             for (int k1 = 0; k1 < nbatch_combine; k1 += T_B_KQ::J) {
-                const T_B_KQ B = get_transposed(VKQ_C[(k00 + k1)/T_B_KQ::J]); // Conversion of C to B matrix puts it in column-major format.
+                // Initialized by a lambda: declaring B first and assigning it changes the register allocation of the f16 build.
+                const T_B_KQ B = [&]() { // Conversion of C to B matrix puts it in column-major format.
+                    if constexpr (std::is_same_v<decltype(T_C_VKQ::x), float[T_C_VKQ::ne]>) {
+                        T_C_VKQ_h2 VKQ_C_h2;
+#pragma unroll
+                        for (int l = 0; l < T_C_VKQ_h2::ne; ++l) {
+                            VKQ_C_h2.x[l] = make_half2(VKQ_C[(k00 + k1)/T_B_KQ::J].x[2*l + 0], VKQ_C[(k00 + k1)/T_B_KQ::J].x[2*l + 1]);
+                        }
+                        return get_transposed(VKQ_C_h2);
+                    } else {
+                        return get_transposed(VKQ_C[(k00 + k1)/T_B_KQ::J]);
+                    }
+                }();
 
 #pragma unroll
                 for (int l = 0; l < T_B_KQ::ne; ++l) {
