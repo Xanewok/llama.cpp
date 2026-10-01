@@ -9321,6 +9321,15 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         for (int64_t nb : {5, 6}) {
             test_cases.emplace_back(new test_flash_attn_swift_verify(4096, nb, GGML_TYPE_Q8_0, "causal", 2));
         }
+        if (getenv("LLAMA_TEST_SWIFT_FA_ACCUM")) {
+            for (int64_t kv : {4096, 65536, 102400, 102399}) {
+                for (int64_t nb : {1, 2, 7}) {
+                    for (ggml_type type : {GGML_TYPE_Q8_0, GGML_TYPE_F16}) {
+                        test_cases.emplace_back(new test_flash_attn_swift_verify(kv, nb, type, "large"));
+                    }
+                }
+            }
+        }
         return test_cases;
     }
     std::default_random_engine rng(0);
