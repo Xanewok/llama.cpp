@@ -1,0 +1,213 @@
+[
+  {
+    "name": "S0-alphametics",
+    "prompt_tokens_D": 20968,
+    "onset_token_D": 21208,
+    "total_tokens_D": 21254,
+    "points": [
+      20000,
+      21208
+    ],
+    "configured_rs": 3,
+    "context_size": 102400,
+    "provenance": {
+      "attempt": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S0-A-IQ4_XS-e3b59faa312a-pair2/attempts/bc1f56f9814127e2-01",
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S0-A-IQ4_XS-e3b59faa312a-pair2/attempts/bc1f56f9814127e2-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T02-06-18-01a0f536-6662-7e53-8f54-aca2f23dd114.jsonl",
+      "line": 96,
+      "rollout_sha256": "bead28f630172115beb989b5afde46d12acb92260e7d0c247340d96dcf4a38d5",
+      "event_type": "message",
+      "span_chars_M": 0,
+      "template_sha256": "4af3dcf0e98bf87adf684a4824683ab15fffd64e93ed1170061ef86a15827ba8",
+      "launch_sha256": "c8380dc332a50981aedc49c1816e3dfc1ee4c4341da64b42cffd9f74addaa40a",
+      "spec_sha256": "34575af8e3a943ec607e9215334cabd254a7936a5b4278c88df98b475de7b303"
+    },
+    "fidelity": {
+      "original_token_ids": false,
+      "raw_requests": false,
+      "tool_schemas": "not archived; omitted",
+      "instructions": "session_meta.base_instructions plus ordered response_item input messages",
+      "current_generation": "reasoning/content text; tool XML inferred from saved template",
+      "reasoning_effort": "xhigh inferred from turn_context; template default agrees",
+      "onset": "start of longest qualifying span; reproducible heuristic, not causal onset",
+      "tool_arguments": "JSON string unescaped for generated cmd; XML whitespace is inferred",
+      "sampling": "ungrammared configured filters; grammar state and original RNG unavailable"
+    }
+  },
+  {
+    "name": "S0-list",
+    "prompt_tokens_D": 48033,
+    "onset_token_D": 48566,
+    "total_tokens_D": 48608,
+    "points": [
+      20000,
+      48566
+    ],
+    "configured_rs": 3,
+    "context_size": 102400,
+    "provenance": {
+      "attempt": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S0-A-IQ4_XS-e3b59faa312a-pair3/attempts/448a1d569fa507d0-01",
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S0-A-IQ4_XS-e3b59faa312a-pair3/attempts/448a1d569fa507d0-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T02-22-28-01a0f545-367a-7dc2-b028-a3965a8f8f55.jsonl",
+      "line": 226,
+      "rollout_sha256": "639b8315a38110c2ca3f9ff4c1aad9b78ecf77d6028044a5109731add5ade73a",
+      "event_type": "message",
+      "span_chars_M": 0,
+      "template_sha256": "4af3dcf0e98bf87adf684a4824683ab15fffd64e93ed1170061ef86a15827ba8",
+      "launch_sha256": "84afce9f5e6f8979430169bcff637f4dc75743460aeb2413679e8e097383cf91",
+      "spec_sha256": "72ca538d18bb581ca20f81442ced9ffea2b3f8a67edee997cec3ac1ef348885f"
+    },
+    "fidelity": {
+      "original_token_ids": false,
+      "raw_requests": false,
+      "tool_schemas": "not archived; omitted",
+      "instructions": "session_meta.base_instructions plus ordered response_item input messages",
+      "current_generation": "reasoning/content text; tool XML inferred from saved template",
+      "reasoning_effort": "xhigh inferred from turn_context; template default agrees",
+      "onset": "start of longest qualifying span; reproducible heuristic, not causal onset",
+      "tool_arguments": "JSON string unescaped for generated cmd; XML whitespace is inferred",
+      "sampling": "ungrammared configured filters; grammar state and original RNG unavailable"
+    }
+  },
+  {
+    "name": "S4-pair1",
+    "prompt_tokens_D": 7482,
+    "onset_token_D": 14750,
+    "total_tokens_D": 101354,
+    "points": [
+      14750,
+      20000,
+      50000,
+      90000
+    ],
+    "configured_rs": 4,
+    "context_size": 102400,
+    "provenance": {
+      "attempt": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair1/attempts/0957923a4a4b4e1b-01",
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair1/attempts/0957923a4a4b4e1b-01/codex-state/sessions/2026/09/30/rollout-2026-09-30T23-22-37-01a0f4a0-8b1d-73a1-8a1b-f316dd232125.jsonl",
+      "line": 26,
+      "rollout_sha256": "718b38dc124f63b2bb3372058431bf063abe7cb8de62994d36c29da460ad2101",
+      "event_type": "reasoning",
+      "span_chars_M": 129905,
+      "template_sha256": "4af3dcf0e98bf87adf684a4824683ab15fffd64e93ed1170061ef86a15827ba8",
+      "launch_sha256": "7c781dd9e15a3f83fea9e9acc320276fcd07100d94ea939b86fd1ca99af13ca2",
+      "spec_sha256": "8833482f61bb5c6b612a989d628f02797a4356522e31f7d9508f7310c49267a2"
+    },
+    "fidelity": {
+      "original_token_ids": false,
+      "raw_requests": false,
+      "tool_schemas": "not archived; omitted",
+      "instructions": "session_meta.base_instructions plus ordered response_item input messages",
+      "current_generation": "reasoning/content text; tool XML inferred from saved template",
+      "reasoning_effort": "xhigh inferred from turn_context; template default agrees",
+      "onset": "start of longest qualifying span; reproducible heuristic, not causal onset",
+      "tool_arguments": "JSON string unescaped for generated cmd; XML whitespace is inferred",
+      "sampling": "ungrammared configured filters; grammar state and original RNG unavailable"
+    }
+  },
+  {
+    "name": "S4-pair2",
+    "prompt_tokens_D": 7839,
+    "onset_token_D": 18793,
+    "total_tokens_D": 86882,
+    "points": [
+      18793,
+      20000,
+      50000
+    ],
+    "configured_rs": 4,
+    "context_size": 102400,
+    "provenance": {
+      "attempt": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair2/attempts/0957923a4a4b4e1b-01",
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair2/attempts/0957923a4a4b4e1b-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T00-51-09-01a0f4f1-9b77-7fa1-9b00-bd89e1b6d1dc.jsonl",
+      "line": 28,
+      "rollout_sha256": "544b24b9faf6bc67c2b29de7bffae5b21f8e18b518f09b1bb275a115d458a058",
+      "event_type": "reasoning",
+      "span_chars_M": 102132,
+      "template_sha256": "4af3dcf0e98bf87adf684a4824683ab15fffd64e93ed1170061ef86a15827ba8",
+      "launch_sha256": "b550a18996d463fe19ca537c279c02dbdcc6cf58878344602174518c2da162a9",
+      "spec_sha256": "8833482f61bb5c6b612a989d628f02797a4356522e31f7d9508f7310c49267a2"
+    },
+    "fidelity": {
+      "original_token_ids": false,
+      "raw_requests": false,
+      "tool_schemas": "not archived; omitted",
+      "instructions": "session_meta.base_instructions plus ordered response_item input messages",
+      "current_generation": "reasoning/content text; tool XML inferred from saved template",
+      "reasoning_effort": "xhigh inferred from turn_context; template default agrees",
+      "onset": "start of longest qualifying span; reproducible heuristic, not causal onset",
+      "tool_arguments": "JSON string unescaped for generated cmd; XML whitespace is inferred",
+      "sampling": "ungrammared configured filters; grammar state and original RNG unavailable"
+    }
+  },
+  {
+    "name": "S4-pair3",
+    "prompt_tokens_D": 7747,
+    "onset_token_D": 13980,
+    "total_tokens_D": 101358,
+    "points": [
+      13980,
+      20000,
+      50000,
+      90000
+    ],
+    "configured_rs": 4,
+    "context_size": 102400,
+    "provenance": {
+      "attempt": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair3/attempts/0957923a4a4b4e1b-01",
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair3/attempts/0957923a4a4b4e1b-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T03-20-10-01a0f57a-06b9-7352-a17b-cc35bd5134ec.jsonl",
+      "line": 31,
+      "rollout_sha256": "a6f460bbdcf9ada5ca747799086a3fb2ffce16698880dbd8bb4379e171741f49",
+      "event_type": "reasoning",
+      "span_chars_M": 131066,
+      "template_sha256": "4af3dcf0e98bf87adf684a4824683ab15fffd64e93ed1170061ef86a15827ba8",
+      "launch_sha256": "92bdd63fd6d3c7369720702c8922fb8b17ca8e52d16344d30b324b126907b968",
+      "spec_sha256": "8833482f61bb5c6b612a989d628f02797a4356522e31f7d9508f7310c49267a2"
+    },
+    "fidelity": {
+      "original_token_ids": false,
+      "raw_requests": false,
+      "tool_schemas": "not archived; omitted",
+      "instructions": "session_meta.base_instructions plus ordered response_item input messages",
+      "current_generation": "reasoning/content text; tool XML inferred from saved template",
+      "reasoning_effort": "xhigh inferred from turn_context; template default agrees",
+      "onset": "start of longest qualifying span; reproducible heuristic, not causal onset",
+      "tool_arguments": "JSON string unescaped for generated cmd; XML whitespace is inferred",
+      "sampling": "ungrammared configured filters; grammar state and original RNG unavailable"
+    }
+  },
+  {
+    "name": "S5-codons",
+    "prompt_tokens_D": 7712,
+    "onset_token_D": 10246,
+    "total_tokens_D": 101353,
+    "points": [
+      10246,
+      20000,
+      50000,
+      90000
+    ],
+    "configured_rs": 5,
+    "context_size": 102400,
+    "provenance": {
+      "attempt": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase2-S5-A-IQ4_XS-e3b59faa312a-pair2/attempts/ad1513a00c7e62e8-01",
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase2-S5-A-IQ4_XS-e3b59faa312a-pair2/attempts/ad1513a00c7e62e8-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T05-35-35-01a0f5f6-012e-76e0-a12f-1500776e6ec1.jsonl",
+      "line": 34,
+      "rollout_sha256": "d47dbdd2b5d5fda6eb3be3726d620e44163c46a3433c3f23201caa2cd603e46f",
+      "event_type": "function_call",
+      "span_chars_M": 143154,
+      "template_sha256": "4af3dcf0e98bf87adf684a4824683ab15fffd64e93ed1170061ef86a15827ba8",
+      "launch_sha256": "6d317b7a5b00833c9fa59d894cf05b71cf4d158df70faf0133af295c982ab3b0",
+      "spec_sha256": "31c354e5f5968f0a1e777e86ecb562821f4141f192ba11ee6bf59e76d325a20b"
+    },
+    "fidelity": {
+      "original_token_ids": false,
+      "raw_requests": false,
+      "tool_schemas": "not archived; omitted",
+      "instructions": "session_meta.base_instructions plus ordered response_item input messages",
+      "current_generation": "reasoning/content text; tool XML inferred from saved template",
+      "reasoning_effort": "xhigh inferred from turn_context; template default agrees",
+      "onset": "start of longest qualifying span; reproducible heuristic, not causal onset",
+      "tool_arguments": "JSON string unescaped for generated cmd; XML whitespace is inferred",
+      "sampling": "ungrammared configured filters; grammar state and original RNG unavailable"
+    }
+  }
+]
