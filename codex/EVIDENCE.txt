@@ -1,0 +1,195 @@
+[law.log]
+M: identity k=3 subset=0 seeds=256
+M: law k=3 subset=0 row=0 broken=0 n=20000 df=18 chi2=19.4626454 rejected=3636 outside_q=0
+M: law k=3 subset=0 row=1 broken=0 n=20000 df=18 chi2=12.2398231 rejected=3592 outside_q=0
+M: law k=3 subset=0 row=2 broken=0 n=20000 df=18 chi2=19.9913629 rejected=3638 outside_q=0
+M: identity k=3 subset=1 seeds=256
+M: law k=3 subset=1 row=0 broken=0 n=20000 df=18 chi2=27.3752135 rejected=9001 outside_q=9001
+M: law k=3 subset=1 row=1 broken=0 n=20000 df=18 chi2=13.7603824 rejected=8858 outside_q=8858
+M: law k=3 subset=1 row=2 broken=0 n=20000 df=18 chi2=12.349186 rejected=8825 outside_q=8825
+M: law k=3 subset=1 row=0 broken=1 n=20000 df=18 chi2=15964.4025 rejected=0 outside_q=0
+M: identity k=4 subset=0 seeds=256
+M: law k=4 subset=0 row=0 broken=0 n=20000 df=18 chi2=13.623421 rejected=3595 outside_q=0
+M: law k=4 subset=0 row=1 broken=0 n=20000 df=18 chi2=11.2303099 rejected=3691 outside_q=0
+M: law k=4 subset=0 row=2 broken=0 n=20000 df=18 chi2=24.7835531 rejected=3549 outside_q=0
+M: law k=4 subset=0 row=3 broken=0 n=20000 df=18 chi2=16.0952949 rejected=3612 outside_q=0
+M: identity k=4 subset=1 seeds=256
+M: law k=4 subset=1 row=0 broken=0 n=20000 df=18 chi2=20.1246707 rejected=8946 outside_q=8946
+M: law k=4 subset=1 row=1 broken=0 n=20000 df=18 chi2=16.1653876 rejected=8942 outside_q=8942
+M: law k=4 subset=1 row=2 broken=0 n=20000 df=18 chi2=17.9052167 rejected=8788 outside_q=8788
+M: law k=4 subset=1 row=3 broken=0 n=20000 df=18 chi2=9.00001246 rejected=8940 outside_q=8940
+M: law k=4 subset=1 row=0 broken=1 n=20000 df=18 chi2=15969.1962 rejected=0 outside_q=0
+M: identity k=5 subset=0 seeds=256
+M: law k=5 subset=0 row=0 broken=0 n=20000 df=18 chi2=23.3721225 rejected=3566 outside_q=0
+M: law k=5 subset=0 row=1 broken=0 n=20000 df=18 chi2=26.8848766 rejected=3569 outside_q=0
+M: law k=5 subset=0 row=2 broken=0 n=20000 df=18 chi2=22.6118631 rejected=3560 outside_q=0
+M: law k=5 subset=0 row=3 broken=0 n=20000 df=18 chi2=12.0741506 rejected=3437 outside_q=0
+M: law k=5 subset=0 row=4 broken=0 n=20000 df=18 chi2=6.28850147 rejected=3572 outside_q=0
+M: identity k=5 subset=1 seeds=256
+M: law k=5 subset=1 row=0 broken=0 n=20000 df=18 chi2=14.5825776 rejected=8804 outside_q=8804
+M: law k=5 subset=1 row=1 broken=0 n=20000 df=18 chi2=17.5434438 rejected=8863 outside_q=8863
+M: law k=5 subset=1 row=2 broken=0 n=20000 df=18 chi2=13.972013 rejected=8865 outside_q=8865
+M: law k=5 subset=1 row=3 broken=0 n=20000 df=18 chi2=24.2100841 rejected=8952 outside_q=8952
+M: law k=5 subset=1 row=4 broken=0 n=20000 df=18 chi2=17.2030528 rejected=8857 outside_q=8857
+M: law k=5 subset=1 row=0 broken=1 n=20000 df=18 chi2=15975.5242 rejected=0 outside_q=0
+M: checkpoint replay k=3 n=9966 counts=0,9966 chi2=9966 preserved_rng_counts=4969,4997 chi2=0.0786674694 df=1
+M: checkpoint replay k=4 n=9974 counts=0,9974 chi2=9974 preserved_rng_counts=4983,4991 chi2=0.00641668338 df=1
+M: checkpoint replay k=5 n=9974 counts=0,9974 chi2=9974 preserved_rng_counts=4985,4989 chi2=0.00160417084 df=1
+[rollback.log]
+M: target backend k=3 subset=0 tp=0 installed=1
+M: prefix k=3 subset=0 r=1 nmse=0
+M: rollback k=3 subset=0 r=1 nmse=0 bit_equal=1
+M: prefix k=3 subset=0 r=2 nmse=0
+M: rollback k=3 subset=0 r=2 nmse=0 bit_equal=1
+M: prefix k=3 subset=0 r=3 nmse=0
+M: rollback k=3 subset=0 r=3 nmse=0 bit_equal=1
+M: law k=3 subset=0 row=0 broken=0 n=20000 df=4 chi2=6.61990326 rejected=4039 outside_q=0
+M: rollback negative k=3 subset=0 nmse=0.0792794755
+M: target backend k=4 subset=0 tp=0 installed=1
+M: prefix k=4 subset=0 r=1 nmse=0
+M: rollback k=4 subset=0 r=1 nmse=0 bit_equal=1
+M: prefix k=4 subset=0 r=2 nmse=0
+M: rollback k=4 subset=0 r=2 nmse=0 bit_equal=1
+M: prefix k=4 subset=0 r=3 nmse=0
+M: rollback k=4 subset=0 r=3 nmse=0 bit_equal=1
+M: prefix k=4 subset=0 r=4 nmse=0
+M: rollback k=4 subset=0 r=4 nmse=0 bit_equal=1
+M: law k=4 subset=0 row=0 broken=0 n=20000 df=4 chi2=7.60265529 rejected=4064 outside_q=0
+M: rollback negative k=4 subset=0 nmse=0.108057905
+M: target backend k=5 subset=0 tp=0 installed=1
+M: prefix k=5 subset=0 r=1 nmse=0
+M: rollback k=5 subset=0 r=1 nmse=0 bit_equal=1
+M: prefix k=5 subset=0 r=2 nmse=0
+M: rollback k=5 subset=0 r=2 nmse=0 bit_equal=1
+M: prefix k=5 subset=0 r=3 nmse=0
+M: rollback k=5 subset=0 r=3 nmse=0 bit_equal=1
+M: prefix k=5 subset=0 r=4 nmse=0
+M: rollback k=5 subset=0 r=4 nmse=0 bit_equal=1
+M: prefix k=5 subset=0 r=5 nmse=0
+M: rollback k=5 subset=0 r=5 nmse=0 bit_equal=1
+M: law k=5 subset=0 row=0 broken=0 n=20000 df=4 chi2=2.18852245 rejected=4045 outside_q=0
+M: rollback negative k=5 subset=0 nmse=0.155353363
+M: target backend k=3 subset=1 tp=0 installed=1
+M: prefix k=3 subset=1 r=1 nmse=0
+M: rollback k=3 subset=1 r=1 nmse=0 bit_equal=1
+M: prefix k=3 subset=1 r=2 nmse=0
+M: rollback k=3 subset=1 r=2 nmse=0 bit_equal=1
+M: prefix k=3 subset=1 r=3 nmse=0
+M: rollback k=3 subset=1 r=3 nmse=0 bit_equal=1
+M: law k=3 subset=1 row=0 broken=0 n=20000 df=4 chi2=2.31114774 rejected=3264 outside_q=3264
+M: rollback negative k=3 subset=1 nmse=0.0792794755
+M: target backend k=4 subset=1 tp=0 installed=1
+M: prefix k=4 subset=1 r=1 nmse=0
+M: rollback k=4 subset=1 r=1 nmse=0 bit_equal=1
+M: prefix k=4 subset=1 r=2 nmse=0
+M: rollback k=4 subset=1 r=2 nmse=0 bit_equal=1
+M: prefix k=4 subset=1 r=3 nmse=0
+M: rollback k=4 subset=1 r=3 nmse=0 bit_equal=1
+M: prefix k=4 subset=1 r=4 nmse=0
+M: rollback k=4 subset=1 r=4 nmse=0 bit_equal=1
+M: law k=4 subset=1 row=0 broken=0 n=20000 df=4 chi2=5.81460403 rejected=3307 outside_q=3307
+M: rollback negative k=4 subset=1 nmse=0.108057905
+M: target backend k=5 subset=1 tp=0 installed=1
+M: prefix k=5 subset=1 r=1 nmse=0
+M: rollback k=5 subset=1 r=1 nmse=0 bit_equal=1
+M: prefix k=5 subset=1 r=2 nmse=0
+M: rollback k=5 subset=1 r=2 nmse=0 bit_equal=1
+M: prefix k=5 subset=1 r=3 nmse=0
+M: rollback k=5 subset=1 r=3 nmse=0 bit_equal=1
+M: prefix k=5 subset=1 r=4 nmse=0
+M: rollback k=5 subset=1 r=4 nmse=0 bit_equal=1
+M: prefix k=5 subset=1 r=5 nmse=0
+M: rollback k=5 subset=1 r=5 nmse=0 bit_equal=1
+M: law k=5 subset=1 row=0 broken=0 n=20000 df=4 chi2=3.0518093 rejected=3293 outside_q=3293
+M: rollback negative k=5 subset=1 nmse=0.155353363
+[tp.log]
+M: target backend k=3 subset=0 tp=1 installed=0
+M: prefix k=3 subset=0 r=1 nmse=0
+M: rollback k=3 subset=0 r=1 nmse=0 bit_equal=1
+M: prefix k=3 subset=0 r=2 nmse=0
+M: rollback k=3 subset=0 r=2 nmse=0 bit_equal=1
+M: prefix k=3 subset=0 r=3 nmse=0
+M: rollback k=3 subset=0 r=3 nmse=0 bit_equal=1
+M: law k=3 subset=0 row=0 broken=0 n=20000 df=4 chi2=4.72160926 rejected=4038 outside_q=0
+M: rollback negative k=3 subset=0 nmse=0.0760126463
+M: target backend k=4 subset=0 tp=1 installed=0
+M: prefix k=4 subset=0 r=1 nmse=0
+M: rollback k=4 subset=0 r=1 nmse=0 bit_equal=1
+M: prefix k=4 subset=0 r=2 nmse=0
+M: rollback k=4 subset=0 r=2 nmse=0 bit_equal=1
+M: prefix k=4 subset=0 r=3 nmse=0
+M: rollback k=4 subset=0 r=3 nmse=0 bit_equal=1
+M: prefix k=4 subset=0 r=4 nmse=0
+M: rollback k=4 subset=0 r=4 nmse=0 bit_equal=1
+M: law k=4 subset=0 row=0 broken=0 n=20000 df=4 chi2=8.64807367 rejected=4009 outside_q=0
+M: rollback negative k=4 subset=0 nmse=0.105300812
+M: target backend k=5 subset=0 tp=1 installed=0
+M: prefix k=5 subset=0 r=1 nmse=0
+M: rollback k=5 subset=0 r=1 nmse=0 bit_equal=1
+M: prefix k=5 subset=0 r=2 nmse=0
+M: rollback k=5 subset=0 r=2 nmse=0 bit_equal=1
+M: prefix k=5 subset=0 r=3 nmse=0
+M: rollback k=5 subset=0 r=3 nmse=0 bit_equal=1
+M: prefix k=5 subset=0 r=4 nmse=0
+M: rollback k=5 subset=0 r=4 nmse=0 bit_equal=1
+M: prefix k=5 subset=0 r=5 nmse=0
+M: rollback k=5 subset=0 r=5 nmse=0 bit_equal=1
+M: law k=5 subset=0 row=0 broken=0 n=20000 df=4 chi2=3.30055177 rejected=4006 outside_q=0
+M: rollback negative k=5 subset=0 nmse=0.147130384
+M: target backend k=3 subset=1 tp=1 installed=0
+M: prefix k=3 subset=1 r=1 nmse=0
+M: rollback k=3 subset=1 r=1 nmse=0 bit_equal=1
+M: prefix k=3 subset=1 r=2 nmse=0
+M: rollback k=3 subset=1 r=2 nmse=0 bit_equal=1
+M: prefix k=3 subset=1 r=3 nmse=0
+M: rollback k=3 subset=1 r=3 nmse=0 bit_equal=1
+M: law k=3 subset=1 row=0 broken=0 n=20000 df=4 chi2=4.75612447 rejected=3153 outside_q=3153
+M: rollback negative k=3 subset=1 nmse=0.0760126463
+M: target backend k=4 subset=1 tp=1 installed=0
+M: prefix k=4 subset=1 r=1 nmse=0
+M: rollback k=4 subset=1 r=1 nmse=0 bit_equal=1
+M: prefix k=4 subset=1 r=2 nmse=0
+M: rollback k=4 subset=1 r=2 nmse=0 bit_equal=1
+M: prefix k=4 subset=1 r=3 nmse=0
+M: rollback k=4 subset=1 r=3 nmse=0 bit_equal=1
+M: prefix k=4 subset=1 r=4 nmse=0
+M: rollback k=4 subset=1 r=4 nmse=0 bit_equal=1
+M: law k=4 subset=1 row=0 broken=0 n=20000 df=4 chi2=6.30764936 rejected=3197 outside_q=3197
+M: rollback negative k=4 subset=1 nmse=0.105300812
+M: target backend k=5 subset=1 tp=1 installed=0
+M: prefix k=5 subset=1 r=1 nmse=0
+M: rollback k=5 subset=1 r=1 nmse=0 bit_equal=1
+M: prefix k=5 subset=1 r=2 nmse=0
+M: rollback k=5 subset=1 r=2 nmse=0 bit_equal=1
+M: prefix k=5 subset=1 r=3 nmse=0
+M: rollback k=5 subset=1 r=3 nmse=0 bit_equal=1
+M: prefix k=5 subset=1 r=4 nmse=0
+M: rollback k=5 subset=1 r=4 nmse=0 bit_equal=1
+M: prefix k=5 subset=1 r=5 nmse=0
+M: rollback k=5 subset=1 r=5 nmse=0 bit_equal=1
+M: law k=5 subset=1 row=0 broken=0 n=20000 df=4 chi2=3.67858479 rejected=3209 outside_q=3209
+M: rollback negative k=5 subset=1 nmse=0.147130384
+[server-identity.log]
+M: k0-subset0: greedy identity, 48 tokens, sha256=4a9eabc8202b24947a03dcd259ef376bd5d0a75453e0ddd9732ffbeea1b97106
+M: k3-subset0: greedy identity, 48 tokens, sha256=4a9eabc8202b24947a03dcd259ef376bd5d0a75453e0ddd9732ffbeea1b97106
+M: k3-subset1: greedy identity, 48 tokens, sha256=4a9eabc8202b24947a03dcd259ef376bd5d0a75453e0ddd9732ffbeea1b97106
+M: k4-subset0: greedy identity, 48 tokens, sha256=4a9eabc8202b24947a03dcd259ef376bd5d0a75453e0ddd9732ffbeea1b97106
+M: k4-subset1: greedy identity, 48 tokens, sha256=4a9eabc8202b24947a03dcd259ef376bd5d0a75453e0ddd9732ffbeea1b97106
+M: k5-subset0: greedy identity, 48 tokens, sha256=4a9eabc8202b24947a03dcd259ef376bd5d0a75453e0ddd9732ffbeea1b97106
+M: k5-subset1: greedy identity, 48 tokens, sha256=4a9eabc8202b24947a03dcd259ef376bd5d0a75453e0ddd9732ffbeea1b97106
+[negative-control.log]
+FAIL: law oracle failed
+M: identity k=3 subset=0 seeds=256
+M: law k=3 subset=0 row=0 broken=0 n=20000 df=18 chi2=3703.95093 rejected=0 outside_q=0
+[head-4-single.log]
+M: target bit identity, subset logits, normalized q, outside mask, backend top-k, multi-ubatch reads PASS; max logit error 0; mapping negative control detected
+[head-4-tp.log]
+M: target bit identity, subset logits, normalized q, outside mask, backend top-k, multi-ubatch reads PASS; max logit error 0; mapping negative control detected
+[head-5-single.log]
+M: target bit identity, subset logits, normalized q, outside mask, backend top-k, multi-ubatch reads PASS; max logit error 0; mapping negative control detected
+[head-5-tp.log]
+M: target bit identity, subset logits, normalized q, outside mask, backend top-k, multi-ubatch reads PASS; max logit error 0; mapping negative control detected
+[head-6-single.log]
+M: target bit identity, subset logits, normalized q, outside mask, backend top-k, multi-ubatch reads PASS; max logit error 0; mapping negative control detected
+[head-6-tp.log]
+M: target bit identity, subset logits, normalized q, outside mask, backend top-k, multi-ubatch reads PASS; max logit error 0; mapping negative control detected

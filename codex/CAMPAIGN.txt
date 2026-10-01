@@ -1,0 +1,194 @@
+[
+  {
+    "campaign": "campaign-swift15-weekend-20260930-main-phase1-S0-A-IQ4_XS-e3b59faa312a-pair1",
+    "attempt": "bc1f56f9814127e2-01",
+    "completion_tokens": 8392.0,
+    "restore_log_messages": 0,
+    "errors": 0,
+    "longest_letter_reasoning": {
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S0-A-IQ4_XS-e3b59faa312a-pair1/attempts/bc1f56f9814127e2-01/codex-state/sessions/2026/09/30/rollout-2026-09-30T22-19-33-01a0f466-cf3a-75c0-bf87-e7e7d328e88a.jsonl",
+      "line": 10,
+      "chars": 82,
+      "tail": "First, let's start by exploring the working directory to understand the exercise.\n",
+      "letter_span_chars": 0,
+      "letter_span_start": null,
+      "letter_span_sample": null
+    }
+  },
+  {
+    "campaign": "campaign-swift15-weekend-20260930-main-phase1-S0-A-IQ4_XS-e3b59faa312a-pair2",
+    "attempt": "bc1f56f9814127e2-01",
+    "completion_tokens": 11153.0,
+    "restore_log_messages": 0,
+    "errors": 0,
+    "longest_letter_reasoning": {
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S0-A-IQ4_XS-e3b59faa312a-pair2/attempts/bc1f56f9814127e2-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T02-06-18-01a0f536-6662-7e53-8f54-aca2f23dd114.jsonl",
+      "line": 10,
+      "chars": 93,
+      "tail": "Let's start by exploring the working directory to understand the structure of the exercises.\n",
+      "letter_span_chars": 0,
+      "letter_span_start": null,
+      "letter_span_sample": null
+    }
+  },
+  {
+    "campaign": "campaign-swift15-weekend-20260930-main-phase1-S0-A-IQ4_XS-e3b59faa312a-pair3",
+    "attempt": "bc1f56f9814127e2-01",
+    "completion_tokens": 10371.0,
+    "restore_log_messages": 0,
+    "errors": 0,
+    "longest_letter_reasoning": {
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S0-A-IQ4_XS-e3b59faa312a-pair3/attempts/bc1f56f9814127e2-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T02-34-58-01a0f550-a782-7111-8bdc-73da73bcd676.jsonl",
+      "line": 10,
+      "chars": 86,
+      "tail": "First, let's start by exploring the working directory and understanding the exercise.\n",
+      "letter_span_chars": 0,
+      "letter_span_start": null,
+      "letter_span_sample": null
+    }
+  },
+  {
+    "campaign": "campaign-swift15-weekend-20260930-main-phase1-S3-A-IQ4_XS-e3b59faa312a-pair1",
+    "attempt": "bc1f56f9814127e2-01",
+    "completion_tokens": 9063.0,
+    "restore_log_messages": 0,
+    "errors": 0,
+    "longest_letter_reasoning": {
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S3-A-IQ4_XS-e3b59faa312a-pair1/attempts/bc1f56f9814127e2-01/codex-state/sessions/2026/09/30/rollout-2026-09-30T22-56-38-01a0f488-c256-7db3-9bcf-b2166dbb685f.jsonl",
+      "line": 10,
+      "chars": 99,
+      "tail": "First, let's start by exploring the working directory to understand the structure of the exercise.\n",
+      "letter_span_chars": 0,
+      "letter_span_start": null,
+      "letter_span_sample": null
+    }
+  },
+  {
+    "campaign": "campaign-swift15-weekend-20260930-main-phase1-S3-A-IQ4_XS-e3b59faa312a-pair2",
+    "attempt": "bc1f56f9814127e2-01",
+    "completion_tokens": 6175.0,
+    "restore_log_messages": 0,
+    "errors": 0,
+    "longest_letter_reasoning": {
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S3-A-IQ4_XS-e3b59faa312a-pair2/attempts/bc1f56f9814127e2-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T01-37-49-01a0f51c-5443-7c73-96a9-0e5cdf06a62b.jsonl",
+      "line": 10,
+      "chars": 89,
+      "tail": "Let's start by exploring the working directory and understanding the practice exercises.\n",
+      "letter_span_chars": 0,
+      "letter_span_start": null,
+      "letter_span_sample": null
+    }
+  },
+  {
+    "campaign": "campaign-swift15-weekend-20260930-main-phase1-S3-A-IQ4_XS-e3b59faa312a-pair3",
+    "attempt": "bc1f56f9814127e2-01",
+    "completion_tokens": 3761.0,
+    "restore_log_messages": 0,
+    "errors": 0,
+    "longest_letter_reasoning": {
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S3-A-IQ4_XS-e3b59faa312a-pair3/attempts/bc1f56f9814127e2-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T02-59-00-01a0f566-a5f3-7031-b017-0dc5cd7f604e.jsonl",
+      "line": 10,
+      "chars": 87,
+      "tail": "Let's start by exploring the working directory and understanding the practice problem.\n",
+      "letter_span_chars": 0,
+      "letter_span_start": null,
+      "letter_span_sample": null
+    }
+  },
+  {
+    "campaign": "campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair1",
+    "attempt": "0957923a4a4b4e1b-01",
+    "completion_tokens": 121806.0,
+    "restore_log_messages": 0,
+    "errors": 0,
+    "longest_letter_reasoning": {
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair1/attempts/0957923a4a4b4e1b-01/codex-state/sessions/2026/09/30/rollout-2026-09-30T23-22-37-01a0f4a0-8b1d-73a1-8a1b-f316dd232125.jsonl",
+      "line": 26,
+      "chars": 153290,
+      "tail": ", S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S,",
+      "letter_span_chars": 129905,
+      "letter_span_start": 23385,
+      "letter_span_sample": "S, A, E, E, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, E, S, S, S, "
+    }
+  },
+  {
+    "campaign": "campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair2",
+    "attempt": "0957923a4a4b4e1b-01",
+    "completion_tokens": 82848.0,
+    "restore_log_messages": 0,
+    "errors": 0,
+    "longest_letter_reasoning": {
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair2/attempts/0957923a4a4b4e1b-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T00-51-09-01a0f4f1-9b77-7fa1-9b00-bd89e1b6d1dc.jsonl",
+      "line": 28,
+      "chars": 140318,
+      "tail": "S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S",
+      "letter_span_chars": 102132,
+      "letter_span_start": 38185,
+      "letter_span_sample": "S, A, E, E, R, L, S, I, L, A, E, T, S, S, E, S, A, E, E, F, E, T, E, E, S, E, R, E, S, S, E, S, E, E, L, S, S, E, S, S, "
+    }
+  },
+  {
+    "campaign": "campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair3",
+    "attempt": "0957923a4a4b4e1b-01",
+    "completion_tokens": 108747.0,
+    "restore_log_messages": 0,
+    "errors": 0,
+    "longest_letter_reasoning": {
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair3/attempts/0957923a4a4b4e1b-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T03-20-10-01a0f57a-06b9-7352-a17b-cc35bd5134ec.jsonl",
+      "line": 31,
+      "chars": 151649,
+      "tail": ", R, E, S, T, A, S, T, H, E, F, I, R, E. S, F, O, R, T, H, E, F, A, T, H, E, F, I, R, E. S, F, O, R, T, H, E, F, I, R, S, F, O, R, T, H, E, F, I, R, E, S, F, O,",
+      "letter_span_chars": 131066,
+      "letter_span_start": 20583,
+      "letter_span_sample": "T, F, T, A, H, I, T, T, T, T, F, T, T, L, T, O, T, L, T, L, A, T, F, H, O, L, A, F, T, F, T, T, H, A, T, A, S, T, F, H, "
+    }
+  },
+  {
+    "campaign": "campaign-swift15-weekend-20260930-main-phase1-S5-A-IQ4_XS-e3b59faa312a-pair1",
+    "attempt": "b6ec5657356fba7f-01",
+    "completion_tokens": 7592.0,
+    "restore_log_messages": 0,
+    "errors": 0,
+    "longest_letter_reasoning": {
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S5-A-IQ4_XS-e3b59faa312a-pair1/attempts/b6ec5657356fba7f-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T00-00-29-01a0f4c3-36c2-77d2-9358-71ac46fe9185.jsonl",
+      "line": 10,
+      "chars": 79,
+      "tail": "Let's start by exploring the working directory and understanding the exercise.\n",
+      "letter_span_chars": 0,
+      "letter_span_start": null,
+      "letter_span_sample": null
+    }
+  },
+  {
+    "campaign": "campaign-swift15-weekend-20260930-main-phase1-S5-A-IQ4_XS-e3b59faa312a-pair2",
+    "attempt": "b6ec5657356fba7f-01",
+    "completion_tokens": 20604.0,
+    "restore_log_messages": 0,
+    "errors": 0,
+    "longest_letter_reasoning": {
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S5-A-IQ4_XS-e3b59faa312a-pair2/attempts/b6ec5657356fba7f-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T00-20-23-01a0f4d5-6fff-7303-8731-d7ba3640049e.jsonl",
+      "line": 10,
+      "chars": 76,
+      "tail": "Let's start by exploring the working directory to understand the exercises.\n",
+      "letter_span_chars": 0,
+      "letter_span_start": null,
+      "letter_span_sample": null
+    }
+  },
+  {
+    "campaign": "campaign-swift15-weekend-20260930-main-phase1-S5-A-IQ4_XS-e3b59faa312a-pair3",
+    "attempt": "b6ec5657356fba7f-01",
+    "completion_tokens": 6184.0,
+    "restore_log_messages": 0,
+    "errors": 0,
+    "longest_letter_reasoning": {
+      "rollout": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S5-A-IQ4_XS-e3b59faa312a-pair3/attempts/b6ec5657356fba7f-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T03-57-53-01a0f59c-8ed8-71f2-9412-f84447d53a20.jsonl",
+      "line": 10,
+      "chars": 97,
+      "tail": "Let's start by exploring the working directory and understanding the structure of the exercises.\n",
+      "letter_span_chars": 0,
+      "letter_span_start": null,
+      "letter_span_sample": null
+    }
+  }
+]
