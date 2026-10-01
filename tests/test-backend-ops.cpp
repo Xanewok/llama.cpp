@@ -11182,6 +11182,17 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         }
     }
 
+    for (int nr : { 1, 2, 4 }) {
+        for (int nb = 1; nb <= 8; ++nb) {
+            test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {nr, 2}, 512, nb, true, false, 0, 0, GGML_PREC_F32,
+                                                            GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}));
+        }
+    }
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {1, 1}, 512, 4, false, false, 0, 0, GGML_PREC_F32,
+                                                    GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}));
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {2, 1}, 513, 4, true, false, 0, 0, GGML_PREC_F32,
+                                                    GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}));
+
     // Small query batches with quantized KV cache views.
     for (int kv : { 512, 1024, 4096 }) {
         for (int nb = 1; nb <= 8; ++nb) {
@@ -11701,11 +11712,13 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 131072, 512, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
 
     // Small query batches with the KV cache layout.
-    for (int kv : { 8192, 32768, 98304 }) {
+    for (int kv : { 512, 2048, 8192, 32768, 98304 }) {
         for (int nb = 1; nb <= 8; ++nb) {
-            for (ggml_type type_KV : { GGML_TYPE_F16, GGML_TYPE_Q8_0 }) {
-                test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, kv, nb, true, false, 0, 0, GGML_PREC_F32,
-                                                                type_KV, type_KV, {0, 2, 1, 3}, false));
+            for (int nr : { 2, 4, 8 }) {
+                for (ggml_type type_KV : { GGML_TYPE_F16, GGML_TYPE_Q8_0 }) {
+                    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {nr, 1}, kv, nb, true, false, 0, 0, GGML_PREC_F32,
+                                                                    type_KV, type_KV, {0, 2, 1, 3}, false));
+                }
             }
         }
     }

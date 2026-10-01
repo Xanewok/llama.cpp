@@ -151,7 +151,7 @@ bool ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(const int cc, const ggml_
 #endif // !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
 }
 
-// The q8_0 instances require the dense, aligned ncols2 == 8 pipeline.
+// The q8_0 instances require dense, aligned, whole KV tiles.
 static bool ggml_cuda_flash_attn_ext_mma_q8_0_supported(const int cc, const ggml_tensor * dst) {
 #if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
     GGML_UNUSED_VARS(cc, dst);
@@ -170,7 +170,7 @@ static bool ggml_cuda_flash_attn_ext_mma_q8_0_supported(const int cc, const ggml
     if (K->type != GGML_TYPE_Q8_0 || V->type != GGML_TYPE_Q8_0 || K->ne[0] != 256 || V->ne[0] != 256) {
         return false;
     }
-    if (Q->ne[1] < 2 || Q->ne[1] > 8 || logit_softcap != 0.0f) {
+    if (Q->ne[1] < 2 || Q->ne[1] > 8 || K->ne[1] % FATTN_KQ_STRIDE != 0 || logit_softcap != 0.0f) {
         return false;
     }
     // the kernel stages raw rows with 16 byte copies
@@ -191,13 +191,14 @@ static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_con
     const ggml_tensor * Q = dst->src[0];
 
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
-    if constexpr (ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, 4, ncols2) &&
-                  ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, 8, ncols2)) {
+    if constexpr (ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, 8, ncols2)) {
         if (ggml_cuda_flash_attn_ext_mma_q8_0_supported(cc, dst)) {
-            if (Q->ne[1] <= 2) {
-                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 2, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
-            } else if (Q->ne[1] <= 4 || ggml_cuda_highest_compiled_arch(cc) == GGML_CUDA_CC_TURING) {
-                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 4, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
+            constexpr int ncols1_small = ncols2 <= 4 ? 8/ncols2 : 2;
+            constexpr int ncols1_mid   = ncols2 <= 2 ? 8/ncols2 : 4;
+            if (Q->ne[1] <= ncols1_small) {
+                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, ncols1_small, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
+            } else if (Q->ne[1] <= ncols1_mid || (ncols2 == 8 && ggml_cuda_highest_compiled_arch(cc) == GGML_CUDA_CC_TURING)) {
+                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, ncols1_mid, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
             } else {
                 ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 8, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
             }

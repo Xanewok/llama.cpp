@@ -498,7 +498,7 @@ static constexpr __host__ __device__ int flash_attn_ext_f16_q8_0_row_bytes() {
     return D/QK8_0*sizeof(block_q8_0);
 }
 
-template<int D, int nwarps, int nbatch_fa>
+template<int D, int nwarps, int nbatch_fa, bool use_cp_async = true>
 static __device__ __forceinline__ void flash_attn_ext_f16_load_tile_q8_0(
         const char * const __restrict__ KV, char * const __restrict__ tile_q8, const int64_t stride_KV_bytes, const int k_VKQ_0) {
 #ifdef TURING_MMA_AVAILABLE
@@ -522,10 +522,13 @@ static __device__ __forceinline__ void flash_attn_ext_f16_load_tile_q8_0(
         const int i = c / chunks_per_row;
         const int k = c % chunks_per_row;
 #ifdef CP_ASYNC_AVAILABLE
-        cp_async_cg_16<64>(tile_q8_32 + i*row_bytes + k*16, KV + (k_VKQ_0 + i)*stride_KV_bytes + k*16);
-#else
-        ggml_cuda_memcpy_1<16>(tile_q8 + i*row_bytes + k*16, KV + (k_VKQ_0 + i)*stride_KV_bytes + k*16);
+        if constexpr (use_cp_async) {
+            cp_async_cg_16<64>(tile_q8_32 + i*row_bytes + k*16, KV + (k_VKQ_0 + i)*stride_KV_bytes + k*16);
+        } else
 #endif // CP_ASYNC_AVAILABLE
+        {
+            ggml_cuda_memcpy_1<16>(tile_q8 + i*row_bytes + k*16, KV + (k_VKQ_0 + i)*stride_KV_bytes + k*16);
+        }
     }
 #else
     GGML_UNUSED_VARS(KV, tile_q8, stride_KV_bytes, k_VKQ_0);
@@ -774,7 +777,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
             const int k0_diff = k0_stop - k0_start;
             constexpr bool use_cp_async = nstages == 1;
             if constexpr (type_KV == GGML_TYPE_Q8_0) {
-                flash_attn_ext_f16_load_tile_q8_0<DKQ, nwarps, nbatch_fa>
+                flash_attn_ext_f16_load_tile_q8_0<DKQ, nwarps, nbatch_fa, false>
                     ((const char *) K_h2, tile_q8, int64_t(stride_K)*sizeof(half2), k_VKQ_0);
                 __syncthreads();
                 flash_attn_ext_f16_dequantize_tile_q8_0<DKQ, stride_tile_K, swz, nwarps, nbatch_fa>(tile_q8, tile_K);
@@ -1143,7 +1146,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
             if (!V_is_K_view || i0_stop > 2*nbatch_K2) {
                 constexpr bool use_cp_async = nstages == 1;
                 if constexpr (type_KV == GGML_TYPE_Q8_0) {
-                    flash_attn_ext_f16_load_tile_q8_0<DV, nwarps, nbatch_fa>
+                    flash_attn_ext_f16_load_tile_q8_0<DV, nwarps, nbatch_fa, false>
                         ((const char *) V_h2, tile_q8, int64_t(stride_V)*sizeof(half2), k_VKQ_0);
                     __syncthreads();
                     flash_attn_ext_f16_dequantize_tile_q8_0<DV, stride_tile_V, swz, nwarps, nbatch_fa>(tile_q8, tile_V);
@@ -2342,12 +2345,21 @@ extern DECL_FATTN_MMA_F16_CASE(512, 512,  4,  8);
 extern DECL_FATTN_MMA_F16_CASE(512, 512,  8,  8);
 
 
+extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 8, 1);
+extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 4, 2);
+extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 8, 2);
+extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 2, 4);
+extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 4, 4);
+extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 8, 4);
 extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 2, 8);
 extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 4, 8);
 extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 8, 8);
 
 static constexpr bool ggml_cuda_flash_attn_ext_mma_q8_0_instance(const int DKQ, const int DV, const int ncols1, const int ncols2) {
-    return DKQ == 256 && DV == 256 && ncols2 == 8 && (ncols1 == 2 || ncols1 == 4 || ncols1 == 8);
+    return DKQ == 256 && DV == 256 && (
+        (ncols2 == 1 && ncols1 == 8) ||
+        (ncols2 == 2 && (ncols1 == 4 || ncols1 == 8)) ||
+        ((ncols2 == 4 || ncols2 == 8) && (ncols1 == 2 || ncols1 == 4 || ncols1 == 8)));
 }
 
 // The number of viable configurations for Deepseek is very limited:
