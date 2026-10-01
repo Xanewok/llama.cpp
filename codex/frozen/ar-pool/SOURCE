@@ -1,0 +1,3 @@
+1efa250254d0603c63dbac64bb6d49285c16da6b
+DO NOT MERGE. AR ring capacity diagnostic; base 2b645a655; env-only pool 2 vs 8.
+CUDA 13.2; compiler forced; arch 120; NCCL OFF; -j8; no GPU execution.

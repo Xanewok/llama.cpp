@@ -1,0 +1,266 @@
+{
+  "labels": "counts/durations M; partition/idle/averages D; no speed claim",
+  "rounds_M": 14,
+  "candidate_rounds_M": 14,
+  "median_round_us_M": 241460.3415,
+  "tables": [
+    {
+      "window": "decode_call",
+      "phase": "C",
+      "samples_M": 14,
+      "ar_wait": 0.0,
+      "inputs": 0.0,
+      "readback": 0.0,
+      "sync": 0.0,
+      "graph_builds": 98.993,
+      "sampling": 0.0,
+      "cuda_api": 0.0,
+      "host_unclassified": 3605.2408571428573,
+      "total_us": 3704.2338571428572
+    },
+    {
+      "window": "decode_call",
+      "phase": "D1",
+      "samples_M": 14,
+      "ar_wait": 0.0,
+      "inputs": 0.0,
+      "readback": 0.0,
+      "sync": 0.0,
+      "graph_builds": 90.81107142857142,
+      "sampling": 0.0,
+      "cuda_api": 0.0,
+      "host_unclassified": 22474.077857142856,
+      "total_us": 22564.88892857143
+    },
+    {
+      "window": "decode_call",
+      "phase": "D2",
+      "samples_M": 14,
+      "ar_wait": 0.0,
+      "inputs": 0.0,
+      "readback": 0.0,
+      "sync": 0.0,
+      "graph_builds": 0.0,
+      "sampling": 0.0,
+      "cuda_api": 0.0,
+      "host_unclassified": 22756.824571428573,
+      "total_us": 22756.824571428573
+    },
+    {
+      "window": "decode_call",
+      "phase": "D3",
+      "samples_M": 14,
+      "ar_wait": 0.0,
+      "inputs": 0.0,
+      "readback": 0.0,
+      "sync": 0.0,
+      "graph_builds": 0.0,
+      "sampling": 0.0,
+      "cuda_api": 0.0,
+      "host_unclassified": 22518.591785714285,
+      "total_us": 22518.591785714285
+    },
+    {
+      "window": "decode_call",
+      "phase": "V",
+      "samples_M": 14,
+      "ar_wait": 0.0,
+      "inputs": 0.0,
+      "readback": 0.0,
+      "sync": 0.0,
+      "graph_builds": 171.16649999999998,
+      "sampling": 0.0,
+      "cuda_api": 0.0,
+      "host_unclassified": 173744.43528571428,
+      "total_us": 173915.6017857143
+    },
+    {
+      "window": "host_boundary",
+      "phase": "C->D1",
+      "samples_M": 14,
+      "ar_wait": 0.0,
+      "inputs": 0.0,
+      "readback": 0.0,
+      "sync": 0.0,
+      "graph_builds": 0.0,
+      "sampling": 18.37364285714286,
+      "cuda_api": 0.0,
+      "host_unclassified": 101.98307142857144,
+      "total_us": 120.35671428571429
+    },
+    {
+      "window": "host_boundary",
+      "phase": "D1->D2",
+      "samples_M": 14,
+      "ar_wait": 0.0,
+      "inputs": 0.0,
+      "readback": 0.0,
+      "sync": 0.0,
+      "graph_builds": 0.0,
+      "sampling": 5.297785714285714,
+      "cuda_api": 0.0,
+      "host_unclassified": 18.910357142857144,
+      "total_us": 24.208142857142857
+    },
+    {
+      "window": "host_boundary",
+      "phase": "D2->D3",
+      "samples_M": 14,
+      "ar_wait": 0.0,
+      "inputs": 0.0,
+      "readback": 0.0,
+      "sync": 0.0,
+      "graph_builds": 0.0,
+      "sampling": 4.616428571428571,
+      "cuda_api": 0.0,
+      "host_unclassified": 17.301785714285714,
+      "total_us": 21.918214285714285
+    },
+    {
+      "window": "host_boundary",
+      "phase": "D3->V",
+      "samples_M": 14,
+      "ar_wait": 0.0,
+      "inputs": 0.0,
+      "readback": 0.0,
+      "sync": 0.0,
+      "graph_builds": 0.0,
+      "sampling": 4.913571428571428,
+      "cuda_api": 0.0,
+      "host_unclassified": 411.66357142857146,
+      "total_us": 416.57714285714286
+    },
+    {
+      "window": "host_boundary",
+      "phase": "V->C",
+      "samples_M": 14,
+      "ar_wait": 0.0,
+      "inputs": 0.0,
+      "readback": 0.0,
+      "sync": 0.0,
+      "graph_builds": 0.0,
+      "sampling": 0.0,
+      "cuda_api": 0.0,
+      "host_unclassified": 62.501357142857145,
+      "total_us": 62.501357142857145
+    }
+  ],
+  "counters": [
+    {
+      "phase": "C",
+      "kind": "graph_miss",
+      "device": -1,
+      "count": 14,
+      "bytes": 0,
+      "host_us": 0.0
+    },
+    {
+      "phase": "C",
+      "kind": "llama_build",
+      "device": -1,
+      "count": 14,
+      "bytes": 0,
+      "host_us": 1385.902
+    },
+    {
+      "phase": "C",
+      "kind": "sampling",
+      "device": -1,
+      "count": 58,
+      "bytes": 0,
+      "host_us": 257.231
+    },
+    {
+      "phase": "D1",
+      "kind": "graph_miss",
+      "device": -1,
+      "count": 14,
+      "bytes": 0,
+      "host_us": 0.0
+    },
+    {
+      "phase": "D1",
+      "kind": "llama_build",
+      "device": -1,
+      "count": 14,
+      "bytes": 0,
+      "host_us": 1271.3549999999998
+    },
+    {
+      "phase": "D1",
+      "kind": "sampling",
+      "device": -1,
+      "count": 14,
+      "bytes": 0,
+      "host_us": 74.16900000000001
+    },
+    {
+      "phase": "D2",
+      "kind": "graph_hit",
+      "device": -1,
+      "count": 14,
+      "bytes": 0,
+      "host_us": 0.0
+    },
+    {
+      "phase": "D2",
+      "kind": "sampling",
+      "device": -1,
+      "count": 14,
+      "bytes": 0,
+      "host_us": 64.63000000000001
+    },
+    {
+      "phase": "D3",
+      "kind": "graph_hit",
+      "device": -1,
+      "count": 14,
+      "bytes": 0,
+      "host_us": 0.0
+    },
+    {
+      "phase": "D3",
+      "kind": "sampling",
+      "device": -1,
+      "count": 14,
+      "bytes": 0,
+      "host_us": 68.79
+    },
+    {
+      "phase": "V",
+      "kind": "graph_hit",
+      "device": -1,
+      "count": 12,
+      "bytes": 0,
+      "host_us": 0.0
+    },
+    {
+      "phase": "V",
+      "kind": "graph_miss",
+      "device": -1,
+      "count": 2,
+      "bytes": 0,
+      "host_us": 0.0
+    },
+    {
+      "phase": "V",
+      "kind": "llama_build",
+      "device": -1,
+      "count": 2,
+      "bytes": 0,
+      "host_us": 2396.331
+    }
+  ],
+  "ar_wait_histogram": {
+    "bins_us": [
+      "[0,1)",
+      "[1,10)",
+      "[10,100)",
+      "[100,1000)",
+      "[1000,inf)"
+    ],
+    "by_phase_device": []
+  },
+  "nsys": null,
+  "limits": "Host residual includes scheduler stalls and uninstrumented work. GPU kernel boundaries include copy activity; device_idle subtracts its union. Without SQLite, GPU gaps are unknown."
+}
