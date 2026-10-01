@@ -1,0 +1,5 @@
+d2bfbee4de17c74e6308a4dc750be4c2271f92ae2df1e28f5c5afa0dcdb6fccc  /home/xanewok/models/Qwen3.5-4B-UD-Q4_K_XL.gguf
+7f9f4c6af61cbbbf35635f1874eca45a570f2e9afd3571aabd0204cdcfd8ed7b  stack2/build-cpu/bin/libggml-cpu.so
+6a2910763ac558f10a8259518142a07842dc75dc5d2235202b9a88473f29830e  /home/xanewok/repos/ra-gpu-paths/stack2/build-cpu/bin/libggml-cpu.so
+44f1225b8011f6ab418f4081d56462da12177e0c99a3300aa2e3a4169fe6f0d9  stack2/build-probe/state-split-sweep-tested
+0e1e85cdf3bc7e8dedc70b237800999a26c3a8a93ddd45da5de2d8bf929d0484  stack2/build-probe/state-split-probe

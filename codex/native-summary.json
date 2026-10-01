@@ -1,0 +1,46 @@
+{
+  "stack2/codex/follow-native.log": {
+    "measured_cases": 1,
+    "measured_follows": 4,
+    "measured_max_pre_nmse": 0.000912029576,
+    "measured_max_conv_nmse": 0.000135852667,
+    "measured_max_gdn_nmse": 2.40548043e-05,
+    "measured_max_post_nmse": 0.00158219451,
+    "measured_max_matched_post_nmse": 0,
+    "measured_logit_exact_cases": 0,
+    "measured_state_exact_cases": 0
+  },
+  "stack2/codex/depth-native.log": {
+    "measured_cases": 21,
+    "measured_follows": 0,
+    "measured_max_pre_nmse": 0.00103675536,
+    "measured_max_conv_nmse": 0.000156414648,
+    "measured_max_gdn_nmse": 3.01485061e-05,
+    "measured_max_post_nmse": 0.00158219451,
+    "measured_max_matched_post_nmse": 0,
+    "measured_logit_exact_cases": 15,
+    "measured_state_exact_cases": 15
+  },
+  "stack2/codex/prefix-native.log": {
+    "measured_cases": 32,
+    "measured_follows": 0,
+    "measured_max_pre_nmse": 0.00328703294,
+    "measured_max_conv_nmse": 0.000167008594,
+    "measured_max_gdn_nmse": 3.97741583e-05,
+    "measured_max_post_nmse": 0.00198421302,
+    "measured_max_matched_post_nmse": 0,
+    "measured_logit_exact_cases": 0,
+    "measured_state_exact_cases": 0
+  },
+  "stack2/codex/ubatch-native-64.log": {
+    "measured_cases": 1,
+    "measured_follows": 0,
+    "measured_max_pre_nmse": 0.000912029576,
+    "measured_max_conv_nmse": 0.000135852667,
+    "measured_max_gdn_nmse": 2.40548043e-05,
+    "measured_max_post_nmse": 0.00158219451,
+    "measured_max_matched_post_nmse": 0,
+    "measured_logit_exact_cases": 0,
+    "measured_state_exact_cases": 0
+  }
+}

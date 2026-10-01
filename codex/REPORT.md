@@ -1,138 +1,88 @@
-# Task D: GPU state and sampling audit
+# Task E: CPU rollback discrepancy
 
-Verdict: **the repetition failure remains unresolved. No concrete GPU-only corruption defect was established.** A new extended CPU fixture fails at k=5 after a 257-token synthetic prefix; this is a material open state/batch discrepancy, not a passing rollback certificate. Among GPU-only hypotheses the MMA query-tile change remains first, followed by graph/input lifetimes and recurrent-cache fusion.
+Verdict (a), high confidence: the reported discrepancy comes from batch-dependent CPU arithmetic. No wrong recurrent, conv, KV retention, position, or snapshot-slot defect was established. Use both `GGML_CPU_REPACK=OFF` and `GGML_LLAMAFILE=OFF` for this CPU rollback oracle. No production or sampling code was changed.
 
-D: the known `flash_attn_mask_to_KV_max` partial-query overread is not reached by this campaign. Its launch at `ggml/src/ggml-cuda/fattn-common.cuh:1163` requires at least 1024 queries or multiple query sequences. The read-only campaign launch inspected uses `-np 1 -ub 128`; tensor splitting heads across two GPUs does not create two query sequences. The actual MMA mask loader uses modulo query addressing (`fattn-mma-f16.cuh:609`, `:623`, `:647`, `:662`) for padded lanes. The scanner is a separate inherited defect, not evidence that these verify rows read past their mask.
+M = executed measurement or observation. D = source/arithmetic inference. G = guess; no performance guesses are made here. Configuration arguments, token IDs, hashes and source locations are literals.
 
-M = measured or directly observed; D = derived from the stated source/contract; G = hypothesis. Configuration values, token IDs, commit IDs, source locations, and command arguments are literal identifiers/settings. No GPU performance numbers are claimed.
+## Decisive evidence
 
-## Scope and provenance
+All measurements use the supplied `Qwen3.5-4B-UD-Q4_K_XL.gguf`, full target head, teacher-forced token histories. The main control uses f16 KV, FA off, native CPU instructions, OpenMP, no BLAS and no repacking. Reference and rollback contexts start from the same serialized prompt state. The reference evaluates only retained tokens and never rolls them back.
 
-Private shared-object clone: `/home/xanewok/repos/ra-gpu-paths/stack2`, branch `codex/gpu-state-audit`. Source audit locations below refer to **unmodified `0dba27b9002b8347c6f14a9f4a1651b3478065ef`**, unless a diagnostic commit is specified. The local upstream boundary is `a6ea155d3d38b3f6f43d0c0dc29c2d592413ef44`, the parent of the fork's probabilistic-draft cherry-pick `eaefd4746`. This is established from local ancestry, without querying a remote. Also diffed against `68d99c67d958c28b6bff5fdc2db096f81c324ef9`.
-
-M: `0dba27b90` adds host uploads, candidate verification, compact draft vocabulary and sampler binding fixes over `68d99c67d`; the diff touches 21 files. Neither GDN, its cache-copy fusion, conv, recurrent memory, nor internal AllReduce is changed by either comparison. Patch A's scheduler-family/multi-entry graph cache is absent. `codex/diff-stack-base.txt` and `codex/diff-upstream-base.txt` retain the complete file summaries; `git diff BASE..0dba27b90 -- PATH` reproduces individual source diffs.
-
-Read the supplied GPU sampling reports, attribution, Patch A report/review, fixture launcher, queue script, and the prior `s4-runaway/stack2/codex/REPORT.md`. All external trees, models and reports were read only. Executed commands hid CUDA, used nice 19, and limited build/compute work to at most eight threads. CUDA code was compiled with nvcc; no CUDA-linked executable, GPU query, server process, external API, network operation, push or download was run. Writes are inside this clone. No production sampling code changed.
-
-## Ranked hypotheses
-
-| Rank | Suspect and fit | Evidence and counter-evidence |
+| Check | Result (M) | Evidence |
 | --- | --- | --- |
-| G: first | Wider MMA query tile / long-KV stream-K fixup | `ggml/src/ggml-cuda/fattn.cu:204` dispatches four queries to a four-column tile and five/six to an eight-column tile. Both the direct-q8 and converted-f16 arms use that wider tile, so the prior dequant-only A/B did not isolate it. A long-KV tile/fixup fault could alter target probabilities and subsequent recurrent state. No faulty index was found. |
-| G: second | CUDA graph or input-copy lifetime at changing shapes/KV extents | Batch and output shape changes, buffer reuse, and graph capture are GPU-only. Upload ordering and topology checks are present; no missing campaign synchronization was established. Shape changes can be tested without changing the sampling law. |
-| G: third | GDN direct-to-cache fusion / PDL dependencies | Wrong snapshot stride, aliasing or an early write would corrupt persistent state after rejection. The actual index arithmetic has no depth-four boundary, and these paths are inherited from upstream. A fusion-disabled or PDL-disabled teacher-forced rollback test is still needed. |
-| G: fourth | CUDA top-k/candidate row indexing | Missing or swapped rows would give wrong p or q despite exact host rejection. The candidate count is fixed by sampler top-k, independent of speculative depth; CPU TP and row-law checks cover shared graph/host logic. CUDA kernels remain unexecuted here. |
-| G: fifth | Compact draft head / ID mapping | Could explain a subset association, but every proposal's actual normalized q is recorded and target weights are unchanged. Draft decodes normally have one output row, so verify depth does not directly cross a draft-head batch boundary. Wrong q rather than merely a different draft is required to bias rejection. |
-| G: lower | Internal AllReduce / prompt splitting / prefill bindings | No direct candidate BF16 rounding, depth-four snapshot overflow, or new prefill cache was found. General numerical and GPU scheduling faults remain possible, but no k-specific mechanism is established. |
+| Requested prefixes `120..140`, `250..260`; configured k `1..6`; every rollback distance | 672 cases; zero pre-correction logit, conv, GDN and post-correction logit NMSE | `sweep-exact.log`, `exact-summary.json` |
+| Prefix `257`, every k and distance, final byte oracle | 21 cases; byte-identical logits, conv/GDN tensors and serialized logical state including retained KV/positions | `state-bytes-strict.log` |
+| k `5`, distance `5`, prefix `257`, continuation | All 200 subsequent teacher-forced logit rows byte-identical to the independent reference | `follow-strict.log` |
+| Original supplied fixture, q8 KV / FA on, single and Meta CPU, k `5`, prefix `257` | Every distance passes with zero logit NMSE after disabling SGEMM | `original-q8-single-no-sgemm.log`, `original-q8-meta-no-sgemm.log` |
+| Deliberately select slot `r-1` instead of `r` | Exit 1; conv NMSE 0.471167677, GDN NMSE 0.0269419436, post-correction NMSE 0.163853968 | `wrong-slot-strict-negative.log` |
 
-Ranking is qualitative. S4 and S5 share the wider tile, while the reported failures are task/session-dependent; this does not prove a tile fault. The earlier checkpoint replay RNG bug is independent and not repaired here. Its ordinary campaign reachability remains excluded by the configured recurrent rollback window, subject to the prior report's qualifications.
+The initial complete sweep checked float-value equality; the final `memcmp` oracle was subsequently run on every prefix-`257` rollback case and the continuation. It detects different signed-zero bytes even when NMSE is zero. All continuation rows are checked; only selected checkpoints are printed. The Meta CPU version of the original fixture uses its existing host sampling fallback for the tied target head.
 
-## Path-by-path audit and parent tests
+With the read-only native build (`GGML_LLAMAFILE=ON`, repacking still off), the original failure reproduces exactly:
 
-### Host input upload batching
+| k `5`, distance `5`, prefix `257` | NMSE (M) |
+| --- | ---: |
+| Retained-token logits before any rollback can affect them | 0.000912029576 |
+| Selected conv state versus single-token reference | 0.000135852667 |
+| Selected GDN state versus single-token reference | 0.0000240548043 |
+| After corrected token | 0.00158219451 |
+| After continuation step `50` | 0.00115052832 |
+| After continuation step `100` | 0.00315685302 |
+| After continuation step `200` | 0.00111854422 |
+| Maximum over the continuation | 0.0635568835 |
+| Rollback versus matched multi-token computation, all state comparisons and continuation steps | 0 |
 
-Locations: `ggml/src/ggml-backend.cpp:1721-1739`, `:1748`; `ggml/src/ggml-backend-meta.cpp:1728`; `ggml/src/ggml-cuda/ggml-cuda.cu:802-865`.
+Persistence or growth is not a sufficient discriminator here. The native error grows while the independently evaluated multi-token shape control remains equal to the rolled result. That control evaluates `keep+1` tokens, checks its retained row before rollback, then removes just its last token. It uses distance one rather than the tested maximum distance. It matches CPU arithmetic dispatch, not the exact full verification column count; the independent no-rollback reference under SGEMM-off supplies the strict state oracle.
 
-Hazard: a copy on `cudaStreamPerThread` could overwrite an input that a nonblocking compute stream still reads; unordered batch copies could also change overlapping destinations. D: the scheduler synchronizes the destination backend/copy slot before uploading. Meta has no event interface, so its synchronize at `ggml-backend-meta.cpp:2048` waits on every simple backend. CUDA staging is mutex-protected, persists per buffer, grows only between completed calls, detects destination overlap, uses ordered scalar copies for overlaps, and synchronizes the upload stream before returning. Thus source pointers can be reused and staging cannot be overwritten while a copy is outstanding. The hazard is not established for the single-sequence tensor backend.
+M: native prefix-`257` tests have 15 equal cases and 6 differing cases: precisely the maximum rollback at every configured k. Native k-`5` maximum rollback differs at every one of the 32 requested prefix lengths; post-correction NMSE ranges from 0.000676568452 to 0.00198421302. Their matched-control NMSE is always zero. Changing prompt ubatch from `128` to `64` leaves the decisive corner's pre/post errors unchanged. Thus neither k `5` nor the prompt boundary alone is required (D).
 
-CPU tests can catch grouping/size/layout mistakes and Meta mirroring; they cannot test stream ordering, pinned staging, or `cudaMemcpyBatchAsync`. New DO-NOT-MERGE control `GGML_CUDA_INPUT_BATCH=0` uses the old scalar setter for each transfer. This isolates CUDA batching/staging while retaining the scheduler's aggregate pre-upload wait; it is not a complete revert of scheduler input reordering. Parent test: `CASE=upload PROBE=state`, short then synthetic/frozen long histories, followed by `PROBE=draft`. Exact full-row equality is the intended invariant. For an unresolved scheduler-level reorder suspicion, compare against the `e7071647c` parent with a full-head fixture; that binary cannot use the later subset flag.
+## Design and source audit
 
-### CUDA graph reuse and changed verify batch sizes
+`codex/state_split_probe.cpp:162` computes `keep=k+1-r`. It reads the selected conv/GDN planes directly (`:56`) before correction, checks retained position and `rs_idx`, and compares complete serialized logical state (`:188`) when requested. The negative control changes the actual pending slot (`:170`), not just the output oracle. The continuation uses identical tokens in each context (`:198`). `state_summary.py --sweep` rejects missing or duplicated cases; its artifact controls reject perturbed/truncated data and distinguish signed zero.
 
-Locations: `src/llama-context.cpp:1512`, `:1527`, `:1539`; `src/llama-graph.h:818-899`; `src/llama-graph.cpp:47`; `ggml/src/ggml-cuda/ggml-cuda.cu:2665`, `:4493-4563`; `ggml/src/ggml-cuda/common.cuh:1289`.
+D: `ggml/src/ggml-cpu/llamafile/sgemm.cpp:3820` rejects right-hand matrix column counts below `2`. `ggml/src/ggml-cpu/ggml-cpu.c:1311` and `:1387` dispatch through SGEMM before the stock dot-product fallback. Maximum rollback retains one token, so its independent reference crosses that dispatch boundary. Disabling this CPU arithmetic path removes the discrepancy without changing rollback logic. Reduction/activation rounding is the supported explanation; the first divergent tensor and its exact arithmetic subtype were not traced with a per-node f64 or all-F32-weight oracle.
 
-Hazard: captured nodes retain old addresses, shapes, mask extent or sampler bindings. D: llama reuse compares token count, per-sequence count, output count, output flags, sampler identities, MTP hidden-output mode and sampling vocabulary/shard topology. KV-mask reuse additionally compares KV extent. Rebuild resets the scheduler; CUDA capture compares graph UID and, for new UIDs, node metadata plus source addresses/shapes/strides. The same-UID shortcut assumes those values do not mutate behind the cache; no violation was found here. Changing five to six outputs does not reuse a four-output llama graph. Deferred full-row reads are drained before the next microbatch graph replaces their tensor, at `llama-context.cpp:1513`.
+D: `src/llama-memory-recurrent.cpp:195` sets the pending distance to `cell.pos-(p0-1)`. `:1363` addresses `idx*mem->size+src0`; the shared hybrid input fills this vector once at `src/llama-graph.cpp:1111`. The index is consumed once and reset before the corrected token completes.
 
-CPU tests cover graph topology, sampler replacement and deferred-row lifetime, not capture. Existing controls: `LLAMA_GRAPH_REUSE_DISABLE=1`, `GGML_CUDA_DISABLE_GRAPHS=1` (presence disables it, even a value of zero), and `GGML_CUDA_GRAPH_OPT=0` for the optional stream optimizer. Parent tests: `CASE=reuse` and `CASE=graphs`, with `PROBE=state`; the probe naturally alternates verify, accepted prefix, corrected token and checkpoint restore shapes at each depth. Repeat after long prefill. Default script fixes graph optimization off, matching its source default.
+D: CPU GDN writes slot `n_tokens-1-t` at `ggml/src/ggml-cpu/ops.cpp:11041`. For the retained token `t=keep-1`, this equals `r`. `src/models/delta-net-base.cpp:588` copies all produced slots to matching cache planes. Conv uses slot `K-t` and the corresponding input window at `:505`. A verify block contains `k+1` tokens and overwrites every required plane, so selecting maximum rollback cannot read an old prompt snapshot.
 
-### Backend target verification candidates and BF16 AllReduce
+D: `src/llama-memory-recurrent.cpp:445` passes the trailing-window constraint to `split_equal`; `src/llama-batch.cpp:649` begins its enforcement. At prefix `257`, ubatch `128`, k `5`, the prompt split is `128,123,6`; prefix `129` splits `123,6`. The sweep covers these boundaries and the neighboring configured depths.
 
-Locations: `src/llama-graph.cpp:3823-3851`, `:3874`; `src/llama-context.cpp:1414-1444`; `ggml/src/ggml-backend-meta.cpp:879`, `:895`, `:1275`, `:2535-2555`; `common/sampling.cpp:156`, `:561`, `:594`.
+## Reproduction and provenance
 
-Hazard: reduction rounds candidate logits or real token IDs through BF16, or per-row gather/top-k indexes cross rows. D: logits remain vocab-split, each shard selects its own k, and the union is gathered by the explicitly marked `ggml_backend_meta_gather`. The reduction dispatcher recognizes that exact-gather marker and bypasses `comm_allreduce`, using same-type PAD/ADD instead. Token IDs are F32 with a vocabulary bound of `1 << 24`; each slice occupies disjoint zero-padded locations. They do not enter the BF16 internal reduction. The CPU arithmetic control demonstrates why bypass is necessary: BF16 rounds token ID 25879 to 25856 (D).
+Private shared-object clone: `/home/xanewok/repos/ra-k5-state/stack2`, branch `codex/k5-state`, inherited diagnostic tip `6827b95a3`. Production CPU/model/memory sources match `0dba27b90`, the supplied stack2 descendant of `68d99c67d`. The inherited CUDA-only diagnostic commits do not execute in these CPU tests. The original native build at `/home/xanewok/repos/ra-gpu-paths/stack2/build-cpu` and every external report/model/tree were read only.
 
-Target top-k 20 requests 21 candidates per shard (D). The host certificate checks finite strict ordering through the cutoff; ties/non-finite cutoffs fetch the full row. Grammar/reasoning-budget handling and the RNG stay on the host. CUDA `top-k.cu:232` iterates rows with independent offsets when modern CUB top-k is available; its alternative loops also advance source/destination rows (`:246-258`). There is no five-row dispatch discontinuity in that code. CPU seed identity/law tests can catch shared row indexing, gather marking and fallback errors, not a CUDA top-k implementation fault.
+CPU model SHA256 (M): `d2bfbee4de17c74e6308a4dc750be4c2271f92ae2df1e28f5c5afa0dcdb6fccc`. `state-inputs.sha256` fingerprints the tested libraries and sweep binary; `final-probe.sha256` fingerprints final CPU-linked probes. `state-evidence.json` retains per-case native/strict measurements and sweep aggregates. Raw logs remain in this worktree.
 
-Disable target offload by omitting `--backend-sampling` / `-bs` and clearing `LLAMA_ARG_BACKEND_SAMPLING`; there is no `--no-backend-sampling` flag in this source. Parent: `CASE=target PROBE=state` tests installed candidates versus host rows on identical target histories, including all verify positions. Within each boot the probe compares host/candidate draws for identical seeds. `CASE=bf16` and `CASE=allreduce` separately test upstream model reductions, not candidate transport.
+From the clone, full reproduction:
 
-### Draft backend sampling
+```sh
+CUDA_VISIBLE_DEVICES='' nice -n 19 bash codex/run_state_cpu.sh
+```
 
-Locations: `common/speculative.cpp:1469-1488`, `:1728-1758`; `src/llama-sampler.cpp` backend top-k implementation; the same gather code above.
+The launcher configures `cmake -B build-cpu -DGGML_CUDA=OFF -DGGML_CPU_REPACK=OFF -DGGML_LLAMAFILE=OFF`, disables ccache, CURL and UI download hooks, builds with `-j8`, sets temporary storage inside this worktree and runs contexts with at most eight compute threads. The native comparison uses the supplied read-only CPU libraries through `LD_LIBRARY_PATH`.
 
-Hazard: candidate values/IDs are wrong, or q describes a different draw from the proposal actually emitted. D: the backend chain only selects draft top-k candidates. `common_sampler_sample` performs the host draw; `cur_p` immediately after that draw supplies the emitted ID and normalized probabilities recorded in `result_q`. With `--spec-draft-p-min 0`, no confidence censoring changes this law. Changing an exact draft distribution is allowed only if the recorded q changes with it; a draft-only numerical difference does not itself bias exact rejection. The code has no per-depth draft candidate buffer; normal D1/D2/etc are single-row decodes.
+Minimal corner after building the probe:
 
-CPU normalized-q, support and law checks catch host bookkeeping errors. GPU candidate numerical correctness is not covered by them. Existing control `--no-spec-draft-backend-sampling` / `LLAMA_ARG_SPEC_DRAFT_BACKEND_SAMPLING`. Parent `PROBE=draft CASE=upload` (or `graphs`) compares host and installed CUDA candidates inside every boot, checks global top-k and normalized q, and drains deferred full rows. A generated server trajectory is not a useful first oracle because a single numerical difference then changes histories.
+```sh
+CUDA_VISIBLE_DEVICES='' E_PREFIX=257 E_K=5 E_R=5 E_SERIALIZED=1 E_EXACT=1 nice -n 19 build-probe/state-split-probe /home/xanewok/models/Qwen3.5-4B-UD-Q4_K_XL.gguf
+CUDA_VISIBLE_DEVICES='' E_PREFIX=257 E_K=5 E_R=5 LD_LIBRARY_PATH=/home/xanewok/repos/ra-gpu-paths/stack2/build-cpu/bin nice -n 19 build-probe/state-split-probe /home/xanewok/models/Qwen3.5-4B-UD-Q4_K_XL.gguf
+```
 
-### Compact draft head and scatter
+M: CPU build, final probe compilation, parent-enabled probe compilation against CPU-only libraries, strict checks, original-fixture q8 controls, negative controls, shell syntax and GPU plan/authorization guard all pass their expected outcomes. No CUDA-linked executable, GPU query, server process or network operation was run. There is no CUDA source change requiring a new CUDA build.
 
-Locations: `src/llama-model.cpp:1517`, `:1950-1995`; `src/models/qwen35.cpp:640-648`; `src/llama-context.cpp:922`, `:1308-1328`, `:1414`; `src/llama-graph.cpp:3845`.
+Operational deviations: the initial filesystem-only `pwd`, skill read and directory listing omitted an explicit empty CUDA environment. Initial native repro and CPU build also overlapped; log timestamps bound that interval to `2026-10-01 09:19:51.708..09:20:08.235 CEST` (M), with a possible aggregate sixteen compute threads (D). This was a scheduling mistake. Subsequent heavy CPU commands were serialized. Parent should exclude that interval if it overlaps a host-sensitive GPU measurement.
 
-Hazard: wrong quantized weight row, TP shard offset, compact/full index confusion, or excluded-token probability leakage. M: weight rows are copied by real ID before backend repacking; duplicates and invalid IDs are rejected, and empty TP shards are rejected. Target context uses the original head. Real token IDs accompany compact logits through the exact gather. **There is no CUDA scatter kernel in this patch**: `expand_draft_logits` runs on the host, fills full rows with negative infinity, scatters by `ids[j]`, and clears pending flags after synchronized readback. Multi-microbatch offsets use compact row width before expansion. Corrected target tokens still index full embeddings.
+## Parent-only GPU twin and remaining scope
 
-CPU tests can catch the scatter/ID/weight-selection contract, but not CUDA GEMV/GEMM or split-buffer execution. Disable by omitting `--spec-draft-vocab FILE`. Parent `PROBE=draft`: load full then compact models sequentially, compare selected raw rows, target invariance, outside masking, deferred reads and backend global top-k for four/five/six output rows. Models are not simultaneously held on the devices. This uses synthetic MTP hidden inputs, not the campaign's actual hidden-state sequence; a full serving reproduction remains a separate follow-up.
+`codex/gpu_ab.sh` defaults to plan mode. Its default compares prompt ubatch `128` versus `64` on frozen stack2 bytes, boots `up,patch,patch,up`, and runs the decisive prefix/k/distance with a teacher-forced continuation. It records raw full-vocabulary logits, conv/GDN errors and serialized-state equality. Optional cases isolate fusion, BF16 AllReduce or CUDA graph use. Repeated boots must have byte-identical artifacts; cross-arm differences are reported for diagnosis rather than judged by an arbitrary CPU tolerance.
 
-### GDN snapshot writes, rollback and fusion
+Parent command, never run here:
 
-Locations: `ggml/src/ggml-cuda/gated_delta_net.cu:44`, `:145-156`, `:183`, `:285-295`; `ggml/src/ggml-cuda/ggml-cuda.cu:2824-2883`, `:3536`; `src/models/delta-net-base.cpp:527-603`; `src/llama-memory-recurrent.cpp:193`, `:1350-1363`.
+```sh
+RUN_PARENT_GPU=1 PLAN=0 nice -n 19 bash codex/gpu_ab.sh
+```
 
-Hazard: writing to a wrong snapshot plane or loading an overwritten initial state produces persistent incorrect recurrent state after partial rejection. D: configured k allocates k+1 slots. The kernel writes `n_tokens - 1 - t` only in `[0,K)`, with per-head/per-sequence offsets independent of k. The unfused graph copies exactly `min(n_seq_tokens,K)` planes, while direct-cache fusion uses the destination plane stride. Per-column ownership means a thread only overwrites the initial-state column it already loaded; no cross-column in-place read race follows. Rollback distance is bounded by k because the server retains at least one emitted token. CPU arithmetic controls cover these index bounds; actual GPU arithmetic/dependencies remain untested.
+The script freezes libraries, probe, input/source hashes and `SHA256SUMS`; checks matching internal C++ layouts against frozen source; refuses active devices/serving processes; checks Xid before and after each boot; bounds execution by `BUDGET_S` with bounded cleanup; and stops only its owned PID. Device/kernel-log queries are time-bounded. The default budget is `1200` seconds, prefix is `257`, k/distance are `5`, continuation is `200`, q8 KV and FA are on, tensor split is `50,50`, and the head is full. Prefix is capped at the probe's `2048`-token batch capacity. The parent-only split array satisfies `llama_max_devices()`, as required by `src/llama-model.cpp:1291`.
 
-The upstream fusion matcher checks the first real CPY, tail offset, contiguous source, destination shape and sequence stride. It does not explicitly prove absence of *all later tail consumers* (`ggml-cuda.cu:2863-2883`). That is a generic fusion contract weakness: another tail consumer could see an unwritten output after fusion. In the inspected llama graph the tail has the snapshot copy and the attention view uses the separate prefix, so this does not establish a campaign fault.
-
-Existing controls: `GGML_CUDA_DISABLE_FUSION=1` and `GGML_CUDA_PDL=0`. The fusion flag is broad; it disables other arithmetic fusions too. Parent `CASE=fusion PROBE=state` then `CASE=pdl`, testing every rollback distance against independently evaluated retained-prefix reference rows on identical histories. CPU rollback tests can catch slot/layout/host removal defects but cannot catch direct-cache fusion, PDL or GPU stream races.
-
-### Conv rollback and split prompt batches
-
-Locations: `src/models/delta-net-base.cpp:449-521`; `src/llama-memory-recurrent.cpp:443-445`; `ggml/src/ggml-cuda/ssm-conv.cu:20-58`, `:94-108`, `:146`.
-
-Hazard: a prompt microbatch splits the trailing rollback window, a snapshot samples the wrong conv input window, or a CUDA conv tail accesses outside the input. D: `split_equal(..., n_rs_seq+1)` keeps the trailing window in one microbatch when needed; conv snapshots use `K-t` and matching windows of concatenated prior state plus current qkv. Four/five/six verify tokens all use the same short conv kernel (`n_t <= 32`). No depth-four conv branch exists. CPU rollback tests cover shared snapshot/window logic.
-
-An inherited GPU read-bound weakness exists in the long conv kernel: the shared-memory load reads a full 32-token tile even when `local_n_t` is smaller. For a final long tile of 31 tokens, it reads one extra input element per channel (D); valid outputs use only the first `local_n_t + d_conv - 1` elements, so the extra values do not contribute to those outputs. This can cause an invalid read at the allocation tail, but is a poor explanation for silent verify-only repetition and is not a stack2 addition. Neither the short verify kernel nor a full 128-token tile reaches that partial-tile case. No fix is included.
-
-Existing controls: change `-ub 128` to another size, or `GGML_CUDA_DISABLE_FUSION=1` to separate conv/SILU fusion. Parent `CASE=ubatch PROBE=state` compares prompt split sizes; use synthetic lengths 127/128/129/257, then a frozen history near onset. The size switch also changes numerical batching, so a small logit difference needs localization before it is called corruption. There is no independent conv-rollback off switch; removing rollback would change the algorithm and is not proposed as a safe sampling control.
-
-### Verify-prefill and scheduler reuse
-
-Locations: `tools/server/server-context.cpp:1101-1102`, `common/speculative.cpp:2564-2580`, `src/llama-context.cpp:1387`, `:1409`, `:1527`, `:2540-2557`, `src/llama-graph.cpp:3855`.
-
-M: the source diff has no separately named verify-prefill cache or switch. The relevant behavior is reserving enough output/sampler nodes and retaining the scheduler when sampler bindings are replaced/detached. Replacement/detachment invalidates the active llama result; the next build resets sampler bindings. Reuse is only of the active result, not Patch A's old multi-entry results. Reserve/output limits scale with k+1. A stale inactive sampler branch could give wrong uniforms/rows if these gates were bypassed, but the reviewed Patch A defect does not transfer to stack2 merely because both reuse schedulers.
-
-CPU TP tests cover binding replacement/detachment, outputs, deferred reads and several microbatches. Parent `CASE=reuse` / `graphs` and `CASE=target` test this mechanism without introducing a new toggle. The state probe covers graph transitions but does not execute the server's actual `common_speculative::process` prefill hook. For a serving-level confirmation, parent must replay frozen original tokenized requests with a renamed frozen server and the flags above, including k+1 verify rows after multi-microbatch prefill. Original request tokens are not present in the supplied brief; saved rollout text is not a substitute for those IDs.
-
-### Internal AllReduce beyond candidate transport
-
-Locations: `ggml/src/ggml-cuda/allreduce.cu:234`, `:364-376`, `:435`, `:664-706`, `:765-789`; `ggml/src/ggml-cuda/ggml-cuda.cu:1293-1325`.
-
-Hazard: BF16 rounding changes hidden activations, or an event/pool reuse fault corrupts reductions. D: internal reduction rounds ordinary F32 model reductions through BF16 by default, so numerical equivalence to a full-F32 reference is not expected. Its threshold is one byte, not a new boundary at five verify rows. The event pool waits for both devices' prior completion before reusing a slot, and the copy-engine path waits for the previous compute consumer before overwriting its temporary buffer. No missing wait was established. The default copy-engine boundary is one MiB of wire data; no evidence identifies a candidate transport or recurrent snapshot reduction crossing it at k=4. Snapshot copies themselves are head-split state movement, not an AllReduce of candidate probabilities.
-
-CPU Meta reductions cannot test the internal CUDA transport or its numerical rounding. Existing controls `GGML_CUDA_AR_BF16_THRESHOLD=0` (keep internal transport, use F32) and `GGML_CUDA_ALLREDUCE=none` (generic reduction). Parent `CASE=bf16` and `CASE=allreduce`, first short then long teacher-forced histories. Differences can be legitimate arithmetic changes; look for loss of same-arm repeatability, non-finite rows or rollback/reference inconsistency before concluding a law defect.
-
-## Delivered controls and GPU queue script
-
-`bfea3fe65`: `GGML_CUDA_INPUT_BATCH=0` selects scalar setters. `04d20c03b`: `GGML_CUDA_FA_MMA_Q8_0_NCOLS1=4` selects existing four-column q8 MMA instances even for the wider query batch. Both default to stack2 behavior and are DO-NOT-MERGE diagnostics. The tile control stays in the direct-q8 path; it does not silently use converted-f16. It changes attention reduction tiling, so no universal bit-identical token claim is made for its enabled arm. Neither control modifies sampler logic or random draws.
-
-`codex/gpu_ab.sh` defaults to plan mode. Parent execution requires `RUN_PARENT_GPU=1 PLAN=0`. Every case uses the same frozen bytes for up/patch and interleaves `up patch patch up`. It copies libraries/probes to a fresh worktree-local output, records build/audit sources plus SHA256 manifests and input hashes, verifies production source/ABI compatibility with `build-cuda/SOURCE`, checks devices are idle and no serving PID is present before every boot, checks Xid before/after, bounds compilation/hashing/boots/comparison by a shared wall budget, and stops only its exact child PID. Probe process names are `audit-state` and `audit-draft`; it never starts `llama-server`. Default transport is internal, NCCL is not compiled. Each Meta CPU fallback uses four threads per backend.
-
-The new CPU discrepancy also warrants `PREFIX_N=257 PROBE=state` on the parent, inspecting within-boot rollback/reference rows independently of arm equality. Recommended first parent command: `RUN_PARENT_GPU=1 PLAN=0 CASE=tile PROBE=state nice -n 19 bash codex/gpu_ab.sh`. Follow with upload, graphs and fusion. A short clean result is only a short-history mechanism check. Extend using `PREFIX_N=8192` / `32768` with a larger explicit `BUDGET_S`, or `TOKENS=/absolute/frozen-history.json PREFIX_N=N` where N is at least the history length. Repeated synthetic motifs test address/length boundaries but do not recreate the campaign distribution. `PROBE=draft` checks the compact head and candidates on short synthetic hidden inputs; `PREFIX_N` does not extend that probe.
-
-The comparison demands complete same-shaped artifacts and exact bytes across/repeated arms. It deliberately reports a floating point difference as DIFFER, not proof of a sampling-law bug. The comparator also prints within-boot rollback/reference NMSE separately; cross-arm equality does not certify those reference rows. Full probability-law work remains on the host against actual p/q. No script was GPU-executed here.
-
-## CPU verification
-
-Reproduce core/extended checks with `CUDA_VISIBLE_DEVICES='' nice -n 19 bash codex/run_cpu.sh`; the script returns nonzero for the unresolved extended fixture. Build settings: `cmake -B build-cpu -DGGML_CUDA=OFF`, with CPU repack disabled for the known fixture numerical issue; network UI hooks and curl disabled. CUDA build uses `-DGGML_CUDA=ON -DCUDAToolkit_ROOT=/usr/local/cuda-13.2 -DGGML_CUDA_NCCL=OFF -DCMAKE_CUDA_ARCHITECTURES=120` and `-j8`. M: the complete CUDA library/server build passed; the server was never executed.
-
-M: standard sampling passed; prefilter/grammar/budget suite passed with zero failures, 35,671 stream bytes and FNV1a `e97ea9873285a3f9`. The input-upload test passed ordering/fallback and its dropped-transfer negative control. The existing TP fixture was extended in `9c376b81b` to four/five/six rows and passed candidate/deferred-logit identity for 64 seeds per row, sampler replacement/detachment, host greedy/distribution checks and the small-shard refusal. The real-model target head is tied on this CPU fixture, so its Meta target sampler correctly falls back to host; the separate untied synthetic TP test covers actual backend target candidates.
-
-M: the synthetic law fixture passed 24 position/subset checks, each with 20,000 draws, and six seed-identity configurations, each with 256 seeds. Corrupt-q control exits 1 with `FAIL: law oracle failed` and chi-square 3703.95093 (M). Short-history Meta CPU rollback passes all 24 k/subset/distance cases with zero logit error (M); leaving the suffix in state is detected (M). Compact-head Meta CPU with four/five/six initial outputs, a two-token microbatch and deferred readback passes target identity, real-ID mapping, normalized q and global top-k; maximum selected-row error is zero (M). Its two-step timing samples are M: full-head MTP host 104.428995 ms/step, compact host 14.943267 ms/step, compact candidates 9.384294 ms/step. These are loaded-host diagnostic samples, not stable throughput estimates or GPU predictions.
-
-**Extended fixture failure:** `state_probe.cpp:294-306`, `D_AUDIT_PREFIX_N=257`, full-head k=5, maximum rollback. All preceding tested rollback distances pass. M: Meta CPU q8 KV has pre-rollback retained-prefix NMSE 0.000976754272 and post-correction NMSE 0.000709012094; disabling llama graph reuse gives the same values. M: single CPU q8 KV has zero prefix NMSE but post-correction NMSE 0.000626832232. M: single CPU f16 KV with FA on gives prefix/post NMSE 0.000955051708 / 0.000890137069; f16 with FA off gives 0.000912029576 / 0.00158219451. Therefore the discrepancy does not require Meta, quantized KV, FA, or llama graph reuse (D); several controls already differ before rollback, so these observations alone cannot distinguish shared state, batch computation, allocator or fixture/checkpoint behavior. CPU repack is disabled in all these runs. Do not infer a CUDA GDN failure from them. The unmodified production logic is used by every run; the two diagnostic CUDA changes cannot execute on CPU.
-
-Attempted q8 attention-off controls are invalid: Meta requires FA and quantized V also requires FA. Both fail context initialization (M), not a correctness oracle. They are retained in local logs, and no invalid attention-off GPU case is offered. `run_cpu.sh` captures extended/f16-control failures and returns nonzero; it is a reproducer, not an all-green certificate.
-
-CPU fixture: `/home/xanewok/models/Qwen3.5-4B-UD-Q4_K_XL.gguf`. `state_probe.cpp` derives from the prior CPU law/rollback harness and adds larger context/microbatch settings, optional frozen/synthetic history and every verify-row artifact. `draft_probe.cpp` derives from its compact-head fixture, uses sequential model loads and optionally compiles a parent-only GPU entry. Without `S4_PARENT_GPU`, both enforce empty CUDA visibility. Their GPU variants were only compiled, never loaded/executed here.
-
-`audit_controls.py` passes its CPU address and artifact oracles (M); `--broken-mask-bound` fails with `FAIL: padded MMA mask address escaped actual queries` (M). The artifact oracle accepts equal data and rejects modified or missing data (M). These controls test the oracle sensitivity and the derived bounds, not CUDA kernel execution. Shell syntax and every selectable plan passed (M).
-
-## Risks and open items
-
-M: the CUDA build emitted the existing `llama-model.cpp:1526` signedness warning; no build error occurred. No GPU execution validates stream lifetimes, CUDA top-k, MMA fixup, direct-cache fusion or long-context state here. CPU results cannot rule those out. The generic GDN-tail consumer contract and long-conv read bound are inherited source hazards; neither explains the campaign under the inspected ordinary graph. The state probe holds two target contexts, so its longest histories may exceed available VRAM; grow the history length in bounded steps. Diagnostic toggles are not production fixes. A parent run must isolate identical histories before allowing generated responses to diverge. The extended CPU discrepancy needs further isolation and an equivalent GPU teacher-forced check. A frozen original token history near runaway onset and a serving-level prefill-hook replay are still needed to close the campaign investigation.
+This resolves the CPU discrepancy. The Swift GPU repetition bug remains unresolved. The twin covers target state on short synthetic histories, not long-context serving, installed backend samplers, draft/subset bookkeeping, server checkpoint RNG or the speculative prefill hook. No GPU correctness or speed claim is made.

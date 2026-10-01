@@ -1,0 +1,24 @@
+{
+  "stack2/codex/state-bytes-strict.log": {
+    "measured_cases": 21,
+    "measured_follows": 0,
+    "measured_max_pre_nmse": 0,
+    "measured_max_conv_nmse": 0,
+    "measured_max_gdn_nmse": 0,
+    "measured_max_post_nmse": 0,
+    "measured_max_matched_post_nmse": 0,
+    "measured_logit_exact_cases": 21,
+    "measured_state_exact_cases": 21
+  },
+  "stack2/codex/follow-strict.log": {
+    "measured_cases": 1,
+    "measured_follows": 4,
+    "measured_max_pre_nmse": 0,
+    "measured_max_conv_nmse": 0,
+    "measured_max_gdn_nmse": 0,
+    "measured_max_post_nmse": 0,
+    "measured_max_matched_post_nmse": 0,
+    "measured_logit_exact_cases": 1,
+    "measured_state_exact_cases": 1
+  }
+}
