@@ -11381,6 +11381,25 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
 static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     std::vector<std::unique_ptr<test_case>> test_cases;
 
+    if (getenv("LLAMA_TEST_FA_ACC_PERF")) {
+        // DO NOT SUBMIT: local A/B shapes for GGML_CUDA_FA_F32_ACC
+        for (ggml_type t : {GGML_TYPE_F16, GGML_TYPE_Q8_0}) {
+            for (int64_t kv : {8192, 32768, 98304}) {
+                for (int64_t nb : {1, 2, 3, 4, 5, 6, 7, 8, 512}) {
+                    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, kv, nb, true, false, 0, 0, GGML_PREC_F32, t, t, {0, 2, 1, 3}, false));
+                }
+            }
+        }
+        for (int64_t kv : {4096, 16384, 32768}) {
+            for (int64_t nb : {1, 8, 512, 4096}) {
+                test_cases.emplace_back(new test_flash_attn_ext(128, 128, 8, {1, 1}, kv, nb, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
+                test_cases.emplace_back(new test_flash_attn_ext(128, 128, 8, {4, 1}, kv, nb, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
+                test_cases.emplace_back(new test_flash_attn_ext( 64,  64, 8, {8, 1}, kv, nb, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
+            }
+        }
+        return test_cases;
+    }
+
     // SWIGLU at a 27B-class FFN width, fused [gate|up] vs split operands
     // note: same bytes either way, so a backend that indexes them differently shows it here
     for (ggml_type type : {GGML_TYPE_F16, GGML_TYPE_F32, GGML_TYPE_BF16}) {
