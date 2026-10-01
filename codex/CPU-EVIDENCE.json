@@ -1,0 +1,34 @@
+{
+  "capture_token_identity_M": 24,
+  "spec_capture_token_identity_M": 22,
+  "generated_tokens_M": 48,
+  "prompt_tokens_M": 300,
+  "lazy_grammar_triggered_M": true,
+  "replay_rows_M": 13,
+  "branches_M": 2,
+  "branch_length_M": 8,
+  "negative_control": "{'code': 500, 'message': 'capture replay distribution mismatch', 'type': 'server_error'}",
+  "validation": "/home/xanewok/repos/ra-capture/stack/build-capture-test5/mtp/captures/request-174785119880-15.jsonl",
+  "branches": [
+    "/home/xanewok/repos/ra-capture/stack/build-capture-test5/mtp/captures/request-174798931476-32.jsonl",
+    "/home/xanewok/repos/ra-capture/stack/build-capture-test5/mtp/captures/request-174813462030-50.jsonl"
+  ],
+  "elapsed_seconds_M": 75.23025441801292,
+  "source_capture": "/home/xanewok/repos/ra-capture/stack/build-capture-test5/mtp/captures/request-174764506949-0.jsonl",
+  "verify_rounds_M": 10,
+  "draft_proposals_M": 37,
+  "accepted_draft_M": 37,
+  "positive_validation_rows_M": 39,
+  "max_probability_abs_error_M": 0,
+  "budget_states_M": [
+    4
+  ],
+  "budget_states_transition_M": [
+    1,
+    2,
+    4
+  ],
+  "budget_replay_rows_M": 7,
+  "budget_source_capture": "/home/xanewok/repos/ra-capture/stack/build-capture-budget2/budget/captures/request-175063577681-0.jsonl",
+  "budget_validation_capture": "/home/xanewok/repos/ra-capture/stack/build-capture-budget2/budget/captures/request-175065784485-14.jsonl"
+}
