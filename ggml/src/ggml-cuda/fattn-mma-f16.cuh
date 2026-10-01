@@ -1685,16 +1685,19 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
     constexpr int tile_stride = nbatch_combine + 4;
     static_assert((DV/2) % nbatch_combine == 0, "bad nbatch_combine");
 
+    // On NVIDIA, f32 VKQ tiles have the half2 layout with 2 floats per half2 element:
+    using T_C_VKQ_h2 = std::conditional_t<std::is_same_v<decltype(T_C_VKQ::x), float[T_C_VKQ::ne]>, tile<T_C_VKQ::I, T_C_VKQ::J/2, half2>, T_C_VKQ>;
+
     if constexpr (cols_per_warp == 8) {
-        const int jc_cwmo = (threadIdx.x % (2*T_C_VKQ::J)) / T_C_VKQ::J; // jc combine write meta offset
-        const int jc_cwm = threadIdx.y*(2*T_C_VKQ::J) + 2*T_C_VKQ::get_j(-1) + jc_cwmo; // jc combine write meta
+        const int jc_cwmo = (threadIdx.x % (2*T_C_VKQ_h2::J)) / T_C_VKQ_h2::J; // jc combine write meta offset
+        const int jc_cwm = threadIdx.y*(2*T_C_VKQ_h2::J) + 2*T_C_VKQ_h2::get_j(-1) + jc_cwmo; // jc combine write meta
         const float2 KQ_cmr = make_float2(KQ_max[jc_cwmo], KQ_rowsum[jc_cwmo]); // KQ combine max rowsum
 
         if constexpr (swz) {
             __syncthreads();
         }
 
-        if (((!needs_fixup && !is_fixup) || np > 1) && threadIdx.x < 2*T_C_VKQ::J) {
+        if (((!needs_fixup && !is_fixup) || np > 1) && threadIdx.x < 2*T_C_VKQ_h2::J) {
             // Use the 16 bytes of padding in each row to store the meta data: KQ max, KQ rowsum, KQ max scale.
             ((float2 *) tile_Q)[jc_cwm*(tile_stride/2) + nbatch_combine/2] = KQ_cmr;
         }
@@ -1717,7 +1720,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
         // KQ_cmr = KQ combine max rowsum
         // Use the 16 bytes of padding in each Q column to store the meta data: KQ max, KQ rowsum, KQ max scale.
 #if defined(TURING_MMA_AVAILABLE)
-        const int jc_cwm = threadIdx.y*cols_per_warp + T_C_VKQ::get_i(threadIdx.x % 4);
+        const int jc_cwm = threadIdx.y*cols_per_warp + T_C_VKQ_h2::get_i(threadIdx.x % 4);
         const float2 KQ_cmr = make_float2(KQ_max[threadIdx.x % cols_per_thread], KQ_rowsum[threadIdx.x % cols_per_thread]);
         const bool thread_should_write = threadIdx.x % 4 < cols_per_thread;
 #elif defined(AMD_WMMA_AVAILABLE) || defined(AMD_MFMA_AVAILABLE)
@@ -1832,15 +1835,13 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
             const int jc_cwd = threadIdx.y*T_B_KQ::I + T_B_KQ::get_i(-1); // jc combine write data
 #pragma unroll
             for (int k1 = 0; k1 < nbatch_combine; k1 += T_B_KQ::J) {
-                tile<16, 4, half2> VKQ_C_h2;
+                T_C_VKQ_h2 VKQ_C_h2;
                 if constexpr (std::is_same_v<decltype(T_C_VKQ::x), float[T_C_VKQ::ne]>) {
-                    static_assert(T_C_VKQ::I == 16 && T_C_VKQ::J == 8, "bad VKQ type");
 #pragma unroll
-                    for (int l = 0; l < VKQ_C_h2.ne; ++l) {
+                    for (int l = 0; l < T_C_VKQ_h2::ne; ++l) {
                         VKQ_C_h2.x[l] = make_half2(VKQ_C[(k00 + k1)/T_B_KQ::J].x[2*l + 0], VKQ_C[(k00 + k1)/T_B_KQ::J].x[2*l + 1]);
                     }
                 } else {
-                    static_assert(std::is_same_v<T_C_VKQ, tile<16, 4, half2>>, "bad VKQ type");
                     VKQ_C_h2 = VKQ_C[(k00 + k1)/T_B_KQ::J];
                 }
                 const T_B_KQ B = get_transposed(VKQ_C_h2); // Conversion of C to B matrix puts it in column-major format.
