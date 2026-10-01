@@ -1,5 +1,7 @@
 # Runaway history and continuation experiment
 
+Latest follow-up: [prefix capture and onset branches](REPORT-catch.md), with CPU validation and the parent-only `catch.sh` run plan.
+
 ## Conclusion
 
 Observed: M: 6 sustained repetition failures survive deduplication: M: 4 weekend Swift1.5 IQ4_XS failures, M: 1 earlier Swift1.0 IQ3_XXS failure, and M: 1 Swift1.5 HQ/vLLM W4A16 failure. Repetition is not unique to IQ4_XS, stack2, probabilistic rejection, or the llama.cpp CUDA FA implementation. This does not exclude any of those from increasing its probability. Confidence: high for the observed failures; unresolved for cause or a quant ranking.
