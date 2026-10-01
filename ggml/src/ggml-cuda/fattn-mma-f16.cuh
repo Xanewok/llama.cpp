@@ -2342,11 +2342,12 @@ extern DECL_FATTN_MMA_F16_CASE(512, 512,  4,  8);
 extern DECL_FATTN_MMA_F16_CASE(512, 512,  8,  8);
 
 
+extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 2, 8);
 extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 4, 8);
 extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 8, 8);
 
 static constexpr bool ggml_cuda_flash_attn_ext_mma_q8_0_instance(const int DKQ, const int DV, const int ncols1, const int ncols2) {
-    return DKQ == 256 && DV == 256 && ncols2 == 8 && (ncols1 == 4 || ncols1 == 8);
+    return DKQ == 256 && DV == 256 && ncols2 == 8 && (ncols1 == 2 || ncols1 == 4 || ncols1 == 8);
 }
 
 // The number of viable configurations for Deepseek is very limited:
