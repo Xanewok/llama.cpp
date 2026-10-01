@@ -11182,6 +11182,16 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         }
     }
 
+    for (int nr : { 6, 8 }) {
+        for (int nb = 3; nb <= 8; ++nb) {
+            if (nr == 8 && nb >= 5 && nb <= 7) {
+                continue;
+            }
+            test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {nr, 2}, 512, nb, true, false, 0, 0, GGML_PREC_F32,
+                                                            GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}));
+        }
+    }
+
     for (int nr : { 1, 2, 4 }) {
         for (int nb = 1; nb <= 8; ++nb) {
             test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {nr, 2}, 512, nb, true, false, 0, 0, GGML_PREC_F32,
