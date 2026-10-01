@@ -1,0 +1,590 @@
+{
+  "models": {
+    "g128": {
+      "path": "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast",
+      "config_sha256": "784e9da01609a2e728381e08aa6ae63e31652a088690f65faaa3c612e7baaf46",
+      "groups": {
+        "group_0": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "Linear"
+          ],
+          "weights": {
+            "actorder": "static",
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": 128,
+            "num_bits": 4,
+            "observer": "memoryless_minmax",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "group",
+            "symmetric": true,
+            "type": "int",
+            "zp_dtype": null
+          }
+        },
+        "group_1": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "re:.*lm_head$"
+          ],
+          "weights": {
+            "actorder": "static",
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": 128,
+            "num_bits": 8,
+            "observer": "memoryless_minmax",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "group",
+            "symmetric": true,
+            "type": "int",
+            "zp_dtype": null
+          }
+        },
+        "group_2": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "re:.*embed_tokens$"
+          ],
+          "weights": {
+            "actorder": "static",
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": 128,
+            "num_bits": 8,
+            "observer": "memoryless_minmax",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "group",
+            "symmetric": true,
+            "type": "int",
+            "zp_dtype": null
+          }
+        },
+        "group_3": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "re:^mtp\\..*"
+          ],
+          "weights": {
+            "actorder": "static",
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": 128,
+            "num_bits": 8,
+            "observer": "memoryless_minmax",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "group",
+            "symmetric": true,
+            "type": "int",
+            "zp_dtype": null
+          }
+        }
+      },
+      "headers": [
+        {
+          "path": "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/model-00001-of-00005.safetensors",
+          "header_sha256": "9dc34e1a69a889062311070c86c47bce625c3d957a7967f38d98020e2d950508",
+          "file_bytes": 2717522792
+        },
+        {
+          "path": "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/model-00002-of-00005.safetensors",
+          "header_sha256": "4b8f32e03ef0a60e79561f0dd7dcb010cf1a44fc279ce55c5fa1dad9fc34c09f",
+          "file_bytes": 3982295724
+        },
+        {
+          "path": "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/model-00003-of-00005.safetensors",
+          "header_sha256": "5bd99e6608b1882e5070c436972b0b336c82cb8f3c3eebc4e1b4e31084e179d0",
+          "file_bytes": 3981907304
+        },
+        {
+          "path": "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/model-00004-of-00005.safetensors",
+          "header_sha256": "662782d4829423a9f2958699c3175c834745daa45118c0dda4bbf4b924a586da",
+          "file_bytes": 3990818108
+        },
+        {
+          "path": "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/model-00005-of-00005.safetensors",
+          "header_sha256": "fa366783434def17aa917e45215891d9141be2abb9913595cd81852bafdb446b",
+          "file_bytes": 1427775184
+        },
+        {
+          "path": "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/model_extra_tensors.safetensors",
+          "header_sha256": "692376f6d59d2e7f42912306d5636f089bbb295bca3887b563a43d011e5f116c",
+          "file_bytes": 134571152
+        },
+        {
+          "path": "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/model_mtp.safetensors",
+          "header_sha256": "766846c57c65e9092b572cc3c19f64b143a8a1b048f72a2be60f4aa509102aac",
+          "file_bytes": 431364472
+        }
+      ],
+      "totals": {
+        "other_weight_bytes": 3099970560,
+        "other_scale_bytes": 48437040,
+        "body_weight_bytes": 11324620800,
+        "body_scale_bytes": 353894400,
+        "attention_weight_bytes": 838860800,
+        "attention_scale_bytes": 26214400
+      }
+    },
+    "g32i8": {
+      "path": "/mnt/scratch/work/models/hq/Swift-1.5-Qwen3.8-27B-W4A16-g32-attn-int8",
+      "config_sha256": "6667dfd2feaa2beb6a7687f8b7398b405864f1591491e3c0ec28496a040ed733",
+      "groups": {
+        "group_0": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "re:^(?!mtp\\.).*layers\\.\\d+\\.(linear_attn\\.(in_proj_(qkv|z)|out_proj)|mlp\\.(gate|up|down)_proj)$"
+          ],
+          "weights": {
+            "actorder": "static",
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": 32,
+            "num_bits": 4,
+            "observer": "memoryless_minmax",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "group",
+            "symmetric": true,
+            "type": "int",
+            "zp_dtype": null
+          }
+        },
+        "group_1": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "re:^(?!mtp\\.).*layers\\.\\d+\\.self_attn\\.(q|k|v|o)_proj$"
+          ],
+          "weights": {
+            "actorder": "static",
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": null,
+            "num_bits": 8,
+            "observer": "memoryless_minmax",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "channel",
+            "symmetric": true,
+            "type": "int",
+            "zp_dtype": null
+          }
+        },
+        "group_2": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "re:.*lm_head$"
+          ],
+          "weights": {
+            "actorder": "static",
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": 128,
+            "num_bits": 8,
+            "observer": "memoryless_minmax",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "group",
+            "symmetric": true,
+            "type": "int",
+            "zp_dtype": null
+          }
+        },
+        "group_3": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "re:.*embed_tokens$"
+          ],
+          "weights": {
+            "actorder": "static",
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": 128,
+            "num_bits": 8,
+            "observer": "memoryless_minmax",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "group",
+            "symmetric": true,
+            "type": "int",
+            "zp_dtype": null
+          }
+        },
+        "group_4": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "re:^mtp\\..*"
+          ],
+          "weights": {
+            "actorder": "static",
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": 128,
+            "num_bits": 8,
+            "observer": "memoryless_minmax",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "group",
+            "symmetric": true,
+            "type": "int",
+            "zp_dtype": null
+          }
+        }
+      },
+      "headers": [
+        {
+          "path": "/mnt/scratch/work/models/hq/Swift-1.5-Qwen3.8-27B-W4A16-g32-attn-int8/model-00001-of-00002.safetensors",
+          "header_sha256": "99909b05f4ba3d2758525b44f8f511f0842beec2978d3791e3e01ec5dd3939d3",
+          "file_bytes": 16684010736
+        },
+        {
+          "path": "/mnt/scratch/work/models/hq/Swift-1.5-Qwen3.8-27B-W4A16-g32-attn-int8/model-00002-of-00002.safetensors",
+          "header_sha256": "4f949c76bec0057101aaa9d14d9cf41082173056156df832d295ee9eababb021",
+          "file_bytes": 1291264336
+        },
+        {
+          "path": "/mnt/scratch/work/models/hq/Swift-1.5-Qwen3.8-27B-W4A16-g32-attn-int8/model_extra_tensors.safetensors",
+          "header_sha256": "692376f6d59d2e7f42912306d5636f089bbb295bca3887b563a43d011e5f116c",
+          "file_bytes": 134571152
+        },
+        {
+          "path": "/mnt/scratch/work/models/hq/Swift-1.5-Qwen3.8-27B-W4A16-g32-attn-int8/model_mtp.safetensors",
+          "header_sha256": "766846c57c65e9092b572cc3c19f64b143a8a1b048f72a2be60f4aa509102aac",
+          "file_bytes": 431364472
+        }
+      ],
+      "totals": {
+        "other_weight_bytes": 3099970560,
+        "other_scale_bytes": 48437040,
+        "body_weight_bytes": 11324620800,
+        "body_scale_bytes": 1415577600,
+        "attention_weight_bytes": 1677721600,
+        "attention_scale_bytes": 622592
+      }
+    },
+    "codexh": {
+      "path": "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-g32-attn-int8-codexh",
+      "config_sha256": "6667dfd2feaa2beb6a7687f8b7398b405864f1591491e3c0ec28496a040ed733",
+      "groups": {
+        "group_0": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "re:^(?!mtp\\.).*layers\\.\\d+\\.(linear_attn\\.(in_proj_(qkv|z)|out_proj)|mlp\\.(gate|up|down)_proj)$"
+          ],
+          "weights": {
+            "actorder": "static",
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": 32,
+            "num_bits": 4,
+            "observer": "memoryless_minmax",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "group",
+            "symmetric": true,
+            "type": "int",
+            "zp_dtype": null
+          }
+        },
+        "group_1": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "re:^(?!mtp\\.).*layers\\.\\d+\\.self_attn\\.(q|k|v|o)_proj$"
+          ],
+          "weights": {
+            "actorder": "static",
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": null,
+            "num_bits": 8,
+            "observer": "memoryless_minmax",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "channel",
+            "symmetric": true,
+            "type": "int",
+            "zp_dtype": null
+          }
+        },
+        "group_2": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "re:.*lm_head$"
+          ],
+          "weights": {
+            "actorder": "static",
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": 128,
+            "num_bits": 8,
+            "observer": "memoryless_minmax",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "group",
+            "symmetric": true,
+            "type": "int",
+            "zp_dtype": null
+          }
+        },
+        "group_3": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "re:.*embed_tokens$"
+          ],
+          "weights": {
+            "actorder": "static",
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": 128,
+            "num_bits": 8,
+            "observer": "memoryless_minmax",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "group",
+            "symmetric": true,
+            "type": "int",
+            "zp_dtype": null
+          }
+        },
+        "group_4": {
+          "format": "pack-quantized",
+          "input_activations": null,
+          "output_activations": null,
+          "targets": [
+            "re:^mtp\\..*"
+          ],
+          "weights": {
+            "actorder": "static",
+            "block_structure": null,
+            "dynamic": false,
+            "group_size": 128,
+            "num_bits": 8,
+            "observer": "memoryless_minmax",
+            "observer_kwargs": {},
+            "scale_dtype": null,
+            "strategy": "group",
+            "symmetric": true,
+            "type": "int",
+            "zp_dtype": null
+          }
+        }
+      },
+      "headers": [
+        {
+          "path": "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-g32-attn-int8-codexh/model-00001-of-00002.safetensors",
+          "header_sha256": "99909b05f4ba3d2758525b44f8f511f0842beec2978d3791e3e01ec5dd3939d3",
+          "file_bytes": 16684010736
+        },
+        {
+          "path": "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-g32-attn-int8-codexh/model-00002-of-00002.safetensors",
+          "header_sha256": "4f949c76bec0057101aaa9d14d9cf41082173056156df832d295ee9eababb021",
+          "file_bytes": 1291264336
+        },
+        {
+          "path": "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-g32-attn-int8-codexh/model_extra_tensors.safetensors",
+          "header_sha256": "692376f6d59d2e7f42912306d5636f089bbb295bca3887b563a43d011e5f116c",
+          "file_bytes": 134571152
+        },
+        {
+          "path": "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-g32-attn-int8-codexh/model_mtp.safetensors",
+          "header_sha256": "766846c57c65e9092b572cc3c19f64b143a8a1b048f72a2be60f4aa509102aac",
+          "file_bytes": 431364472
+        }
+      ],
+      "totals": {
+        "other_weight_bytes": 3099970560,
+        "other_scale_bytes": 48437040,
+        "body_weight_bytes": 11324620800,
+        "body_scale_bytes": 1415577600,
+        "attention_weight_bytes": 1677721600,
+        "attention_scale_bytes": 622592
+      }
+    }
+  },
+  "roofline": {
+    "label": "D, one target body pass per step, TP2 equal sharding; no cache/re-read correction",
+    "bandwidth_bytes_s_assumed": 448000000000.0,
+    "body_scale_extra_bytes_rank": 530841600.0,
+    "attention_extra_bytes_rank": 406634496.0,
+    "body_scale_extra_ms": 1.1849142857142858,
+    "attention_extra_ms": 0.9076662857142856,
+    "total_extra_ms": 2.0925805714285715
+  },
+  "traces": [
+    {
+      "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/engine-plan/step0/out/profile/decode8k.sqlite",
+      "scope": "whole capture, includes warmup; not a matched checkpoint A/B",
+      "kernels": [
+        {
+          "device": 0,
+          "name": "void marlin::Marlin<(long)1125899906909960, (long)1125899907892224, (long)1125899906909960, (long)1125899906909960, (int)256, (int)1, (int)8, (int)8, (bool)1, (int)4, (int)8, (bool)0>(const int4 *, const int4 *, int4 *, int4 *, const int4 *, const float *, const int4 *, const float *, const int4 *, int, int, int, int, int *, bool, bool, bool, int)",
+          "calls_M": 51200,
+          "total_ms_M": 3502.778472,
+          "mean_us_M": 68.41364203124999,
+          "threads": 256,
+          "registers": 102,
+          "dynamic_shared_bytes": 101376,
+          "local_bytes": 0
+        },
+        {
+          "device": 0,
+          "name": "void marlin::Marlin<(long)1125899906909960, (long)1125899923621888, (long)1125899906909960, (long)1125899906909960, (int)128, (int)1, (int)4, (int)8, (bool)1, (int)4, (int)8, (bool)0>(const int4 *, const int4 *, int4 *, int4 *, const int4 *, const float *, const int4 *, const float *, const int4 *, int, int, int, int, int *, bool, bool, bool, int)",
+          "calls_M": 600,
+          "total_ms_M": 108.936151,
+          "mean_us_M": 181.5602516666667,
+          "threads": 128,
+          "registers": 128,
+          "dynamic_shared_bytes": 101376,
+          "local_bytes": 0
+        },
+        {
+          "device": 0,
+          "name": "void marlin::Marlin<(long)1125899906909960, (long)1125899923621888, (long)1125899906909960, (long)1125899906909960, (int)256, (int)1, (int)8, (int)8, (bool)1, (int)4, (int)8, (bool)0>(const int4 *, const int4 *, int4 *, int4 *, const int4 *, const float *, const int4 *, const float *, const int4 *, int, int, int, int, int *, bool, bool, bool, int)",
+          "calls_M": 3200,
+          "total_ms_M": 688.34146,
+          "mean_us_M": 215.10670625,
+          "threads": 256,
+          "registers": 125,
+          "dynamic_shared_bytes": 101376,
+          "local_bytes": 0
+        },
+        {
+          "device": 1,
+          "name": "void marlin::Marlin<(long)1125899906909960, (long)1125899907892224, (long)1125899906909960, (long)1125899906909960, (int)256, (int)1, (int)8, (int)8, (bool)1, (int)4, (int)8, (bool)0>(const int4 *, const int4 *, int4 *, int4 *, const int4 *, const float *, const int4 *, const float *, const int4 *, int, int, int, int, int *, bool, bool, bool, int)",
+          "calls_M": 51200,
+          "total_ms_M": 3215.783375,
+          "mean_us_M": 62.80826904296875,
+          "threads": 256,
+          "registers": 102,
+          "dynamic_shared_bytes": 101376,
+          "local_bytes": 0
+        },
+        {
+          "device": 1,
+          "name": "void marlin::Marlin<(long)1125899906909960, (long)1125899923621888, (long)1125899906909960, (long)1125899906909960, (int)128, (int)1, (int)4, (int)8, (bool)1, (int)4, (int)8, (bool)0>(const int4 *, const int4 *, int4 *, int4 *, const int4 *, const float *, const int4 *, const float *, const int4 *, int, int, int, int, int *, bool, bool, bool, int)",
+          "calls_M": 600,
+          "total_ms_M": 99.358422,
+          "mean_us_M": 165.59736999999998,
+          "threads": 128,
+          "registers": 128,
+          "dynamic_shared_bytes": 101376,
+          "local_bytes": 0
+        },
+        {
+          "device": 1,
+          "name": "void marlin::Marlin<(long)1125899906909960, (long)1125899923621888, (long)1125899906909960, (long)1125899906909960, (int)256, (int)1, (int)8, (int)8, (bool)1, (int)4, (int)8, (bool)0>(const int4 *, const int4 *, int4 *, int4 *, const int4 *, const float *, const int4 *, const float *, const int4 *, int, int, int, int, int *, bool, bool, bool, int)",
+          "calls_M": 3200,
+          "total_ms_M": 624.109118,
+          "mean_us_M": 195.03409937499998,
+          "threads": 256,
+          "registers": 125,
+          "dynamic_shared_bytes": 101376,
+          "local_bytes": 0
+        }
+      ]
+    },
+    {
+      "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/vast-hq-d/ab/prof/nsys-n3-1.sqlite",
+      "scope": "whole capture, includes warmup; not a matched checkpoint A/B",
+      "kernels": [
+        {
+          "device": 0,
+          "name": "void marlin::Marlin<(long)1125899906909960, (long)1125899907892224, (long)1125899906909960, (long)1125899906909960, (int)256, (int)1, (int)8, (int)8, (bool)1, (int)4, (int)8, (bool)0>(const int4 *, const int4 *, int4 *, int4 *, const int4 *, const float *, const int4 *, const float *, const int4 *, int, int, int, int, int *, bool, bool, bool, int)",
+          "calls_M": 34893,
+          "total_ms_M": 2197.382458,
+          "mean_us_M": 62.974879144814146,
+          "threads": 256,
+          "registers": 102,
+          "dynamic_shared_bytes": 101376,
+          "local_bytes": 0
+        },
+        {
+          "device": 0,
+          "name": "void marlin::Marlin<(long)1125899906909960, (long)1125899923621888, (long)1125899906909960, (long)1125899906909960, (int)128, (int)1, (int)4, (int)8, (bool)1, (int)4, (int)8, (bool)0>(const int4 *, const int4 *, int4 *, int4 *, const int4 *, const float *, const int4 *, const float *, const int4 *, int, int, int, int, int *, bool, bool, bool, int)",
+          "calls_M": 408,
+          "total_ms_M": 68.295197,
+          "mean_us_M": 167.39018872549022,
+          "threads": 128,
+          "registers": 128,
+          "dynamic_shared_bytes": 101376,
+          "local_bytes": 0
+        },
+        {
+          "device": 0,
+          "name": "void marlin::Marlin<(long)1125899906909960, (long)1125899923621888, (long)1125899906909960, (long)1125899906909960, (int)256, (int)1, (int)8, (int)8, (bool)1, (int)4, (int)8, (bool)0>(const int4 *, const int4 *, int4 *, int4 *, const int4 *, const float *, const int4 *, const float *, const int4 *, int, int, int, int, int *, bool, bool, bool, int)",
+          "calls_M": 2176,
+          "total_ms_M": 425.846897,
+          "mean_us_M": 195.7016989889706,
+          "threads": 256,
+          "registers": 125,
+          "dynamic_shared_bytes": 101376,
+          "local_bytes": 0
+        },
+        {
+          "device": 1,
+          "name": "void marlin::Marlin<(long)1125899906909960, (long)1125899907892224, (long)1125899906909960, (long)1125899906909960, (int)256, (int)1, (int)8, (int)8, (bool)1, (int)4, (int)8, (bool)0>(const int4 *, const int4 *, int4 *, int4 *, const int4 *, const float *, const int4 *, const float *, const int4 *, int, int, int, int, int *, bool, bool, bool, int)",
+          "calls_M": 34893,
+          "total_ms_M": 2196.43012,
+          "mean_us_M": 62.947586048777694,
+          "threads": 256,
+          "registers": 102,
+          "dynamic_shared_bytes": 101376,
+          "local_bytes": 0
+        },
+        {
+          "device": 1,
+          "name": "void marlin::Marlin<(long)1125899906909960, (long)1125899923621888, (long)1125899906909960, (long)1125899906909960, (int)128, (int)1, (int)4, (int)8, (bool)1, (int)4, (int)8, (bool)0>(const int4 *, const int4 *, int4 *, int4 *, const int4 *, const float *, const int4 *, const float *, const int4 *, int, int, int, int, int *, bool, bool, bool, int)",
+          "calls_M": 408,
+          "total_ms_M": 68.274554,
+          "mean_us_M": 167.33959313725492,
+          "threads": 128,
+          "registers": 128,
+          "dynamic_shared_bytes": 101376,
+          "local_bytes": 0
+        },
+        {
+          "device": 1,
+          "name": "void marlin::Marlin<(long)1125899906909960, (long)1125899923621888, (long)1125899906909960, (long)1125899906909960, (int)256, (int)1, (int)8, (int)8, (bool)1, (int)4, (int)8, (bool)0>(const int4 *, const int4 *, int4 *, int4 *, const int4 *, const float *, const int4 *, const float *, const int4 *, int, int, int, int, int *, bool, bool, bool, int)",
+          "calls_M": 2176,
+          "total_ms_M": 425.748618,
+          "mean_us_M": 195.65653400735295,
+          "threads": 256,
+          "registers": 125,
+          "dynamic_shared_bytes": 101376,
+          "local_bytes": 0
+        }
+      ]
+    }
+  ]
+}

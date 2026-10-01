@@ -1,0 +1,11 @@
+PASS AST codex/marlin_bench.py
+PASS AST codex/check_cpu.py
+PASS AST codex/summarize.py
+PASS AST codex/analyze.py
+PASS bash -n codex/gpu_ab.sh
+M analyzer wall_ms=650.967, CUDA_VISIBLE_DEVICES empty
+PASS CPU-only GPU A/B dry plan
+PASS --execute rejects empty GPU authorization before torch import
+PASS synthetic full-matrix A/B recovers -2 us_D
+PASS negative control rejects mismatched up/patch output
+PASS incomplete boot set rejected

@@ -1,0 +1,8 @@
+0ba4028664e799a8072cb5a41bfa571d8aba327faa6e02042a3565c87cc128a2  /home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/model_executor/layers/quantization/compressed_tensors/compressed_tensors.py
+2a96b958000f6340756f9003d9fa5a7f743c71b76558f7e153dcbad4ab077240  /home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/model_executor/layers/quantization/compressed_tensors/schemes/compressed_tensors_wNa16.py
+7cb7186b4e9150855b05c5bc335ed957d573d98e85fc9ad7d64e256eb04a7954  /home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/model_executor/kernels/linear/mixed_precision/marlin.py
+19eeaed1d0c40e694944e992f6be32b5dc0ffce5569359881ea7d61a67b41792  /home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/model_executor/layers/quantization/utils/marlin_utils.py
+37bfd7ddba5f50b8705c7c123d1a9e0a388172ee5e1a7027a0ec11666850ce6e  /home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/_custom_ops.py
+ee705342620ac13ee019e18129cf499b6031d5aa7f7a9e5b9fd649cb75f688b3  /home/xanewok/repos/vllm-patches/csrc/libtorch_stable/quantization/marlin/marlin.cu
+972ffd66fdfb6781dad13daea1167981821a78b86a93d865baa2b3c3ed11cd19  /home/xanewok/repos/vllm-patches/csrc/libtorch_stable/quantization/marlin/marlin_template.h
+bf863d252bfc468eaff42b2c1bda583c5e6ab97ceacf0ac248c164564ddcce9b  /home/xanewok/repos/vllm-patches/csrc/libtorch_stable/quantization/marlin/marlin_mma.h
