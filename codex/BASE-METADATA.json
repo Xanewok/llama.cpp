@@ -1,0 +1,31 @@
+{
+  "path": "/home/xanewok/models/Qwen3.8-27B-IQ4_XS.gguf",
+  "metadata_M": {
+    "general.architecture": "qwen35",
+    "general.type": "model",
+    "general.sampling.top_k": 20,
+    "general.sampling.top_p": 0.949999988079071,
+    "general.sampling.temp": 1.0,
+    "general.name": "Qwen3.8 27B",
+    "general.basename": "Qwen3.8",
+    "general.size_label": "27B",
+    "general.license": "apache-2.0",
+    "general.tags": [
+      "image-text-to-text"
+    ],
+    "qwen35.block_count": 65,
+    "qwen35.embedding_length": 5120,
+    "qwen35.nextn_predict_layers": 1,
+    "general.quantization_version": 2,
+    "general.file_type": 30
+  },
+  "bytes_M": 15475951328,
+  "tensor_count_M": 866,
+  "nextn_tensor_names": [
+    "blk.64.nextn.eh_proj.weight",
+    "blk.64.nextn.enorm.weight",
+    "blk.64.nextn.hnorm.weight",
+    "blk.64.nextn.shared_head_norm.weight"
+  ],
+  "arm": "no-spec regardless of preserved NextN tensors"
+}

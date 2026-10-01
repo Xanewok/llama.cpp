@@ -1,0 +1,29 @@
+{
+  "source": "8a15734ca7f8e1315007da7813e83b9893f10f92\nDO NOT MERGE: request capture; stack2 base 0dba27b90\nCUDA 13.2; NCCL OFF; arch 120; nice 19; j4; compiler forced (no GPU compiler probe)\n",
+  "sha256": {
+    "capture-srv": "a0dfa7762078f90fd70746f6f7d91d3685d9519bec03c2a80692108794fe253e",
+    "libggml-base.so": "6e1587ee085d3432e1a3f2c0947a00bba3f12707b59e23c01ccf6f6189ec66a5",
+    "libggml-base.so.0": "6e1587ee085d3432e1a3f2c0947a00bba3f12707b59e23c01ccf6f6189ec66a5",
+    "libggml-base.so.0.25.3": "6e1587ee085d3432e1a3f2c0947a00bba3f12707b59e23c01ccf6f6189ec66a5",
+    "libggml-cpu.so": "70980a7c0af90dadfa732d3fd37d92e1efdc91bde9012b1c4332eaf8a07c04c2",
+    "libggml-cpu.so.0": "70980a7c0af90dadfa732d3fd37d92e1efdc91bde9012b1c4332eaf8a07c04c2",
+    "libggml-cpu.so.0.25.3": "70980a7c0af90dadfa732d3fd37d92e1efdc91bde9012b1c4332eaf8a07c04c2",
+    "libggml-cuda.so": "db0f8718ae2a206ed6bbfece613511c81f001a418068da504c6a3196c2b6fbe3",
+    "libggml-cuda.so.0": "db0f8718ae2a206ed6bbfece613511c81f001a418068da504c6a3196c2b6fbe3",
+    "libggml-cuda.so.0.25.3": "db0f8718ae2a206ed6bbfece613511c81f001a418068da504c6a3196c2b6fbe3",
+    "libggml.so": "c206c745fac8aa5ce180f026148b4ff10a54a10b3d8794ad1fd0343596959fee",
+    "libggml.so.0": "c206c745fac8aa5ce180f026148b4ff10a54a10b3d8794ad1fd0343596959fee",
+    "libggml.so.0.25.3": "c206c745fac8aa5ce180f026148b4ff10a54a10b3d8794ad1fd0343596959fee",
+    "libllama-common.so": "bc7a38bcf13241336214784866c28033f9c43b55e692639effa72db344c341f7",
+    "libllama-common.so.0": "bc7a38bcf13241336214784866c28033f9c43b55e692639effa72db344c341f7",
+    "libllama-common.so.0.5.0": "bc7a38bcf13241336214784866c28033f9c43b55e692639effa72db344c341f7",
+    "libllama-server-impl.so": "ca7fe07e71b789fecb57418ae406a33b376371566fe1689504a58164fceb0d6e",
+    "libllama.so": "cdfd59917bbf1d3ba7e1ff6c5e56252617e9213eec7b52e5bde8b85c264f94bb",
+    "libllama.so.0": "cdfd59917bbf1d3ba7e1ff6c5e56252617e9213eec7b52e5bde8b85c264f94bb",
+    "libllama.so.0.5.0": "cdfd59917bbf1d3ba7e1ff6c5e56252617e9213eec7b52e5bde8b85c264f94bb",
+    "libmtmd.so": "8287cafc04355e5ba7e0c97a1fd0601b44eef2b31c333080227f7ecb863c617b",
+    "libmtmd.so.0": "8287cafc04355e5ba7e0c97a1fd0601b44eef2b31c333080227f7ecb863c617b",
+    "libmtmd.so.0.5.0": "8287cafc04355e5ba7e0c97a1fd0601b44eef2b31c333080227f7ecb863c617b",
+    "llama-server": "a0dfa7762078f90fd70746f6f7d91d3685d9519bec03c2a80692108794fe253e"
+  }
+}
