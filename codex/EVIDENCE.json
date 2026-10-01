@@ -1,0 +1,52 @@
+{
+  "cpu_configs": [
+    {
+      "config": "f16-full",
+      "rows_M": 30,
+      "max_abs_M": 0.5955398082733154,
+      "max_probability_diff_D": 0.04811108484864235,
+      "filtered_support_rows_M": 8,
+      "top20_changed_rows_M": 11,
+      "raw_KL_max_D": 0.015581808138192101,
+      "filtered_TV_max_D": 0.08781823702156544,
+      "seeded_sample_changed_rows_M": 9
+    },
+    {
+      "config": "f16-subset",
+      "rows_M": 30,
+      "max_abs_M": 0.5955398082733154,
+      "max_probability_diff_D": 0.04811108484864235,
+      "filtered_support_rows_M": 8,
+      "top20_changed_rows_M": 11,
+      "raw_KL_max_D": 0.015581808138192101,
+      "filtered_TV_max_D": 0.08781823702156544,
+      "seeded_sample_changed_rows_M": 9
+    },
+    {
+      "config": "q8_0-full",
+      "rows_M": 30,
+      "max_abs_M": 0.5405826568603516,
+      "max_probability_diff_D": 0.03504481911659241,
+      "filtered_support_rows_M": 1,
+      "top20_changed_rows_M": 4,
+      "raw_KL_max_D": 0.003860329786262274,
+      "filtered_TV_max_D": 0.06083375168964267,
+      "seeded_sample_changed_rows_M": 10
+    },
+    {
+      "config": "q8_0-subset",
+      "rows_M": 30,
+      "max_abs_M": 0.5405826568603516,
+      "max_probability_diff_D": 0.03504481911659241,
+      "filtered_support_rows_M": 1,
+      "top20_changed_rows_M": 4,
+      "raw_KL_max_D": 0.003860329786262274,
+      "filtered_TV_max_D": 0.06083375168964267,
+      "seeded_sample_changed_rows_M": 10
+    }
+  ],
+  "repeated_boot_noise_max_abs_M": 0.0,
+  "repeated_boot_noise_max_probability_D": 0.0,
+  "repeated_boot_flagged_rows_M": 30,
+  "negative_control_error": "FAIL: independent context oracle failed: /home/xanewok/repos/ra-verify-rows/stack2/build-cpu-contract/negative/d32/verify-k3-r0.f32"
+}
