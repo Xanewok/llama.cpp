@@ -1,0 +1,69 @@
+[
+  {
+    "command": [
+      "python3",
+      "codex/test_runaways.py"
+    ],
+    "exit_M": 0,
+    "seconds_M": 0.4708763389789965,
+    "stdout": "M: detector positives, ordinary output controls, generated-only filtering, deduplication and exact CI pass\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "python3",
+      "codex/test_runaways.py",
+      "--broken-detector"
+    ],
+    "exit_M": 1,
+    "seconds_M": 0.19941493999795057,
+    "stdout": "",
+    "stderr": "Traceback (most recent call last):\n  File \"/home/xanewok/repos/ra-rates/stack/codex/test_runaways.py\", line 33, in <module>\n    main()\n  File \"/home/xanewok/repos/ra-rates/stack/codex/test_runaways.py\", line 17, in main\n    assert runaways.spans(output), 'detector missed positive fixture'\n           ^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: detector missed positive fixture\n"
+  },
+  {
+    "command": [
+      "python3",
+      "codex/test_experiment.py"
+    ],
+    "exit_M": 0,
+    "seconds_M": 0.6100284400163218,
+    "stdout": "PLAN: no GPU query, process, or HTTP request executed\nD: 12 boots; 48 trials; L=32; budget=7200s per invocation\nM: interleaving, independent seeds, SSE and Fisher-family censoring, controlled requests, renamed frozen binaries and hash failure control pass\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "-n",
+      "codex/gpu_ab.sh"
+    ],
+    "exit_M": 0,
+    "seconds_M": 0.006309324991889298,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "codex/gpu_ab.sh"
+    ],
+    "exit_M": 0,
+    "seconds_M": 0.08328376701683737,
+    "stdout": "PLAN: no GPU query, process, or HTTP request executed\nD: 96 boots; 1536 trials; L=8192; budget=7200s per invocation\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "python3",
+      "-m",
+      "py_compile",
+      "codex/runaways.py",
+      "codex/experiment.py",
+      "codex/prefixes.py",
+      "codex/power.py"
+    ],
+    "exit_M": 0,
+    "seconds_M": 0.04070690099615604,
+    "stdout": "",
+    "stderr": ""
+  }
+]
