@@ -320,7 +320,7 @@ def tables(rows, out):
     for r in rows:
         grouped[tuple(r[k] for k in FACTORS)].append(r)
     with (out / 'rates.csv').open('w') as f:
-        writer = csv.DictWriter(f, fieldnames=fields)
+        writer = csv.DictWriter(f, fieldnames=fields, lineterminator='\n')
         writer.writeheader()
         for key, group in sorted(grouped.items()):
             eligible = [r for r in group if r['observed_output']]
@@ -337,7 +337,7 @@ def tables(rows, out):
         for r in rows:
             groups[tuple(r[k] for k in factors)].append(r)
         with (out / f'{name}-rates.csv').open('w') as f:
-            w = csv.writer(f)
+            w = csv.writer(f, lineterminator='\n')
             w.writerow(factors + ['attempts_M', 'output_M', 'text_M', 'censored_M', 'repeat_M', 'low_D', 'high_D', 'truncated_M', 'long_M', 'parse_M'])
             for key, group in sorted(groups.items()):
                 eligible = [r for r in group if r['observed_output']]

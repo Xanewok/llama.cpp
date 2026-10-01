@@ -16,5 +16,6 @@
   "duplicates_M": 228,
   "unique_output_M": 1578,
   "alias_conflicts_M": 0,
-  "detector_sha256": "7ec3af868bc6f0b9e620df8a86782f5ec2081453707d547770e9597e16653532"
+  "detector_sha256": "7ec3af868bc6f0b9e620df8a86782f5ec2081453707d547770e9597e16653532",
+  "table_writer_sha256": "8c8fc52ab9a117876c4c18be5a56ae6916e1fa6cc6676b835eb151cb4a8af020"
 }
