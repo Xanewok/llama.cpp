@@ -1,0 +1,20 @@
+{
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/__init__.py": "1f1f84bfe6f4f5af3a7e21a7a8716ecf7b9013da1d03327668a3ee36afc24c32",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/mtp/speculator.py": "926d6c9ffdb368c971647911a60493820d056ce236fcae9d94a42fa2e006255d",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/autoregressive/speculator.py": "5b97f54e20ddf65b98e939832d050745f67ef43cfa145786da300f1a8322e3c6",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/autoregressive/cudagraph_utils.py": "13392ef0a9ed59eb9c2b2bad43d7c61beb212a8805849e46b5130c230275d0a5",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/speculator.py": "3a1ab15bf8b20918852eb835fe9755046e99dcbac6ba6ca3d414949fc8bc695a",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/model_runner.py": "66e7d8c0afffe0f5250b9c5e0e2f683d8db0da1cc94924e13ba497a7a43f4e37",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/model_states/mamba_hybrid.py": "573e130ac5587d4822fabf97adad1ad0fda02ff83c5e70df879a5bb175ae845c",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/third_party/flash_linear_attention/ops/fused_recurrent.py": "085fa04ef2cabd9604bda3ac5bfc567480bc59a890b78cb9886561285db35036",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/dflash2/lookup.py": "b35d3e33c2744f043e74c5f26ba4506278f74f7f5abc9e6e58c081b0e1117a1e",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/rejection_sampler.py": "030db5bfca162cc1f305112f299de5d6d61c59d3ed0807fee46575441ca4086d",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/spec_decode/rejection_sampler_utils.py": "214b61fa0abe88573beb779872c035b3954e5651a85bd438d99ee5905d3a62ec",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/worker/gpu/cudagraph_utils.py": "b63e810e5689d8a4c03ba465e280221a82f9c7c4bb0ea98c11a6a50a79aea9cc",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/spec_decode/suffix_decoding.py": "5ce2f64f9c6bec815a10f51eb328934a112eb432d29fb5a4d93926128977844e",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/v1/spec_decode/ngram_proposer_gpu.py": "6b304fb5a2b7a2e4b6ac05c90c49d228975a7b1f7d566dc1445f048992163b72",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/config/speculative.py": "9c642a87264339c0dbc1d0b57330572149df0f9d5e16c6893b9895e50a619e19",
+  "/home/xanewok/repos/HyperQwen/venv/lib/python3.12/site-packages/vllm/_version.py": "c8b934f984aeeb61bbe5f0bdfe0fa80783e39d18369cbf47d63f7ff7581ac8f9",
+  "/home/xanewok/repos/HyperQwen/patches/dflash2-lookup-drafting.patch": "193fd88aae62adb9dda764b7db559ae4c6fb27954184de6baf98414df5638e42",
+  "/home/xanewok/repos/HyperQwen/patches/series": "861fbea800686cb6654e431ededc8b9040b2351f5268562a6261f901e0fbcc08"
+}

@@ -1,0 +1,24 @@
+.F...
+======================================================================
+FAIL: test_exact_law_with_history_selected_proposal (test_replay.Tests.test_exact_law_with_history_selected_proposal)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/xanewok/repos/hq-lookup/codex/test_replay.py", line 59, in test_exact_law_with_history_selected_proposal
+    self.assertEqual(verified_law(p, q, proposal), p)
+AssertionError: Lists differ: [Fraction(3, 5), Fraction(2, 5)] != [Fraction(3, 10), Fraction(7, 10)]
+
+First differing element 0:
+Fraction(3, 5)
+Fraction(3, 10)
+
+- [Fraction(3, 5), Fraction(2, 5)]
+?              ^            ^  ^
+
++ [Fraction(3, 10), Fraction(7, 10)]
+?              ^^            ^  ^^
+
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.163s
+
+FAILED (failures=1)

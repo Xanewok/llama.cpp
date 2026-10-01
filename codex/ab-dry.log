@@ -1,0 +1,3 @@
+Parent-only plan: up patch patch up up patch patch up
+No active candidate delivered: replay did not clear +5% on current k=5 arms.
+Real run needs frozen up/patch descriptors and a checksummed request corpus; see REPORT.md.

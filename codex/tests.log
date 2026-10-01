@@ -1,0 +1,13 @@
+test_decode_uses_metric_delta (test_gpu_ab.Tests.test_decode_uses_metric_delta) ... ok
+test_missing_metrics_fail (test_gpu_ab.Tests.test_missing_metrics_fail) ... ok
+test_paths_cannot_escape (test_gpu_ab.Tests.test_paths_cannot_escape) ... ok
+test_disabled_gate_and_wrong_round (test_replay.Tests.test_disabled_gate_and_wrong_round) ... ok
+test_exact_law_with_history_selected_proposal (test_replay.Tests.test_exact_law_with_history_selected_proposal) ... ok
+test_negative_control_stale_q (test_replay.Tests.test_negative_control_stale_q) ... ok
+test_prefix_only_and_recent (test_replay.Tests.test_prefix_only_and_recent) ... ok
+test_self_suffix_is_excluded (test_replay.Tests.test_self_suffix_is_excluded) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.630s
+
+OK

@@ -1,0 +1,144 @@
+extracted campaign-hq15-ckptab-g32i8-r1-20261001-rust_nucleotide-codons 5285
+extracted campaign-hq15-ckptab-g32i8-r1-20261001-rust_react 19198
+extracted campaign-hq15-ckptab-g32i8-r1-20261001-rust_xorcism 41981
+extracted campaign-hq15-ckptab-g32i8-r2-20261001-javascript_complex-numbers 7058
+extracted campaign-hq15-ckptab-g32i8-r2-20261001-rust_alphametics 10899
+extracted campaign-hq15-ckptab-g32i8-r2-20261001-rust_book-store 6239
+extracted campaign-hq15-ckptab-g32i8-r2-20261001-rust_doubly-linked-list 21627
+extracted campaign-hq15-ckptab-g32i8-r2-20261001-rust_forth 8140
+extracted campaign-hq15-ckptab-g32i8-r2-20261001-rust_nucleotide-codons 5617
+extracted campaign-hq15-ckptab-g32i8-r2-20261001-rust_react 13844
+extracted campaign-hq15-ckptab-g32i8-r2-20261001-rust_xorcism 17783
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-javascript_complex-numbers 2701
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rust_alphametics 5709
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rust_book-store 5551
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rust_doubly-linked-list 10730
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rust_forth 8272
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rust_nucleotide-codons 7901
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rust_react 12068
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rust_xorcism 14739
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rep2-javascript_complex-numbers 31401
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rep2-rust_alphametics 11927
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rep2-rust_book-store 5600
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rep2-rust_doubly-linked-list 20074
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rep2-rust_forth 15666
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rep2-rust_nucleotide-codons 5022
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rep2-rust_react 13999
+extracted campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rep2-rust_xorcism 16462
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-javascript_complex-numbers 17585
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rust_alphametics 7075
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rust_book-store 9347
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rust_doubly-linked-list 19605
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rust_forth 7942
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rust_nucleotide-codons 4690
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rust_react 18221
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rust_xorcism 23729
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rep2-javascript_complex-numbers 19183
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rep2-rust_alphametics 14429
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rep2-rust_book-store 5508
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rep2-rust_doubly-linked-list 12175
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rep2-rust_forth 12347
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rep2-rust_nucleotide-codons 4426
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rep2-rust_react 15844
+extracted campaign-hyperqwen15-u16-minp-k4-longtail-20260929-rep2-rust_xorcism 12439
+extracted campaign-hyperqwen15-u64-minp-chunk4096-longtail-20260928-javascript_complex-numbers 10981
+extracted campaign-hyperqwen15-u64-minp-chunk4096-longtail-20260928-rust_alphametics 6469
+extracted campaign-hyperqwen15-u64-minp-chunk4096-longtail-20260928-rust_book-store 12947
+extracted campaign-hyperqwen15-u64-minp-chunk4096-longtail-20260928-rust_doubly-linked-list 11900
+extracted campaign-hyperqwen15-u64-minp-chunk4096-longtail-20260928-rust_forth 10255
+extracted campaign-hyperqwen15-u64-minp-chunk4096-longtail-20260928-rust_nucleotide-codons 8020
+extracted campaign-hyperqwen15-u64-minp-chunk4096-longtail-20260928-rust_react 18360
+extracted campaign-hyperqwen15-u64-minp-chunk4096-longtail-20260928-rust_xorcism 10922
+extracted campaign-hyperqwen15-u64-minp-longtail-20260928-javascript_complex-numbers 22079
+extracted campaign-hyperqwen15-u64-minp-longtail-20260928-rust_alphametics 12370
+extracted campaign-hyperqwen15-u64-minp-longtail-20260928-rust_book-store 7440
+extracted campaign-hyperqwen15-u64-minp-longtail-20260928-rust_doubly-linked-list 10816
+extracted campaign-hyperqwen15-u64-minp-longtail-20260928-rust_forth 12941
+extracted campaign-hyperqwen15-u64-minp-longtail-20260928-rust_nucleotide-codons 3185
+extracted campaign-hyperqwen15-u64-minp-longtail-20260928-rust_react 17130
+extracted campaign-hyperqwen15-u64-minp-longtail-20260928-rust_xorcism 16111
+extracted campaign-hyperqwen15-u64-minp-lost4-rep1-20260929-javascript_complex-numbers 2016
+extracted campaign-hyperqwen15-u64-minp-lost4-rep1-20260929-rust_book-store 6957
+extracted campaign-hyperqwen15-u64-minp-lost4-rep1-20260929-rust_forth 14083
+extracted campaign-hyperqwen15-u64-minp-lost4-rep1-20260929-rust_react 15798
+extracted campaign-hyperqwen15-u64-minp-lost4-rep2-20260929-javascript_complex-numbers 4792
+extracted campaign-hyperqwen15-u64-minp-lost4-rep2-20260929-rust_book-store 5074
+extracted campaign-hyperqwen15-u64-minp-lost4-rep2-20260929-rust_forth 8851
+extracted campaign-hyperqwen15-u64-minp-lost4-rep2-20260929-rust_react 10991
+extracted campaign-hyperqwen15-u64-minp-lost4-rep3-20260929-javascript_complex-numbers 3060
+extracted campaign-hyperqwen15-u64-minp-lost4-rep3-20260929-rust_book-store 5549
+extracted campaign-hyperqwen15-u64-minp-lost4-rep3-20260929-rust_forth 9801
+extracted campaign-hyperqwen15-u64-minp-lost4-rep3-20260929-rust_react 37740
+{"tasks": 108, "campaigns": 15, "calls": 1683, "stored_tokens": 1304401, "usage_tokens": 1826242, "excluded_calls": 1, "excluded_tokens": 32768}
+4 8 1.4 False 0.11
+4 8 1.4 True -3.26
+4 8 2.5 False -2.49
+4 8 2.5 True -5.44
+8 8 1.4 False 4.61
+8 8 1.4 True 1.19
+8 8 2.5 False 3.34
+8 8 2.5 True 0.03
+12 8 1.4 False 4.54
+12 8 1.4 True 1.79
+12 8 2.5 False 3.68
+12 8 2.5 True 0.99
+16 8 1.4 False 4.03
+16 8 1.4 True 1.74
+16 8 2.5 False 3.36
+16 8 2.5 True 1.12
+24 8 1.4 False 3.37
+24 8 1.4 True 1.63
+24 8 2.5 False 2.9
+24 8 2.5 True 1.19
+32 8 1.4 False 2.84
+32 8 1.4 True 1.43
+32 8 2.5 False 2.48
+32 8 2.5 True 1.07
+4 12 1.4 False -0.59
+4 12 1.4 True -3.66
+4 12 2.5 False -5.16
+4 12 2.5 True -7.5
+8 12 1.4 False 5.26
+8 12 1.4 True 1.8
+8 12 2.5 False 3.11
+8 12 2.5 True -0.16
+12 12 1.4 False 5.26
+12 12 1.4 True 2.46
+12 12 2.5 False 3.86
+12 12 2.5 True 1.15
+16 12 1.4 False 4.71
+16 12 1.4 True 2.4
+16 12 2.5 False 3.64
+16 12 2.5 True 1.4
+24 12 1.4 False 3.97
+24 12 1.4 True 2.21
+24 12 2.5 False 3.26
+24 12 2.5 True 1.53
+32 12 1.4 False 3.38
+32 12 1.4 True 1.95
+32 12 2.5 False 2.83
+32 12 2.5 True 1.41
+4 16 1.4 False -1.95
+4 16 1.4 True -4.68
+4 16 2.5 False -8.07
+4 16 2.5 True -9.84
+8 16 1.4 False 5.18
+8 16 1.4 True 1.75
+8 16 2.5 False 2.31
+8 16 2.5 True -0.86
+12 16 1.4 False 5.43
+12 16 1.4 True 2.63
+12 16 2.5 False 3.6
+12 16 2.5 True 0.92
+16 16 1.4 False 4.94
+16 16 1.4 True 2.61
+16 16 2.5 False 3.56
+16 16 2.5 True 1.33
+24 16 1.4 False 4.25
+24 16 1.4 True 2.48
+24 16 2.5 False 3.37
+24 16 2.5 True 1.64
+32 16 1.4 False 3.62
+32 16 1.4 True 2.18
+32 16 2.5 False 2.95
+32 16 2.5 True 1.53
