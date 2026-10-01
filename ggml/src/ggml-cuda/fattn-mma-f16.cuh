@@ -2292,9 +2292,14 @@ void ggml_cuda_flash_attn_ext_mma_f16_case(ggml_backend_cuda_context & ctx, ggml
     template void ggml_cuda_flash_attn_ext_mma_f16_case                                          \
     <DKQ, DV, ncols1, ncols2, GGML_TYPE_F16>(ggml_backend_cuda_context & ctx, ggml_tensor * dst) \
 
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
 #define DECL_FATTN_MMA_Q8_0_CASE(DKQ, DV, ncols1, ncols2)                                         \
     template void ggml_cuda_flash_attn_ext_mma_f16_case                                           \
     <DKQ, DV, ncols1, ncols2, GGML_TYPE_Q8_0>(ggml_backend_cuda_context & ctx, ggml_tensor * dst) \
+
+#else
+#define DECL_FATTN_MMA_Q8_0_CASE(DKQ, DV, ncols1, ncols2)
+#endif // !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
 
 #define DECL_FATTN_MMA_F16_CASE_ALL_NCOLS2(DKQ, DV, ncols)   \
     extern DECL_FATTN_MMA_F16_CASE(DKQ, DV, (ncols)/ 1,  1); \
@@ -2345,6 +2350,7 @@ extern DECL_FATTN_MMA_F16_CASE(512, 512,  4,  8);
 extern DECL_FATTN_MMA_F16_CASE(512, 512,  8,  8);
 
 
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
 extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 8, 1);
 extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 4, 2);
 extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 8, 2);
@@ -2361,6 +2367,7 @@ static constexpr bool ggml_cuda_flash_attn_ext_mma_q8_0_instance(const int DKQ, 
         (ncols2 == 2 && (ncols1 == 4 || ncols1 == 8)) ||
         ((ncols2 == 4 || ncols2 == 8) && (ncols1 == 2 || ncols1 == 4 || ncols1 == 8)));
 }
+#endif // !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
 
 // The number of viable configurations for Deepseek is very limited:
 extern DECL_FATTN_MMA_F16_CASE(576, 512, 1, 16);
