@@ -1811,13 +1811,21 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
         if constexpr (use_f32) {
             float * tile_Q_f = (float *) tile_Q;
             constexpr int tile_width = cols_per_warp == 8 ? T_C_VKQ::I : T_C_VKQ::J;
+            static_assert((2*nbatch_combine) % tile_width == 0, "bad float combine tile size");
 #pragma unroll
             for (int k1 = 0; k1 < 2*nbatch_combine; k1 += tile_width) {
 #pragma unroll
                 for (int l = 0; l < T_C_VKQ::ne; ++l) {
                     const int j = threadIdx.y*cols_per_warp + (cols_per_warp == 8 ? T_C_VKQ::get_j(l) : T_C_VKQ::get_i(l));
                     const int k = k1 + (cols_per_warp == 8 ? T_C_VKQ::get_i(l) : T_C_VKQ::get_j(l));
-                    tile_Q_f[j*(2*tile_stride) + k] = VKQ_C[(2*k00 + k1)/tile_width].x[l];
+                    // Float and half2 both use one 32-bit word per element.
+                    const int index = j*tile_stride + k;
+#ifdef GGML_CUDA_FA_MMA_DEBUG_BOUNDS
+                    assert(j >= 0 && j < nwarps*cols_per_warp);
+                    assert(k >= 0 && k < 2*nbatch_combine);
+                    assert(index >= 0 && index < nwarps*cols_per_warp*tile_stride);
+#endif
+                    tile_Q_f[index] = VKQ_C[(2*k00 + k1)/tile_width].x[l];
                 }
             }
         } else if constexpr (cols_per_warp == 8) {
@@ -1944,7 +1952,8 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
                 }
             }
         }
-        if (np > 1) {
+        // Readers can use rows written by another warp before the next chunk reuses them.
+        if (np > 1 || (use_f32 && nbatch_combine < DV/2)) {
             __syncthreads();
         }
     }

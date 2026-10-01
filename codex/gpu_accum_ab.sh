@@ -9,6 +9,7 @@ NEW=$ROOT/build-cuda/bin
 UUIDS=${UUIDS:-GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f}
 if [[ $PLAN != 0 ]]; then
     printf '%s\n' 'PLAN: frozen old/new binaries and libraries; verify manifests before each process.' \
+        'First: new kv=4096, nb=1..8, f16/q8_0, prec=f32, causal/large under compute-sanitizer memcheck on both GPUs; abort on any error or missing coverage.' \
         'Both GPUs: old,new,new,old boots; old expects 332/362 with exactly 30 large inf failures, new 386/386 including large nb 1/2/7.' \
         'Per boot: nsys kernel timings for nb 4/8, KV 8192/32768/98304, f16/q8_0, direct q8 staging enabled.' \
         'Record median/mean MMA us, fixup us, registers, dynamic shared memory and launch geometry.' \
@@ -26,6 +27,7 @@ unset LLAMA_TEST_SWIFT_FA LLAMA_TEST_SWIFT_FA_CORRUPT LLAMA_TEST_SWIFT_FA_ACCUM
 (cd "$OLD" && sha256sum -c --quiet SHA256SUMS)
 (cd "$ROOT" && sha256sum -c --quiet codex/cuda-accum.sha256)
 command -v nsys >/dev/null || { echo 'REFUSE: nsys missing'; exit 6; }
+command -v compute-sanitizer >/dev/null || { echo 'REFUSE: compute-sanitizer missing'; exit 6; }
 pgrep -x llama-server >/dev/null && { echo 'REFUSE: existing llama-server'; exit 4; }
 xid_check() {
     local log
@@ -89,6 +91,15 @@ run() {
     (( rc != 124 && rc != 137 )) || { echo 'FAIL: wall budget'; exit 7; }
     RUN_RC=$rc
 }
+for gpu in CUDA0 CUDA1; do
+    dir=$OUT/frozen/new
+    filter='^hsk=256,hsv=256,nh=2,nr23=\[6,1\],kv=4096,nb=[1-8],mask=1,sinks=0,max_bias=0.000000,logit_softcap=0.000000,prec=f32,type_K=(f16|q8_0),type_V=(f16|q8_0),.*swift_verify=1,pattern=(causal|large),compare_rows=0,used_kv=4096$'
+    run "$gpu-memcheck" env LD_LIBRARY_PATH="$dir" LLAMA_TEST_SWIFT_FA=1 LLAMA_TEST_SWIFT_FA_ACCUM=1 \
+        compute-sanitizer --tool memcheck --error-exitcode 98 --target-processes all --force-blocking-launches yes \
+        "$dir/swift-fa-gpu" test -b "$gpu" -o FLASH_ATTN_EXT -p "$filter" -j 1
+    [[ $RUN_RC == 0 ]] || { echo "FAIL: $gpu memcheck exit $RUN_RC; normal runs blocked"; exit 1; }
+    python3 "$OUT/frozen/accum_gpu_results.py" memcheck "$OUT/$gpu-memcheck.log" >> "$OUT/results.jsonl"
+done
 for gpu in CUDA0 CUDA1; do
     boot=0
     for arm in old new new old; do

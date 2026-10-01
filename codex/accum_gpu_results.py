@@ -39,13 +39,35 @@ def kernels(path):
                           "mean_us": statistics.mean(times), "launches": sorted(set(tuple(r[2:]) for r in selected))}))
 
 
+def memcheck(path):
+    text = re.sub(r"\x1b\[[0-9;]*m", "", path.read_text())
+    summaries = re.findall(r"========= ERROR SUMMARY: (\d+) errors?", text)
+    assert summaries and all(int(n) == 0 for n in summaries), "missing or nonzero memcheck summary"
+    cases = [line for line in text.splitlines() if "swift_verify=1" in line and re.search(r"\): (OK|FAIL)$", line)]
+    expected = {(nb, kind, pattern) for nb in range(1, 9) for kind in ("f16", "q8_0") for pattern in ("causal", "large")}
+    seen = set()
+    for line in cases:
+        assert line.endswith("OK"), line
+        assert "kv=4096," in line and "prec=f32," in line
+        nb = int(re.search(r"\bnb=(\d+),", line)[1])
+        kind = re.search(r"type_K=(f16|q8_0),", line)[1]
+        assert f"type_V={kind}," in line
+        pattern = re.search(r"pattern=(causal|large),", line)[1]
+        seen.add((nb, kind, pattern))
+    assert seen == expected and len(cases) == len(expected), f"incomplete memcheck subset: {len(cases)} cases, missing {expected - seen}"
+    assert "not supported" not in text.lower()
+    print(json.dumps({"memcheck": "clean", "pass": len(cases)}))
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=["suite", "kernels"])
+    parser.add_argument("mode", choices=["suite", "kernels", "memcheck"])
     parser.add_argument("path", type=Path)
     parser.add_argument("--arm", choices=["old", "new"])
     args = parser.parse_args()
     if args.mode == "suite":
         suite(args.path, args.arm)
-    else:
+    elif args.mode == "kernels":
         kernels(args.path)
+    else:
+        memcheck(args.path)
