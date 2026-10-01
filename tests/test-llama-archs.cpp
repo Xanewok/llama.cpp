@@ -930,7 +930,7 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
 // gpu = false runs on two CPU devices, which exchange the candidates through the meta backend's exact generic
 // AllReduce. gpu = true runs on the first two GPUs, where the backend's own AllReduce is used; that is the only way
 // to cover a lossy exchange (the CUDA internal AllReduce rounds F32 through BF16).
-static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu) {
+static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu, const int32_t n_rows) {
     std::vector<ggml_backend_dev_t> devs;
     for (size_t i = 0; i < ggml_backend_dev_count() && devs.size() < 2; i++) {
         ggml_backend_dev_t dev = ggml_backend_dev_get(i);
@@ -978,7 +978,6 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
     GGML_ASSERT(n_vocab == n_vocab_test);
 
     const std::vector<llama_token> tokens = get_tokens(48, n_vocab, seed);
-    const int32_t n_rows = 4;                     // output rows at the end of the last ubatch
     const int32_t i_row0 = 32 - n_rows;           // batch index of the first output row in the second batch
 
     auto make_ctx = [&](llama_sampler * chain) {
@@ -1445,7 +1444,12 @@ int main(int argc, char ** argv) {
             return test_input_upload();
         }
         if (tp_sampling) {
-            return test_tp_sampling(seed, stdev, tp_sampling_gpu);
+            for (const int32_t n_rows : {4, 5, 6}) {
+                if (test_tp_sampling(seed, stdev, tp_sampling_gpu, n_rows) != 0) {
+                    return 1;
+                }
+            }
+            return 0;
         }
         if (!out.empty()) {
             return save_models(arch_filter, seed, stdev, verbosity, out);
