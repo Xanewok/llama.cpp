@@ -1835,16 +1835,19 @@ static __device__ __forceinline__ void flash_attn_ext_f16_process_tile(
             const int jc_cwd = threadIdx.y*T_B_KQ::I + T_B_KQ::get_i(-1); // jc combine write data
 #pragma unroll
             for (int k1 = 0; k1 < nbatch_combine; k1 += T_B_KQ::J) {
-                T_C_VKQ_h2 VKQ_C_h2;
-                if constexpr (std::is_same_v<decltype(T_C_VKQ::x), float[T_C_VKQ::ne]>) {
+                // Initialized by a lambda: declaring B first and assigning it changes the register allocation of the f16 build.
+                const T_B_KQ B = [&]() { // Conversion of C to B matrix puts it in column-major format.
+                    if constexpr (std::is_same_v<decltype(T_C_VKQ::x), float[T_C_VKQ::ne]>) {
+                        T_C_VKQ_h2 VKQ_C_h2;
 #pragma unroll
-                    for (int l = 0; l < T_C_VKQ_h2::ne; ++l) {
-                        VKQ_C_h2.x[l] = make_half2(VKQ_C[(k00 + k1)/T_B_KQ::J].x[2*l + 0], VKQ_C[(k00 + k1)/T_B_KQ::J].x[2*l + 1]);
+                        for (int l = 0; l < T_C_VKQ_h2::ne; ++l) {
+                            VKQ_C_h2.x[l] = make_half2(VKQ_C[(k00 + k1)/T_B_KQ::J].x[2*l + 0], VKQ_C[(k00 + k1)/T_B_KQ::J].x[2*l + 1]);
+                        }
+                        return get_transposed(VKQ_C_h2);
+                    } else {
+                        return get_transposed(VKQ_C[(k00 + k1)/T_B_KQ::J]);
                     }
-                } else {
-                    VKQ_C_h2 = VKQ_C[(k00 + k1)/T_B_KQ::J];
-                }
-                const T_B_KQ B = get_transposed(VKQ_C_h2); // Conversion of C to B matrix puts it in column-major format.
+                }();
 
 #pragma unroll
                 for (int l = 0; l < T_B_KQ::ne; ++l) {
