@@ -1,0 +1,44 @@
+[
+  {
+    "id": "swift10-llamacpp-3-f4899df3",
+    "file": "swift10-llamacpp-3-f4899df3.json",
+    "primary": false,
+    "source": "/home/xanewok/repos/qwen38-eval/results/session2/pair-5060ti-2060s/campaign-swift-fullsuite-20260915/swift-iq3-xxs/attempts/c166943d9bbf48fc-01/codex-state/sessions/2026/09/15/rollout-2026-09-15T06-35-26-01a0a3c7-0c62-7e22-8fa1-caa9f4899df3.jsonl",
+    "exact_prefix": false
+  },
+  {
+    "id": "swift15-vllm-4-15430b2e",
+    "file": "swift15-vllm-4-15430b2e.json",
+    "primary": false,
+    "source": "/home/xanewok/repos/qwen38-eval/results/session2/pair-5060ti-x2/campaign-hyperqwen15-u16-minp-k4-hsfast-longtail-20260929-rep2/attempts/90e42cc604ecf441-01/codex-state/sessions/2026/09/29/rollout-2026-09-29T17-02-31-01a0ee1e-32c4-7fc0-86bc-c2bf15430b2e.jsonl",
+    "exact_prefix": false
+  },
+  {
+    "id": "swift15-llamacpp-4-dd232125",
+    "file": "swift15-llamacpp-4-dd232125.json",
+    "primary": true,
+    "source": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair1/attempts/0957923a4a4b4e1b-01/codex-state/sessions/2026/09/30/rollout-2026-09-30T23-22-37-01a0f4a0-8b1d-73a1-8a1b-f316dd232125.jsonl",
+    "exact_prefix": false
+  },
+  {
+    "id": "swift15-llamacpp-4-e1b6d1dc",
+    "file": "swift15-llamacpp-4-e1b6d1dc.json",
+    "primary": false,
+    "source": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair2/attempts/0957923a4a4b4e1b-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T00-51-09-01a0f4f1-9b77-7fa1-9b00-bd89e1b6d1dc.jsonl",
+    "exact_prefix": false
+  },
+  {
+    "id": "swift15-llamacpp-4-bd5134ec",
+    "file": "swift15-llamacpp-4-bd5134ec.json",
+    "primary": false,
+    "source": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair3/attempts/0957923a4a4b4e1b-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T03-20-10-01a0f57a-06b9-7352-a17b-cc35bd5134ec.jsonl",
+    "exact_prefix": false
+  },
+  {
+    "id": "swift15-llamacpp-5-776e6ec1",
+    "file": "swift15-llamacpp-5-776e6ec1.json",
+    "primary": true,
+    "source": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase2-S5-A-IQ4_XS-e3b59faa312a-pair2/attempts/ad1513a00c7e62e8-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T05-35-35-01a0f5f6-012e-76e0-a12f-1500776e6ec1.jsonl",
+    "exact_prefix": false
+  }
+]
