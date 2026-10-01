@@ -116,7 +116,7 @@ def main():
     traces = [trace(SP / p) for p in ["engine-plan/step0/out/profile/decode8k.sqlite", "vast-hq-d/ab/prof/nsys-n3-1.sqlite"]]
     (args.out / "inventory.json").write_text(json.dumps(dict(models=models, roofline=roofline, traces=traces), indent=2) + "\n")
     with (args.out / "modules.csv").open("w") as f:
-        writer = csv.DictWriter(f, fieldnames=list(modules[0]))
+        writer = csv.DictWriter(f, fieldnames=list(modules[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(modules)
     (args.out / "shapes.json").write_text(json.dumps(SHAPES, indent=2) + "\n")
