@@ -5,7 +5,7 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from attrib import analyze, union_ns, validate
+from attrib import analyze, union_ns, validate, wait_histograms
 
 
 def fixture():
@@ -80,6 +80,15 @@ def main():
     validate(rows)
     result = analyze(rows, skip=0, min_rounds=5)
     assert result["rounds_M"] == 5
+    hist = result["ar_wait_histogram"]["by_phase_device"]
+    assert len(hist) == 5 and all(h["bins_M"] == [5, 0, 0, 0, 0] for h in hist)
+    edges = [0, 999, 1000, 9999, 10000, 99999, 100000, 999999, 1000000]
+    synthetic = [{"phases": [{"phase": "V"}], "events": [
+        dict(kind="ar_wait", phase=0, device=1, count=1, begin_ns=0, end_ns=t) for t in edges]}]
+    edge_hist = wait_histograms(synthetic)["by_phase_device"][0]
+    assert edge_hist["bins_M"] == [2, 2, 2, 2, 1] and edge_hist["p95_wait_us_D"] == 1000
+    synthetic[0]["events"][0]["count"] = 2
+    reject(lambda: wait_histograms(synthetic), "aggregated wait hid histogram samples")
     call = next(r for r in result["tables"] if r["window"] == "decode_call" and r["phase"] == "V")
     gap = next(r for r in result["tables"] if r["window"] == "host_boundary" and r["phase"] == "V->C")
     assert abs(call["inputs"] - 0.1) < 1e-9 and abs(call["ar_wait"] - 0.1) < 1e-9

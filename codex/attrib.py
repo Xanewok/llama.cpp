@@ -170,6 +170,30 @@ def nsys(path, rows):
             "unmatched_kernels": dict(unmatched), "matched_phases": len(phase_refs)}
 
 
+def wait_histograms(rows):
+    waits = collections.defaultdict(list)
+    for row in rows:
+        for e in row["events"]:
+            if e["kind"] == "ar_wait":
+                if e["count"] != 1:
+                    raise ValueError("AR wait histogram requires one event per API call")
+                phase = row["phases"][e["phase"]]["phase"]
+                waits[phase, e["device"]].append((e["end_ns"] - e["begin_ns"]) / 1000)
+    result = []
+    for (phase, device), values in sorted(waits.items()):
+        bins = [0] * 5
+        for value in values:
+            bins[bisect.bisect_right((1, 10, 100, 1000), value)] += 1
+        result.append({"phase": phase, "device": device, "waits_M": len(values),
+                       "waits_per_round_D": len(values) / len(rows),
+                       "total_wait_us_D": sum(values), "mean_wait_us_D": statistics.mean(values),
+                       "p50_wait_us_D": statistics.median(values),
+                       "p95_wait_us_D": sorted(values)[max(0, (95 * len(values) + 99) // 100 - 1)],
+                       "max_wait_us_M": max(values), "bins_M": bins})
+    return {"bins_us": ["[0,1)", "[1,10)", "[10,100)", "[100,1000)", "[1000,inf)"],
+            "by_phase_device": result}
+
+
 def analyze(rows, k=3, trim=0.03, skip=3, min_rounds=0, sqlite=None):
     validate(rows)
     groups = collections.defaultdict(list)
@@ -233,6 +257,7 @@ def analyze(rows, k=3, trim=0.03, skip=3, min_rounds=0, sqlite=None):
             "rounds_M": len(kept), "candidate_rounds_M": len(candidates), "median_round_us_M": median / 1000,
             "tables": tables, "counters": [{"phase": key[0], "kind": key[1], "device": key[2], **value}
                                              for key, value in sorted(counters.items())],
+            "ar_wait_histogram": wait_histograms([r for r, _, _ in kept]),
             "nsys": {"matched_phases_M": ns["matched_phases"], "gap_samples_M": gpu_used,
                      "unmatched_kernels_M": ns["unmatched_kernels"]} if ns else None,
             "limits": "Host residual includes scheduler stalls and uninstrumented work. GPU kernel boundaries include copy activity; device_idle subtracts its union. Without SQLite, GPU gaps are unknown."}
