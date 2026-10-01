@@ -800,6 +800,18 @@ static void ggml_backend_cuda_buffer_get_tensor(ggml_backend_buffer_t buffer, co
 }
 
 static void ggml_backend_cuda_buffer_set_tensor_batch(ggml_backend_buffer_t buffer, const ggml_backend_tensor_transfer * transfers, size_t n_transfers) {
+    // DO NOT MERGE: isolate batched uploads without changing scheduler ordering.
+    static const bool enabled = [] {
+        const char * e = getenv("GGML_CUDA_INPUT_BATCH");
+        return e == nullptr || atoi(e) != 0;
+    }();
+    if (!enabled) {
+        for (size_t i = 0; i < n_transfers; ++i) {
+            const auto & transfer = transfers[i];
+            ggml_backend_tensor_set(transfer.tensor, transfer.data, transfer.offset, transfer.size);
+        }
+        return;
+    }
     auto * ctx = (ggml_backend_cuda_buffer_context *) buffer->context;
     std::lock_guard<std::mutex> lock(ctx->input_mutex);
     ggml_cuda_set_device(ctx->device);
