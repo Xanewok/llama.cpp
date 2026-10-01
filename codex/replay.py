@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import time
 import urllib.request
 import urllib.error
 from pathlib import Path
@@ -97,13 +98,22 @@ def post(url, path, data, timeout=1800):
 def request_capture(url, capture_dir, request, timeout=1800):
     before = set(Path(capture_dir).glob('request-*.jsonl'))
     result = post(url, '/completion', request, timeout)
-    created = set(Path(capture_dir).glob('request-*.jsonl')) - before
-    if len(created) != 1:
-        raise RuntimeError('replay requires an exclusive single-slot server')
-    path = created.pop()
-    events = [json.loads(line) for line in path.read_text().splitlines()]
-    if not events or events[-1]['event'] != 'end':
-        raise RuntimeError('replay was interrupted')
+    # The HTTP result can arrive before the slot flushes its final capture event.
+    completed_by = time.monotonic() + 5
+    while True:
+        created = set(Path(capture_dir).glob('request-*.jsonl')) - before
+        if len(created) > 1:
+            raise RuntimeError('replay requires an exclusive single-slot server')
+        path = next(iter(created), None)
+        try:
+            events = [json.loads(line) for line in path.read_text().splitlines()] if path else []
+        except json.JSONDecodeError:
+            events = []
+        if events and events[-1]['event'] == 'end':
+            break
+        if time.monotonic() >= completed_by:
+            raise RuntimeError('replay was interrupted')
+        time.sleep(.02)
     wanted = request.get('__capture_expected', {})
     validations = [e for e in events if e['event'] == 'validation']
     if {str(e['index']) for e in validations} != set(wanted) or any(not e['equal'] and not request.get('__capture_allow_drift') for e in validations):

@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import threading
 from unittest.mock import patch
 
 import parent_gpu
@@ -39,6 +40,25 @@ def main():
         assert request['__capture_budget']['tokens'] == 0
         assert request['n_predict'] == 10 and request['__capture_branch_seed'] == 9001
         assert replay.text([dict(piece_hex='c3'), dict(piece_hex='b3')]) == '\u00f3'
+        capture_dir = Path(tmp) / 'late'
+        capture_dir.mkdir()
+        late = capture_dir / 'request-late.jsonl'
+        validation_events = [dict(event='validation', index=i, equal=True) for i in range(3)]
+        def append_end():
+            with late.open('a') as stream:
+                stream.write(json.dumps(events[-1]) + '\n')
+        def reply(*_args, **_kwargs):
+            late.write_text(''.join(json.dumps(e) + '\n' for e in events[:-1] + validation_events))
+            timer.start()
+            return dict(stop=True)
+        timer = threading.Timer(.04, append_end)
+        try:
+            with patch('replay.post', reply):
+                _, result_path, emitted = replay.request_capture('http://127.0.0.1:18127', capture_dir, request)
+            assert result_path == late and len(emitted) == 3
+        finally:
+            if timer.ident is not None:
+                timer.join()
         events.insert(-1, dict(event='checkpoint_restore'))
         path.write_text(''.join(json.dumps(e) + '\n' for e in events))
         try:
@@ -78,7 +98,7 @@ def main():
             assert 'hash mismatch' in str(error)
         else:
             raise AssertionError('changed frozen library passed')
-    print('PASS: replay roles, budget/grammar transport, UTF-8 bytes, unsupported transitions, plan sentinels, GPU gates, frozen negative control')
+    print('PASS: replay roles, budget/grammar transport, UTF-8 bytes, final-flush race, unsupported transitions, plan sentinels, GPU gates, frozen negative control')
 
 
 if __name__ == '__main__':
