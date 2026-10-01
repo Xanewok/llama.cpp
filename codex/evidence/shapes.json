@@ -1,0 +1,38 @@
+[
+  {
+    "name": "mlp.gate_up_proj",
+    "k": 5120,
+    "n": 17408,
+    "count": 64
+  },
+  {
+    "name": "mlp.down_proj",
+    "k": 8704,
+    "n": 5120,
+    "count": 64
+  },
+  {
+    "name": "linear_attn.in_proj_qkvz",
+    "k": 5120,
+    "n": 8192,
+    "count": 48
+  },
+  {
+    "name": "linear_attn.out_proj",
+    "k": 3072,
+    "n": 5120,
+    "count": 48
+  },
+  {
+    "name": "self_attn.qkv_proj",
+    "k": 5120,
+    "n": 7168,
+    "count": 16
+  },
+  {
+    "name": "self_attn.o_proj",
+    "k": 3072,
+    "n": 5120,
+    "count": 16
+  }
+]
