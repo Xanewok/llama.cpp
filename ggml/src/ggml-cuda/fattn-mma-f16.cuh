@@ -577,7 +577,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_dequantize_tile_q8_0(
 
 #pragma unroll
             for (int cc = 0; cc < QK8_0/8; ++cc) {
-                half2 v[4];
+                __align__(16) half2 v[4];
 #pragma unroll
                 for (int l = 0; l < 2; ++l) {
                     const int m = 2*cc + l;
