@@ -204,7 +204,13 @@ static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_con
     if constexpr (ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, 4, ncols2) &&
                   ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, 8, ncols2)) {
         if (ggml_cuda_flash_attn_ext_mma_q8_0_supported(cc, dst)) {
-            if (Q->ne[1] <= 4) {
+            // DO NOT MERGE: keep dequantization fixed while isolating the wider query tile.
+            static const bool force_ncols1_4 = [] {
+                const char * e = getenv("GGML_CUDA_FA_MMA_Q8_0_NCOLS1");
+                GGML_ASSERT(e == nullptr || atoi(e) == 4);
+                return e != nullptr;
+            }();
+            if (Q->ne[1] <= 4 || force_ncols1_4) {
                 ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 4, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
             } else {
                 ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 8, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
