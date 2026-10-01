@@ -153,6 +153,10 @@ if (CUDAToolkit_FOUND)
         add_compile_definitions(GGML_CUDA_NO_FA)
     endif()
 
+    if (GGML_CUDA_FA_F32_ACC)
+        add_compile_definitions(GGML_CUDA_FA_F32_ACC)
+    endif()
+
     if (GGML_CUDA_NO_PEER_COPY)
         add_compile_definitions(GGML_CUDA_NO_PEER_COPY)
     endif()
