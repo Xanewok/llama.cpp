@@ -1,0 +1,20 @@
+{
+  "roots": [
+    "/home/xanewok/repos/qwen38-eval/results/session2/pair-5060ti-x2",
+    "/home/xanewok/repos/qwen38-eval/results/session2/pair-5060ti-2060s",
+    "/home/xanewok/repos/qwen38-weekend/results"
+  ],
+  "attempts_M": 1975,
+  "started_utc_M": "2026-10-01T07:02:24.917724+00:00",
+  "finished_utc_M": "2026-10-01T07:02:45.872176+00:00",
+  "output_M": 1806,
+  "text_M": 1806,
+  "repetition_M": 6,
+  "seconds_M": 20.954883778991643,
+  "malformed_M": 0,
+  "unique_M": 1747,
+  "duplicates_M": 228,
+  "unique_output_M": 1578,
+  "alias_conflicts_M": 0,
+  "detector_sha256": "7ec3af868bc6f0b9e620df8a86782f5ec2081453707d547770e9597e16653532"
+}
