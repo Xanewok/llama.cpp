@@ -1,0 +1,12 @@
+{
+  "up": {
+    "revision": "869034b4bb93a425ea989d30fc3d000f5a461d58",
+    "archive": "source-up.tar.gz",
+    "sha256": "93d93c42ee10780c50750558953768f3f940f4e52ac1725071b701e000699ff8"
+  },
+  "scope": {
+    "revision": "4ab70fe9d7159352a8a1bbcdf26eeec247654c6e",
+    "archive": "source-scope.tar.gz",
+    "sha256": "ef83f8b323a5e7cf50d19350588ea33f82a9132252a93d126924bb953f85c239"
+  }
+}

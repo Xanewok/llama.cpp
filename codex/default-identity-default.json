@@ -1,0 +1,14 @@
+{
+  "profile": "default",
+  "resources": {
+    "common_M": 26052,
+    "changed_M": [],
+    "missing_M": []
+  },
+  "sass": {
+    "active_common_M": 696,
+    "inactive_diagnostic_kernels_M": 328,
+    "changed_M": [],
+    "missing_M": []
+  }
+}
