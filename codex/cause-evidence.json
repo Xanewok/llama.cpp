@@ -1,0 +1,29 @@
+{
+  "file": "/home/xanewok/repos/qwen38-eval/results/2026-09-28-dual-5060ti/campaign-hq15-ckptab-g32i8-r1-20261001/attempts/02115757a053dbc3-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T15-48-46-01a0f827-665b-7483-9000-02fef4f7b876.jsonl",
+  "line": 43,
+  "characters_M": 77191,
+  "repeat_count_M": 3530,
+  "tail": "t)\\n        .map(|t| t)\\n        .map(|t| t)\\n        .map(|t| t)\\n        .map(|t| t)\\n        .map(|t| t)\\n        .map(|t| t)\\n        .map(|t| t)\\n        .map(|t| t)\\n        .map(|t| t)\\n       ",
+  "call": {
+    "started": 1790869760.1155796,
+    "method": "POST",
+    "path": "/v1/responses",
+    "status": 200,
+    "event": "response.completed",
+    "input_tokens": 14029,
+    "output_tokens": 32768,
+    "cached_tokens": 12720,
+    "reasoning_tokens": 17,
+    "finished": 1790869945.498793
+  },
+  "windows_M": 17,
+  "accepted_M": 25549,
+  "drafted_M": 25555,
+  "acceptance_D": 0.9997652122872236,
+  "excluded_task_acceptance_D": {
+    "g32i8-r1": 0.6049164377289378,
+    "g32i8-r2": 0.6019504197642536,
+    "codexh-r1": 0.5858416288023308,
+    "codexh-r2": 0.5819331983805668
+  }
+}

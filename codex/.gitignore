@@ -1,0 +1,8 @@
+__pycache__/
+frozen/
+gpu-results-*/
+checkpoints.json
+campaigns.json
+*.log
+*.hidden.pt
+replay-*.json

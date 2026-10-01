@@ -1,0 +1,19 @@
+arm	accepted_M	drafted_M	acceptance_D	task_mean_D	decode_tps_D	reasoning_share_D
+codexh-r1	91637	156430	0.585802	0.587846	119.098	0.769676
+codexh-r2	129488	221900	0.583542	0.594715	117.399	0.760131
+g128-r1	83961	135085	0.621542	0.618197	133.108	0.737874
+g128-r2	116082	194595	0.596531	0.602685	128.702	0.819455
+g32i8-r1	136982	208560	0.656799	0.635899	128.365	0.597573
+g32i8-r2	110801	183365	0.604265	0.605352	121.848	0.792595
+
+task	g32i8_r1_D	g32i8_r2_D	codexh_r1_D	codexh_r2_D	delta_pp_D
+javascript/complex-numbers	54.78	52.32	55.41	50.75	-0.47
+rust/alphametics	59.40	54.35	56.76	54.81	-1.09
+rust/book-store	59.09	59.10	58.91	68.61	4.66
+rust/doubly-linked-list	65.22	61.60	56.45	58.24	-6.06
+rust/forth	57.08	61.75	60.72	56.33	-0.89
+rust/nucleotide-codons	92.47	66.74	58.53	66.06	-17.31
+rust/react	60.31	64.17	63.88	61.93	0.66
+rust/xorcism	60.37	64.25	59.62	59.04	-2.98
+
+identical_launch_except_model True

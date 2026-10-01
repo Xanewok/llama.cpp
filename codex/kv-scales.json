@@ -1,0 +1,158 @@
+[
+  {
+    "tensor": "model.language_model.layers.11.self_attn.k_scale",
+    "up_M": 0.032470703125,
+    "patch_M": 0.03271484375,
+    "ratio_D": 1.0075187969924813
+  },
+  {
+    "tensor": "model.language_model.layers.11.self_attn.v_scale",
+    "up_M": 0.028564453125,
+    "patch_M": 0.0235595703125,
+    "ratio_D": 0.8247863247863247
+  },
+  {
+    "tensor": "model.language_model.layers.15.self_attn.k_scale",
+    "up_M": 0.039794921875,
+    "patch_M": 0.040283203125,
+    "ratio_D": 1.0122699386503067
+  },
+  {
+    "tensor": "model.language_model.layers.15.self_attn.v_scale",
+    "up_M": 0.0228271484375,
+    "patch_M": 0.021484375,
+    "ratio_D": 0.9411764705882353
+  },
+  {
+    "tensor": "model.language_model.layers.19.self_attn.v_scale",
+    "up_M": 0.031005859375,
+    "patch_M": 0.0263671875,
+    "ratio_D": 0.8503937007874016
+  },
+  {
+    "tensor": "model.language_model.layers.23.self_attn.v_scale",
+    "up_M": 0.04052734375,
+    "patch_M": 0.040771484375,
+    "ratio_D": 1.0060240963855422
+  },
+  {
+    "tensor": "model.language_model.layers.27.self_attn.k_scale",
+    "up_M": 0.04833984375,
+    "patch_M": 0.048583984375,
+    "ratio_D": 1.005050505050505
+  },
+  {
+    "tensor": "model.language_model.layers.27.self_attn.v_scale",
+    "up_M": 0.06103515625,
+    "patch_M": 0.061767578125,
+    "ratio_D": 1.012
+  },
+  {
+    "tensor": "model.language_model.layers.3.self_attn.k_scale",
+    "up_M": 0.0262451171875,
+    "patch_M": 0.0283203125,
+    "ratio_D": 1.0790697674418606
+  },
+  {
+    "tensor": "model.language_model.layers.3.self_attn.v_scale",
+    "up_M": 0.035888671875,
+    "patch_M": 0.036376953125,
+    "ratio_D": 1.0136054421768708
+  },
+  {
+    "tensor": "model.language_model.layers.31.self_attn.v_scale",
+    "up_M": 0.09423828125,
+    "patch_M": 0.09619140625,
+    "ratio_D": 1.0207253886010363
+  },
+  {
+    "tensor": "model.language_model.layers.35.self_attn.k_scale",
+    "up_M": 0.043701171875,
+    "patch_M": 0.044189453125,
+    "ratio_D": 1.011173184357542
+  },
+  {
+    "tensor": "model.language_model.layers.35.self_attn.v_scale",
+    "up_M": 0.08447265625,
+    "patch_M": 0.08544921875,
+    "ratio_D": 1.0115606936416186
+  },
+  {
+    "tensor": "model.language_model.layers.39.self_attn.v_scale",
+    "up_M": 0.0712890625,
+    "patch_M": 0.07177734375,
+    "ratio_D": 1.0068493150684932
+  },
+  {
+    "tensor": "model.language_model.layers.43.self_attn.k_scale",
+    "up_M": 0.044921875,
+    "patch_M": 0.045654296875,
+    "ratio_D": 1.016304347826087
+  },
+  {
+    "tensor": "model.language_model.layers.47.self_attn.k_scale",
+    "up_M": 0.04150390625,
+    "patch_M": 0.042236328125,
+    "ratio_D": 1.0176470588235293
+  },
+  {
+    "tensor": "model.language_model.layers.51.self_attn.k_scale",
+    "up_M": 0.038330078125,
+    "patch_M": 0.03955078125,
+    "ratio_D": 1.0318471337579618
+  },
+  {
+    "tensor": "model.language_model.layers.51.self_attn.v_scale",
+    "up_M": 0.1611328125,
+    "patch_M": 0.1591796875,
+    "ratio_D": 0.9878787878787879
+  },
+  {
+    "tensor": "model.language_model.layers.55.self_attn.k_scale",
+    "up_M": 0.038818359375,
+    "patch_M": 0.03955078125,
+    "ratio_D": 1.0188679245283019
+  },
+  {
+    "tensor": "model.language_model.layers.55.self_attn.v_scale",
+    "up_M": 0.10498046875,
+    "patch_M": 0.1142578125,
+    "ratio_D": 1.0883720930232559
+  },
+  {
+    "tensor": "model.language_model.layers.59.self_attn.k_scale",
+    "up_M": 0.037841796875,
+    "patch_M": 0.039306640625,
+    "ratio_D": 1.038709677419355
+  },
+  {
+    "tensor": "model.language_model.layers.59.self_attn.v_scale",
+    "up_M": 0.205078125,
+    "patch_M": 0.248046875,
+    "ratio_D": 1.2095238095238094
+  },
+  {
+    "tensor": "model.language_model.layers.63.self_attn.k_scale",
+    "up_M": 0.033203125,
+    "patch_M": 0.03369140625,
+    "ratio_D": 1.0147058823529411
+  },
+  {
+    "tensor": "model.language_model.layers.63.self_attn.v_scale",
+    "up_M": 0.251953125,
+    "patch_M": 0.298828125,
+    "ratio_D": 1.186046511627907
+  },
+  {
+    "tensor": "model.language_model.layers.7.self_attn.k_scale",
+    "up_M": 0.031982421875,
+    "patch_M": 0.032470703125,
+    "ratio_D": 1.015267175572519
+  },
+  {
+    "tensor": "model.language_model.layers.7.self_attn.v_scale",
+    "up_M": 0.0279541015625,
+    "patch_M": 0.027099609375,
+    "ratio_D": 0.9694323144104804
+  }
+]
