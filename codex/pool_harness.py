@@ -14,6 +14,7 @@ from attrib import analyze
 from gpu_harness import Harness, INPUTS, MODEL, MODEL_SHA, ROOT, VOCAB, command, frozen, identity, sha
 
 ORDER = (2, 8, 8, 2)
+COMMON_ENV = {"LLAMA_ARG_LOG_VERBOSITY": "4"}
 FALSIFICATION = (
     "If AR waits fall substantially while V-to-V time and paired-GPU kernel-boundary idle do not improve beyond boot variation, "
     "slot waits are primarily backpressure on active GPU work, not the dominant removable gap. "
@@ -93,6 +94,8 @@ def summary(results):
 class PoolHarness(Harness):
     def __init__(self, args, out):
         super().__init__(args, out)
+        # Backend INFO requires trace verbosity in common_log_default_callback.
+        self.env.update(COMMON_ENV)
         self.monitor_stop = threading.Event()
         self.monitor = None
         self.memory = []
@@ -135,13 +138,13 @@ class PoolHarness(Harness):
     def pool_boot(self, label, pool, trace):
         self.env["GGML_CUDA_AR_POOL"] = str(pool)
         dest = self.boot(self.args.patch, label, trace=trace, nsys=trace)
+        config = json.loads((dest / "command.json").read_text())
+        config.update({name: self.env[name] for name in ("GGML_CUDA_AR_POOL", "LLAMA_ARG_LOG_VERBOSITY")})
+        (dest / "command.json").write_text(json.dumps(config, indent=2))
         log = (dest / "server.log").read_text()
         pools = re.findall(r"initialized AllReduce pipeline:.*pool=(\d+)", log)
-        if not pools or any(int(p) != pool for p in pools):
-            raise ValueError("internal AR active-pool initialization not confirmed")
-        config = json.loads((dest / "command.json").read_text())
-        config["GGML_CUDA_AR_POOL"] = str(pool)
-        (dest / "command.json").write_text(json.dumps(config, indent=2))
+        if len(pools) != 2 or any(int(p) != pool for p in pools):
+            raise ValueError(f"internal AR active-pool initialization not confirmed: expected target/draft pool={pool}, observed={pools}")
         return dest
 
 
@@ -164,6 +167,7 @@ def main():
                       "source": (args.patch / "SOURCE").read_text().splitlines()[0], "manifest": manifest,
                       "command": command(args.patch / "bin/round-trace", args.k, args.port),
                       "arms": [{"GGML_CUDA_AR_POOL": str(p)} for p in (2, 8)],
+                      "common_env": COMMON_ENV,
                       "requests": "each boot: warmup, tool, think; trace-on: fixed matched tool/think repeats under nsys",
                       "capture_requests_per_case": args.capture_requests, "minimum_steady_rounds": args.rounds,
                       "budget_s_G": args.budget, "falsification_rule": FALSIFICATION}, indent=2))

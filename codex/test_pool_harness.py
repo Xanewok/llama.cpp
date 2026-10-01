@@ -2,6 +2,7 @@
 import contextlib
 import copy
 import io
+import json
 import os
 from pathlib import Path
 import sys
@@ -37,13 +38,15 @@ def synthetic():
 
 
 def main():
+    plan = io.StringIO()
     with patch.object(base.subprocess, "run", side_effect=AssertionError("plan subprocess")), \
             patch.object(base.subprocess, "Popen", side_effect=AssertionError("plan launch")), \
             patch.object(base.socket, "socket", side_effect=AssertionError("plan network")), \
             patch.object(h, "sha", side_effect=AssertionError("plan model or input hash")), \
-            patch.object(sys, "argv", ["pool_harness"]), contextlib.redirect_stdout(io.StringIO()):
+            patch.object(sys, "argv", ["pool_harness"]), contextlib.redirect_stdout(plan):
         # Frozen validation has its own hash function; plan never opens model/inputs or probes GPUs.
         h.main()
+    assert json.loads(plan.getvalue())["common_env"] == {"LLAMA_ARG_LOG_VERBOSITY": "4"}
     for env in ({"RUN_GPU": "0", "CUDA_VISIBLE_DEVICES": "0,1"}, {"RUN_GPU": "1", "CUDA_VISIBLE_DEVICES": ""}):
         with patch.dict(os.environ, env), patch.object(sys, "argv", ["pool_harness", "--execute"]), \
                 patch.object(base.subprocess, "run", side_effect=AssertionError("ungated subprocess")), \
@@ -78,15 +81,20 @@ def main():
     assert cmd[cmd.index("-c") + 1] == "102400" and cmd[cmd.index("-sm") + 1] == "tensor"
     with tempfile.TemporaryDirectory(dir=h.ROOT / "build-tmp") as directory:
         dest = Path(directory)
-        harness = h.PoolHarness(SimpleNamespace(budget=2400, patch=h.ROOT / "codex/frozen/ar-pool"), dest)
+        with patch.dict(os.environ, {"LLAMA_ARG_LOG_VERBOSITY": "0", "GGML_CUDA_AR_POOL": "16"}):
+            harness = h.PoolHarness(SimpleNamespace(budget=2400, patch=h.ROOT / "codex/frozen/ar-pool"), dest)
+        assert harness.env["LLAMA_ARG_LOG_VERBOSITY"] == "4"
+        assert "GGML_CUDA_AR_POOL" not in harness.env
         (dest / "command.json").write_text('{}')
         with patch.object(harness, "boot", return_value=dest):
-            for log in ("generic fallback", "initialized AllReduce pipeline: 2 GPUs, pool=2", "initialized AllReduce pipeline: 2 GPUs, pool=8\ninitialized AllReduce pipeline: 2 GPUs, pool=2"):
+            for log in ("generic fallback", "initialized AllReduce pipeline: 2 GPUs, pool=2", "initialized AllReduce pipeline: 2 GPUs, pool=8", "initialized AllReduce pipeline: 2 GPUs, pool=8\ninitialized AllReduce pipeline: 2 GPUs, pool=2"):
                 (dest / "server.log").write_text(log)
                 rejects(lambda: harness.pool_boot("test", 8, False))
-            (dest / "server.log").write_text("initialized AllReduce pipeline: 2 GPUs, pool=8")
+            (dest / "server.log").write_text("initialized AllReduce pipeline: 2 GPUs, pool=8\ninitialized AllReduce pipeline: 2 GPUs, pool=8")
             harness.pool_boot("test", 8, False)
             assert harness.env["GGML_CUDA_AR_POOL"] == "8"
+            config = json.loads((dest / "command.json").read_text())
+            assert config["GGML_CUDA_AR_POOL"] == "8" and config["LLAMA_ARG_LOG_VERBOSITY"] == "4"
     print("M: plan/gates make no subprocess/network calls; completion/counter/missing-boot controls rejected; authoritative period arithmetic and S3/K flags PASS")
 
 
