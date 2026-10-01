@@ -1,0 +1,24 @@
+M: CUDA sm_120 library and server compilation: exit 0. CUDA server never executed.
+Build source: 04d20c03b (production diff to audit HEAD is empty).
+M: CPU build targets test-sampling, test-sampling-prefilter, test-llama-archs: exit 0.
+M: test-sampling: OK.
+M: test-sampling-prefilter: OK (0 failures); stream bytes 35671; FNV1a e97ea9873285a3f9.
+M: input-upload ordering/fallback/dropped-transfer control: OK.
+M: TP candidate/deferred-logit identity: 64 seeds x 4/5/6 rows; all OK.
+M: law: 24 checks x 20000 draws; 6 identity arms x 256 seeds; all normal checks pass.
+M: corrupt q: exit 1, FAIL: law oracle failed, chi2=3703.95093.
+M: CPU address/control oracle passes; missing-mask-bound and modified/missing-row controls fail.
+M: short-history Meta CPU rollback: 24 cases (k=3/4/5, +/-subset, distances 1..k), all bit-identical.
+M: Meta CPU compact-head four/five/six-row fixtures: normalized q, target identity, deferred scatter/global top-k; max selected-row error 0.
+M: two-step CPU draft timing samples, loaded host: full host=104.428995 ms/step; compact host=14.943267; compact candidates=9.384294. Not a GPU estimate.
+M: extended full-head prefix=257 k=5 max rollback fails; Meta/q8 prefix NMSE=.000976754272, after=.000709012094.
+M: same Meta failure with LLAMA_GRAPH_REUSE_DISABLE=1.
+M: extended single-CPU q8/FA: prefix NMSE=0, after=.000626832232; fails.
+M: extended single-CPU f16/FA: prefix=.000955051708, after=.000890137069; fails.
+M: extended single-CPU f16/no-FA: prefix=.000912029576, after=.00158219451; fails.
+M: q8/no-FA initialization refused (TP requires FA; quantized V requires FA). Invalid controls, not oracle results.
+M: CPU and parent-GPU state/draft probes compiled; GPU variants never executed.
+M: shell syntax plus 11 state case plans and draft plan pass. No GPU plan executed.
+D: CPU discrepancy does not require Meta, quantized KV, flash attention or llama graph reuse; cause unresolved.
+D: KV-max scanner launch excluded by campaign -np 1 -ub 128. MMA loader wraps padded lanes modulo actual queries.
+D: candidate gather bypasses BF16; BF16 control corrupts ID 25879 to 25856.

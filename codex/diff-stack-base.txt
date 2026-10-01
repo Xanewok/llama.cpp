@@ -1,0 +1,22 @@
+ codex/test-draft-vocab.cpp        | 236 ++++++++++++++++++++++++++++++++++++++
+ common/arg.cpp                    |  23 ++++
+ common/common.cpp                 |   4 +-
+ common/common.h                   |   2 +
+ common/sampling.cpp               |  92 +++++++++++----
+ common/sampling.h                 |  19 +++
+ common/speculative.cpp            |   4 +
+ ggml/src/ggml-backend-impl.h      |  14 ++-
+ ggml/src/ggml-backend-meta.cpp    |  22 ++++
+ ggml/src/ggml-backend.cpp         |  60 ++++++++++
+ ggml/src/ggml-cuda/ggml-cuda.cu   |  73 ++++++++++++
+ include/llama.h                   |   4 +
+ src/llama-context.cpp             | 123 ++++++++++++++++----
+ src/llama-context.h               |  13 +++
+ src/llama-graph.cpp               |   3 +
+ src/llama-model.cpp               |  93 +++++++++++++--
+ src/llama-model.h                 |   8 +-
+ src/models/qwen35.cpp             |   4 +-
+ tests/test-llama-archs.cpp        | 156 ++++++++++++++++++++++++-
+ tests/test-sampling-prefilter.cpp |  84 ++++++++++++++
+ tools/server/server-context.cpp   |   2 +-
+ 21 files changed, 980 insertions(+), 59 deletions(-)
