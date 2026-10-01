@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 from attrib import analyze, union_ns, validate, wait_histograms
+from read_round_trace import Activity
 
 
 def fixture():
@@ -76,6 +77,12 @@ def make_sqlite(path, rows):
 
 
 def main():
+    activity = Activity([(100, 200), (150, 250), (300, 400)])
+    assert activity.busy(125, 350) == 175
+    assert list(activity.idle(125, 350)) == [(250, 300)]
+    assert activity.busy(0, 500) == 250, "overlapping device activity was summed"
+    assert list(activity.idle(0, 500)) == [(0, 100), (250, 300), (400, 500)]
+    reject(lambda: Activity([(200, 100)]), "reversed GPU activity")
     rows = fixture()
     validate(rows)
     result = analyze(rows, skip=0, min_rounds=5)
