@@ -1,0 +1,28 @@
+Labels: M measured/observed; D derived. Literal flags, paths and source identities are configuration.
+CPU full matrix: M 362 evaluated, 253 passed, 109 failed; zero unsupported, no final abort.
+Pure q8 graphs: M 178/178 passed.
+Combined q8/VEC/f16 graphs: M 2/8 passed; six failed in their f16 arm.
+Standalone f16 graphs: M 73/176 passed.
+F16 causal worst-head NMSE: M 0.0189702958.
+Constant-V worst-head NMSE: M 0.960400045.
+Large-V non-finite cases: M 20.
+Sanitizer filter selected cases (regex checked against CPU result parameters): M 40.
+Full-matrix exit: M 1; this preserves reported CPU failures.
+Final long q8 query 5/6 subset: M 6/6 passed, exit 0.
+Final corrupted-output control: M 0/1 passed, exit 1 (required failure).
+Regular ADD(type=f32) suite with specialized fixture unset: M 56/56 passed, exit 0.
+Negative-control worst-head NMSE: M 19.6824319.
+
+Commands (all executed under nice 19; CUDA hidden):
+CUDA_VISIBLE_DEVICES='' nice -n 19 bash codex/run_cpu.sh
+CUDA_VISIBLE_DEVICES='' LLAMA_TEST_SWIFT_FA=1 OMP_NUM_THREADS=8 OMP_THREAD_LIMIT=8 OPENBLAS_NUM_THREADS=8 nice -n 19 build-cpu/bin/swift-fa-cpu test -b CPU -o FLASH_ATTN_EXT -p 'nr23=\[6,1\],kv=(102400|102399),nb=(5|6),.*type_K=q8_0.*pattern=causal,compare_rows=0' -j 1
+CUDA_VISIBLE_DEVICES='' LLAMA_TEST_SWIFT_FA=1 LLAMA_TEST_SWIFT_FA_CORRUPT=1 OMP_NUM_THREADS=8 OMP_THREAD_LIMIT=8 OPENBLAS_NUM_THREADS=8 nice -n 19 build-cpu/bin/swift-fa-cpu test -b CPU -o FLASH_ATTN_EXT -p 'nr23=\[6,1\],kv=4096,nb=5,.*type_K=q8_0.*pattern=causal,compare_rows=0,used_kv=4096$' -j 1
+CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=8 OMP_THREAD_LIMIT=8 OPENBLAS_NUM_THREADS=8 nice -n 19 env -u LLAMA_TEST_SWIFT_FA -u LLAMA_TEST_SWIFT_FA_CORRUPT build-cpu/bin/swift-fa-cpu test -b CPU -o ADD -p 'type=f32' -j 1
+CUDA_VISIBLE_DEVICES='' nice -n 19 bash codex/build_cuda.sh  # compile only
+CUDA_VISIBLE_DEVICES='' nice -n 19 bash -n codex/*.sh
+CUDA_VISIBLE_DEVICES='' nice -n 19 bash codex/gpu_ab.sh  # plan only
+CUDA_VISIBLE_DEVICES='' PLAN=0 RUN_PARENT_GPU=0 nice -n 19 bash codex/gpu_ab.sh  # required refusal, exit 4
+
+Full local logs: codex/cpu-results.log, cpu-final-positive.log, negative-control.log, cpu-standard.log, configure-cpu.log, build-cpu.log, configure-cuda.log, build-cuda.log.
+CUDA compile/source/binary hashes: codex/cuda-build.sha256.
+GPU results: none. Parent run remains required.
