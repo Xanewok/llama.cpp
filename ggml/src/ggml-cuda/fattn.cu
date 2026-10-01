@@ -164,7 +164,7 @@ static bool ggml_cuda_flash_attn_ext_mma_q8_0_supported(const int cc, const ggml
     float logit_softcap;
     memcpy(&logit_softcap, (const float *) dst->op_params + 2, sizeof(float));
 
-    if (!GGML_CUDA_CC_IS_NVIDIA(cc) || !turing_mma_available(cc) || !cp_async_available(cc)) {
+    if (!GGML_CUDA_CC_IS_NVIDIA(cc) || !turing_mma_available(cc)) {
         return false;
     }
     if (K->type != GGML_TYPE_Q8_0 || V->type != GGML_TYPE_Q8_0 || K->ne[0] != 256 || V->ne[0] != 256) {
@@ -194,7 +194,7 @@ static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_con
     if constexpr (ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, 4, ncols2) &&
                   ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, 8, ncols2)) {
         if (ggml_cuda_flash_attn_ext_mma_q8_0_supported(cc, dst)) {
-            if (Q->ne[1] <= 4) {
+            if (Q->ne[1] <= 4 || ggml_cuda_highest_compiled_arch(cc) == GGML_CUDA_CC_TURING) {
                 ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 4, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
             } else {
                 ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 8, ncols2, GGML_TYPE_Q8_0>(ctx, dst);

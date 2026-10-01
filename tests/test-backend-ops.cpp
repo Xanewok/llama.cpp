@@ -11169,6 +11169,12 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
                                                         GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
     }
 
+    // Turing uses the 32-column tile even when the query batch is wider.
+    for (int nb : { 5, 6, 7 }) {
+        test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {8, 2}, 512, nb, true, false, 0, 0, GGML_PREC_F32,
+                                                        GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}));
+    }
+
     // Small query batches with quantized KV cache views.
     for (int kv : { 512, 1024, 4096 }) {
         for (int nb = 1; nb <= 8; ++nb) {
