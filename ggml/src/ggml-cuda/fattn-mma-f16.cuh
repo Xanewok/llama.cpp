@@ -1203,19 +1203,24 @@ static __device__ __forceinline__ void flash_attn_ext_f16_iter(
 
 #if defined(TURING_MMA_AVAILABLE)
 #ifdef GGML_CUDA_FA_F32_ACC
-using fattn_mma_T_C_VKQ_wide = tile<16, 16, float>;
-using fattn_mma_T_C_VKQ_thin = tile<16,  8, float>;
+// From DKQ 256 the f32 tiles spill and the 256/64x1 kernel reads out of bounds; those head sizes keep half2.
+static constexpr bool fattn_mma_f32_VKQ(const int DKQ) {
+    return DKQ < 256;
+}
 #else
-using fattn_mma_T_C_VKQ_wide = tile<16,  8, half2>;
-using fattn_mma_T_C_VKQ_thin = tile<16,  4, half2>;
+static constexpr bool fattn_mma_f32_VKQ(const int /*DKQ*/) {
+    return false;
+}
 #endif // GGML_CUDA_FA_F32_ACC
+template<int DKQ> using fattn_mma_T_C_VKQ_wide = std::conditional_t<fattn_mma_f32_VKQ(DKQ), tile<16, 16, float>, tile<16, 8, half2>>;
+template<int DKQ> using fattn_mma_T_C_VKQ_thin = std::conditional_t<fattn_mma_f32_VKQ(DKQ), tile<16,  8, float>, tile<16, 4, half2>>;
 template<int DKQ, int ncols> struct mma_tile_sizes {
     using T_A_KQ  = tile<16,  8, half2>; // row-major
     using T_B_KQ  = tile<16,  8, half2>; // column-major
     using T_C_KQ  = tile<16, 16, float>; // column-major
     using T_A_VKQ = tile<16,  8, half2>; // row-major
     using T_B_VKQ = tile<16,  8, half2>; // column-major
-    using T_C_VKQ = fattn_mma_T_C_VKQ_wide; // column-major
+    using T_C_VKQ = fattn_mma_T_C_VKQ_wide<DKQ>; // column-major
 };
 // If there are only 8 columns, use thinner B tiles to avoid wasting compute:
 template<int DKQ> struct mma_tile_sizes<DKQ, 8> {
@@ -1224,7 +1229,7 @@ template<int DKQ> struct mma_tile_sizes<DKQ, 8> {
     using T_C_KQ  = tile<16,  8, float>; // row-major
     using T_A_VKQ = tile<16,  8, half2>; // row-major
     using T_B_VKQ = tile< 8,  8, half2>; // column-major
-    using T_C_VKQ = fattn_mma_T_C_VKQ_thin; // row-major
+    using T_C_VKQ = fattn_mma_T_C_VKQ_thin<DKQ>; // row-major
 };
 // For very large head sizes, use thinner B tiles to reduce register pressure:
 template<> struct mma_tile_sizes<256, 16> {
@@ -1233,7 +1238,7 @@ template<> struct mma_tile_sizes<256, 16> {
     using T_C_KQ  = tile<16,  8, float>; // row-major
     using T_A_VKQ = tile<16,  8, half2>; // row-major
     using T_B_VKQ = tile< 8,  8, half2>; // column-major
-    using T_C_VKQ = fattn_mma_T_C_VKQ_thin; // row-major
+    using T_C_VKQ = fattn_mma_T_C_VKQ_thin<256>; // row-major
 };
 template<> struct mma_tile_sizes<512, 16> {
     using T_A_KQ  = tile<16,  8, half2>; // row-major
@@ -1241,7 +1246,7 @@ template<> struct mma_tile_sizes<512, 16> {
     using T_C_KQ  = tile<16,  8, float>; // row-major
     using T_A_VKQ = tile<16,  8, half2>; // row-major
     using T_B_VKQ = tile< 8,  8, half2>; // column-major
-    using T_C_VKQ = fattn_mma_T_C_VKQ_thin; // row-major
+    using T_C_VKQ = fattn_mma_T_C_VKQ_thin<512>; // row-major
 };
 template<> struct mma_tile_sizes<512, 32> {
     using T_A_KQ  = tile<16,  8, half2>; // row-major
@@ -1249,7 +1254,7 @@ template<> struct mma_tile_sizes<512, 32> {
     using T_C_KQ  = tile<16,  8, float>; // row-major
     using T_A_VKQ = tile<16,  8, half2>; // row-major
     using T_B_VKQ = tile< 8,  8, half2>; // column-major
-    using T_C_VKQ = fattn_mma_T_C_VKQ_thin; // row-major
+    using T_C_VKQ = fattn_mma_T_C_VKQ_thin<512>; // row-major
 };
 #elif defined(AMD_WMMA_AVAILABLE)
 #ifdef RDNA3
