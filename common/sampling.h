@@ -145,3 +145,10 @@ struct common_sampler_deleter {
 };
 
 typedef std::unique_ptr<common_sampler, common_sampler_deleter> common_sampler_ptr;
+
+// Diagnostic observer receives the filtered target row before history advances. It must not mutate the sampler.
+using common_sampler_observer = std::function<void(const std::vector<llama_token_data> &)>;
+void common_sampler_set_observer(common_sampler * gsmpl, common_sampler_observer observer);
+void common_sampler_observe(common_sampler * gsmpl);
+
+int common_sampler_budget_state(const common_sampler * gsmpl);

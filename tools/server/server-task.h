@@ -153,6 +153,15 @@ struct server_task {
     task_params   params;
     server_tokens tokens;
 
+    json capture_request;
+    json capture_parsed;
+    llama_tokens capture_force;
+    uint32_t capture_branch_seed = 0;
+    bool capture_branch = false;
+    json capture_expected;
+    double capture_tolerance = 1e-6;
+    bool capture_allow_drift = false;
+
     // only used by CLI, this allow tokenizing CLI inputs on server side
     // we need this because mtmd_context and vocab are not accessible outside of server_context
     bool                    cli = false;
@@ -233,6 +242,8 @@ struct server_task {
         copy.params    = params;
         copy.type      = type;
         copy.tokens    = tokens.clone();
+        copy.capture_request = capture_request;
+        copy.capture_parsed = capture_parsed;
         copy.id_slot   = -1; // child tasks cannot specify slot
 
         // use different sampling seed for each child

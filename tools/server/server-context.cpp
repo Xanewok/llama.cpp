@@ -1,4 +1,5 @@
 #include "server-context.h"
+#include "server-capture.h"
 #include "server-chat.h"
 #include "server-common.h"
 #include "server-http.h"
@@ -225,6 +226,9 @@ struct server_batch {
 struct server_slot {
     int id;
 
+    std::unique_ptr<server_capture> capture;
+    bool capture_branch_started = false;
+
     llama_context * ctx_tgt = nullptr;
     llama_context * ctx_dft = nullptr;
 
@@ -359,6 +363,8 @@ struct server_slot {
         SLT_DBG(*this, "%s", "\n");
 
         spec_is_replay = false;
+        capture.reset();
+        capture_branch_started = false;
 
         last_nl_pos    = 0;
         generated_text = "";
@@ -468,7 +474,7 @@ struct server_slot {
     }
 
     bool can_speculate() const {
-        return !!spec;
+        return !!spec && (!task || task->capture_force.size() <= stats.n_gen);
     }
 
     // at temp 0 both p and q are point masses, so rejection is the same as sample-and-match
@@ -561,6 +567,10 @@ struct server_slot {
                 prompt_clear();
             }
 
+            if (capture) {
+                capture->write({{"event", "end"}, {"emitted", capture->emitted},
+                                {"stop", (int) stop}, {"truncated", truncated}});
+            }
             callback_on_reset(*this);
 
             reset();
@@ -1931,6 +1941,26 @@ private:
         // the per-request limit takes priority over the global one
         slot.n_predict_max = task.params.n_predict != -1 ? task.params.n_predict : params_base.n_predict;
 
+        if (server_capture::directory() && task.need_sampling()) {
+            if (task.tokens.has_mtmd || !task.params.lora.empty()) {
+                send_error(task, "capture supports text requests without LoRA", ERROR_TYPE_INVALID_REQUEST);
+                return false;
+            }
+            const int limit = server_capture::limit();
+            if (limit > 0) {
+                slot.n_predict_max = slot.n_predict_max < 0 ? limit : std::min(limit, slot.n_predict_max);
+            }
+            slot.capture = std::make_unique<server_capture>();
+            slot.capture->begin(task, slot.smpl.get(), slot.n_ctx);
+            slot.capture->write({{"event", "server"}, {"model", params_base.model.path},
+                                 {"sampling", params_base.sampling.print()},
+                                 {"kv_k", ggml_type_name(params_base.cache_type_k)},
+                                 {"kv_v", ggml_type_name(params_base.cache_type_v)}});
+            if (slot.capture->probs) {
+                common_sampler_set_observer(slot.smpl.get(), [&slot](const auto & p) { slot.capture->observe(p, common_sampler_budget_state(slot.smpl.get())); });
+            }
+        }
+
         slot.task = std::make_unique<const server_task>(std::move(task));
 
         slot.state = slot.task->is_child()
@@ -1945,9 +1975,16 @@ private:
     }
 
     bool process_token(completion_token_output & result, server_slot & slot) {
+        if (slot.capture && slot.capture->mismatch) {
+            send_error(*slot.task, "capture replay distribution mismatch", ERROR_TYPE_SERVER);
+            return false;
+        }
         // remember which tokens were sampled - used for repetition penalties during sampling
         const std::string token_str = result.text_to_send;
         slot.sampled = result.tok;
+        if (slot.capture) {
+            slot.capture->token(result.tok, token_str, slot.capture->emitted < slot.task->capture_force.size());
+        }
 
         slot.generated_text += token_str;
         if (slot.task->params.return_tokens) {
@@ -2610,6 +2647,10 @@ private:
                             break;
                         }
                         // act on the live slot mid generation, never defer
+                        if (slot->capture) {
+                            slot->capture->write({{"event", "control"}, {"at", slot->capture->emitted},
+                                                  {"action", task.params.control_action}});
+                        }
                         common_sampler_reasoning_budget_force(slot->smpl.get());
                         res->success = true;
                     } else {
@@ -3090,6 +3131,10 @@ private:
                     slot.prompt.tokens.insert(new_tokens);
                 }
 
+                if (slot.capture) {
+                    slot.capture->write({{"event", "context_shift"}, {"at", slot.capture->emitted},
+                                         {"n_keep", n_keep}, {"n_discard", n_discard}});
+                }
                 slot.truncated = true;
             }
         });
@@ -3107,6 +3152,31 @@ private:
         iterate(slots, [&](server_slot & slot) {
             if (slot.state != SLOT_STATE_GENERATING) {
                 return;
+            }
+
+            if (slot.task->capture_branch && !slot.capture_branch_started &&
+                    slot.stats.n_gen == slot.task->capture_force.size()) {
+                auto sampling = slot.task->params.sampling;
+                sampling.seed = slot.task->capture_branch_seed;
+                llama_set_sampler(ctx_tgt, slot.id, nullptr);
+                slot.smpl.reset(common_sampler_init(model_tgt, sampling));
+                for (auto id : slot.task->tokens.get_text_tokens()) {
+                    common_sampler_accept(slot.smpl.get(), id, false);
+                }
+                for (auto id : slot.task->capture_force) {
+                    common_sampler_accept(slot.smpl.get(), id, true);
+                }
+                if (slot.capture) {
+                    if (slot.capture->probs) {
+                        common_sampler_set_observer(slot.smpl.get(), [&slot](const auto & p) { slot.capture->observe(p, common_sampler_budget_state(slot.smpl.get())); });
+                    }
+                    slot.capture->write({{"event", "branch"}, {"at", slot.stats.n_gen}, {"seed", sampling.seed}});
+                }
+                llama_set_sampler(ctx_tgt, slot.id, common_sampler_get_backend(slot.smpl.get()));
+                slot.capture_branch_started = true;
+                if (spec) {
+                    common_speculative_begin(spec.get(), slot.id, slot.prompt.tokens.get_text_tokens());
+                }
             }
 
             // check if we can batch this slot with the previous one
@@ -3162,7 +3232,7 @@ private:
                             /* .result   = */ &slot.spec_draft,
                             /* .result_q = */ spec_reject ? &slot.spec_draft_q : nullptr,
                             /* .temp     = */ slot.task->params.sampling.temp,
-                            /* .seed     = */ slot.task->params.sampling.seed,
+                            /* .seed     = */ slot.capture_branch_started ? slot.task->capture_branch_seed : slot.task->params.sampling.seed,
                         };
 
                         drafting.push_back(&slot);
@@ -3969,6 +4039,9 @@ private:
 
                 // prompt evaluated for next-token prediction
                 slot.state = SLOT_STATE_GENERATING;
+                if (slot.capture) {
+                    slot.capture->write({{"event", "prompt"}, {"ids", slot.prompt.tokens.get_text_tokens()}});
+                }
 
                 if (slot.can_speculate()) {
                     common_speculative_begin(spec.get(), slot.id, slot.prompt.tokens.get_text_tokens());
@@ -3984,6 +4057,9 @@ private:
             // shifted according to the current sub-batch
             const int tok_idx = slot.i_batch - off;
 
+            if (slot.capture) {
+                slot.capture->start_round({}, {}, false);
+            }
             llama_token id;
             {
                 scoped_timer timer(t_sampl, n_sampl);
@@ -3992,6 +4068,10 @@ private:
 
             slot.i_batch = -1;
 
+            common_sampler_observe(slot.smpl.get());
+            if (slot.stats.n_gen < slot.task->capture_force.size()) {
+                id = slot.task->capture_force[slot.stats.n_gen];
+            }
             common_sampler_accept(slot.smpl.get(), id, true);
 
             // here we have synchronized the llama_context (due to the sampling above), so we can do time measurement
@@ -4040,6 +4120,9 @@ private:
 
             GGML_ASSERT(n_draft > 0);
 
+            if (slot.capture) {
+                slot.capture->start_round(slot.spec_draft, slot.spec_draft_q, slot.spec_is_replay);
+            }
             // verify and try to accept the draft
             {
                 common_sampler_ptr smpl_save(common_sampler_clone(slot.smpl.get()));
@@ -4064,6 +4147,10 @@ private:
                 } else {
                     accepted = common_sampler_sample_and_accept_n(slot.smpl.get(), slot.ctx_tgt, slot.spec_i_batch, slot.spec_draft);
                 }
+                if (slot.capture) {
+                    slot.capture->write({{"event", "verify"}, {"round", slot.capture->round - 1},
+                                         {"retained", accepted}, {"accepted_draft", accepted.size() - 1}});
+                }
                 slot.spec_i_batch.clear();
 
                 GGML_ASSERT(accepted.size() >= 1);
@@ -4082,6 +4169,9 @@ private:
                         }
 
                         // partial acceptance is not supported by the context -> truncate the draft and restore the state
+                        if (slot.capture) {
+                            slot.capture->write({{"event", "checkpoint_restore"}, {"at", slot.capture->emitted}});
+                        }
                         slot.spec_is_replay = true;
                         slot.spec_draft = std::move(accepted);
 
@@ -4464,6 +4554,54 @@ std::unique_ptr<server_res_generator> server_routes::handle_completions_impl(
                     params,
                     meta->logit_bias_eog,
                     data);
+
+            if (server_capture::directory()) {
+                task.capture_request = json::parse(req.body);
+                task.capture_parsed = data;
+                if (data.contains("__capture_force")) {
+                    if (inputs.size() != 1 || task.params.n_cmpl != 1 || task.tokens.has_mtmd ||
+                            task.params.sampling.mirostat != 0 || task.params.sampling.adaptive_target != -1.0f ||
+                            task.params.sampling.xtc_probability != 0 || !task.params.lora.empty()) {
+                        throw std::runtime_error("unsupported capture replay state");
+                    }
+                    task.capture_force = data.at("__capture_force").get<llama_tokens>();
+                    for (auto id : task.capture_force) {
+                        if (id < 0 || id >= llama_vocab_n_tokens(ctx_server.vocab) || llama_vocab_is_eog(ctx_server.vocab, id)) {
+                            throw std::runtime_error("invalid or terminal replay token");
+                        }
+                    }
+                    task.capture_branch = data.contains("__capture_branch_seed");
+                    task.capture_branch_seed = json_value(data, "__capture_branch_seed", 0u);
+                    const auto & b = data.at("__capture_budget");
+                    auto & sp = task.params.sampling;
+                    sp.reasoning_budget_tokens = b.at("tokens").get<int32_t>();
+                    sp.reasoning_budget_start = b.at("start").get<llama_tokens>();
+                    sp.reasoning_budget_end.clear();
+                    for (const auto & end : b.at("end")) {
+                        sp.reasoning_budget_end.push_back(end.get<llama_tokens>());
+                    }
+                    sp.reasoning_budget_forced = b.at("forced").get<llama_tokens>();
+                    sp.reasoning_control = json_value(b, "control", false);
+                    sp.preserved_tokens.clear();
+                    for (auto id : data.at("__capture_preserved").get<llama_tokens>()) {
+                        sp.preserved_tokens.insert(id);
+                    }
+                    task.capture_expected = json_value(data, "__capture_expected", json::object());
+                    task.capture_tolerance = json_value(data, "__capture_tolerance", 1e-6);
+                    task.capture_allow_drift = json_value(data, "__capture_allow_drift", false);
+                    if (!std::isfinite(task.capture_tolerance) || task.capture_tolerance < 0 || task.capture_tolerance > .01) {
+                        throw std::runtime_error("invalid capture tolerance");
+                    }
+                    if (!task.capture_expected.empty() && (!std::getenv("LLAMA_CAPTURE_PROBS") || std::string(std::getenv("LLAMA_CAPTURE_PROBS")) != "1")) {
+                        throw std::runtime_error("replay validation requires LLAMA_CAPTURE_PROBS=1");
+                    }
+                    if (task.params.cache_prompt) {
+                        throw std::runtime_error("capture replay requires cache_prompt=false");
+                    }
+                }
+            } else if (data.contains("__capture_force")) {
+                throw std::runtime_error("capture replay is disabled");
+            }
 
             task.params.message_spans = task.tokens.find_message_spans(delimiters);
 

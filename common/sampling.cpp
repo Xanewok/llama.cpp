@@ -265,6 +265,8 @@ struct common_sampler {
         }
         return true;
     }
+
+    common_sampler_observer observer = {};
 };
 
 // The top-k of the chain when it can be taken straight from the logits, else 0.
@@ -880,6 +882,43 @@ llama_token common_sampler_sample_row(struct common_sampler * gsmpl, const commo
     return id;
 }
 
+int common_sampler_budget_state(const common_sampler * gsmpl) {
+    return (int) common_reasoning_budget_get_state(gsmpl->rbudget);
+}
+
+void common_sampler_set_observer(common_sampler * gsmpl, common_sampler_observer observer) {
+    gsmpl->observer = std::move(observer);
+}
+
+void common_sampler_observe(common_sampler * gsmpl) {
+    if (!gsmpl->observer) {
+        return;
+    }
+    const auto & cur = gsmpl->cur_p;
+    std::vector<llama_token_data> p(cur.data, cur.data + cur.size);
+    if (grammar_should_apply(gsmpl)) {
+        llama_sampler * grammar = llama_sampler_clone(gsmpl->grmr);
+        llama_token_data_array arr = { p.data(), p.size(), -1, false };
+        llama_sampler_apply(grammar, &arr);
+        llama_sampler_free(grammar);
+    }
+    float sum = 0;
+    for (auto & e : p) {
+        if (e.logit == -INFINITY) {
+            e.p = 0;
+        }
+        sum += e.p;
+    }
+    if (sum > 0) {
+        for (auto & e : p) {
+            e.p /= sum;
+        }
+    } else if (gsmpl->params.temp <= 0 && cur.selected >= 0) {
+        p[cur.selected].p = 1;
+    }
+    gsmpl->observer(p);
+}
+
 std::vector<llama_token> common_sampler_sample_and_accept_n(struct common_sampler * gsmpl, struct llama_context * ctx, const std::vector<int> & idxs, const llama_tokens & draft, bool grammar_first) {
     GGML_ASSERT(idxs.size() == draft.size() + 1 && "idxs.size() must be draft.size() + 1");
 
@@ -892,6 +931,7 @@ std::vector<llama_token> common_sampler_sample_and_accept_n(struct common_sample
     for (; i < draft.size(); i++) {
         const llama_token id = common_sampler_sample(gsmpl, ctx, idxs[i], grammar_first);
 
+        common_sampler_observe(gsmpl);
         common_sampler_accept(gsmpl, id, true);
 
         result.push_back(id);
@@ -906,6 +946,7 @@ std::vector<llama_token> common_sampler_sample_and_accept_n(struct common_sample
     if (i == draft.size()) {
         const llama_token id = common_sampler_sample(gsmpl, ctx, idxs[i], grammar_first);
 
+        common_sampler_observe(gsmpl);
         common_sampler_accept(gsmpl, id, true);
 
         result.push_back(id);
@@ -980,6 +1021,14 @@ std::vector<llama_token> common_sampler_sample_and_accept_n_rejection_rows(struc
             return p_raw(k)*p_norm;
         };
 
+        if (gsmpl->observer) {
+            std::vector<llama_token_data> p(cur_p->data, cur_p->data + cur_p->size);
+            for (size_t k = 0; k < p.size(); ++k) {
+                p[k].p = p_of(k);
+            }
+            gsmpl->observer(p);
+        }
+
         // q_x is never 0 for a token the draft produced, but guard the divide
         const float q_x = prob_of(q.data(), q.size(), draft[i]);
 
@@ -1030,6 +1079,7 @@ std::vector<llama_token> common_sampler_sample_and_accept_n_rejection_rows(struc
     if (i == draft.size()) {
         const llama_token id = common_sampler_sample_row(gsmpl, row_at(i), grammar_first);
 
+        common_sampler_observe(gsmpl);
         common_sampler_accept(gsmpl, id, true);
 
         result.push_back(id);
