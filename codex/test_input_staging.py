@@ -18,6 +18,7 @@ cleanup = source.split("ggml_backend_cuda_context::~ggml_backend_cuda_context()"
 template = (ROOT / "codex/input-staging-fake.cpp").read_text().replace("// PRODUCTION_FIELDS", fields).replace("// PRODUCTION_CLEANUP", cleanup)
 mutations = {
     "correct": function,
+    "no-exact-fallback": function.replace("            capacity = total;", "            return false;"),
     "linear-growth": function.replace("size_t capacity = slot.capacity ? slot.capacity : total;", "size_t capacity = total;"),
     "early-reuse": function.replace("CUDA_CHECK(cudaEventSynchronize(slot.uploaded));", "/* mutation: reuse before completion */"),
     "skip-upload-wait": function.replace("CUDA_CHECK(cudaStreamWaitEvent(ctx->stream(), slot.uploaded, 0));", "/* mutation: compute before upload */"),
