@@ -287,10 +287,10 @@ class StopOnlyOurOwnServer(unittest.TestCase):
             other = subprocess.Popen(['bash', '-c', 'exec -a start_qwen.sh sleep 120'])
             (hq / 'serve.pid').write_text(str(other.pid))
         try:
-            r = subprocess.run(['bash', str(d / 'attrib_hq.sh')], capture_output=True, text=True, timeout=120, env={
+            r = subprocess.run(['bash', str(d / 'attrib_hq.sh')], capture_output=True, text=True, timeout=90, env={
                 **os.environ, 'DRY_RUN': '0', 'CUDA_VISIBLE_DEVICES': '', 'ATTRIB_SP': str(sp), 'ATTRIB_HQ': str(hq),
                 'ATTRIB_PORT': str(port), 'PATH': f'{bin_}:{os.environ["PATH"]}', 'OUT': str(d / 'out'),
-                'XID_SINCE': time.strftime('%Y-%m-%d %H:%M:%S'), 'BUDGET_S': '300'})
+                'XID_SINCE': time.strftime('%Y-%m-%d %H:%M:%S'), 'BUDGET_S': '40'})
             alive = other is not None and other.poll() is None
         finally:
             if other:
