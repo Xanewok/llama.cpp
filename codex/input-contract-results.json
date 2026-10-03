@@ -1,0 +1,38 @@
+[
+  {
+    "case": "correct",
+    "exit_M": 0,
+    "stdout": "growth allocation calls M: 16 for 256 uploads\nowned bytes, ring reuse, bidirectional event order, overlap, refusal, allocation fallback, teardown: pass",
+    "stderr": ""
+  },
+  {
+    "case": "no-exact-fallback",
+    "exit_M": 1,
+    "stdout": "growth allocation calls M: 16 for 256 uploads",
+    "stderr": "exact-size fallback refused"
+  },
+  {
+    "case": "linear-growth",
+    "exit_M": 1,
+    "stdout": "",
+    "stderr": "linear staging allocation growth"
+  },
+  {
+    "case": "early-reuse",
+    "exit_M": 1,
+    "stdout": "",
+    "stderr": "stale staging or missing event wait"
+  },
+  {
+    "case": "skip-upload-wait",
+    "exit_M": 1,
+    "stdout": "",
+    "stderr": "overlap order lost"
+  },
+  {
+    "case": "skip-compute-wait",
+    "exit_M": 1,
+    "stdout": "",
+    "stderr": "stale staging or missing event wait"
+  }
+]
