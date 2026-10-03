@@ -1268,7 +1268,21 @@ bool llm_graph_input_mem_hybrid_iswa::can_reuse(const llm_graph_params & params)
     return res;
 }
 
+llm_graph_input_sampling::llm_graph_input_sampling(std::map<llama_seq_id, llama_sampler *> samplers) : samplers(std::move(samplers)) {
+    for (const auto & entry : this->samplers) {
+        auto bind = llama_sampler_backend_bindings(entry.second);
+        bindings_valid &= bool(bind);
+        if (bind) {
+            bindings.push_back(std::move(bind));
+        }
+    }
+}
+
 void llm_graph_input_sampling::set_input(const llama_ubatch * ubatch) {
+    for (const auto & bind : bindings) {
+        bind();
+    }
+
     // set the inputs only for the active samplers in the current ubatch
     std::unordered_set<llama_seq_id> active_samplers;
     for (uint32_t i = 0; i < ubatch->n_tokens; i++) {
@@ -1292,7 +1306,7 @@ void llm_graph_input_sampling::set_input(const llama_ubatch * ubatch) {
 }
 
 bool llm_graph_input_sampling::can_reuse(const llm_graph_params & params) {
-    if (samplers.size() != params.samplers.size()) {
+    if (!bindings_valid || samplers.size() != params.samplers.size()) {
         return false;
     }
 
@@ -3837,8 +3851,6 @@ void llm_graph_context::build_sampling() const {
     std::array<ggml_tensor *, 2> outs;
     outs[0] = res->t_logits;
 
-    auto inp_sampling = std::make_unique<llm_graph_input_sampling>(samplers);
-    res->add_input(std::move(inp_sampling));
 
     std::map<llama_seq_id, std::vector<uint32_t>> sampling_rows;
     uint32_t n_rows = 0;
@@ -3965,6 +3977,8 @@ void llm_graph_context::build_sampling() const {
             }
         }
     }
+
+    res->add_input(std::make_unique<llm_graph_input_sampling>(samplers));
 
     // TODO: Call backend_accept after all samplers have been applied.
     /*
