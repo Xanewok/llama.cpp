@@ -1534,6 +1534,7 @@ bool llama_context::set_adapter_cvec(
 }
 
 llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, llm_graph_type gtype, llama_memory_context_i * mctx, ggml_status & ret) {
+    ggml_round_trace_scope trace_ubatch("ubatch", cparams.ctx_type, ubatch.n_tokens, n_outputs);
     logits_deferred_fetch();
     sched_active = nullptr;
     if (mctx && !mctx->apply()) {
@@ -1600,11 +1601,13 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         //const auto t_start_us = ggml_time_us();
 
         // FIXME this call causes a crash if any model inputs were not used in the graph and were therefore not allocated
+        ggml_round_trace_scope trace_inputs("set_inputs");
         res->set_inputs(&ubatch);
 
         //LLAMA_LOG_INFO("graph set inputs time: %.3f ms\n", (ggml_time_us() - t_start_us)/1000.0);
     }
 
+    ggml_round_trace_scope trace_compute("compute_submit");
     const auto status = graph_compute(res->get_gf(), ubatch.n_tokens > 1);
     if (status != GGML_STATUS_SUCCESS) {
         LLAMA_LOG_ERROR("%s: failed to compute graph, compute status: %d\n", __func__, status);
@@ -2618,6 +2621,7 @@ ggml_backend_sched_t llama_context::get_sched_graph() const {
 }
 
 void llama_context::reset_graphs() {
+    ggml_round_trace_scope trace_reset("reset_graphs");
     logits_deferred_fetch();
     if (sched_output) { ggml_backend_sched_reset(sched_output.get()); }
     if (sched) { ggml_backend_sched_reset(sched.get()); }
@@ -3935,7 +3939,8 @@ void llama_context::opt_epoch_iter(
             ggml_opt_prepare_alloc(opt_ctx, ctx_compute_opt, gf, res->get_inp_tokens(), res->get_logits());
             ggml_opt_alloc(opt_ctx, train);
 
-            res->set_inputs(&ubatch);
+            ggml_round_trace_scope trace_inputs("set_inputs");
+        res->set_inputs(&ubatch);
             {
                 struct ggml_tensor * labels = ggml_opt_labels(opt_ctx);
                 GGML_ASSERT(labels->ne[1] == n_ubatch);
