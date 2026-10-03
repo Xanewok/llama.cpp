@@ -107,6 +107,7 @@ class Harness:
         self.env["TMPDIR"] = str(out / "tmp")
         self.env["CUDA_CACHE_PATH"] = str(out / "cuda-cache")
         self.env.pop("LD_PRELOAD", None)
+        self.env.pop("GGML_BACKEND_PATH", None)
         self.env.pop("LLAMA_ROUND_TRACE", None)
         self.env.pop("LLAMA_GRAPH_REUSE_DISABLE", None)
 
@@ -671,6 +672,7 @@ def tandem_main():
                 result = suite(h, dest)
                 failures = validate_boot(result, dest, k, args.rounds)
                 results.append(result)
+                print(f"M: K={k} boot={index} arm={arm}: recorded {len(result)} requests, validation failures={len(failures)}", flush=True)
                 (out / f"k{k}-ab-results.json").write_text(json.dumps(results, indent=2))
                 h.stop()
                 h.xid()
