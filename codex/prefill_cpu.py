@@ -9,7 +9,9 @@ from attrib import union_ns
 
 ROOT = Path(__file__).resolve().parent.parent
 assert os.environ.get("CUDA_VISIBLE_DEVICES") == ""
-OUT = ROOT / "codex/reuse-results/prefill"
+campaign = os.environ.get("CPU_CAMPAIGN", "prefill")
+assert campaign.replace("-", "").isalnum(), "unsafe CPU campaign name"
+OUT = ROOT / "codex/reuse-results" / campaign
 OUT.mkdir(parents=True, exist_ok=True)
 env = dict(os.environ, CUDA_VISIBLE_DEVICES="", OMP_NUM_THREADS="8", OPENBLAS_NUM_THREADS="8", MKL_NUM_THREADS="8",
            TMPDIR=str(ROOT / "build-tmp"), PYTHONDONTWRITEBYTECODE="1", CPU_PREFILL_WORDS=os.environ.get("CPU_PREFILL_WORDS", "512"), CPU_UBATCH=os.environ.get("CPU_UBATCH", "32"))
@@ -119,4 +121,4 @@ for row in results:
                            "input_ms_M": group["host_us_M"].get("set_inputs", 0) / 1000}
         requests.append({"request": record["request"], "prompt_ms_M": record["timings_M"]["prompt_ms"], "groups": groups})
     summary.append({"arm": row["arm"], "sha256": row["sha256"], "requests": requests})
-(ROOT / "codex/prefill-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+(ROOT / f"codex/{campaign}-summary.json").write_text(json.dumps(summary, indent=2) + "\n")

@@ -10,7 +10,8 @@ from attrib import union_ns
 
 ROOT = Path(__file__).resolve().parent.parent
 assert os.environ.get("CUDA_VISIBLE_DEVICES") == ""
-campaign = "ab2-candidate" if os.environ.get("CPU_TARGET_MODEL") else "ab2"
+campaign = os.environ.get("CPU_CAMPAIGN", "ab2-candidate" if os.environ.get("CPU_TARGET_MODEL") else "ab2")
+assert campaign.replace("-", "").isalnum(), "unsafe CPU campaign name"
 out = ROOT / "codex/reuse-results" / campaign
 out.mkdir(parents=True, exist_ok=True)
 env = dict(os.environ, CUDA_VISIBLE_DEVICES="", OMP_NUM_THREADS="8", OPENBLAS_NUM_THREADS="8", MKL_NUM_THREADS="8",

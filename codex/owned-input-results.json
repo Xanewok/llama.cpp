@@ -1,0 +1,162 @@
+[
+  {
+    "fixture": "synthetic",
+    "k": 3,
+    "seed": 1,
+    "bytes_M": 20832,
+    "sha256": "411e7e2ea5db3f7d7ae0d2c638c1ce5352bfbc8b22d4f056425e7d40ed12ae8c",
+    "dispatch": "M: owned uploads=120 capability queries=296",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "synthetic",
+    "k": 3,
+    "seed": 2,
+    "bytes_M": 20832,
+    "sha256": "7d0000d80b2a41388a5b959ebfac5cce269debc7c7488e3387113b80af1ab5b5",
+    "dispatch": "M: owned uploads=120 capability queries=296",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "synthetic",
+    "k": 3,
+    "seed": 3,
+    "bytes_M": 20832,
+    "sha256": "0938af1482272bc6f94edf486d5d24207815a3a40bdfb286fc796cf07125b08a",
+    "dispatch": "M: owned uploads=120 capability queries=296",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "synthetic",
+    "k": 3,
+    "seed": 4,
+    "bytes_M": 20832,
+    "sha256": "ae0ec7f4273b2b51002a7355f224b1cb9f77115bfd6e3f8453ea51c55137790a",
+    "dispatch": "M: owned uploads=120 capability queries=296",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "synthetic",
+    "k": 5,
+    "seed": 1,
+    "bytes_M": 32736,
+    "sha256": "33881007e5d19bba1738a63f84dafb41b737fba75701217a642f53c8ab517b58",
+    "dispatch": "M: owned uploads=168 capability queries=344",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "synthetic",
+    "k": 5,
+    "seed": 2,
+    "bytes_M": 32736,
+    "sha256": "4f72223548733f7ae927de57b2c8874b1ac8db7a6e4f923239a8758208da9973",
+    "dispatch": "M: owned uploads=168 capability queries=344",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "synthetic",
+    "k": 5,
+    "seed": 3,
+    "bytes_M": 32736,
+    "sha256": "ed3846ae2c662a48d610ccb97b223c82ac159a1759efa5b5eeacae433667ee68",
+    "dispatch": "M: owned uploads=168 capability queries=344",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "synthetic",
+    "k": 5,
+    "seed": 4,
+    "bytes_M": 32736,
+    "sha256": "87bc99425f265aa62235dc5548668c2b6abcd5fefc80953c594459b91f82bfa0",
+    "dispatch": "M: owned uploads=168 capability queries=344",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "real",
+    "k": 3,
+    "seed": 1,
+    "bytes_M": 20832,
+    "sha256": "6315d6b5388a024b764c252b6ab8040d0fd3a24c6364ae6e13481b09691c8cfb",
+    "dispatch": "M: owned uploads=120 capability queries=296",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "real",
+    "k": 3,
+    "seed": 2,
+    "bytes_M": 20832,
+    "sha256": "172d8fa887b7843ca5829dbf30d9b6d13e6bbb93cecd7c07c7e7feacc97f89ce",
+    "dispatch": "M: owned uploads=120 capability queries=296",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "real",
+    "k": 3,
+    "seed": 3,
+    "bytes_M": 20832,
+    "sha256": "c0ee76244ab7b4c9f64c6ba35290bc61d1adea45f11a1d1408bf555e7797b293",
+    "dispatch": "M: owned uploads=120 capability queries=296",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "real",
+    "k": 3,
+    "seed": 4,
+    "bytes_M": 20832,
+    "sha256": "11492a5a60c2af3d02a69111af9f93a6502a181b8b17a6121025e8edb68844d1",
+    "dispatch": "M: owned uploads=120 capability queries=296",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "real",
+    "k": 5,
+    "seed": 1,
+    "bytes_M": 32736,
+    "sha256": "62209ee1c38f9200c066409ba70152f2067c6fe38acfee3fb8a36b5c80ebfd01",
+    "dispatch": "M: owned uploads=168 capability queries=344",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "real",
+    "k": 5,
+    "seed": 2,
+    "bytes_M": 32736,
+    "sha256": "a663f1a7ecbb70cf9228185bb05e681933e303da044f14d3b8f825d7669722e8",
+    "dispatch": "M: owned uploads=168 capability queries=344",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "real",
+    "k": 5,
+    "seed": 3,
+    "bytes_M": 32736,
+    "sha256": "71bb371ed06ccd5c079314eccd9f78edbc07640f93cb9623fb872ee34ad3c51a",
+    "dispatch": "M: owned uploads=168 capability queries=344",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  },
+  {
+    "fixture": "real",
+    "k": 5,
+    "seed": 4,
+    "bytes_M": 32736,
+    "sha256": "e17d60342a0a48f9b805e76b6d36bcea6738c6e5a5a6660daf4aa6d4fca5d560",
+    "dispatch": "M: owned uploads=168 capability queries=344",
+    "C_D1_host_fences_M": 0,
+    "C_D1_staged_decisions_M": 18
+  }
+]

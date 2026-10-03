@@ -167,7 +167,10 @@ static int run_fixture(int argc, char ** argv) {
     return 0;
 }
 
-int main(int argc, char ** argv) {
+#ifndef REUSE_FIXTURE_ENTRY
+#define REUSE_FIXTURE_ENTRY main
+#endif
+int REUSE_FIXTURE_ENTRY(int argc, char ** argv) {
     try { return run_fixture(argc, argv); }
     catch (const std::exception & e) { fprintf(stderr, "fixture failure: %s\n", e.what()); return 1; }
 }
