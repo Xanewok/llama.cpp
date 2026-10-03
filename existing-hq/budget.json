@@ -1,0 +1,252 @@
+{
+ "schema": 1,
+ "title": "pre-fill from the EXISTING HyperQwen 8k trace (idle desktop, k=3, NCCL AllReduce, default top-k); the item will measure codexh k=5 with host-staged AR and fast top-k",
+ "model": "Swift 1.5 W4A16 g128 syv-fast on HyperQwen (existing 8k traces), TP2",
+ "engine": "hq",
+ "traces": [
+  {
+   "id": "hq-idle-8k (2026-09-29, g128 syv-fast, k=3)",
+   "status": "ok",
+   "group": null,
+   "result": {
+    "kind": "decode",
+    "engine": "hq",
+    "depth": 8192,
+    "k": 3,
+    "n_rounds": 197,
+    "tp": 2,
+    "round_ms_gpu0": 29.80809375634518,
+    "round_sd_ms": 0.6178067566906862,
+    "round_ms_host": 29.77411862436548,
+    "device_skew_ms": 2.816751268852613e-05,
+    "axes": {
+     "FWD": {
+      "measured_ms": 21.062343228426396,
+      "target_ms": 18.968416385786803,
+      "draft_ms": 2.093926842639594,
+      "kernel_sum_ms": 21.062343228426396,
+      "floor_ms": 18.422537839285717,
+      "floor_target_ms": 16.527676339285716,
+      "floor_draft_ms": 1.8948615,
+      "headroom_ms": 2.6398053891406814,
+      "share_pct": 70.65981273607241,
+      "headroom_pct_of_round": 8.856002033269075
+     },
+     "KV": {
+      "measured_ms": 1.3322078426395938,
+      "target_ms": 1.2094176852791878,
+      "draft_ms": 0.12279015736040609,
+      "kernel_sum_ms": 1.3322080050761422,
+      "floor_ms": 0.7059748571428571,
+      "floor_target_ms": 0.6498011428571429,
+      "floor_draft_ms": 0.056173714285714285,
+      "headroom_ms": 0.6262329854967368,
+      "share_pct": 4.469282247731826,
+      "headroom_pct_of_round": 2.1008823664325464
+     },
+     "COMM": {
+      "measured_ms": 4.1651778984771575,
+      "target_ms": 3.711860492385787,
+      "draft_ms": 0.45331740609137056,
+      "kernel_sum_ms": 4.1651778984771575,
+      "floor_ms": 1.955,
+      "floor_target_ms": 1.82,
+      "floor_draft_ms": 0.135,
+      "headroom_ms": 2.2101778984771574,
+      "share_pct": 13.973311854571463,
+      "headroom_pct_of_round": 7.41469050836799
+     },
+     "ELEM": {
+      "measured_ms": 1.1083606345177666,
+      "target_ms": 0.9814921573604062,
+      "draft_ms": 0.1268684771573604,
+      "kernel_sum_ms": 1.1083606345177666,
+      "floor_ms": 1.0,
+      "floor_target_ms": 0.94,
+      "floor_draft_ms": 0.06,
+      "headroom_ms": 0.10836063451776665,
+      "share_pct": 3.7183210827825324,
+      "headroom_pct_of_round": 0.363527555312725
+     },
+     "STEP": {
+      "measured_ms": 2.1400041522842637,
+      "target_ms": 1.9935700304568527,
+      "draft_ms": 0.14643412182741117,
+      "kernel_sum_ms": 1.558631263959391,
+      "floor_ms": 0.52,
+      "floor_target_ms": 0.20800000000000002,
+      "floor_draft_ms": 0.312,
+      "headroom_ms": 1.7855700304568527,
+      "share_pct": 7.179272078841761,
+      "headroom_pct_of_round": 5.990218781020717
+     }
+    },
+    "sub": {
+     "FWD.lm_head": {
+      "target_ms": 1.527565390862944,
+      "draft_ms": 0.4986264771573604
+     },
+     "KV_ATTN": {
+      "target_ms": 0.6957935177664974,
+      "draft_ms": 0.11960622842639594
+     },
+     "KV_GDN": {
+      "target_ms": 0.5136241675126904,
+      "draft_ms": 0.003183928934010152
+     },
+     "STEP.SAMP": {
+      "target_ms": 1.5415179746192893,
+      "draft_ms": 0.017113289340101524
+     },
+     "STEP.COPY": {
+      "target_ms": 0.03458127411167513,
+      "draft_ms": 0.023143279187817258
+     },
+     "STEP.IDLE": {
+      "target_ms": 0.4174707817258883,
+      "draft_ms": 0.10617755329949238
+     }
+    },
+    "floor_sum_ms": 22.603512696428574,
+    "ideal_speedup_x": 1.3187372315390145,
+    "ideal_speedup_basis": "floors use the theoretical 448 GB/s per GPU, the GDN state read+write charge (guess) and, for ELEM and STEP, values demonstrated by HQ at k=3 (not physical limits)",
+    "per_gpu": {
+     "0": {
+      "round_ms": 29.80809375634518,
+      "FWD": 21.062343228426396,
+      "KV": 1.3322078426395938,
+      "COMM": 4.1651778984771575
+     },
+     "1": {
+      "round_ms": 29.80812192385787,
+      "FWD": 21.084915822335027,
+      "KV": 1.3413464111675126,
+      "COMM": 4.270521862944163
+     }
+    },
+    "ar": {
+     "V": {
+      "calls": 130.0,
+      "payload_kib": 40.0,
+      "floor_us_per_call": 14.0
+     },
+     "D1": {
+      "calls": 5.0,
+      "payload_kib": 10.0,
+      "floor_us_per_call": 9.0
+     },
+     "D2": {
+      "calls": 5.0,
+      "payload_kib": 10.0,
+      "floor_us_per_call": 9.0
+     },
+     "D3": {
+      "calls": 5.0,
+      "payload_kib": 10.0,
+      "floor_us_per_call": 9.0
+     }
+    },
+    "draft_forwards": 3,
+    "selection": {
+     "graph_shapes": {
+      "VDDD": 199
+     },
+     "modal_shape": "VDDD",
+     "complete_rounds": 199,
+     "steady": 197,
+     "trim_frac": 0.05,
+     "k": 3,
+     "has_C": false
+    },
+    "kernels_per_round": {
+     "V": 1202.0,
+     "D1": 36.0,
+     "D2": 32.0,
+     "D3": 76.0
+    },
+    "warnings": [],
+    "per_device_round_ms": {
+     "0": 29.80809375634518,
+     "1": 29.80812192385787
+    },
+    "top_kernels_gpu0": [
+     {
+      "kernel": "void marlin::Marlin<(long)1125899906909960, (long)1125899907",
+      "ms_per_round": 16.06892740609137,
+      "calls_per_round": 256.0
+     },
+     {
+      "kernel": "ncclDevKernel_AllReduce_Sum_bf16_RING_LL(ncclDevKernelArgsSt",
+      "ms_per_round": 3.8076687055837564,
+      "calls_per_round": 138.0
+     },
+     {
+      "kernel": "void marlin::Marlin<(long)1125899906909960, (long)1125899923",
+      "ms_per_round": 3.621492233502538,
+      "calls_per_round": 19.0
+     },
+     {
+      "kernel": "_topk_topp_kernel",
+      "ms_per_round": 1.3911043197969544,
+      "calls_per_round": 1.0
+     },
+     {
+      "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616g",
+      "ms_per_round": 1.3719235888324874,
+      "calls_per_round": 48.0
+     },
+     {
+      "kernel": "kernel_mha(unsigned int, unsigned int, unsigned int, const u",
+      "ms_per_round": 0.658694,
+      "calls_per_round": 17.0
+     },
+     {
+      "kernel": "fused_sigmoid_gating_delta_rule_update_kernel",
+      "ms_per_round": 0.38186501522842636,
+      "calls_per_round": 48.0
+     },
+     {
+      "kernel": "ncclDevKernel_AllGather_RING_LL(ncclDevKernelArgsStorage<(un",
+      "ms_per_round": 0.357509192893401,
+      "calls_per_round": 7.0
+     },
+     {
+      "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_marlin_gemm",
+      "ms_per_round": 0.3220781827411167,
+      "calls_per_round": 83.0
+     },
+     {
+      "kernel": "void at::native::elementwise_kernel<(int)128, (int)4, void a",
+      "ms_per_round": 0.18857086294416245,
+      "calls_per_round": 146.0
+     },
+     {
+      "kernel": "void vllm::act_and_mul_kernel<c10::BFloat16, __nv_bfloat162,",
+      "ms_per_round": 0.14725735532994924,
+      "calls_per_round": 67.0
+     },
+     {
+      "kernel": "_causal_conv1d_update_kernel",
+      "ms_per_round": 0.12976426395939086,
+      "calls_per_round": 48.0
+     },
+     {
+      "kernel": "_min_p_kernel",
+      "ms_per_round": 0.11451563451776649,
+      "calls_per_round": 1.0
+     },
+     {
+      "kernel": "triton_red_fused__to_copy_add_fused_add_rms_norm_3",
+      "ms_per_round": 0.07562433502538071,
+      "calls_per_round": 32.0
+     }
+    ],
+    "trace": {
+     "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/gpu0-display/idle-run/profile/decode8k.sqlite",
+     "sha": "df8712a94aa35d39:63725568",
+     "span_ms": 5964.54052
+    }
+   }
+  }
+ ]
+}

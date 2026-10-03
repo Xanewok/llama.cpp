@@ -1,0 +1,10 @@
+{
+  "title": "pre-fill from the EXISTING HyperQwen 8k trace (idle desktop, k=3, NCCL AllReduce, default top-k); the item will measure codexh k=5 with host-staged AR and fast top-k",
+  "model": "hq-swift15-syvfast.json",
+  "engine": "hq",
+  "min_rounds": 30,
+  "traces": [
+    {"id": "hq-idle-8k (2026-09-29, g128 syv-fast, k=3)", "kind": "decode", "depth": 8192, "k": 3,
+     "sqlite": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/gpu0-display/idle-run/profile/decode8k.sqlite"}
+  ]
+}

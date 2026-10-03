@@ -1,0 +1,45 @@
+{
+  "name": "Swift 1.5 W4A16 g32 attn-int8 codexh on HyperQwen (vLLM 0.30, host-staged AR, V2 runner), TP2",
+  "engine": "hq",
+  "tp": 2,
+  "bw_gbs": 448.0,
+  "hidden": 5120,
+  "ar_bytes_per_token": 10240,
+  "weights": {
+    "target_stream_bytes": 16683750192,
+    "target_stream_note": "safetensors headers: trunk 15,392,486,176 + lm_head 1,291,264,016 (weight_packed+scale; the 134,570,816 B extra-tensors file holds the draft head and is excluded); embed_tokens 1,291,264,016 is a gather (derived)",
+    "mtp_stream_bytes": 431361152,
+    "draft_head_bytes": 134570816,
+    "draft_head_note": "mtp.draft_lm_head int8, 25,879 rows (derived from safetensors headers)"
+  },
+  "kv": {
+    "attn_layers": 16,
+    "kv_heads": 4,
+    "head_dim": 256,
+    "target_bytes_per_token": 32768,
+    "target_kv_note": "fp8 KV (CTX=long): 16 layers * 2 * 4 heads * 256 * 1 B (derived; start_qwen.sh header says CTX=long uses fp8 via FlashInfer)",
+    "draft_bytes_per_token": 2048,
+    "draft_kv_note": "one MTP attention layer, fp8 (guess: same dtype as target)"
+  },
+  "gdn": {
+    "layers": 48,
+    "state_bytes_per_forward": 156893184,
+    "state_note": "same f32 geometry as llama: 156,893,184 B (derived); vLLM mamba_ssm_cache_dtype default not verified (guess); floor charges read + write (guess); k+1 per-token slots not charged (uncertain)"
+  },
+  "elem_ref_ms_per_target_forward": 0.94,
+  "elem_ref_ms_per_draft_forward": 0.02,
+  "elem_ref_note": "HQ idle-desktop trace (draft-anatomy REPORT, M)",
+  "step_ref_ms": 0.52,
+  "step_ref_note": "HQ idle-desktop trace idle per step (draft-anatomy REPORT, M, k=3)",
+  "prefill": {
+    "params_flops_per_token": 51300000000,
+    "attn_layers": 16,
+    "q_heads": 24,
+    "head_dim": 256,
+    "peak_tops": 94,
+    "peak_note": "fp16 tensor-core peak per GPU for Marlin W4A16 (guess)",
+    "batch_tokens": 2048
+  },
+  "head_type": null,
+  "draft_passes_per_round": "measured"
+}

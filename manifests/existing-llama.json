@@ -1,0 +1,14 @@
+{
+  "title": "pre-fill from EXISTING llama.cpp traces (no GPU); k=3 builds, not the k=5 stack2 the item will measure",
+  "model": "llama-swift15-iq4xs.json",
+  "engine": "llama",
+  "min_rounds": 30,
+  "traces": [
+    {"id": "item47-np1-8k (2026-09-29, host draft sampling, full 248k draft head, k=3)", "kind": "decode", "depth": 8192, "k": 3,
+     "sqlite": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/queue/out/np2-nsys/np1-k3-d8192.sqlite", "draft_head_bytes": 1042964480, "tok_per_round": 2.878},
+    {"id": "round-trace-0.7k (2026-10-01, backend draft sampling + subset draft head, k=3, prompts 600-790 tokens)", "kind": "decode",
+     "depth": 700, "k": 3, "sqlite": "/home/xanewok/repos/round-trace/llama.cpp/codex/runs/20261001-214325/trace/capture.sqlite"},
+    {"id": "round-trace short prefill (505-token warm-up prompt; NOT a 32k prefill)", "kind": "prefill", "tokens": 505,
+     "sqlite": "/home/xanewok/repos/round-trace/llama.cpp/codex/runs/20261001-214325/trace/capture.sqlite"}
+  ]
+}
