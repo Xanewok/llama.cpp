@@ -1,0 +1,12 @@
+[
+  {
+    "mutation": "binding",
+    "exit_M": 1,
+    "failure": "contract failure: stale bindings or RNG draw count"
+  },
+  {
+    "mutation": "epoch",
+    "exit_M": 1,
+    "failure": "contract failure: stale epoch escaped public compute guard"
+  }
+]

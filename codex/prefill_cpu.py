@@ -9,23 +9,28 @@ from attrib import union_ns
 
 ROOT = Path(__file__).resolve().parent.parent
 assert os.environ.get("CUDA_VISIBLE_DEVICES") == ""
-OUT = ROOT / "codex/reuse-results/prefill"
+campaign = os.environ.get("CPU_CAMPAIGN", "prefill")
+assert campaign.replace("-", "").isalnum(), "unsafe CPU campaign name"
+OUT = ROOT / "codex/reuse-results" / campaign
 OUT.mkdir(parents=True, exist_ok=True)
 env = dict(os.environ, CUDA_VISIBLE_DEVICES="", OMP_NUM_THREADS="8", OPENBLAS_NUM_THREADS="8", MKL_NUM_THREADS="8",
            TMPDIR=str(ROOT / "build-tmp"), PYTHONDONTWRITEBYTECODE="1", CPU_PREFILL_WORDS=os.environ.get("CPU_PREFILL_WORDS", "512"), CPU_UBATCH=os.environ.get("CPU_UBATCH", "32"))
 model = os.environ.get("CPU_TARGET_MODEL", str(ROOT / "build-tmp/reuse-untied-target.gguf"))
 results = []
 reference = None
-arms = os.environ.get("CPU_ARMS", "up,patch,patch,up,disabled").split(",")
+arms = os.environ.get("CPU_ARMS", "patch,unpooled,disabled").split(",")
 for boot, arm in enumerate(arms, 1):
     label = f"{boot}-{arm}"
-    binary = ROOT / ("codex/reuse-results/prefill-unpooled" if arm == "unpooled" else ("build-base-cpu" if arm == "up" else "build-cpu")) / "bin/reuse-server-cpu"
+    binary = ROOT / ("build-base-cpu" if arm == "up" else "build-cpu") / "bin/reuse-server-cpu"
     trace = OUT / (label + ".jsonl")
     if trace.exists():
         trace.unlink()
     path = OUT / (label + ".bin")
     child = dict(env, LLAMA_ROUND_TRACE=str(trace), LD_LIBRARY_PATH=str(binary.parent))
     child.pop("LLAMA_GRAPH_REUSE_DISABLE", None)
+    child.pop("GGML_META_PLAN_REUSE", None)
+    if arm == "unpooled":
+        child["GGML_META_PLAN_REUSE"] = "0"
     if arm == "disabled":
         child["LLAMA_GRAPH_REUSE_DISABLE"] = "1"
     with (OUT / (label + ".log")).open("w") as log:
@@ -89,10 +94,34 @@ for result in results:
         try:
             allocation_contract(result)
         except AssertionError:
-            print("M: frozen unpooled mutation fails the arena-allocation contract; bytes remain identical", flush=True)
+            print("M: runtime unpooled control fails the arena-allocation contract; bytes remain identical", flush=True)
         else:
             raise AssertionError("unpooled negative control passed")
     if result["arm"] == "disabled":
         assert all(g["counts_M"].get("graph_hit", 0) == 0 for r in result["requests"] for g in r["groups"].values())
         assert any(g["counts_M"].get("graph_hit", 0) > 0 for p in patches for r in p["requests"] for g in r["groups"].values())
         print("M: reuse-disabled control removes graph hits; bytes remain identical", flush=True)
+
+summary = []
+for row in results:
+    requests = []
+    for record in row["requests"]:
+        groups = {}
+        for name, group in record["groups"].items():
+            build_ms = sum(union_ns([(e["begin_ns"], e["end_ns"]) for e in u["events"]
+                                    if e["kind"] in ("llama_build", "meta_build")]) for u in group["per_ubatch"]) / 1e6
+            n = group["ubatches_M"]
+            groups[name] = {"ubatches_M": n, "tokens_M": group["tokens_M"],
+                           "misses_M": group["counts_M"].get("graph_miss", 0),
+                           "hits_M": group["counts_M"].get("graph_hit", 0),
+                           "meta_builds_M": group["counts_M"].get("meta_build", 0),
+                           "meta_executes_D": group["counts_M"].get("meta_compute", 0) - group["counts_M"].get("meta_plan_create", 0),
+                           "arena_creates_M": group["counts_M"].get("meta_arena", 0),
+                           "arena_bytes_M": group["bytes_M"].get("meta_arena", 0),
+                           "build_union_ms_D": build_ms, "build_us_per_ubatch_D": build_ms * 1000 / n if n else None,
+                           "retention_ms_M": group["host_us_M"].get("meta_retention", 0) / 1000,
+                           "arena_init_ms_M": group["host_us_M"].get("meta_arena", 0) / 1000,
+                           "input_ms_M": group["host_us_M"].get("set_inputs", 0) / 1000}
+        requests.append({"request": record["request"], "prompt_ms_M": record["timings_M"]["prompt_ms"], "groups": groups})
+    summary.append({"arm": row["arm"], "sha256": row["sha256"], "requests": requests})
+(ROOT / f"codex/{campaign}-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
