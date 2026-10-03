@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sqlite3
+import socket
 import subprocess
 import sys
 import tempfile
@@ -109,6 +110,9 @@ def drive(server, windows, delay='0.2', window='0.3', timeout=120):
         server.server_close()
 
 
+CANARY_WINDOWS = re.search(r'^\[ "\$CANARY" = 1 \] && WINDOWS=(\S+)$', (PACK / 'gpu/attrib_hq.sh').read_text(), re.M).group(1)
+
+
 class HqDriver(unittest.TestCase):
     def test_three_windows_and_last_stop_never_answers(self):
         s = Mock(3)
@@ -132,10 +136,10 @@ class HqDriver(unittest.TestCase):
 
     def test_canary_two_windows_exercises_repeat(self):
         s = Mock(2)
-        r, runs = drive(s, 'decode-8k,decode-8k-b')
+        r, runs = drive(s, CANARY_WINDOWS)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(s.events.count('/start_profile'), 2)
-        self.assertEqual([w['name'] for w in runs['windows']], ['decode-8k', 'decode-8k-b'])
+        self.assertEqual([w['name'] for w in runs['windows']], ['prefill-32k', 'decode-8k'])
         self.assertIsNotNone(runs['windows'][0]['stop_s'])
         self.assertIsNone(runs['windows'][1]['stop_s'])
 
@@ -187,6 +191,17 @@ class Manifest(unittest.TestCase):
             self.assertEqual(t['hq-decode-8k']['unprofiled']['ms'], 31.5)
             self.assertNotIn('unprofiled', t['hq-decode-90k'])
 
+    def test_canary_windows_cover_the_hq_prefill_markers_and_two_ranges(self):
+        # The canary must carry a prefill window (MARKERS['hq'], assign_hq) and >= 2 ranges (repeat-shutdown).
+        self.assertEqual(CANARY_WINDOWS, 'prefill-32k,decode-8k')
+        with tempfile.TemporaryDirectory(dir=SP) as d:
+            d = Path(d)
+            make_sqlite(d / 'hq_1.sqlite', ['fused_sigmoid_gating_delta_rule_update_kernel'])
+            make_sqlite(d / 'hq.sqlite', ['chunk_gated_delta_rule_fwd_kernel_h_blockdim64', 'BatchPrefillWithPagedKVCacheKernel'])
+            t = self.run_mm(d, [{'name': n} for n in CANARY_WINDOWS.split(',')])
+            self.assertTrue(t['hq-prefill-32k']['sqlite'].endswith('hq.sqlite'))
+            self.assertTrue(t['hq-decode-8k']['sqlite'].endswith('hq_1.sqlite'))
+
     def test_negative_control_missing_report_rejected_by_pack(self):
         with tempfile.TemporaryDirectory(dir=SP) as d:
             d = Path(d)
@@ -228,6 +243,85 @@ kill "$BYSTANDER"
         self.assertIn('bystander-alive', r.stdout)
         self.assertIn('wrapper-dead', r.stdout)
         self.assertEqual(r.stdout.count('survivor'), r.stdout.count('TERM'))
+
+
+NEW_TRAP = 'trap \'rc=$?; { [ -z "$LAUNCHED" ] || [ ! -e "$HQ/serve.pid" ]; } || stop_server; reap_members; log "exit rc=$rc"\' EXIT'
+OLD_TRAP = 'trap \'rc=$?; [ ! -e "$HQ/serve.pid" ] || stop_server; reap_members; log "exit rc=$rc"\' EXIT'
+FAKE_SERVER = r'''
+import http.server, os
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.send_header('Content-Length', '2'); self.end_headers(); self.wfile.write(b'ok')
+    log_message = lambda *a: None
+http.server.HTTPServer(('127.0.0.1', int(os.environ['PORT'])), H).serve_forever()
+'''
+
+
+class StopOnlyOurOwnServer(unittest.TestCase):
+    """attrib_hq.sh must run stop_hq.sh from its EXIT trap only for a server it launched itself. Everything runs against a
+    scratch HQ dir and a stub stop_hq.sh (ATTRIB_HQ / ATTRIB_SP); the real stop_hq.sh and HQ server are never involved."""
+
+    def run_script(self, d, trap, foreign):
+        d = Path(d)
+        hq, sp, bin_ = d / 'hq', d / 'sp', d / 'bin'
+        for x in (hq / 'single-user', sp, bin_):
+            x.mkdir(parents=True)
+        called, ownpid = d / 'stop-called', d / 'own.pid'
+        (sp / 'stop_hq.sh').write_text(f'echo called >> {called}\nkill $(cat {ownpid} 2>/dev/null) 2>/dev/null\nexit 0\n')
+        (bin_ / 'nvidia-smi').write_text('#!/bin/sh\necho 0\n')
+        (bin_ / 'journalctl').write_text('#!/bin/sh\nexit 0\n')
+        (d / 'server.py').write_text(FAKE_SERVER)
+        # stands in for `nsys profile ... bash start_qwen.sh`; argv keeps "start_qwen.sh" in /proc/PID/cmdline
+        (bin_ / 'nsys').write_text(f'#!/bin/sh\necho $$ > {ownpid}\nexec python3 {d}/server.py "$@"\n')
+        for n in ('nvidia-smi', 'journalctl', 'nsys'):
+            (bin_ / n).chmod(0o755)
+        script = (PACK / 'gpu/attrib_hq.sh').read_text()
+        self.assertEqual(script.count(NEW_TRAP), 1)
+        script = script.replace(NEW_TRAP, trap)
+        self.assertEqual(script.count('\ngates\ncpu_checks\n'), 1)
+        script = script.replace('\ngates\ncpu_checks\n', '\ngates\n')           # cpu_checks needs the real venv and overlay
+        (d / 'attrib_hq.sh').write_text(script)
+        s = socket.socket(); s.bind(('127.0.0.1', 0)); port = s.getsockname()[1]; s.close()
+        other = None
+        if foreign:
+            other = subprocess.Popen(['bash', '-c', 'exec -a start_qwen.sh sleep 120'])
+            (hq / 'serve.pid').write_text(str(other.pid))
+        try:
+            r = subprocess.run(['bash', str(d / 'attrib_hq.sh')], capture_output=True, text=True, timeout=120, env={
+                **os.environ, 'DRY_RUN': '0', 'CUDA_VISIBLE_DEVICES': '', 'ATTRIB_SP': str(sp), 'ATTRIB_HQ': str(hq),
+                'ATTRIB_PORT': str(port), 'PATH': f'{bin_}:{os.environ["PATH"]}', 'OUT': str(d / 'out'),
+                'XID_SINCE': time.strftime('%Y-%m-%d %H:%M:%S'), 'BUDGET_S': '300'})
+            alive = other is not None and other.poll() is None
+        finally:
+            if other:
+                other.kill(); other.wait()
+            if ownpid.exists():
+                try:
+                    os.kill(int(ownpid.read_text()), 9)
+                except (ProcessLookupError, ValueError):
+                    pass
+        return r, called.exists(), alive
+
+    def test_gate_refusal_leaves_a_foreign_server_alone(self):
+        with tempfile.TemporaryDirectory(dir=SP) as d:
+            r, called, alive = self.run_script(d, NEW_TRAP, foreign=True)
+        self.assertEqual(r.returncode, 4, r.stdout + r.stderr)
+        self.assertIn('still running', r.stdout + r.stderr)
+        self.assertFalse(called, 'stop_hq.sh was run for a server this script did not launch')
+        self.assertTrue(alive)
+
+    def test_negative_control_old_trap_stops_the_foreign_server(self):
+        with tempfile.TemporaryDirectory(dir=SP) as d:
+            r, called, alive = self.run_script(d, OLD_TRAP, foreign=True)
+        self.assertEqual(r.returncode, 4, r.stdout + r.stderr)
+        self.assertTrue(called)
+
+    def test_failure_after_our_own_launch_stops_the_server(self):
+        with tempfile.TemporaryDirectory(dir=SP) as d:
+            r, called, alive = self.run_script(d, NEW_TRAP, foreign=False)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn('not on the V2 runner', r.stdout + r.stderr)
+        self.assertTrue(called, 'stop_hq.sh must run for the server this script launched')
 
 
 @unittest.skipUnless(GPUQ.exists() and (ITEMS / 'attrib-hq.toml').exists(), 'gpuq or items missing')

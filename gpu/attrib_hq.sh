@@ -12,7 +12,8 @@
 # Output: $OUT/{hq*.nsys-rep,sqlite,runs.json,manifest.json,pack/budget.{json,md},serve.log,console.log}.
 # Exit: 0 ok, 2 server/profiler/driver failure, 3 Xid, 4 GPUs/port busy, 6 inputs missing/changed, 7 wall budget exceeded,
 #       8 pack rejected a trace.
-# CANARY=1 runs decode-8k twice (repeat-shutdown:2:sync) so the multi-range path itself is exercised.
+# CANARY=1 runs prefill-32k then decode-8k (repeat-shutdown:2:sync): the multi-range path, the HQ prefill markers
+# (attrib_pack MARKERS['hq']) and make_manifest.assign_hq are all exercised before the full run.
 # Fallback if the canary shows repeat-shutdown does not write one report per range: one boot per window with
 # --capture-range-end=stop-shutdown (proven by engine-plan/step0), i.e. run attrib_hq.sh once per window with WINDOWS=<one name> (it then uses stop-shutdown).
 # Env: DRY_RUN (1 = print the plan, CPU preflight only), CANARY, OUT, BUDGET_S, XID_SINCE.
@@ -22,14 +23,15 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PACK=$(dirname "$HERE")
 DRY_RUN=${DRY_RUN:-1}
 CANARY=${CANARY:-0}
-SP=/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad
+# ATTRIB_SP / ATTRIB_HQ / ATTRIB_PORT exist for tests/test_gpu_drivers.py (stubbed stop_hq.sh and HQ dir); the defaults are the real ones.
+SP=${ATTRIB_SP:-/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad}
 Q=$HOME/repos/qwen38-eval
-HQ=$HOME/repos/HyperQwen
+HQ=${ATTRIB_HQ:-$HOME/repos/HyperQwen}
 OV=$SP/vllm-both/overlay
 VSP=$HQ/venv/lib/python3.12/site-packages/vllm
 MODEL=$HOME/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-g32-attn-int8-codexh
 OUT=${OUT:-$PACK/runs/attrib-hq}
-PORT=8081
+PORT=${ATTRIB_PORT:-8081}
 URL=http://127.0.0.1:$PORT
 K=5
 UNIT=16
@@ -38,7 +40,7 @@ XID_SINCE=${XID_SINCE:-"2026-10-03 18:57:00"}
 BUDGET_S=${BUDGET_S:-1650}
 BOOT_WAIT_S=750
 WINDOWS=${WINDOWS:-prefill-32k,decode-8k,decode-90k}
-[ "$CANARY" = 1 ] && WINDOWS=decode-8k,decode-8k-b
+[ "$CANARY" = 1 ] && WINDOWS=prefill-32k,decode-8k
 NWIN=$(echo "$WINDOWS" | tr ',' '\n' | wc -l)
 END_MODE=repeat-shutdown:$NWIN:sync
 [ "$NWIN" = 1 ] && END_MODE=stop-shutdown  # the mode step0 proved
@@ -139,7 +141,9 @@ stop_server() {
   log "WARNING: GPU memory / port not free 180 s after stop_hq.sh (gpu_used=$(gpu_used) MiB)"
   return 1
 }
-trap 'rc=$?; [ ! -e "$HQ/serve.pid" ] || stop_server; reap_members; log "exit rc=$rc"' EXIT
+# LAUNCHED is set only once launch_real wrote our own wrapper PID: a gate refusal must never stop a foreign HQ server.
+LAUNCHED=
+trap 'rc=$?; { [ -z "$LAUNCHED" ] || [ ! -e "$HQ/serve.pid" ]; } || stop_server; reap_members; log "exit rc=$rc"' EXIT
 trap 'log "signal"; exit 130' INT TERM
 
 gates
@@ -158,12 +162,13 @@ launch_real() {
     nsys profile -o "$OUT/hq" --force-overwrite=true -t cuda,nvtx --cuda-graph-trace=node --trace-fork-before-exec=true \
       --capture-range=cudaProfilerApi --capture-range-end=$END_MODE --kill=sigterm --sample=none --cpuctxsw=none \
       env -u TMPDIR bash single-user/start_qwen.sh > "$OUT/serve.log" 2>&1 < /dev/null & echo $! > "$HQ/serve.pid"
+  LAUNCHED=1
   sleep 2
   tr '\0' ' ' < "/proc/$(cat "$HQ/serve.pid")/cmdline" 2>/dev/null | grep -q 'start_qwen.sh\|vllm serve' \
     || { log "serve.pid $(cat "$HQ/serve.pid") is not the launch wrapper"; return 1; }
 }
 
-launch_real || { stop_server; exit 2; }
+launch_real || { [ -z "$LAUNCHED" ] || stop_server; exit 2; }
 WRAP=$(cat "$HQ/serve.pid")
 for i in $(seq 1 $(( BOOT_WAIT_S / 5 ))); do
   curl -s -m 3 "$URL/health" >/dev/null 2>&1 && break
