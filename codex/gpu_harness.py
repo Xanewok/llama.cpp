@@ -277,7 +277,13 @@ class Harness:
             response = completion(chunks)
         else:
             chunks = []
-            response = self.http("/v1/chat/completions", body)
+            import urllib.error
+            try:
+                response = self.http("/v1/chat/completions", body)
+            except urllib.error.HTTPError as error:
+                (dest / f"{case}-{number}-error.json").write_text(json.dumps(
+                    {"case": case, "status": error.code, "body": error.read().decode(errors="replace")}, indent=2))
+                raise
         end = time.monotonic_ns()
         after = self.metrics()
         record = {"case": case, "max_tokens": body["max_tokens"], "begin_ns": begin, "end_ns": end, "response": response,
@@ -388,7 +394,8 @@ def suite(h, dest):
             record = h.request(dest, label, 1, body=body, stream=True)
             results[label] = record
     body = json.loads((INPUTS / "tool.json").read_text())
-    body.update(cache_prompt=True, max_tokens=128)
+    # A tool call cut by max_tokens makes the server answer 500 (unparsable arguments); follow-ups need room to finish.
+    body.update(cache_prompt=True, max_tokens=768)
     for number in range(1, h.args.short_requests + 1):
         label = f"short-tool-{number}"
         record = h.request(dest, label, 1, body=body)
@@ -528,7 +535,7 @@ def main():
                       "budget_s_G": args.budget, "capture": ("trace-both" if args.diagnostic_trace else "trace-off") + " up/patch/patch/up" if args.mode == "ab" else "warmup, think/tool, trace",
                       "ab_workload": {"long": "long-tool, long-think; seeds 1 and 2; one write_file content with 256 explicit numbered lines; 2048 max tokens each; SSE server timings",
                                       "cold": "original tool request immediately after warmup; seed 1; cache_prompt=false",
-                                      "short": f"{args.short_requests} sequential agent follow-ups; cache_prompt=true; 128 max tokens",
+                                      "short": f"{args.short_requests} sequential agent follow-ups; cache_prompt=true; 768 max tokens",
                                       "steady_gate": "at least 40 adjacent full-K interior SSE intervals and 2048 completion tokens per long request; visible write_file arguments; validate after all boot requests are recorded",
                                       "fixed_cost": "report prompt, generation excess, and outside prompt/generation separately"}}, indent=2))
     if not args.execute:
