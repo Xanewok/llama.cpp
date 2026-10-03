@@ -50,9 +50,21 @@ def main():
     changed["chunks"].append({"choices": [{"delta": {}, "finish_reason": None}]})
     assert s.h.completion(changed["chunks"])["timings"] == parsed["timings"]
     reject(lambda: s.h.completion(real["chunks"][:5]), "missing final")
+    memory = (FIXTURES / "nvidia-smi-query.csv").read_text()
+    assert [row[2] for row in s.h.gpu_memory(memory)] == [108, 15]
+    reject(lambda: s.h.gpu_memory(memory.replace("108 MiB", "20000 MiB")), "memory bounds")
+    reject(lambda: s.h.gpu_memory(memory.replace("108 MiB", "unknown")), "memory values")
+    reject(lambda: s.h.gpu_memory(memory.splitlines()[1]), "not a pair")
     with tempfile.TemporaryDirectory(dir=s.ROOT / "build-tmp") as directory:
         harness = s.h.Harness(SimpleNamespace(budget=960, port=8403), Path(directory))
         harness.env["XID_SINCE"] = "fixture-cutoff"
+        harness.env["CUDA_VISIBLE_DEVICES"] = "mock-pair"
+        busy_memory = memory.replace("108 MiB", "16000 MiB")
+        with patch.object(harness, "xid"), patch.object(harness, "run", side_effect=[SimpleNamespace(stdout=busy_memory), SimpleNamespace(stdout=memory)]), \
+             patch.object(s.h.socket, "socket") as sock, patch.object(s.h.time, "sleep") as pause:
+            harness.idle()
+            assert pause.call_count == 1
+            assert sock.return_value.__enter__.return_value.bind.called
         def run_result(text): return SimpleNamespace(stdout=text)
         with patch.object(harness, "run", return_value=run_result((FIXTURES / "xid-lines.txt").read_text())):
             reject(harness.xid, "Xid since")
@@ -141,6 +153,24 @@ def main():
                 s.main()
             assert json.loads((out / "verdict.json").read_text())["verdict"] == "PASS"
             assert len(json.loads((out / "boots.json").read_text())) == boot_count
+    with tempfile.TemporaryDirectory(dir=s.ROOT / "build-tmp") as directory:
+        out = Path(directory) / "interrupted"
+        original_handler = s.signal.getsignal(s.signal.SIGTERM)
+        def stop_signal(*args):
+            s.signal.getsignal(s.signal.SIGTERM)(s.signal.SIGTERM, None)
+        with patch.dict(os.environ, RUN_GPU="1", CUDA_VISIBLE_DEVICES="0,1", XID_SINCE="mock-cutoff"), \
+             patch.object(s, "pins", return_value=[s.h.MODEL]), patch.object(s.h, "sha", return_value=s.h.MODEL_SHA), \
+             patch.object(s.h.Harness, "boot", boot), patch.object(s, "suite", stop_signal), \
+             patch.object(s.h.Harness, "stop") as cleanup, patch.object(s.sys, "argv", ["stack3_gpu", "--execute", "--out", str(out)]):
+            try:
+                s.main()
+            except KeyboardInterrupt:
+                pass
+            else:
+                raise AssertionError("termination did not interrupt")
+        assert cleanup.call_count >= 1
+        assert json.loads((out / "verdict.json").read_text())["verdict"] == "interrupted"
+        assert s.signal.getsignal(s.signal.SIGTERM) == original_handler
     print("M PASS: recorded Swift completion/steady/counters, journal, identity, size, overlap, budget, and execution guard controls")
 
 

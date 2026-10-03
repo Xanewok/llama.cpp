@@ -4,6 +4,7 @@ import argparse
 import concurrent.futures
 import json
 import os
+import signal
 from pathlib import Path
 import sys
 
@@ -165,6 +166,12 @@ def main():
     baseline = None
     results = []
     status = "INVALID"
+    def interrupted(signum, frame):
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        # Executor shutdown waits for HTTP workers, so stop their server before unwinding.
+        harness.stop()
+        raise KeyboardInterrupt("queue interrupted")
+    previous_handler = signal.signal(signal.SIGTERM, interrupted)
     try:
         hashes = {str(path): h.sha(path) for path in files}
         if hashes[str(h.MODEL)] != h.MODEL_SHA:
@@ -219,11 +226,15 @@ def main():
         summary = {"arms": summary, "paired": paired}
         (out / "summary.json").write_text(json.dumps(summary, indent=2))
         status = "PASS"
+    except KeyboardInterrupt:
+        status = "interrupted"
+        raise
     except Exception as error:
         status = "budget" if isinstance(error, TimeoutError) or "queue wall budget" in str(error) else "hazard" if "Xid" in str(error) else "INVALID"
         (out / "failure.json").write_text(json.dumps({"type": type(error).__name__, "message": str(error)}, indent=2))
         raise
     finally:
+        signal.signal(signal.SIGTERM, previous_handler)
         harness.stop()
         (out / "verdict.json").write_text(json.dumps({"verdict": status, "canary": args.canary, "valid_boots_M": len(results)}, indent=2))
 

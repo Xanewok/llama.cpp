@@ -92,6 +92,26 @@ def owned_pid(binary):
     return found[0]
 
 
+def gpu_memory(raw):
+    rows = []
+    for line in raw.splitlines():
+        fields = [field.strip() for field in line.split(",")]
+        if not line.strip() or fields[0] == "index":
+            continue
+        if len(fields) != 4 or not fields[1].startswith("GPU-"):
+            raise RuntimeError("invalid selected GPU memory row")
+        try:
+            index, used, total = int(fields[0]), int(fields[2].removesuffix(" MiB")), int(fields[3].removesuffix(" MiB"))
+        except ValueError as error:
+            raise RuntimeError("invalid selected GPU memory values") from error
+        if not 0 <= used <= total or total <= 0:
+            raise RuntimeError("invalid selected GPU memory bounds")
+        rows.append((index, fields[1], used, total))
+    if len(rows) != 2 or len({row[1] for row in rows}) != 2:
+        raise RuntimeError("selected GPUs are not a pair")
+    return rows
+
+
 class Harness:
     def __init__(self, args, out):
         self.args, self.out = args, out
@@ -133,12 +153,10 @@ class Harness:
         self.xid()
         while True:
             data = self.run(["nvidia-smi", "--id=" + self.env["CUDA_VISIBLE_DEVICES"],
-                             "--query-gpu=memory.used,utilization.gpu", "--format=csv,noheader,nounits"],
+                             "--query-gpu=index,uuid,memory.used,memory.total", "--format=csv,noheader,nounits"],
                             capture_output=True, text=True).stdout
-            used = [tuple(int(value.strip()) for value in line.split(",")) for line in data.splitlines()]
-            if len(used) != 2 or any(len(row) != 2 for row in used):
-                raise RuntimeError("selected GPUs are not a pair")
-            if sum(row[0] for row in used) <= 1500 and all(row[1] == 0 for row in used):
+            used = gpu_memory(data)
+            if sum(row[2] for row in used) <= 1500:
                 break
             self.timeout()
             time.sleep(1)
