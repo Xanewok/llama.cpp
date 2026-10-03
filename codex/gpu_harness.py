@@ -386,16 +386,12 @@ def suite(h, dest):
             body["seed"] = seed
             label = f"long-{case}-s{seed}"
             record = h.request(dest, label, 1, body=body, stream=True)
-            record["steady"] = steady(record, h.args.k, h.args.rounds)
-            (dest / f"{label}-steady.json").write_text(json.dumps(record["steady"], indent=2))
             results[label] = record
     body = json.loads((INPUTS / "tool.json").read_text())
     body.update(cache_prompt=True, max_tokens=128)
     for number in range(1, h.args.short_requests + 1):
         label = f"short-tool-{number}"
         record = h.request(dest, label, 1, body=body)
-        if number > 1 and record["response"]["timings"]["cache_n"] <= 0:
-            raise ValueError("agent follow-up did not reuse the prompt cache")
         results[label] = record
         message = dict(record["response"]["choices"][0]["message"])
         calls = message.get("tool_calls", [])
@@ -408,6 +404,30 @@ def suite(h, dest):
                                      "content": "Fixture result: the command was not executed. Continue with the next step."})
         body["messages"].append({"role": "user", "content": "Continue fixing the parser. Give the next small tool call."})
     return results
+
+
+def validate_boot(results, dest, k, minimum):
+    failures = {}
+    for case, record in results.items():
+        if case.startswith("long-"):
+            errors = []
+            try:
+                record["steady"] = steady(record, k, minimum)
+            except ValueError as error:
+                errors.append(str(error))
+            if record["response"]["timings"]["predicted_n"] < 2048:
+                errors.append("long request generated fewer than 2048 tokens")
+            calls = record["response"]["choices"][0]["message"].get("tool_calls", [])
+            if not any(call["function"]["name"] == "write_file" and call["function"]["arguments"] for call in calls):
+                errors.append("long request did not stream visible write_file arguments")
+            if errors:
+                failures[case] = errors
+            (dest / f"{case}-steady.json").write_text(json.dumps({"errors": errors, **record.get("steady", {})}, indent=2))
+        elif case.startswith("short-tool-") and case != "short-tool-1" and record["response"]["timings"]["cache_n"] <= 0:
+            failures[case] = ["agent follow-up did not reuse the prompt cache"]
+    (dest / "boot-validation.json").write_text(json.dumps({"passed": not failures, "failures": failures,
+                                                          "minimum_steady_rounds": minimum, "minimum_completion_tokens": 2048}, indent=2))
+    return failures
 
 
 def summarize(results, k):
@@ -501,15 +521,15 @@ def main():
             raise ValueError("up must be the frozen stack2 base")
         for case in ("tool", "think"):
             body = json.loads((INPUTS / f"long-{case}.json").read_text())
-            if body["max_tokens"] < (args.k + 1) * (args.rounds + 5) or body["cache_prompt"]:
+            if body["max_tokens"] < max(2048, (args.k + 1) * (args.rounds + 5)) or body["cache_prompt"]:
                 raise ValueError("long workload token budget is too short or cache is enabled")
     print(json.dumps({"mode": args.mode, "boots": ["trace"] if args.mode == "trace" else ["up", "patch", "patch", "up"],
                       "command": command(args.patch / "bin/round-trace", args.k, args.port), "minimum_steady_rounds": args.rounds,
                       "budget_s_G": args.budget, "capture": ("trace-both" if args.diagnostic_trace else "trace-off") + " up/patch/patch/up" if args.mode == "ab" else "warmup, think/tool, trace",
-                      "ab_workload": {"long": "long-tool, long-think; seeds 1 and 2; 2048 max tokens each; SSE server timings",
+                      "ab_workload": {"long": "long-tool, long-think; seeds 1 and 2; one write_file content with 256 explicit numbered lines; 2048 max tokens each; SSE server timings",
                                       "cold": "original tool request immediately after warmup; seed 1; cache_prompt=false",
                                       "short": f"{args.short_requests} sequential agent follow-ups; cache_prompt=true; 128 max tokens",
-                                      "steady_gate": "at least 40 adjacent full-K interior SSE intervals per long request",
+                                      "steady_gate": "at least 40 adjacent full-K interior SSE intervals and 2048 completion tokens per long request; visible write_file arguments; validate after all boot requests are recorded",
                                       "fixed_cost": "report prompt, generation excess, and outside prompt/generation separately"}}, indent=2))
     if not args.execute:
         return
@@ -552,6 +572,7 @@ def main():
                 root = args.up if arm == "up" else args.patch
                 dest = h.boot(root, f"{index}-{arm}", trace=args.diagnostic_trace)
                 result = suite(h, dest)
+                failures = validate_boot(result, dest, args.k, args.rounds)
                 results.append(result)
                 (out / "ab-results.json").write_text(json.dumps(results, indent=2))
                 h.stop()
@@ -560,6 +581,8 @@ def main():
                 if args.diagnostic_trace:
                     rows = h.rows(dest, 0)
                     (dest / "request-builds.json").write_text(json.dumps({case: builds(rows, record, args.k) for case, record in result.items()}, indent=2))
+                if failures:
+                    raise ValueError("boot validation failed after writing results: " + json.dumps(failures))
             for case in results[0]:
                 expected = identity(results[0][case])
                 if any(identity(result[case]) != expected for result in results[1:]):

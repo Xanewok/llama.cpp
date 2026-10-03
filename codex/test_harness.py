@@ -75,6 +75,22 @@ def main():
         wrong = copy.deepcopy(real)
         wrong["chunks"][20]["timings"][field] = value
         rejects(lambda: h.steady(wrong, 5, 1))
+    for case, thinking in (("tool", False), ("think", True)):
+        body = json.loads((h.INPUTS / f"long-{case}.json").read_text())
+        assert body["chat_template_kwargs"]["enable_thinking"] == thinking
+        assert body["max_tokens"] >= 2048 and body["tool_choice"] == "auto" and not body["cache_prompt"]
+        assert len(body["messages"]) == 2 and len(body["tools"]) == 1
+        tool = body["tools"][0]["function"]
+        assert tool["name"] == "write_file" and tool["parameters"]["required"] == ["content"]
+        prompt = body["messages"][-1]["content"]
+        literal = prompt.split("BEGIN LITERAL FILE\n", 1)[1].split("\nEND LITERAL FILE", 1)[0]
+        lines = literal.splitlines()
+        assert len(lines) == 256 and len(literal.encode()) == 34047
+        for number, line in enumerate(lines, 1):
+            assert line == f"{number:04d}: This is numbered record {number:04d} in the benchmark fixture. Preserve this complete sentence and its distinct record number exactly."
+        assert "visible content argument" in prompt and "not reasoning" in prompt
+        if thinking:
+            assert body["chat_template_kwargs"]["reasoning_effort"] == "low"
     chunks = [{"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "random-id", "function": {"name": "apply_patch", "arguments": "ab"}}]}}]},
               {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "cd"}}]}, "finish_reason": "length"}],
                "timings": sampled["response"]["timings"]}]
@@ -89,11 +105,17 @@ def main():
             record = copy.deepcopy(sampled)
             record["response"].update(choices=[{"message": {"role": "assistant", "content": "fixture"}, "finish_reason": "length"}])
             record["response"]["timings"].update(cache_n=0, prompt_ms=100)
+            if case.startswith("long-"):
+                record["max_tokens"] = record["response"]["timings"]["predicted_n"] = 2048
+                record["response"]["choices"][0]["message"]["tool_calls"] = [
+                    {"type": "function", "function": {"name": "write_file", "arguments": '{"content":"0001: fixture'}}]
             record.update(begin_ns=0, end_ns=2000000000)
             return record
         fake.request = request
-        rejects(lambda: h.suite(fake, Path(directory)))
-        assert len(calls) == 7 and calls[-1]["cache_prompt"]
+        result = h.suite(fake, Path(directory))
+        failures = h.validate_boot(result, Path(directory), 5, 40)
+        assert len(calls) == 13 and calls[-1]["cache_prompt"]
+        assert set(failures) == {f"short-tool-{number}" for number in range(2, 9)}
         def cached_request(*args, **kwargs):
             record = request(*args, **kwargs)
             if args[1].startswith("short-"):
@@ -101,6 +123,7 @@ def main():
             return record
         fake.request = cached_request
         result = h.suite(fake, Path(directory))
+        assert not h.validate_boot(result, Path(directory), 5, 40)
         assert len(result) == 13
         assert len(calls[-1]["messages"]) > len(calls[-8]["messages"])
         variants = [copy.deepcopy(result) for _ in range(4)]
@@ -116,6 +139,46 @@ def main():
         assert report["paired"][0]["patch_minus_up_D"]["generation_excess_ms_D"] == 10
         assert report["paired"][-1]["patch_minus_up_D"]["generation_excess_ms_D"] == 10
         assert report["paired"][-1]["patch_minus_up_D"]["request_fixed_ms_estimate_D"] == 10
+        invalid = copy.deepcopy(result)
+        invalid["long-think-s1"]["response"]["choices"][0]["message"].pop("tool_calls")
+        invalid["long-think-s2"]["response"]["timings"]["predicted_n"] = 1024
+        failures = h.validate_boot(invalid, Path(directory), 5, 40)
+        assert set(failures) == {"long-think-s1", "long-think-s2"}
+        def short_request(*args, **kwargs):
+            record = cached_request(*args, **kwargs)
+            if args[1] == "long-tool-s1":
+                record = copy.deepcopy(real)
+                record.update(begin_ns=0, end_ns=2000000000)
+            return record
+        fake.request = short_request
+        out = Path(directory) / "run"
+        boots, stopped, xids = [], [], []
+        def boot(root, label, trace=False):
+            boots.append(label)
+            dest = out / label
+            dest.mkdir()
+            return dest
+        fake.boot, fake.stop, fake.xid = boot, lambda: stopped.append(True), lambda: xids.append(True)
+        fake.capturing = False
+        with patch.dict(os.environ, {"RUN_GPU": "1", "CUDA_VISIBLE_DEVICES": "fixture-only"}), \
+                patch.object(sys, "argv", ["gpu_harness", "ab", "--execute", "--out", str(out)]), \
+                patch.object(h, "Harness", return_value=fake), patch.object(h, "frozen"), \
+                patch.object(h, "sha", return_value=h.MODEL_SHA), patch.object(h.signal, "signal"), \
+                patch.object(h.subprocess, "run", side_effect=AssertionError("test subprocess")), \
+                patch.object(h.subprocess, "Popen", side_effect=AssertionError("test launch")), \
+                patch.object(h.socket, "socket", side_effect=AssertionError("test network")), contextlib.redirect_stdout(io.StringIO()):
+            try:
+                h.main()
+            except ValueError as error:
+                assert "boot validation failed after writing results" in str(error)
+            else:
+                raise AssertionError("short boot passed")
+        saved = json.loads((out / "ab-results.json").read_text())
+        validation = json.loads((out / "1-up/boot-validation.json").read_text())
+        assert len(saved) == 1 and len(saved[0]) == 13 and saved[0]["long-tool-s1"]["response"] == real["response"]
+        assert not validation["passed"] and set(validation["failures"]) == {"long-tool-s1"}
+        assert all((out / f"1-up/long-{case}-s{seed}-steady.json").is_file() for case in ("tool", "think") for seed in (1, 2))
+        assert boots == ["1-up"] and len(stopped) == 2 and len(xids) == 1
     guard = h.Harness.__new__(h.Harness)
     guard.env = {"XID_SINCE": "2026-10-03 00:00:00"}
     calls = []
