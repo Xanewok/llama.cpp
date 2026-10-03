@@ -437,6 +437,7 @@ private:
 
     // env: LLAMA_GRAPH_REUSE_DISABLE
     bool graph_reuse_disable = false;
+    bool graph_mtp_reuse = true;
 
     // perf
     mutable int64_t t_start_us  = 0;

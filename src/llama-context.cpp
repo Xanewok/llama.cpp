@@ -294,6 +294,8 @@ llama_context::llama_context(
     {
         const char * LLAMA_GRAPH_REUSE_DISABLE = getenv("LLAMA_GRAPH_REUSE_DISABLE");
         graph_reuse_disable = LLAMA_GRAPH_REUSE_DISABLE ? (atoi(LLAMA_GRAPH_REUSE_DISABLE) != 0) : graph_reuse_disable;
+        const char * mtp_reuse = getenv("LLAMA_MTP_GRAPH_REUSE");
+        graph_mtp_reuse = !mtp_reuse || atoi(mtp_reuse) != 0;
 
         if (graph_reuse_disable) {
             LLAMA_LOG_WARN("%s: graph reuse disabled\n", __func__);
@@ -1543,7 +1545,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         return nullptr;
     }
 
-    if (n_outputs > 0 && !sched_output && !cparams.pipeline_parallel && !cparams.cb_eval) {
+    if (graph_mtp_reuse && n_outputs > 0 && !sched_output && !cparams.pipeline_parallel && !cparams.cb_eval) {
         sched_output.reset(ggml_backend_sched_new_shared(sched.get()));
     }
     sched_active = n_outputs > 0 && sched_output ? sched_output.get() : sched.get();
@@ -1555,7 +1557,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
     const auto gparams = graph_params(res, ubatch, mctx, gtype);
 
     const bool allocated = ggml_backend_sched_graph_is_alloc(sched_active, gf);
-    if (!graph_reuse_disable && allocated && res->can_reuse(gparams)) {
+    if (!graph_reuse_disable && allocated && (graph_mtp_reuse || gf_res_prev_active == res) && res->can_reuse(gparams)) {
         ggml_round_trace_count("graph_hit");
         //LLAMA_LOG_DEBUG("%s: reusing previous graph\n", __func__);
 
