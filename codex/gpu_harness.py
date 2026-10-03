@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -12,6 +13,9 @@ import socket
 import statistics
 import subprocess
 import time
+import sys
+import urllib.error
+import urllib.request
 
 from attrib import analyze, union_ns
 
@@ -126,30 +130,23 @@ class Harness:
 
     def idle(self):
         self.xid()
-        data = self.run(["nvidia-smi", "--id=" + self.env["CUDA_VISIBLE_DEVICES"],
-                         "--query-gpu=memory.used", "--format=csv,noheader,nounits"], capture_output=True, text=True).stdout
-        used = [int(line.strip()) for line in data.splitlines()]
-        if len(used) != 2 or sum(used) > 1500:
-            raise RuntimeError("selected GPUs are busy or not a pair")
-        utilization = self.run(["nvidia-smi", "--id=" + self.env["CUDA_VISIBLE_DEVICES"],
-                                "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"], capture_output=True, text=True).stdout
-        if any(int(line.strip()) != 0 for line in utilization.splitlines()) or len(utilization.splitlines()) != 2:
-            raise RuntimeError("selected GPUs are not idle")
+        while True:
+            data = self.run(["nvidia-smi", "--id=" + self.env["CUDA_VISIBLE_DEVICES"],
+                             "--query-gpu=memory.used,utilization.gpu", "--format=csv,noheader,nounits"],
+                            capture_output=True, text=True).stdout
+            used = [tuple(int(value.strip()) for value in line.split(",")) for line in data.splitlines()]
+            if len(used) != 2 or any(len(row) != 2 for row in used):
+                raise RuntimeError("selected GPUs are not a pair")
+            if sum(row[0] for row in used) <= 1500 and all(row[1] == 0 for row in used):
+                break
+            self.timeout()
+            time.sleep(1)
+            self.xid()
         with socket.socket() as sock:
-            if sock.connect_ex(("127.0.0.1", self.args.port)) == 0:
-                raise RuntimeError("port already occupied")
-        for p in Path("/proc").iterdir():
-            if not p.name.isdigit():
-                continue
-            try:
-                name = (p / "comm").read_text().strip()
-                if name in {"llama-server", "weekend-srv", "vocab-ab", "verify-ab", "round-trace"}:
-                    raise RuntimeError("other GPU server PID " + p.name)
-            except FileNotFoundError:
-                pass
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind(("127.0.0.1", self.args.port))
 
     def http(self, path, body=None, raw=False):
-        import urllib.request
         request = urllib.request.Request(f"http://127.0.0.1:{self.args.port}{path}",
             None if body is None else json.dumps(body).encode(), {"Content-Type": "application/json"})
         with urllib.request.urlopen(request, timeout=self.timeout()) as response:
@@ -245,7 +242,9 @@ class Harness:
             raise RuntimeError("server load timeout")
         if not self.pid:
             raise RuntimeError("server PID ownership unresolved")
-        self.request(dest, "warmup", 0)
+        warmup = self.request(dest, "warmup", 0)
+        if "error" in warmup:
+            raise ValueError("warmup failed after recording: " + json.dumps(warmup["error"]))
         return dest
 
     def request(self, dest, case, number, body=None, stream=False):
@@ -254,43 +253,46 @@ class Harness:
         if stream:
             body.update(stream=True, timings_per_token=True, stream_options={"include_usage": True})
         (dest / f"{case}-{number}-input.json").write_text(json.dumps(body, indent=2))
-        before = self.metrics()
+        chunks = []
         begin = time.monotonic_ns()
-        if stream:
-            import urllib.request
-            request = urllib.request.Request(f"http://127.0.0.1:{self.args.port}/v1/chat/completions",
-                json.dumps(body).encode(), {"Content-Type": "application/json"})
-            chunks = []
-            done = False
-            with urllib.request.urlopen(request, timeout=self.timeout()) as response:
-                for line in response:
-                    self.timeout()
-                    if not line.startswith(b"data: "):
-                        continue
-                    data = line[6:].strip()
-                    if data == b"[DONE]":
-                        done = True
-                        break
-                    chunks.append(json.loads(data))
-            if not done:
-                raise ValueError("incomplete SSE response")
-            response = completion(chunks)
-        else:
-            chunks = []
-            import urllib.error
-            try:
+        try:
+            before = self.metrics()
+            begin = time.monotonic_ns()
+            if stream:
+                request = urllib.request.Request(f"http://127.0.0.1:{self.args.port}/v1/chat/completions",
+                    json.dumps(body).encode(), {"Content-Type": "application/json"})
+                done = False
+                with urllib.request.urlopen(request, timeout=self.timeout()) as response:
+                    for line in response:
+                        self.timeout()
+                        if not line.startswith(b"data: "):
+                            continue
+                        data = line[6:].strip()
+                        if data == b"[DONE]":
+                            done = True
+                            break
+                        chunks.append(json.loads(data))
+                if not done:
+                    raise ValueError("incomplete SSE response")
+                response = completion(chunks)
+            else:
                 response = self.http("/v1/chat/completions", body)
-            except urllib.error.HTTPError as error:
-                (dest / f"{case}-{number}-error.json").write_text(json.dumps(
-                    {"case": case, "status": error.code, "body": error.read().decode(errors="replace")}, indent=2))
-                raise
-        end = time.monotonic_ns()
-        after = self.metrics()
-        record = {"case": case, "max_tokens": body["max_tokens"], "begin_ns": begin, "end_ns": end, "response": response,
-                  "metrics": {key: after[key] - before[key] for key in before}, "chunks": chunks}
+            end = time.monotonic_ns()
+            after = self.metrics()
+            if "choices" not in response:
+                raise ValueError("completion request failed")
+            record = {"case": case, "max_tokens": body["max_tokens"], "begin_ns": begin, "end_ns": end, "response": response,
+                      "metrics": {key: after[key] - before[key] for key in before}, "chunks": chunks}
+        except (OSError, ValueError, RuntimeError) as error:
+            details = {"type": type(error).__name__, "message": str(error)}
+            if isinstance(error, urllib.error.HTTPError):
+                details.update(status=error.code, body=error.read().decode(errors="replace"))
+            if isinstance(error, TimeoutError) and time.monotonic() >= self.deadline - 75:
+                details["message"] = "queue wall budget exhausted"
+            record = {"case": case, "max_tokens": body["max_tokens"], "begin_ns": begin,
+                      "end_ns": time.monotonic_ns(), "chunks": chunks, "error": details}
+            (dest / f"{case}-{number}-error.json").write_text(json.dumps(record, indent=2))
         (dest / f"{case}-{number}.json").write_text(json.dumps(record, indent=2))
-        if "choices" not in response:
-            raise RuntimeError("completion request failed")
         return record
 
     def rows(self, dest, begin):
@@ -323,8 +325,8 @@ def completion(chunks):
         if "error" in chunk:
             raise ValueError("SSE completion failed: " + str(chunk["error"]))
         for key in ("timings", "usage"):
-            if key in chunk:
-                result[key] = chunk[key]
+            if isinstance(chunk.get(key), dict):
+                result.setdefault(key, {}).update({name: value for name, value in chunk[key].items() if value is not None})
         for choice in chunk.get("choices", []):
             if choice.get("index", 0) != 0:
                 raise ValueError("unexpected completion index")
@@ -357,11 +359,13 @@ def steady(record, k, minimum):
     points = {}
     last_tokens = last_ms = 0
     for chunk in record["chunks"]:
-        timing = chunk.get("timings", {})
+        timing = chunk.get("timings") or {}
         n = timing.get("draft_n")
         if n is None:
             continue
-        ms = timing.get("predicted_ms", 0)
+        ms = timing.get("predicted_ms")
+        if ms is None or timing.get("predicted_n") is None:
+            continue
         if n < last_tokens or ms < last_ms or n > tokens or ms > final["predicted_ms"]:
             raise ValueError("reversed or inconsistent cumulative SSE timing")
         last_tokens, last_ms = n, ms
@@ -400,6 +404,8 @@ def suite(h, dest):
         label = f"short-tool-{number}"
         record = h.request(dest, label, 1, body=body)
         results[label] = record
+        if "error" in record:
+            break
         message = dict(record["response"]["choices"][0]["message"])
         calls = message.get("tool_calls", [])
         message["tool_calls"] = [dict(call, id=f"followup_{number}_{i}") for i, call in enumerate(calls)]
@@ -416,6 +422,25 @@ def suite(h, dest):
 def validate_boot(results, dest, k, minimum):
     failures = {}
     for case, record in results.items():
+        if "error" in record:
+            failures[case] = [record["error"]["message"]]
+            continue
+        timings = record["response"].get("timings", {})
+        if any(not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0
+               for value in [*record["metrics"].values(), *[timings.get(key) for key in ("predicted_n", "predicted_ms", "prompt_ms", "cache_n")]]):
+            failures[case] = ["invalid timing or metric value"]
+            continue
+        if timings["predicted_n"] >= 32768 or record["metrics"]["drafts"] <= 0:
+            failures[case] = ["runaway response or missing authoritative rounds"]
+            continue
+        metrics = record["metrics"]
+        if metrics["drafts"] != int(metrics["drafts"]) or metrics["draft_tokens"] != timings.get("draft_n") or \
+                metrics["accepted_tokens"] != timings.get("draft_n_accepted") or not 0 <= metrics["accepted_tokens"] <= metrics["draft_tokens"]:
+            failures[case] = ["authoritative counters disagree with final timings"]
+            continue
+        if (case == "cold-tool" or case.startswith("long-")) and timings["cache_n"] != 0:
+            failures[case] = ["cold request reused a prompt cache"]
+            continue
         if case.startswith("long-"):
             errors = []
             try:
@@ -437,16 +462,20 @@ def validate_boot(results, dest, k, minimum):
     return failures
 
 
-def summarize(results, k):
+def summarize(results, k, arms=None):
+    arms = arms or ["up", "patch", "patch", "up"]
+    if len(arms) != len(results):
+        raise ValueError("boot labels and results differ")
     summary = []
     for index, result in enumerate(results):
-        reference = statistics.mean(result[f"long-tool-s{s}"]["steady"]["steady_ms_per_round_D"] for s in (1, 2))
+        reference = statistics.mean(record["steady"]["steady_ms_per_round_D"]
+                                    for case, record in result.items() if case.startswith("long-tool-"))
         for case, record in result.items():
             timings = record["response"]["timings"]
             rounds = record["metrics"]["drafts"]
             if rounds <= 0:
                 raise ValueError("no authoritative MTP rounds")
-            row = {"boot": index + 1, "arm": "up" if index in (0, 3) else "patch", "case": case,
+            row = {"boot": index + 1, "arm": arms[index], "case": case,
                    "rounds_M": rounds, "predicted_ms_M": timings["predicted_ms"],
                    "whole_request_ms_per_round_D": timings["predicted_ms"] / rounds,
                    "prompt_ms_M": timings["prompt_ms"], "cached_tokens_M": timings["cache_n"],
@@ -460,13 +489,48 @@ def summarize(results, k):
             row["request_fixed_ms_estimate_D"] = row["outside_prompt_generation_ms_D"] + row["generation_excess_ms_D"]
             summary.append(row)
     paired = []
+    per_arm = []
     for case in results[0]:
         rows = [r for r in summary if r["case"] == case]
         keys = [key for key in rows[0] if "ms" in key and key.endswith(("_M", "_D"))]
-        pairs = [{key: rows[p][key] - rows[u][key] for key in keys} for u, p in ((0, 1), (3, 2))]
-        paired.append({"case": case, "pair_differences_D": pairs,
-                       "patch_minus_up_D": {key: statistics.mean(pair[key] for pair in pairs) for key in keys}})
-    return {"requests": summary, "paired": paired,
+        upstream = [row for row in rows if row["arm"] == "up"]
+        for arm in dict.fromkeys(arms):
+            selected = [row for row in rows if row["arm"] == arm]
+            per_arm.append({"arm": arm, "case": case, "boots_M": len(selected),
+                            "mean_D": {key: statistics.mean(row[key] for row in selected) for key in keys},
+                            "boot_range_M": {key: [min(row[key] for row in selected), max(row[key] for row in selected)] for key in keys},
+                            "boot_sd_D": {key: statistics.pstdev(row[key] for row in selected) for key in keys}})
+            if arm == "up":
+                continue
+            if len(selected) != len(upstream):
+                raise ValueError("unbalanced arm boots")
+            pairs = [{key: row[key] - base[key] for key in keys} for base, row in zip(upstream, selected)]
+            paired.append({"case": case, "arm": arm, "pair_differences_D": pairs,
+                           "patch_minus_up_D": {key: statistics.mean(pair[key] for pair in pairs) for key in keys},
+                           "difference_range_D": {key: [min(pair[key] for pair in pairs), max(pair[key] for pair in pairs)] for key in keys}})
+    classes = []
+    for request_class, cases in (
+        ("cold-1k", ["cold-tool"]),
+        ("cold-10k-tool", [case for case in results[0] if case.startswith("long-tool-")]),
+        ("cold-10k-think", [case for case in results[0] if case.startswith("long-think-")]),
+        ("cached-followup", [case for case in results[0] if case.startswith("short-tool-") and case != "short-tool-1"]),
+    ):
+        boot_rows = []
+        for boot, arm in enumerate(arms, 1):
+            selected = [row for row in summary if row["boot"] == boot and row["case"] in cases]
+            keys = ("wall_ms_M", "prompt_ms_M", "generation_excess_ms_D", "request_fixed_ms_estimate_D")
+            boot_rows.append({"boot": boot, "arm": arm, **{key: statistics.mean(row[key] for row in selected) for key in keys}})
+        base = [row for row in boot_rows if row["arm"] == "up"]
+        for arm in dict.fromkeys(arms):
+            selected = [row for row in boot_rows if row["arm"] == arm]
+            deltas = [{key: row[key] - ref[key] for key in keys} for ref, row in zip(base, selected)]
+            classes.append({"class": request_class, "arm": arm, "per_boot_M_D": selected,
+                            "mean_D": {key: statistics.mean(row[key] for row in selected) for key in keys},
+                            "minus_up_D": {key: statistics.mean(row[key] for row in deltas) for key in keys},
+                            "difference_range_D": {key: [min(row[key] for row in deltas), max(row[key] for row in deltas)] for key in keys}})
+    return {"requests": summary, "per_arm": per_arm, "paired": paired, "request_classes": classes,
+            "pairing_definition": "Pair each arm's first boot with the first up and second boot with the second up; mirrored order balances early/late positions. Ranges describe boot spread, not confidence intervals.",
+            "prompt_classes": "10k/1k are workload names; actual ab3 prompts are about 8.4k/602 uncached tokens. Cached follow-ups exclude short-tool-1; raw prompt/cache token counts are retained.",
             "fixed_cost_definition": "request_fixed_ms_estimate = wall_ms - prompt_ms - rounds * steady_ms_per_round. Generation excess = predicted_ms - rounds * steady_ms_per_round. These include ramp/tail, HTTP/dispatch/release and content/context effects, not pure graph setup. Short requests use the same boot's long-tool mean as an extrapolation; negative estimates are retained.",
             "steady_definition": "Server cumulative SSE predicted_ms differences at adjacent full-K draft counters, after round 3 and before the last K+1 output tokens; no time-based trimming.",
             "k": k}
@@ -515,7 +579,128 @@ def canary_identity(results, k):
             if identity(results[case]) != identity(json.loads(path.read_text()))]
 
 
+UP_SOURCE = "0dba27b9002b8347c6f14a9f4a1651b3478065ef"
+TANDEM_ORDER = ("up", "graph-prefill", "graph-tandem", "graph-tandem", "graph-prefill", "up")
+
+
+def tandem_pins(roots):
+    paths = [MODEL, VOCAB, ROOT / "codex/gpu_ab.sh", Path(__file__).resolve(), ROOT / "codex/attrib.py",
+             *sorted(INPUTS.glob("*.json")), INPUTS / "chat-template.jinja"]
+    for root in roots.values():
+        paths.extend([root / "SOURCE", root / "SHA256SUMS", root / "bin/SHA256SUMS"])
+        paths.extend(root / "bin" / name for name in frozen(root))
+    return sorted(set(path.resolve() for path in paths))
+
+
+def stage_estimate(canary, short_requests):
+    stages = {"idle_load_snapshot_s_G": 20, "warmup_s_G": 5, "cold_1k_s_G": 3,
+              "long_request_s_G": 30, "long_requests_D": 2 if canary else 4,
+              "followup_s_G": 3, "followups_D": 2 if canary else short_requests,
+              "stop_xid_hash_s_G": 10}
+    stages["boot_total_s_G"] = 20 + 5 + 3 + 30 * stages["long_requests_D"] + 3 * stages["followups_D"] + 10
+    return stages
+
+
+def tandem_main():
+    p = argparse.ArgumentParser(description="Frozen three-arm graph reuse/input staging A/B; plan by default")
+    p.add_argument("mode", choices=("tandem",))
+    p.add_argument("--execute", action="store_true")
+    p.add_argument("--canary", action="store_true")
+    p.add_argument("--k", choices=("3", "5", "both"))
+    p.add_argument("--budget", type=int)
+    p.add_argument("--port", type=int, default=8398)
+    p.add_argument("--rounds", type=int, default=40)
+    p.add_argument("--short-requests", type=int, default=8)
+    p.add_argument("--up", type=Path, default=ROOT / "codex/frozen/up")
+    p.add_argument("--prefill", type=Path, default=ROOT / "codex/frozen/graph-prefill")
+    p.add_argument("--tandem", type=Path, default=ROOT / "codex/frozen/graph-tandem")
+    p.add_argument("--out", type=Path)
+    p.add_argument("--pins", action="store_true", help="print the complete hash/pin file inventory without executing")
+    args = p.parse_args()
+    args.k = args.k or ("3" if args.canary else "both")
+    args.budget = args.budget or (600 if args.canary else 3600)
+    if args.rounds < 40 or not 8 <= args.short_requests <= 16 or not 120 < args.budget <= 7200:
+        raise ValueError("invalid round minimum, follow-up count or budget")
+    if args.canary and (args.k == "both" or args.budget > 600):
+        raise ValueError("canary uses one K and at most 600 seconds")
+    ks = (5, 3) if args.k == "both" else (int(args.k),)
+    boots = ("up", "graph-prefill", "graph-tandem") if args.canary else TANDEM_ORDER
+    stages = stage_estimate(args.canary, args.short_requests)
+    stages["initial_input_hash_s_G"] = 20
+    estimated = stages["initial_input_hash_s_G"] + stages["boot_total_s_G"] * len(boots) * len(ks)
+    if estimated > 0.7 * args.budget:
+        raise ValueError("stage estimates exceed 70% of the wall budget")
+    roots = {"up": args.up.resolve(), "graph-prefill": args.prefill.resolve(), "graph-tandem": args.tandem.resolve()}
+    paths = tandem_pins(roots)
+    if (args.up / "SOURCE").read_text().splitlines()[0] != UP_SOURCE:
+        raise ValueError("up must be the supplied codex/frozen/up snapshot")
+    for case in ("tool", "think"):
+        body = json.loads((INPUTS / f"long-{case}.json").read_text())
+        if body["max_tokens"] < max(2048, (max(ks) + 1) * (args.rounds + 5)) or body["cache_prompt"]:
+            raise ValueError("long workload token budget is too short or cache is enabled")
+    if args.pins:
+        print(json.dumps([str(path) for path in paths], indent=2))
+        return
+    print(json.dumps({"mode": "tandem", "canary": args.canary, "k": list(ks), "boots": list(boots),
+                      "stage_estimates": stages, "stage_count_D": len(boots) * len(ks),
+                      "stage_estimate_s_G": estimated, "budget_s_G": args.budget, "minimum_steady_rounds": args.rounds,
+                      "workloads": "ab3 unchanged: cold-tool, long-tool/think seeds 1/2 (seed 1 in canary), cached tool follow-ups with 768-token headroom",
+                      "pins": [str(path) for path in paths], "capture": "trace-off"}, indent=2))
+    if not args.execute:
+        return
+    if os.environ.get("RUN_GPU") != "1" or not os.environ.get("CUDA_VISIBLE_DEVICES"):
+        raise RuntimeError("parent execute needs RUN_GPU=1 and selected CUDA_VISIBLE_DEVICES")
+    out = (args.out or ROOT / "codex/runs" / ("tandem-" + time.strftime("%Y%m%d-%H%M%S"))).resolve()
+    if not out.is_relative_to(ROOT):
+        raise ValueError("OUT must stay inside this worktree")
+    out.mkdir(parents=True, exist_ok=False)
+    h = Harness(args, out)
+    signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
+    signal.signal(signal.SIGINT, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
+    try:
+        pins = {str(path): sha(path) for path in paths}
+        if pins[str(MODEL.resolve())] != MODEL_SHA:
+            raise ValueError("model SHA changed")
+        (out / "inputs.json").write_text(json.dumps(pins, indent=2))
+        reports = []
+        for k in ks:
+            args.k = k
+            results = []
+            for index, arm in enumerate(boots, 1):
+                dest = h.boot(roots[arm], f"k{k}-{index}-{arm}")
+                result = suite(h, dest)
+                failures = validate_boot(result, dest, k, args.rounds)
+                results.append(result)
+                (out / f"k{k}-ab-results.json").write_text(json.dumps(results, indent=2))
+                h.stop()
+                h.xid()
+                frozen(dest)
+                if failures:
+                    raise ValueError("boot validation failed after writing results: " + json.dumps(failures))
+            mismatches = [case for case in results[0]
+                          if any(identity(result[case]) != identity(results[0][case]) for result in results[1:])]
+            (out / f"k{k}-identity.json").write_text(json.dumps({"passed": not mismatches, "failures": mismatches}, indent=2))
+            if mismatches:
+                raise ValueError("three-arm completion or authoritative counter identity failed: " + ", ".join(mismatches))
+            reports.append(summarize(results, k, list(boots)))
+        if pins != {path: sha(Path(path)) for path in pins}:
+            raise ValueError("inputs changed during run")
+        h.timeout(limit=1, reserve=0)
+        (out / ("canary-summary.json" if args.canary else "ab-summary.json")).write_text(json.dumps(reports, indent=2))
+        (out / "verdict.json").write_text(json.dumps({"verdict": "PASS", "canary": args.canary, "k": list(ks)}, indent=2))
+    except BaseException as error:
+        message = str(error)
+        verdict = "hazard" if "Xid" in message or "fallen off" in message else "budget" if "budget" in message else "INVALID"
+        (out / "verdict.json").write_text(json.dumps({"verdict": verdict, "error": message}, indent=2))
+        raise
+    finally:
+        h.stop()
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "tandem":
+        tandem_main()
+        return
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("mode", choices=("trace", "ab"))
     p.add_argument("--execute", action="store_true")
