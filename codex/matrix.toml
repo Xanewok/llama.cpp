@@ -1,0 +1,47 @@
+id = "knob-sweep-pmin"
+baseline = "k5-p0"
+canary_arm = "k12-p08"
+frozen = "/home/xanewok/repos/qwen38-weekend/frozen/stack2"
+source = "0dba27b9002b8347c6f14a9f4a1651b3478065ef"
+model = "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf"
+model_sha256 = "e3b59faa312a6202d7ac0a2400123956104bc720e77f6ff21c754aec5c3740df"
+vocab = "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json"
+rounds = 40
+followups = 8
+depths = [8192, 90000]
+max_total_budget_s = 9000
+
+[cost]
+boot_s_G = 90
+warmup_cold_s_G = 10
+prefix_calibration_s_G = 10
+stop_hash_s_G = 15
+initial_hash_s_G = 20
+shallow_request_s_M = 22.95
+deep_cold_s_D = 122.45
+followup_s_G = 3.0
+generation_s_M = 12.278937
+source = "/home/xanewok/repos/graph-reuse/codex/runs/20261003-173851/1-up"
+deep_definition = "90000 / 816.9717 prompt tokens/s + 12.28 generation seconds; shallow source long-tool-s1-1.json"
+
+[[arms]]
+name = "k5-p0"
+flags = ["--spec-draft-n-max", "5", "--spec-draft-p-min", "0"]
+[[arms]]
+name = "k8-p05"
+flags = ["--spec-draft-n-max", "8", "--spec-draft-p-min", "0.5"]
+[[arms]]
+name = "k8-p07"
+flags = ["--spec-draft-n-max", "8", "--spec-draft-p-min", "0.7"]
+[[arms]]
+name = "k8-p08"
+flags = ["--spec-draft-n-max", "8", "--spec-draft-p-min", "0.8"]
+[[arms]]
+name = "k12-p07"
+flags = ["--spec-draft-n-max", "12", "--spec-draft-p-min", "0.7"]
+[[arms]]
+name = "k12-p08"
+flags = ["--spec-draft-n-max", "12", "--spec-draft-p-min", "0.8"]
+[[arms]]
+name = "k5-p07"
+flags = ["--spec-draft-n-max", "5", "--spec-draft-p-min", "0.7"]
