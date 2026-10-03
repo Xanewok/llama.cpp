@@ -1,0 +1,67 @@
+{
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a coding agent running in a terminal. You work in the user's repository. Use exec_command to inspect files and run tests, and apply_patch to edit files. Keep going until the task is done. Be concise."
+    },
+    {
+      "role": "user",
+      "content": "The test tests/test_parser.py::test_empty_input fails with IndexError. Find the cause in src/parser.py and fix it."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "exec_command",
+        "description": "Runs a shell command and returns its output.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "cmd": {
+              "type": "string",
+              "description": "The shell command to execute."
+            },
+            "workdir": {
+              "type": "string",
+              "description": "Working directory."
+            },
+            "yield_time_ms": {
+              "type": "number",
+              "description": "How long to wait for output."
+            }
+          },
+          "required": [
+            "cmd"
+          ]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "apply_patch",
+        "description": "Applies a patch to files in the workspace. The input is a unified patch.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "input": {
+              "type": "string",
+              "description": "The patch."
+            }
+          },
+          "required": [
+            "input"
+          ]
+        }
+      }
+    }
+  ],
+  "tool_choice": "auto",
+  "max_tokens": 128,
+  "seed": 1,
+  "chat_template_kwargs": {
+    "enable_thinking": true
+  },
+  "cache_prompt": false
+}
