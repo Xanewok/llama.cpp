@@ -4542,6 +4542,10 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
 
 #ifdef USE_CUDA_GRAPH
     graph_key = ggml_cuda_graph_get_key(cgraph);
+    if (ggml_round_trace_enabled()) {
+        const auto now = ggml_round_trace_now();
+        ggml_round_trace_event("cuda_key", now, now, cuda_ctx->device, 1, (uintptr_t) graph_key);
+    }
 
     ggml_cuda_graph_set_enabled(cuda_ctx, graph_key);
 
@@ -4549,7 +4553,12 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     if (graph->is_enabled()) {
         const bool graph_compatible = ggml_cuda_graph_check_compability(cgraph);
         if (graph_compatible) {
-            const bool properties_changed = ggml_cuda_graph_update_required(cuda_ctx, cgraph);
+            bool properties_changed;
+            {
+                ggml_round_trace_scope trace_properties("cuda_properties", cuda_ctx->device);
+                properties_changed = ggml_cuda_graph_update_required(cuda_ctx, cgraph);
+            }
+            if (properties_changed) { ggml_round_trace_count("cuda_changed", cuda_ctx->device); }
 
             if (!graph->warmup_complete) {
                 // Warmup: need at least 2 calls with no property change on the 2nd call
@@ -4564,6 +4573,7 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
                 // Post-warmup: normal CUDA graph operation
                 if (properties_changed) {
                     // Properties changed - reset warmup, execute directly until stable again
+                    ggml_round_trace_count("cuda_warmup_reset", cuda_ctx->device);
                     graph->warmup_complete = false;
                     GGML_LOG_DEBUG("%s: CUDA graph warmup reset\n", __func__);
                 } else {

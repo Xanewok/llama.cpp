@@ -25,9 +25,10 @@ int main(int argc, char ** argv) {
     common_params params;
     params.model.path = argv[1];
     params.n_gpu_layers = 0;
-    params.n_ctx = requests > 1 ? 4096 : 512;
+    const int prefill_words = std::getenv("CPU_PREFILL_WORDS") ? std::atoi(std::getenv("CPU_PREFILL_WORDS")) : 0;
+    params.n_ctx = prefill_words > 0 ? prefill_words * 2 + 4096 : (requests > 1 ? 4096 : 512);
     params.n_batch = 128;
-    params.n_ubatch = 32;
+    params.n_ubatch = std::getenv("CPU_UBATCH") ? std::atoi(std::getenv("CPU_UBATCH")) : 32;
     params.n_parallel = 1;
     params.cpuparams.n_threads = params.cpuparams_batch.n_threads = 8;
     params.speculative.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
@@ -53,6 +54,7 @@ int main(int argc, char ** argv) {
         require(server.load_model(params), "server model load failed");
         std::thread inference([&] { server.start_loop(); });
         std::string prompt = "The sequence of positive integers begins with 1, 2, 3, 4, 5. Continue the sequence:";
+        for (int i = 0; i < prefill_words; ++i) { prompt += " sequence"; }
         try {
             for (int request = 0; request < requests; ++request) {
                 auto reader = server.get_response_reader();
