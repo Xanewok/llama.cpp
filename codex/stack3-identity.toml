@@ -1,0 +1,109 @@
+id = "stack3-identity"
+title = "Swift S5 np2: stack2 vs stack3 defaults vs staged inputs, exact output gate"
+kind = "measure"
+ab = true
+retry = "fresh"
+budget_s = 1200
+est_s = 780
+startup_grace_s = 90
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "timeout", regex = "queue wall budget" },
+  { class = "integrity", regex = "identity failed|frozen.*changed|inputs changed|model SHA changed" },
+  { class = "insufficient_data", regex = "insufficient steady|generated length|did not stream|missing authoritative rounds|did not overlap" },
+  { class = "deterministic", regex = "boot validation failed|aggregate counters disagree|prompt size/cache gate failed" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/stack3/codex/gpu_ab.sh", "--execute", "--budget", "960", "--port", "8403", "--out", "/home/xanewok/repos/stack3/codex/runs/stack3-identity/full-a{attempt}"]
+cwd = "/home/xanewok/repos/stack3"
+env = { RUN_GPU = "1" }
+ports = [8403]
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/stack3/codex/gpu_ab.sh", "--budget", "960", "--port", "8403"]
+cwd = "/home/xanewok/repos/stack3"
+env = {}
+timeout_s = 120
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/stack3/codex/gpu_ab.sh", "--execute", "--canary", "--budget", "240", "--port", "8403", "--out", "/home/xanewok/repos/stack3/codex/runs/stack3-identity/canary-a{attempt}"]
+cwd = "/home/xanewok/repos/stack3"
+env = { RUN_GPU = "1" }
+timeout_s = 240
+
+[outputs]
+paths = ["/home/xanewok/repos/stack3/codex/runs/stack3-identity"]
+
+[fix]
+editable = []
+protected = ["identity", "minimum_steady_rounds", "768", "SHA256SUMS", "32768"]
+
+[pins]
+files = [
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf",
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json",
+  "/home/xanewok/repos/stack3/codex/attrib.py",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/SHA256SUMS",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/SOURCE",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/SHA256SUMS",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libggml-base.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libggml-base.so.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libggml-cpu.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libggml-cuda.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libggml.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libggml.so.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libllama-common.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libllama-common.so.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libllama.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libllama.so.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libmtmd.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libmtmd.so.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack2/bin/round-trace",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/SHA256SUMS",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/SOURCE",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/SHA256SUMS",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libggml-base.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libggml-base.so.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libggml-cpu.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libggml-cuda.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libggml.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libggml.so.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libllama-common.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libllama-common.so.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libllama.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libllama.so.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libmtmd.so",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libmtmd.so.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/stack3/codex/frozen/stack3/bin/round-trace",
+  "/home/xanewok/repos/stack3/codex/gpu_ab.sh",
+  "/home/xanewok/repos/stack3/codex/gpu_harness.py",
+  "/home/xanewok/repos/stack3/codex/inputs/PROVENANCE.json",
+  "/home/xanewok/repos/stack3/codex/inputs/chat-template.jinja",
+  "/home/xanewok/repos/stack3/codex/inputs/long-think.json",
+  "/home/xanewok/repos/stack3/codex/inputs/long-tool.json",
+  "/home/xanewok/repos/stack3/codex/inputs/think.json",
+  "/home/xanewok/repos/stack3/codex/inputs/tool.json",
+  "/home/xanewok/repos/stack3/codex/inputs/warmup.json",
+  "/home/xanewok/repos/stack3/codex/stack3_gpu.py",
+]
