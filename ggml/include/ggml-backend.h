@@ -330,6 +330,14 @@ extern "C" {
     GGML_API ggml_backend_sched_t ggml_backend_sched_new(ggml_backend_t * backends, ggml_backend_buffer_type_t * bufts, int n_backends, size_t graph_size, bool parallel, bool op_offload);
     GGML_API void                 ggml_backend_sched_free(ggml_backend_sched_t sched);
 
+    // Shares compute storage with parent, but owns its split state. Serialize all operations in the family.
+    // Returns NULL for pipeline parallelism. Backends must outlive every family member.
+    GGML_API ggml_backend_sched_t ggml_backend_sched_new_shared(ggml_backend_sched_t parent);
+
+    // False after reset, buffer replacement, or destructive backend reset. Input writes must follow previous compute.
+    // An allocated but stale graph is rejected by compute_async; rebuild and upload inputs again.
+    GGML_API bool                 ggml_backend_sched_graph_is_alloc(ggml_backend_sched_t sched, const struct ggml_cgraph * graph);
+
     // Initialize backend buffers from a measure graph
     GGML_API void                 ggml_backend_sched_reserve_size(ggml_backend_sched_t sched, struct ggml_cgraph * measure_graph, size_t * sizes);
     GGML_API bool                 ggml_backend_sched_reserve(ggml_backend_sched_t sched, struct ggml_cgraph * measure_graph); // returns success
