@@ -1893,7 +1893,8 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
                 }
             }
         }
-        if (!input_transfers.empty()) {
+        if (!input_transfers.empty() && (!split_backend->iface.set_tensor_batch_owned ||
+                !split_backend->iface.set_tensor_batch_owned(split_backend, input_transfers.data(), input_transfers.size()))) {
             // Wait before overwriting a pipeline copy slot; sources may be reused as soon as compute returns.
             if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
                 ggml_backend_event_synchronize(sched->events[split_backend_id][sched->cur_copy]);
@@ -2342,6 +2343,34 @@ enum ggml_status ggml_backend_sched_graph_compute_async(ggml_backend_sched_t sch
     }
 
     return ggml_backend_sched_compute_splits(sched);
+}
+
+bool ggml_backend_sched_can_stage_inputs(ggml_backend_sched_t sched, const ggml_cgraph * graph) {
+    if (!ggml_backend_sched_graph_is_alloc(sched, graph) || sched->n_copies != 1 || sched->callback_eval) {
+        return false;
+    }
+    for (int i = 0; i < sched->n_splits; ++i) {
+        ggml_backend_t backend = sched->backends[sched->splits[i].backend_id];
+        if (!backend->iface.set_tensor_batch_owned || !backend->iface.set_tensor_batch_owned(backend, nullptr, 0)) {
+            return false;
+        }
+    }
+    for (int i = 0; i < graph->n_leafs; ++i) {
+        ggml_tensor * leaf = graph->leafs[i];
+        if (!(leaf->flags & GGML_TENSOR_FLAG_INPUT)) {
+            continue;
+        }
+        if (!ggml_backend_buffer_is_host(leaf->buffer)) {
+            return false;
+        }
+        // A backend that accepts this host buffer can read it without making an owned copy.
+        for (int j = 0; j < sched->n_splits; ++j) {
+            if (ggml_backend_sched_buffer_supported(sched, leaf, sched->splits[j].backend_id)) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 void ggml_backend_sched_synchronize(ggml_backend_sched_t sched) {
