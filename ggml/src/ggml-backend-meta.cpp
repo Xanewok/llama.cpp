@@ -2117,6 +2117,40 @@ static void ggml_backend_meta_set_tensor_async(ggml_backend_t backend, ggml_tens
     }
 }
 
+static void ggml_backend_meta_synchronize(ggml_backend_t backend);
+
+static bool ggml_backend_meta_set_tensor_batch_owned(ggml_backend_t backend, const ggml_backend_tensor_transfer * transfers, size_t n_transfers) {
+    std::lock_guard<std::recursive_mutex> lock(meta_tensor_mutex);
+    const size_t n_backends = ggml_backend_meta_n_backends(backend);
+    for (size_t j = 0; j < n_backends; ++j) {
+        ggml_backend_t simple = ggml_backend_meta_simple_backend(backend, j);
+        if (!simple->iface.set_tensor_batch_owned || !simple->iface.set_tensor_batch_owned(simple, nullptr, 0)) {
+            return false;
+        }
+    }
+    for (size_t i = 0; i < n_transfers; ++i) {
+        const auto state = ggml_backend_meta_get_split_state(transfers[i].tensor, /*assume_sync =*/ false);
+        if (state.axis != GGML_BACKEND_SPLIT_AXIS_MIRRORED) {
+            return false;
+        }
+    }
+    std::vector<ggml_backend_tensor_transfer> simple_transfers(n_transfers);
+    for (size_t j = 0; j < n_backends; ++j) {
+        ggml_backend_t simple = ggml_backend_meta_simple_backend(backend, j);
+        for (size_t i = 0; i < n_transfers; ++i) {
+            simple_transfers[i] = transfers[i];
+            simple_transfers[i].tensor = ggml_backend_meta_buffer_simple_tensor(transfers[i].tensor, j);
+        }
+        if (!simple->iface.set_tensor_batch_owned(simple, simple_transfers.data(), n_transfers)) {
+            // An earlier rank may have queued writes; drain all ranks before ordered fallback.
+            ggml_backend_meta_synchronize(backend);
+            ggml_backend_tensor_set_batch(transfers, n_transfers);
+            return true;
+        }
+    }
+    return true;
+}
+
 static void ggml_backend_meta_get_tensor_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
     std::lock_guard<std::recursive_mutex> lock(meta_tensor_mutex);
     const size_t n_backends = ggml_backend_meta_n_backends(backend);
@@ -2775,6 +2809,7 @@ static const ggml_backend_i ggml_backend_meta_i = {
     /* .event_record            = */ nullptr,
     /* .event_wait              = */ nullptr,
     /* .graph_optimize          = */ nullptr,
+    /* .set_tensor_batch_owned  = */ ggml_backend_meta_set_tensor_batch_owned,
 };
 
 bool ggml_backend_is_meta(ggml_backend_t backend) {
