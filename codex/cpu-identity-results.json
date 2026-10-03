@@ -1,0 +1,188 @@
+{
+  "runs_M": 30,
+  "cases_M": 6,
+  "negative_controls_M": 6,
+  "identity": "token IDs and every final-target-logit byte",
+  "results": [
+    {
+      "label": "m0-t0-s1729-stack2",
+      "bytes_M": 993680,
+      "sha256": "c0d19b0d7c405c31fdbc3ad473d4284fbbfa153bff62ed32bbd95090d8bdd7ad",
+      "wall_s_M": 21.438775732007343
+    },
+    {
+      "label": "m0-t0-s1729-default",
+      "bytes_M": 993680,
+      "sha256": "c0d19b0d7c405c31fdbc3ad473d4284fbbfa153bff62ed32bbd95090d8bdd7ad",
+      "wall_s_M": 20.935353364038747
+    },
+    {
+      "label": "m0-t0-s1729-staged",
+      "bytes_M": 993680,
+      "sha256": "c0d19b0d7c405c31fdbc3ad473d4284fbbfa153bff62ed32bbd95090d8bdd7ad",
+      "wall_s_M": 21.250404292950407
+    },
+    {
+      "label": "m0-t0-s1729-reuse-off",
+      "bytes_M": 993680,
+      "sha256": "c0d19b0d7c405c31fdbc3ad473d4284fbbfa153bff62ed32bbd95090d8bdd7ad",
+      "wall_s_M": 21.09157230501296
+    },
+    {
+      "label": "m0-t0-s1729-pool-off",
+      "bytes_M": 993680,
+      "sha256": "c0d19b0d7c405c31fdbc3ad473d4284fbbfa153bff62ed32bbd95090d8bdd7ad",
+      "wall_s_M": 21.301982389006298
+    },
+    {
+      "label": "m0-t1-s1729-stack2",
+      "bytes_M": 993680,
+      "sha256": "7d16e6c377856a2088994365fce263dbe7fb1e0d601de3f1711a67be29344d9e",
+      "wall_s_M": 23.727040604979265
+    },
+    {
+      "label": "m0-t1-s1729-default",
+      "bytes_M": 993680,
+      "sha256": "7d16e6c377856a2088994365fce263dbe7fb1e0d601de3f1711a67be29344d9e",
+      "wall_s_M": 24.4407538229716
+    },
+    {
+      "label": "m0-t1-s1729-staged",
+      "bytes_M": 993680,
+      "sha256": "7d16e6c377856a2088994365fce263dbe7fb1e0d601de3f1711a67be29344d9e",
+      "wall_s_M": 22.797945878992323
+    },
+    {
+      "label": "m0-t1-s1729-reuse-off",
+      "bytes_M": 993680,
+      "sha256": "7d16e6c377856a2088994365fce263dbe7fb1e0d601de3f1711a67be29344d9e",
+      "wall_s_M": 23.280163930961862
+    },
+    {
+      "label": "m0-t1-s1729-pool-off",
+      "bytes_M": 993680,
+      "sha256": "7d16e6c377856a2088994365fce263dbe7fb1e0d601de3f1711a67be29344d9e",
+      "wall_s_M": 22.284217634005472
+    },
+    {
+      "label": "m0-t1-s2718-stack2",
+      "bytes_M": 993680,
+      "sha256": "ada00a98abf966169fefab41dee9db105222377b7be1ec9ba980e3f317d016ab",
+      "wall_s_M": 22.75070831296034
+    },
+    {
+      "label": "m0-t1-s2718-default",
+      "bytes_M": 993680,
+      "sha256": "ada00a98abf966169fefab41dee9db105222377b7be1ec9ba980e3f317d016ab",
+      "wall_s_M": 24.584140075021423
+    },
+    {
+      "label": "m0-t1-s2718-staged",
+      "bytes_M": 993680,
+      "sha256": "ada00a98abf966169fefab41dee9db105222377b7be1ec9ba980e3f317d016ab",
+      "wall_s_M": 22.95919447799679
+    },
+    {
+      "label": "m0-t1-s2718-reuse-off",
+      "bytes_M": 993680,
+      "sha256": "ada00a98abf966169fefab41dee9db105222377b7be1ec9ba980e3f317d016ab",
+      "wall_s_M": 23.316638579010032
+    },
+    {
+      "label": "m0-t1-s2718-pool-off",
+      "bytes_M": 993680,
+      "sha256": "ada00a98abf966169fefab41dee9db105222377b7be1ec9ba980e3f317d016ab",
+      "wall_s_M": 23.375655320996884
+    },
+    {
+      "label": "m1-t0-s1729-stack2",
+      "bytes_M": 993680,
+      "sha256": "8586beb85db276f3f87f71d1996bab2e6a7b3385949c4bd4ee018d98259a10a4",
+      "wall_s_M": 30.3019338909653
+    },
+    {
+      "label": "m1-t0-s1729-default",
+      "bytes_M": 993680,
+      "sha256": "8586beb85db276f3f87f71d1996bab2e6a7b3385949c4bd4ee018d98259a10a4",
+      "wall_s_M": 31.062518953986
+    },
+    {
+      "label": "m1-t0-s1729-staged",
+      "bytes_M": 993680,
+      "sha256": "8586beb85db276f3f87f71d1996bab2e6a7b3385949c4bd4ee018d98259a10a4",
+      "wall_s_M": 38.66299045999767
+    },
+    {
+      "label": "m1-t0-s1729-reuse-off",
+      "bytes_M": 993680,
+      "sha256": "8586beb85db276f3f87f71d1996bab2e6a7b3385949c4bd4ee018d98259a10a4",
+      "wall_s_M": 33.261024827021174
+    },
+    {
+      "label": "m1-t0-s1729-pool-off",
+      "bytes_M": 993680,
+      "sha256": "8586beb85db276f3f87f71d1996bab2e6a7b3385949c4bd4ee018d98259a10a4",
+      "wall_s_M": 30.519654664036352
+    },
+    {
+      "label": "m1-t1-s1729-stack2",
+      "bytes_M": 993680,
+      "sha256": "f318433202e414fe415a2a54be6cb6ab3746e80dced694fb5e71207865dfd0c9",
+      "wall_s_M": 31.546993372030556
+    },
+    {
+      "label": "m1-t1-s1729-default",
+      "bytes_M": 993680,
+      "sha256": "f318433202e414fe415a2a54be6cb6ab3746e80dced694fb5e71207865dfd0c9",
+      "wall_s_M": 31.66521195898531
+    },
+    {
+      "label": "m1-t1-s1729-staged",
+      "bytes_M": 993680,
+      "sha256": "f318433202e414fe415a2a54be6cb6ab3746e80dced694fb5e71207865dfd0c9",
+      "wall_s_M": 35.59083672100678
+    },
+    {
+      "label": "m1-t1-s1729-reuse-off",
+      "bytes_M": 993680,
+      "sha256": "f318433202e414fe415a2a54be6cb6ab3746e80dced694fb5e71207865dfd0c9",
+      "wall_s_M": 36.29102830903139
+    },
+    {
+      "label": "m1-t1-s1729-pool-off",
+      "bytes_M": 993680,
+      "sha256": "f318433202e414fe415a2a54be6cb6ab3746e80dced694fb5e71207865dfd0c9",
+      "wall_s_M": 35.58676731499145
+    },
+    {
+      "label": "m1-t1-s2718-stack2",
+      "bytes_M": 993680,
+      "sha256": "ffe84a11ac4c06801b4036857a24addd1b6acc3b6d0c13ab7a73dc2d14fb1182",
+      "wall_s_M": 51.651624020014424
+    },
+    {
+      "label": "m1-t1-s2718-default",
+      "bytes_M": 993680,
+      "sha256": "ffe84a11ac4c06801b4036857a24addd1b6acc3b6d0c13ab7a73dc2d14fb1182",
+      "wall_s_M": 46.60141203698004
+    },
+    {
+      "label": "m1-t1-s2718-staged",
+      "bytes_M": 993680,
+      "sha256": "ffe84a11ac4c06801b4036857a24addd1b6acc3b6d0c13ab7a73dc2d14fb1182",
+      "wall_s_M": 36.236647162993904
+    },
+    {
+      "label": "m1-t1-s2718-reuse-off",
+      "bytes_M": 993680,
+      "sha256": "ffe84a11ac4c06801b4036857a24addd1b6acc3b6d0c13ab7a73dc2d14fb1182",
+      "wall_s_M": 54.99396131397225
+    },
+    {
+      "label": "m1-t1-s2718-pool-off",
+      "bytes_M": 993680,
+      "sha256": "ffe84a11ac4c06801b4036857a24addd1b6acc3b6d0c13ab7a73dc2d14fb1182",
+      "wall_s_M": 53.02724711102201
+    }
+  ]
+}

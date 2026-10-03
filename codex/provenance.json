@@ -1,0 +1,147 @@
+{
+  "fmq": {
+    "topic": "topic/fattn-mma-quant-kv",
+    "commits": [
+      {
+        "commit": "b0118d2ff29f66fc9b42399c3c020ab3e6b03c03",
+        "subject": "ggml-cuda : FA MMA kernel dequantizes q8_0 K/V tiles for small batches",
+        "present_in_stack2_M": true
+      },
+      {
+        "commit": "5926c67a7b52e0e0fcdffe2308d62816a12e2f1a",
+        "subject": "DO NOT MERGE: ggml-cuda : GGML_CUDA_FA_MMA_Q8_0=0 restores the f16 K/V copy (A/B knob)",
+        "present_in_stack2_M": true
+      },
+      {
+        "commit": "68d99c67d958c28b6bff5fdc2db096f81c324ef9",
+        "subject": "ggml-cuda : spread q8_0 FA dequant stores over rows",
+        "present_in_stack2_M": true
+      }
+    ]
+  },
+  "input-upload": {
+    "topic": "topic/host-input-upload",
+    "commits": [
+      {
+        "commit": "e7071647cb10190f99ac7d6b16565ee0d83f2829",
+        "subject": "ggml : batch scheduler host input uploads",
+        "present_in_stack2_M": true
+      }
+    ]
+  },
+  "verify-sampling": {
+    "topic": "topic/backend-verify-sampling",
+    "commits": [
+      {
+        "commit": "70036f47d6064a8f652f620065190ba751667ad0",
+        "subject": "sampling : verify target rows from backend candidates",
+        "present_in_stack2_M": true
+      }
+    ]
+  },
+  "draft-vocab": {
+    "topic": "topic/mtp-draft-vocab",
+    "commits": [
+      {
+        "commit": "faee46be93e3deea324904ce2efe0c60090e5906",
+        "subject": "llama : add reduced vocabulary for Qwen3.5 MTP drafts",
+        "present_in_stack2_M": true
+      },
+      {
+        "commit": "b8668a92e5188c8294e4e133f4426a3506fac50c",
+        "subject": "llama : handle small MTP draft vocabularies",
+        "present_in_stack2_M": true
+      }
+    ]
+  },
+  "verify-prefill": {
+    "topic": "topic/verify-prefill",
+    "commits": [
+      {
+        "commit": "46c388284c60945f2778e56dc6ff26a0c9dfe87a",
+        "subject": "llama : retain scheduler when replacing backend samplers",
+        "present_in_stack2_M": true
+      },
+      {
+        "commit": "0dba27b9002b8347c6f14a9f4a1651b3478065ef",
+        "subject": "llama : retain scheduler when detaching backend samplers",
+        "present_in_stack2_M": true
+      }
+    ]
+  },
+  "resync": {
+    "topic": "topic/fix-server-noncanonical-resync",
+    "commits": [
+      {
+        "commit": "df5f4fa3e192b34ea78043c2fb91e04fc13a147d",
+        "subject": "server : reuse the cached tokens when the prompt only differs in spelling",
+        "present_in_stack2_M": true
+      }
+    ]
+  },
+  "checkpoint-skip": {
+    "topic": "topic/ckpt-skip-draft-kv",
+    "commits": [
+      {
+        "commit": "740ca4aa04157777c83daec36972772a7e0ddc90",
+        "subject": "server : skip the draft KV in context checkpoints when the draft can seq_rm partially",
+        "present_in_stack2_M": true
+      },
+      {
+        "commit": "e6f9d8ba2ed81123fbcce2daa55782d1ff0fdad5",
+        "subject": "server : keep the draft KV in context checkpoints of a sliding-window draft",
+        "present_in_stack2_M": true
+      }
+    ]
+  },
+  "checkpoint-pool": {
+    "topic": "topic/ckpt-buffer-pool",
+    "commits": [
+      {
+        "commit": "a4adcd97cb06c510c454e9941c74caa7ba0060e2",
+        "subject": "server : reuse and prefault the host buffers of context checkpoints",
+        "present_in_stack2_M": true
+      }
+    ]
+  },
+  "prefilter": {
+    "topic": "topic/sampler-topk-prefilter",
+    "commits": [
+      {
+        "commit": "63cf1afe670821446d01c9f1566e62c69caeac4b",
+        "subject": "common : sampling: take the chain's top-k straight from the logits",
+        "present_in_stack2_M": true
+      },
+      {
+        "commit": "6f562b8b91da659deea68d55ceb187f5985cc0ec",
+        "subject": "common : sampling: keep the top-k prefilter under a lazy grammar and the reasoning budget",
+        "present_in_stack2_M": true
+      },
+      {
+        "commit": "adcbc2f0e0de89986e44161c75e05ef74f0f6e24",
+        "subject": "common : sampling: the top-k prefilter falls back to the full row on ties",
+        "present_in_stack2_M": true
+      }
+    ]
+  },
+  "probabilistic-draft": {
+    "topic": "topic/pr27694-probabilistic-draft",
+    "commits": [
+      {
+        "commit": "eaefd4746ff3e8965d916f4c89a125453b1a9d78",
+        "subject": "speculative : probabilistic draft + rejection-sampling verify (PR #27694)",
+        "present_in_stack2_M": true
+      }
+    ]
+  },
+  "masked-mtp-hidden": {
+    "topic": "topic/mtp-h-nextn-masked",
+    "commits": [
+      {
+        "commit": "2f649b4bc4abd846d81918a1832f340ba0a3172d",
+        "subject": "models : MTP heads emit h_nextn for output rows only when masked",
+        "present_in_stack2_M": true
+      }
+    ]
+  }
+}

@@ -24,6 +24,7 @@ constexpr int cudaErrorNotReady = 1;
 constexpr int cudaSuccess = 0, cudaHostAllocDefault = 0, cudaEventDisableTiming = 0, cudaStreamNonBlocking = 0, cudaMemcpyHostToDevice = 0;
 static bool fail_alloc = false;
 static size_t allocation_calls = 0;
+static size_t allocation_limit = SIZE_MAX;
 static void drain(queue * q, size_t target) {
     while (q->completed < target) {
         assert(!q->jobs.empty());
@@ -35,7 +36,7 @@ static void drain(queue * q, size_t target) {
 static void enqueue(queue * q, std::function<void()> job) { q->jobs.push_back(std::move(job)); ++q->submitted; }
 static int cudaEventQuery(event * e) { return e->stream->completed >= e->target ? cudaSuccess : cudaErrorNotReady; }
 static int cudaEventSynchronize(event * e) { drain(e->stream, e->target); return 0; }
-static int cudaHostAlloc(void ** p, size_t n, int) { ++allocation_calls; if (fail_alloc) { return 1; } *p = malloc(n); return *p ? 0 : 1; }
+static int cudaHostAlloc(void ** p, size_t n, int) { ++allocation_calls; if (fail_alloc || n > allocation_limit) { return 1; } *p = malloc(n); return *p ? 0 : 1; }
 static int cudaGetLastError() { return 0; }
 static int cudaFreeHost(void * p) { free(p); return 0; }
 static int cudaEventCreateWithFlags(event ** e, int) { *e = new event; return 0; }
@@ -146,6 +147,25 @@ int main() {
             }
             require(allocation_calls - before <= 18, "linear staging allocation growth");
             std::cout << "growth allocation calls M: " << allocation_calls - before << " for 256 uploads\n";
+        }
+        {
+            ggml_backend_cuda_context constrained;
+            ggml_backend constrained_backend { &constrained };
+            std::vector<char> source(129, 7), destination(129);
+            ggml_tensor target { nullptr, &buffer, destination.data(), destination.size() };
+            ggml_backend_tensor_transfer transfer { &target, source.data(), 0, 128 };
+            for (int slot = 0; slot < 2; ++slot) {
+                require(ggml_backend_cuda_set_tensor_batch_owned(&constrained_backend, &transfer, 1), "initial constrained upload refused");
+                drain(constrained.stream(), constrained.stream()->submitted);
+            }
+            const size_t before = allocation_calls;
+            allocation_limit = 129;
+            transfer.size = 129;
+            require(ggml_backend_cuda_set_tensor_batch_owned(&constrained_backend, &transfer, 1), "exact-size fallback refused");
+            drain(constrained.stream(), constrained.stream()->submitted);
+            allocation_limit = SIZE_MAX;
+            require(allocation_calls - before == 2, "exact-size allocation retry was not exercised");
+            require(source == destination, "exact-size fallback changed bytes");
         }
         std::cout << "owned bytes, ring reuse, bidirectional event order, overlap, refusal, allocation fallback, teardown: pass\n";
         return 0;
