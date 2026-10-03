@@ -19,6 +19,7 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -2118,7 +2119,8 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
         {
             ggml_round_trace_scope trace_retention("meta_retention");
             backend_ctx->containers.clear();
-            std::set<ggml_tensor *> tensors;
+            std::unordered_set<ggml_tensor *> tensors;
+            tensors.reserve(cgraph->n_nodes + cgraph->n_leafs);
             std::function<void(ggml_tensor *)> visit = [&](ggml_tensor * t) {
                 if (!t || !tensors.insert(t).second) {
                     return;
