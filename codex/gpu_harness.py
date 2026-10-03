@@ -386,7 +386,7 @@ def steady(record, k, minimum):
 def suite(h, dest):
     cold = json.loads((INPUTS / "tool.json").read_text())
     results = {"cold-tool": h.request(dest, "cold-tool", 1, body=cold)}
-    for seed in (1, 2):
+    for seed in ((1,) if getattr(h.args, "canary", False) else (1, 2)):
         for case in ("tool", "think"):
             body = json.loads((INPUTS / f"long-{case}.json").read_text())
             body["seed"] = seed
@@ -396,7 +396,7 @@ def suite(h, dest):
     body = json.loads((INPUTS / "tool.json").read_text())
     # A tool call cut by max_tokens makes the server answer 500 (unparsable arguments); follow-ups need room to finish.
     body.update(cache_prompt=True, max_tokens=768)
-    for number in range(1, h.args.short_requests + 1):
+    for number in range(1, (2 if getattr(h.args, "canary", False) else h.args.short_requests) + 1):
         label = f"short-tool-{number}"
         record = h.request(dest, label, 1, body=body)
         results[label] = record
@@ -502,10 +502,24 @@ def identity(record):
     return choices, record["metrics"], {key: timings[key] for key in ("predicted_n", "prompt_n", "cache_n") if key in timings}
 
 
+def canary_references(k):
+    run = "20261003-173851" if k == 5 else "20261003-174710"
+    source = ROOT / "codex/runs" / run / "1-up"
+    return {case: source / name for case, name in (
+        ("cold-tool", "cold-tool-1.json"), ("long-tool-s1", "long-tool-s1-1.json"),
+        ("long-think-s1", "long-think-s1-1.json"))}
+
+
+def canary_identity(results, k):
+    return [case for case, path in canary_references(k).items()
+            if identity(results[case]) != identity(json.loads(path.read_text()))]
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("mode", choices=("trace", "ab"))
     p.add_argument("--execute", action="store_true")
+    p.add_argument("--canary", action="store_true", help="one patch boot, one long request per kind and two cached follow-ups; budget <=600 seconds")
     p.add_argument("--trace-patch", action="store_true", help="unsupported for graph reuse AB; use trace mode separately")
     p.add_argument("--up", type=Path, default=ROOT / "codex/frozen/graph-up")
     p.add_argument("--patch", type=Path, default=ROOT / "codex/frozen/graph-patch")
@@ -519,8 +533,14 @@ def main():
     args = p.parse_args()
     if args.k not in (3, 5) or args.rounds < 40 or not 120 < args.budget <= 2400 or not 8 <= args.short_requests <= 16:
         raise ValueError("invalid K, round minimum, or budget")
+    if args.canary and (args.mode != "ab" or args.budget > 600):
+        raise ValueError("canary needs ab mode and budget <=600")
     if args.mode == "ab" and args.trace_patch:
         raise ValueError("graph reuse A/B requires trace-off arms")
+    estimated_boot_s = 45 + 15 + 15 + 35 * (2 if args.canary else 4) + 20 * (2 if args.canary else args.short_requests)
+    estimated_s = estimated_boot_s * (1 if args.canary else 4)
+    if args.mode == "ab" and estimated_s > 0.7 * args.budget:
+        raise ValueError("stage estimates exceed 70% of the wall budget")
     frozen(args.patch)
     if args.mode == "ab":
         frozen(args.up)
@@ -530,12 +550,13 @@ def main():
             body = json.loads((INPUTS / f"long-{case}.json").read_text())
             if body["max_tokens"] < max(2048, (args.k + 1) * (args.rounds + 5)) or body["cache_prompt"]:
                 raise ValueError("long workload token budget is too short or cache is enabled")
-    print(json.dumps({"mode": args.mode, "boots": ["trace"] if args.mode == "trace" else ["up", "patch", "patch", "up"],
+    boots = ("patch",) if args.canary else ("up", "patch", "patch", "up")
+    print(json.dumps({"mode": args.mode, "canary": args.canary, "boots": ["trace"] if args.mode == "trace" else list(boots),
                       "command": command(args.patch / "bin/round-trace", args.k, args.port), "minimum_steady_rounds": args.rounds,
-                      "budget_s_G": args.budget, "capture": ("trace-both" if args.diagnostic_trace else "trace-off") + " up/patch/patch/up" if args.mode == "ab" else "warmup, think/tool, trace",
-                      "ab_workload": {"long": "long-tool, long-think; seeds 1 and 2; one write_file content with 256 explicit numbered lines; 2048 max tokens each; SSE server timings",
+                      "budget_s_G": args.budget, "stage_estimate_s_G": estimated_s if args.mode == "ab" else None, "capture": ("trace-both" if args.diagnostic_trace else "trace-off") + " " + "/".join(boots) if args.mode == "ab" else "warmup, think/tool, trace",
+                      "ab_workload": {"long": "long-tool, long-think; " + ("seed 1" if args.canary else "seeds 1 and 2") + "; one write_file content with 256 explicit numbered lines; 2048 max tokens each; SSE server timings",
                                       "cold": "original tool request immediately after warmup; seed 1; cache_prompt=false",
-                                      "short": f"{args.short_requests} sequential agent follow-ups; cache_prompt=true; 768 max tokens",
+                                      "short": f"{2 if args.canary else args.short_requests} sequential agent follow-ups; cache_prompt=true; 768 max tokens",
                                       "steady_gate": "at least 40 adjacent full-K interior SSE intervals and 2048 completion tokens per long request; visible write_file arguments; validate after all boot requests are recorded",
                                       "fixed_cost": "report prompt, generation excess, and outside prompt/generation separately"}}, indent=2))
     if not args.execute:
@@ -552,7 +573,8 @@ def main():
     try:
         if sha(MODEL) != MODEL_SHA:
             raise ValueError("model SHA changed")
-        pins = {str(p): sha(p) for p in [VOCAB, *INPUTS.glob("*.json"), INPUTS / "chat-template.jinja"]}
+        references = list(canary_references(args.k).values()) if args.canary else []
+        pins = {str(p): sha(p) for p in [VOCAB, *INPUTS.glob("*.json"), INPUTS / "chat-template.jinja", *references]}
         (out / "inputs.json").write_text(json.dumps(pins, indent=2))
         if args.mode == "trace":
             dest = h.boot(args.patch, "trace", trace=True, nsys=True)
@@ -575,7 +597,7 @@ def main():
                 (dest / f"capture-{case}-gpu-attrib.json").write_text(json.dumps(result, indent=2))
         else:
             results = []
-            for index, arm in enumerate(("up", "patch", "patch", "up"), 1):
+            for index, arm in enumerate(boots, 1):
                 root = args.up if arm == "up" else args.patch
                 dest = h.boot(root, f"{index}-{arm}", trace=args.diagnostic_trace)
                 result = suite(h, dest)
@@ -595,7 +617,14 @@ def main():
                 if any(identity(result[case]) != expected for result in results[1:]):
                     raise ValueError("A/B completion or authoritative round/counter identity failed: " + case)
             (out / "ab-results.json").write_text(json.dumps(results, indent=2))
-            (out / "ab-summary.json").write_text(json.dumps(summarize(results, args.k), indent=2))
+            if args.canary:
+                mismatch = canary_identity(results[0], args.k)
+                (out / "canary-validation.json").write_text(json.dumps({"passed": not mismatch, "k": args.k,
+                    "cases": list(results[0]), "identity_failures": mismatch}, indent=2))
+                if mismatch:
+                    raise ValueError("canary differs from recorded frozen up: " + ", ".join(mismatch))
+            else:
+                (out / "ab-summary.json").write_text(json.dumps(summarize(results, args.k), indent=2))
         if pins != {path: sha(Path(path)) for path in pins}:
             raise ValueError("inputs changed during run")
         frozen(args.patch)

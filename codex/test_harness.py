@@ -28,6 +28,15 @@ def main():
                 patch.object(h.socket, "socket", side_effect=AssertionError("plan network")), contextlib.redirect_stdout(io.StringIO()):
             h.main()
     rejects(lambda: execute_without_gate())
+    with patch.object(sys, "argv", ["gpu_harness", "ab", "--canary", "--budget", "600"]), \
+            patch.object(h.subprocess, "run", side_effect=AssertionError("canary subprocess")), \
+            patch.object(h.subprocess, "Popen", side_effect=AssertionError("canary launch")), \
+            patch.object(h.socket, "socket", side_effect=AssertionError("canary network")), contextlib.redirect_stdout(io.StringIO()) as output:
+        h.main()
+    plan = json.loads(output.getvalue())
+    assert plan["canary"] and plan["boots"] == ["patch"] and plan["budget_s_G"] == 600
+    with patch.object(sys, "argv", ["gpu_harness", "ab", "--canary", "--budget", "601"]):
+        rejects(h.main)
     with patch.object(sys, "argv", ["gpu_harness", "ab", "--budget", "2401"]):
         rejects(h.main)
     reference = {"response": {"choices": [{"message": {"role": "assistant", "content": "same"}, "finish_reason": "stop"}]},
@@ -38,6 +47,26 @@ def main():
     wrong = copy.deepcopy(reference)
     wrong["metrics"]["accepted_tokens"] += 1
     assert h.identity(wrong) != h.identity(reference)
+    for k, run in ((5, "20261003-173851"), (3, "20261003-174710")):
+        source = h.ROOT / "codex/runs" / run / "2-patch"
+        actual = {case: json.loads((source / name).read_text()) for case, name in (
+            ("cold-tool", "cold-tool-1.json"), ("long-tool-s1", "long-tool-s1-1.json"),
+            ("long-think-s1", "long-think-s1-1.json"), ("short-tool-1", "short-tool-1-1.json"),
+            ("short-tool-2", "short-tool-2-1.json"))}
+        with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+            assert not h.validate_boot(actual, Path(directory), k, 40)
+            assert not h.canary_identity(actual, k)
+            broken = copy.deepcopy(actual)
+            broken["cold-tool"]["metrics"]["accepted_tokens"] += 1
+            assert h.canary_identity(broken, k) == ["cold-tool"]
+            for record in actual.values():
+                assert h.identity(record) == h.identity(copy.deepcopy(record))
+                if record.get("chunks"):
+                    parsed = h.completion(record["chunks"])
+                    assert parsed["timings"] == record["response"]["timings"]
+            wrong = copy.deepcopy(actual)
+            wrong["short-tool-2"]["response"]["timings"]["cache_n"] = 0
+            assert "short-tool-2" in h.validate_boot(wrong, Path(directory), k, 40)
     sampled = {"max_tokens": 300, "metrics": {"drafts": 50, "draft_tokens": 250, "accepted_tokens": 200},
                "response": {"timings": {"draft_n": 250, "draft_n_accepted": 200, "predicted_ms": 1540, "predicted_n": 251}},
                "chunks": [{"timings": {"draft_n": 5 * r, "predicted_ms": 40 + 30 * r, "predicted_n": 1 + 5 * r}} for r in range(1, 51)]}
@@ -179,6 +208,29 @@ def main():
         assert not validation["passed"] and set(validation["failures"]) == {"long-tool-s1"}
         assert all((out / f"1-up/long-{case}-s{seed}-steady.json").is_file() for case in ("tool", "think") for seed in (1, 2))
         assert boots == ["1-up"] and len(stopped) == 2 and len(xids) == 1
+        # Replay the decisive GPU captures through the complete canary path.
+        out = Path(directory) / "canary"
+        boots.clear(); stopped.clear(); xids.clear()
+        fake.args.canary = True
+        fake.deadline = h.time.monotonic() + 600
+        def actual_request(dest, case, number, body=None, stream=False):
+            names = {"cold-tool": "cold-tool-1.json", "long-tool-s1": "long-tool-s1-1.json",
+                     "long-think-s1": "long-think-s1-1.json", "short-tool-1": "short-tool-1-1.json",
+                     "short-tool-2": "short-tool-2-1.json"}
+            return json.loads((h.ROOT / "codex/runs/20261003-173851/2-patch" / names[case]).read_text())
+        fake.request = actual_request
+        with patch.dict(os.environ, {"RUN_GPU": "1", "CUDA_VISIBLE_DEVICES": "fixture-only"}), \
+                patch.object(sys, "argv", ["gpu_harness", "ab", "--execute", "--canary", "--budget", "600", "--out", str(out)]), \
+                patch.object(h, "Harness", return_value=fake), patch.object(h, "frozen"), \
+                patch.object(h, "sha", return_value=h.MODEL_SHA), patch.object(h.signal, "signal"), \
+                patch.object(h.subprocess, "run", side_effect=AssertionError("canary test subprocess")), \
+                patch.object(h.subprocess, "Popen", side_effect=AssertionError("canary test launch")), \
+                patch.object(h.socket, "socket", side_effect=AssertionError("canary test network")), contextlib.redirect_stdout(io.StringIO()):
+            h.main()
+        validation = json.loads((out / "canary-validation.json").read_text())
+        assert validation["passed"] and len(validation["cases"]) == 5
+        assert boots == ["1-patch"] and len(xids) == 1
+        assert not (out / "ab-summary.json").exists()
     guard = h.Harness.__new__(h.Harness)
     guard.env = {"XID_SINCE": "2026-10-03 00:00:00"}
     calls = []
@@ -186,6 +238,9 @@ def main():
     guard.xid()
     assert calls[0][calls[0].index("--since") + 1] == guard.env["XID_SINCE"]
     guard.run = lambda *args, **kwargs: SimpleNamespace(stdout="NVRM: Xid 31")
+    rejects(guard.xid)
+    real_xids = Path("/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/xid-lines.txt").read_text()
+    guard.run = lambda *args, **kwargs: SimpleNamespace(stdout=real_xids)
     rejects(guard.xid)
     guard.env = {}
     rejects(guard.xid)
