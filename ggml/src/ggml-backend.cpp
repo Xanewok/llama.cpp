@@ -1865,16 +1865,29 @@ static bool ggml_backend_sched_is_host_weight(const struct ggml_tensor * t) {
         ggml_backend_buffer_is_host(t->buffer);
 }
 
+// host inputs that ggml_backend_sched_compute_splits uploads in one batch before the per-input copies
+static bool ggml_backend_sched_is_host_transfer(ggml_backend_sched_t sched, struct ggml_tensor * input) {
+    if (!ggml_backend_buffer_is_host(input->buffer)) {
+        return false;
+    }
+    if (input->flags & GGML_TENSOR_FLAG_INPUT) {
+        return true;
+    }
+    ggml_backend_t producer = ggml_backend_sched_get_tensor_backend(sched, input);
+    return ggml_backend_buffer_get_usage(input->buffer) == GGML_BACKEND_BUFFER_USAGE_COMPUTE && !producer->iface.synchronize;
+}
+
 static void ggml_backend_sched_copy_input(ggml_backend_sched_t sched, struct ggml_backend_sched_split * split, struct ggml_tensor * input) {
     const int split_backend_id = split->backend_id;
     ggml_backend_t split_backend = sched->backends[split_backend_id];
     ggml_backend_t input_backend = ggml_backend_sched_get_tensor_backend(sched, input);
     struct ggml_tensor * input_cpy = tensor_copy(input, split_backend_id, sched->cur_copy);
 
+    if (ggml_backend_sched_is_host_transfer(sched, input)) {
+        return;
+    }
+
     if (input->flags & GGML_TENSOR_FLAG_INPUT) {
-        if (ggml_backend_buffer_is_host(input->buffer)) {
-            return; // uploaded in one batch by ggml_backend_sched_compute_splits
-        }
         // inputs from the user must be copied immediately to prevent the user overwriting the data before the copy is done
         if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
             ggml_backend_event_synchronize(sched->events[split_backend_id][sched->cur_copy]);
@@ -1935,7 +1948,7 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
         input_transfers.clear();
         for (int input_id = 0; input_id < split->n_inputs; ++input_id) {
             ggml_tensor * input = split->inputs[input_id];
-            if ((input->flags & GGML_TENSOR_FLAG_INPUT) && ggml_backend_buffer_is_host(input->buffer)) {
+            if (ggml_backend_sched_is_host_transfer(sched, input)) {
                 ggml_tensor * input_cpy = tensor_copy(input, split_backend_id, sched->cur_copy);
                 GGML_ASSERT(ggml_are_same_layout(input, input_cpy));
                 if (ggml_nbytes(input) > 0) {
@@ -2285,9 +2298,31 @@ bool ggml_backend_sched_can_stage_inputs(ggml_backend_sched_t sched, const ggml_
         return false;
     }
     for (int i = 0; i < sched->n_splits; ++i) {
-        ggml_backend_t backend = sched->backends[sched->splits[i].backend_id];
+        auto & split = sched->splits[i];
+        ggml_backend_t backend = sched->backends[split.backend_id];
+        // Synchronous backends finish host reads before compute returns.
+        if (!backend->iface.synchronize) {
+            continue;
+        }
         if (!backend->iface.set_tensor_batch_owned || !backend->iface.set_tensor_batch_owned(backend, nullptr, 0)) {
             return false;
+        }
+        for (int j = 0; j < split.n_inputs; ++j) {
+            ggml_tensor * input = split.inputs[j];
+            if (!(input->flags & GGML_TENSOR_FLAG_INPUT) && ggml_backend_buffer_is_host(input->buffer) &&
+                    ggml_backend_buffer_get_usage(input->buffer) == GGML_BACKEND_BUFFER_USAGE_COMPUTE &&
+                    ggml_backend_sched_get_tensor_backend(sched, input)->iface.synchronize) {
+                return false;
+            }
+        }
+        // Direct access to another backend's host outputs bypasses owned transfers.
+        for (int j = 0; j < graph->n_nodes; ++j) {
+            ggml_tensor * node = graph->nodes[j];
+            if (node->buffer && ggml_backend_buffer_is_host(node->buffer) &&
+                    ggml_backend_buffer_get_usage(node->buffer) == GGML_BACKEND_BUFFER_USAGE_COMPUTE &&
+                    tensor_backend_id(node) != split.backend_id && ggml_backend_sched_buffer_supported(sched, node, split.backend_id)) {
+                return false;
+            }
         }
     }
     for (int i = 0; i < graph->n_leafs; ++i) {
@@ -2298,9 +2333,9 @@ bool ggml_backend_sched_can_stage_inputs(ggml_backend_sched_t sched, const ggml_
         if (!ggml_backend_buffer_is_host(leaf->buffer)) {
             return false;
         }
-        // A backend that accepts this host buffer can read it without making an owned copy.
         for (int j = 0; j < sched->n_splits; ++j) {
-            if (ggml_backend_sched_buffer_supported(sched, leaf, sched->splits[j].backend_id)) {
+            const int id = sched->splits[j].backend_id;
+            if (sched->backends[id]->iface.synchronize && ggml_backend_sched_buffer_supported(sched, leaf, id)) {
                 return false;
             }
         }
