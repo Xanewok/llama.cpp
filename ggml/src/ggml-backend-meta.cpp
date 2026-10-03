@@ -27,6 +27,9 @@ struct ggml_backend_meta_buffer_type;
 struct ggml_backend_meta_buffer;
 struct ggml_backend_meta;
 
+bool ggml_backend_meta_buffer_reset_is_noop(ggml_backend_buffer_t buffer);
+std::recursive_mutex & ggml_backend_meta_tensor_mutex();
+
 const char * ggml_backend_meta_split_axis_name(enum ggml_backend_meta_split_axis split_axis) {
     switch (split_axis) {
         case GGML_BACKEND_SPLIT_AXIS_0:
