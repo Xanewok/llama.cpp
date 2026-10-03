@@ -2571,6 +2571,7 @@ ggml_backend_sched_t llama_context::get_sched_graph() const {
 }
 
 void llama_context::reset_graphs() {
+    logits_deferred_fetch();
     if (sched_output) { ggml_backend_sched_reset(sched_output.get()); }
     if (sched) { ggml_backend_sched_reset(sched.get()); }
     for (auto & res : gf_res_prev) {
