@@ -1,0 +1,42 @@
+id = "knob-sweep-pmin"
+title = "Swift stack2 S5: top-q early stop x maximum MTP draft length"
+kind = "measure"
+ab = true
+retry = "fresh"
+budget_s = 8100
+est_s = 5649
+startup_grace_s = 180
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "timeout", regex = "queue wall budget" },
+  { class = "integrity", regex = "frozen.*changed|inputs changed|model SHA changed|identity failed" },
+  { class = "insufficient_data", regex = "insufficient steady|missing rounds|counter coverage" },
+  { class = "deterministic", regex = "boot validation failed" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/knob-sweep/codex/gpu_ab.sh", "run", "/home/xanewok/repos/knob-sweep/codex/matrix.toml", "--execute", "--port", "{port}", "--out", "/home/xanewok/repos/knob-sweep/codex/runs/knob-sweep-pmin/run-a{attempt}"]
+cwd = "/home/xanewok/repos/knob-sweep"
+env = { RUN_GPU = "1" }
+ports = "dynamic"
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/knob-sweep/codex/gpu_ab.sh", "run", "/home/xanewok/repos/knob-sweep/codex/matrix.toml"]
+cwd = "/home/xanewok/repos/knob-sweep"
+env = {}
+timeout_s = 600
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/knob-sweep/codex/gpu_ab.sh", "run", "/home/xanewok/repos/knob-sweep/codex/matrix.toml", "--execute", "--port", "{port}", "--out", "/home/xanewok/repos/knob-sweep/codex/runs/knob-sweep-pmin/canary-a{attempt}", "--canary"]
+cwd = "/home/xanewok/repos/knob-sweep"
+env = { RUN_GPU = "1" }
+timeout_s = 600
+
+[outputs]
+paths = ["/home/xanewok/repos/knob-sweep/codex/runs/knob-sweep-pmin"]
+
+[pins]
+files = ["/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf", "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json", "/home/xanewok/repos/knob-sweep/codex/gpu_ab.sh", "/home/xanewok/repos/knob-sweep/codex/gpu_harness.py", "/home/xanewok/repos/knob-sweep/codex/inputs/PROVENANCE.json", "/home/xanewok/repos/knob-sweep/codex/inputs/chat-template.jinja", "/home/xanewok/repos/knob-sweep/codex/inputs/long-think.json", "/home/xanewok/repos/knob-sweep/codex/inputs/long-tool.json", "/home/xanewok/repos/knob-sweep/codex/inputs/tool.json", "/home/xanewok/repos/knob-sweep/codex/inputs/warmup.json", "/home/xanewok/repos/knob-sweep/codex/matrix.toml", "/home/xanewok/repos/knob-sweep/codex/sweep.py", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/SOURCE", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/SHA256SUMS", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libggml-base.so", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libggml-base.so.0", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libggml-base.so.0.25.3", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libggml-cpu.so", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libggml-cpu.so.0", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libggml-cpu.so.0.25.3", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libggml-cuda.so", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libggml-cuda.so.0", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libggml-cuda.so.0.25.3", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libggml.so", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libggml.so.0", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libggml.so.0.25.3", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libllama-common.so", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libllama-common.so.0", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libllama-common.so.0.5.0", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libllama-server-impl.so", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libllama.so", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libllama.so.0", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libllama.so.0.5.0", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libmtmd.so", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libmtmd.so.0", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/libmtmd.so.0.5.0", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/llama-server", "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/weekend-srv"]
+
+[fix]
+editable = []

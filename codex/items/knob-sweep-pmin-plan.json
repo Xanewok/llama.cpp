@@ -1,0 +1,46 @@
+{
+  "boots": [
+    "k5-p0",
+    "k8-p05",
+    "k8-p07",
+    "k8-p08",
+    "k12-p07",
+    "k12-p08",
+    "k5-p07",
+    "k5-p07",
+    "k12-p08",
+    "k12-p07",
+    "k8-p08",
+    "k8-p07",
+    "k8-p05",
+    "k5-p0"
+  ],
+  "canary_arm": "k12-p08",
+  "full_est_s_D": 5237,
+  "full_budget_s_D": 7500,
+  "canary_est_s_D": 412,
+  "canary_budget_s_D": 600,
+  "total_budget_s_D": 8100,
+  "per_arm_boot_s_D": {
+    "k5-p0": 340.3,
+    "k8-p05": 369.7694488,
+    "k8-p07": 369.7694488,
+    "k8-p08": 369.7694488,
+    "k12-p07": 409.0620472,
+    "k12-p08": 409.0620472,
+    "k5-p07": 340.3
+  },
+  "stage_inputs": {
+    "boot_s_G": 90,
+    "warmup_cold_s_G": 10,
+    "prefix_calibration_s_G": 10,
+    "stop_hash_s_G": 15,
+    "initial_hash_s_G": 20,
+    "shallow_request_s_M": 22.95,
+    "deep_cold_s_D": 122.45,
+    "followup_s_G": 3.0,
+    "generation_s_M": 12.278937,
+    "source": "/home/xanewok/repos/graph-reuse/codex/runs/20261003-173851/1-up",
+    "deep_definition": "90000 / 816.9717 prompt tokens/s + 12.28 generation seconds; shallow source long-tool-s1-1.json"
+  }
+}

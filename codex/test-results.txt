@@ -1,0 +1,30 @@
+test_all_zero_proposal_arm (test_sweep.SweepTests.test_all_zero_proposal_arm) ... ok
+test_canary_suite_replay_and_execution_guard (test_sweep.SweepTests.test_canary_suite_replay_and_execution_guard) ... ok
+test_counter_disagreement_rejected (test_sweep.SweepTests.test_counter_disagreement_rejected) ... ok
+test_cut_followup_tool_call_rejected (test_sweep.SweepTests.test_cut_followup_tool_call_rejected) ... ok
+test_frozen_snapshot_bytes_and_negative_control (test_sweep.SweepTests.test_frozen_snapshot_bytes_and_negative_control) ... ok
+test_journal_real_artifact_and_word_boundaries (test_sweep.SweepTests.test_journal_real_artifact_and_word_boundaries) ... ok
+test_metrics_real_fixture (test_sweep.SweepTests.test_metrics_real_fixture) ... ok
+test_missing_interior_round_is_excluded (test_sweep.SweepTests.test_missing_interior_round_is_excluded) ... ok
+test_order_and_budget_negative_control (test_sweep.SweepTests.test_order_and_budget_negative_control) ... ok
+test_real_gpu_memory_parser_and_negative_controls (test_sweep.SweepTests.test_real_gpu_memory_parser_and_negative_controls) ... ok
+test_real_long_captures (test_sweep.SweepTests.test_real_long_captures) ... ok
+test_real_reversed_rows_rejected (test_sweep.SweepTests.test_real_reversed_rows_rejected) ... ok
+test_real_server_log_and_negative_health_controls (test_sweep.SweepTests.test_real_server_log_and_negative_health_controls) ... ok
+test_real_short_capture_and_too_few_rounds (test_sweep.SweepTests.test_real_short_capture_and_too_few_rounds) ... ok
+test_same_arm_identity_gate_on_real_recordings (test_sweep.SweepTests.test_same_arm_identity_gate_on_real_recordings) ... ok
+test_suite_preserves_followup_error_and_records_all_long_cases (test_sweep.SweepTests.test_suite_preserves_followup_error_and_records_all_long_cases) ... ok
+test_summary_pairing_and_signed_fixed_cost (test_sweep.SweepTests.test_summary_pairing_and_signed_fixed_cost) ... ok
+test_too_few_variable_rounds (test_sweep.SweepTests.test_too_few_variable_rounds) ... ok
+test_top_q_stop_preserves_one_step_law (test_sweep.SweepTests.test_top_q_stop_preserves_one_step_law) ... ok
+test_trace_checkpoint_replay (test_sweep.SweepTests.test_trace_checkpoint_replay) ... ok
+test_trace_counter_coverage (test_sweep.SweepTests.test_trace_counter_coverage) ... ok
+test_trace_real_uninstrumented_log_is_rejected (test_sweep.SweepTests.test_trace_real_uninstrumented_log_is_rejected) ... ok
+test_unknown_rows_are_skipped (test_sweep.SweepTests.test_unknown_rows_are_skipped) ... ok
+test_unsafe_plan_and_execute_cannot_launch (test_sweep.SweepTests.test_unsafe_plan_and_execute_cannot_launch) ... ok
+test_variable_rounds_fail_old_fixed_k_control (test_sweep.SweepTests.test_variable_rounds_fail_old_fixed_k_control) ... ok
+
+----------------------------------------------------------------------
+Ran 25 tests in 2.234s
+
+OK
