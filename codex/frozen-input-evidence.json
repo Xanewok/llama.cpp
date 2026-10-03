@@ -1,0 +1,32 @@
+{
+  "input-up": {
+    "source": "7fc0244d7e04925501ae44a16f4789d0002c22aa",
+    "SOURCE_sha256": "41d101537dd4596153ee7386bbd2fc35c7fcf7b48a2addda3d6744e7393cac95",
+    "SHA256SUMS_sha256": "48fb0ed3aa0c04e92f449bcc50463bef112f47ccef4078f67288f8751083b5fd",
+    "bin_SHA256SUMS_sha256": "50b32eb251a6908332dadcbdfc7989deab16638986a265300ed14417281249d0",
+    "cuda_probe_binary_absent_M": true,
+    "configuration": {
+      "CUDA_VISIBLE_DEVICES": "",
+      "CUDA_architectures": "120 -> 120a",
+      "CUDA_compiler_forced": "ON",
+      "CUDA_toolkit": "/usr/local/cuda-13.2",
+      "NCCL": "OFF",
+      "jobs": 8
+    }
+  },
+  "input-patch": {
+    "source": "30bea8abda7a93a2b36a7089e74c2edc6de926ec",
+    "SOURCE_sha256": "72c586ea38a0d7daa244c160bc52a36c3c8e32ce4650c8f0be182f80666e02b6",
+    "SHA256SUMS_sha256": "f301d4522bc4c7200e02bb358b23f8ca1c0f45eb7f141e8a4c069a94302b4f3e",
+    "bin_SHA256SUMS_sha256": "d8b407f947e9a6017116d0f55902e5358e552a3bddeb8bee9e03b934ae905f78",
+    "cuda_probe_binary_absent_M": true,
+    "configuration": {
+      "CUDA_VISIBLE_DEVICES": "",
+      "CUDA_architectures": "120 -> 120a",
+      "CUDA_compiler_forced": "ON",
+      "CUDA_toolkit": "/usr/local/cuda-13.2",
+      "NCCL": "OFF",
+      "jobs": 8
+    }
+  }
+}
