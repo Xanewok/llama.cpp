@@ -22,9 +22,11 @@ if [[ ! -d codex/base.git ]]; then
     git --git-dir=codex/base.git symbolic-ref HEAD refs/heads/base
     git --git-dir=codex/base.git read-tree HEAD
 fi
-export GIT_DIR="$PWD/codex/base.git"
-cmake -S codex/base-src -B build-base-cuda "${flags[@]}" > codex/cmake-base-cuda-safe.log 2>&1
-cmake --build build-base-cuda --target llama-server -j8 > codex/build-base-cuda-safe.log 2>&1
+if [[ ${FREEZE_PATCH_ONLY:-0} != 1 ]]; then
+    export GIT_DIR="$PWD/codex/base.git"
+    cmake -S codex/base-src -B build-base-cuda "${flags[@]}" > codex/cmake-base-cuda-safe.log 2>&1
+    cmake --build build-base-cuda --target llama-server -j8 > codex/build-base-cuda-safe.log 2>&1
+fi
 export GIT_DIR="$PWD/codex/local.git"
 cmake -B build-cuda "${flags[@]}" > codex/cmake-cuda-safe.log 2>&1
 cmake --build build-cuda --target llama-server -j8 > codex/build-cuda-safe.log 2>&1
@@ -40,6 +42,10 @@ freeze() {
     (cd "$dest/bin"; sha256sum round-trace *.so* > SHA256SUMS)
     (cd "$dest"; sha256sum SOURCE bin/SHA256SUMS > SHA256SUMS)
 }
-freeze build-base-cuda codex/frozen/graph-up "$(cat codex/BASE)"
-freeze build-cuda codex/frozen/graph-patch "$(git rev-parse HEAD)"
+if [[ ${FREEZE_PATCH_ONLY:-0} != 1 ]]; then
+    freeze build-base-cuda codex/frozen/graph-up "$(cat codex/BASE)"
+fi
+patch_dest=${PATCH_FREEZE_DIR:-codex/frozen/graph-patch}
+[[ "$patch_dest" =~ ^codex/frozen/[a-zA-Z0-9_-]+$ ]] || { echo "unsafe patch destination" >&2; exit 1; }
+freeze build-cuda "$patch_dest" "$(git rev-parse HEAD)"
 printf 'M: frozen CUDA builds; no CUDA executable was run\n'
