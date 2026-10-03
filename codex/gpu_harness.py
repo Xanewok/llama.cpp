@@ -352,7 +352,10 @@ def steady(record, k, minimum):
     last_tokens = last_ms = 0
     for chunk in record["chunks"]:
         timing = chunk.get("timings", {})
-        n, ms = timing.get("draft_n", 0), timing.get("predicted_ms", 0)
+        n = timing.get("draft_n")
+        if n is None:
+            continue
+        ms = timing.get("predicted_ms", 0)
         if n < last_tokens or ms < last_ms or n > tokens or ms > final["predicted_ms"]:
             raise ValueError("reversed or inconsistent cumulative SSE timing")
         last_tokens, last_ms = n, ms

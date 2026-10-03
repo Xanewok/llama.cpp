@@ -1,0 +1,151 @@
+{
+  "max_tokens": 2048,
+  "metrics": {
+    "drafts": 30.0,
+    "draft_tokens": 150.0,
+    "accepted_tokens": 93.0
+  },
+  "response": {
+    "choices": [
+      {
+        "message": {
+          "role": "assistant",
+          "content": "I'll first fix the actual bug, then add the generated test file.\n\n",
+          "tool_calls": [
+            {
+              "type": "function",
+              "function": {
+                "name": "apply_patch",
+                "arguments": "{\"input\":\"--- a/src/parser.py\\n+++ b/src/parser.py\\n@@ -11,6 +11,7 @@ def tokenize(text):\\n \\n def parse(text):\\n     toks = tokenize(text)\\n+    if not toks:\\n+        raise ValueError(\\\"empty input\\\")\\n     head = toks[0]\\n     if head.isdigit():\\n         return int(head), toks[1:]\"}"
+              },
+              "id": "bV67vzVgqPZmKaoiZFDd1IxNtk0UvL6h"
+            }
+          ]
+        },
+        "finish_reason": "tool_calls"
+      }
+    ],
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 684,
+      "prompt_ms": 1202.469,
+      "prompt_per_token_ms": 1.7579956140350879,
+      "prompt_per_second": 568.8296330300407,
+      "predicted_n": 122,
+      "predicted_ms": 1200.672,
+      "predicted_per_token_ms": 9.92290909090909,
+      "predicted_per_second": 100.77689827030196,
+      "draft_n": 150,
+      "draft_n_accepted": 93
+    },
+    "usage": {
+      "completion_tokens": 122,
+      "prompt_tokens": 684,
+      "total_tokens": 806,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    }
+  },
+  "source": {
+    "path": "codex/runs/20261003-160526/1-up/long-tool-s1-1.json",
+    "sha256": "c4a19485290072a014c7ee1742cbbe76b53170f021c2476cd5d4977e9c044cab"
+  },
+  "chunks": [
+    {},
+    {"timings": {"predicted_n": 1, "predicted_ms": 0.001}},
+    {"timings": {"predicted_n": 2, "predicted_ms": 64.377, "draft_n": 5}},
+    {"timings": {"predicted_n": 3, "predicted_ms": 64.377, "draft_n": 5}},
+    {"timings": {"predicted_n": 4, "predicted_ms": 103.542, "draft_n": 10}},
+    {"timings": {"predicted_n": 5, "predicted_ms": 136.97, "draft_n": 15}},
+    {"timings": {"predicted_n": 6, "predicted_ms": 136.97, "draft_n": 15}},
+    {"timings": {"predicted_n": 7, "predicted_ms": 136.97, "draft_n": 15}},
+    {"timings": {"predicted_n": 8, "predicted_ms": 136.97, "draft_n": 15}},
+    {"timings": {"predicted_n": 9, "predicted_ms": 136.97, "draft_n": 15}},
+    {"timings": {"predicted_n": 10, "predicted_ms": 136.97, "draft_n": 15}},
+    {"timings": {"predicted_n": 11, "predicted_ms": 173.147, "draft_n": 20}},
+    {"timings": {"predicted_n": 12, "predicted_ms": 173.147, "draft_n": 20}},
+    {"timings": {"predicted_n": 13, "predicted_ms": 173.147, "draft_n": 20}},
+    {"timings": {"predicted_n": 14, "predicted_ms": 206.507, "draft_n": 25}},
+    {"timings": {"predicted_n": 15, "predicted_ms": 206.507, "draft_n": 25}},
+    {"timings": {"predicted_n": 16, "predicted_ms": 206.507, "draft_n": 25}},
+    {"timings": {"predicted_n": 25, "predicted_ms": 274.441, "draft_n": 35}},
+    {"timings": {"predicted_n": 30, "predicted_ms": 309.571, "draft_n": 40}},
+    {"timings": {"predicted_n": 31, "predicted_ms": 309.571, "draft_n": 40}},
+    {"timings": {"predicted_n": 32, "predicted_ms": 344.436, "draft_n": 45}},
+    {"timings": {"predicted_n": 33, "predicted_ms": 382.93, "draft_n": 50}},
+    {"timings": {"predicted_n": 34, "predicted_ms": 382.93, "draft_n": 50}},
+    {"timings": {"predicted_n": 35, "predicted_ms": 382.93, "draft_n": 50}},
+    {"timings": {"predicted_n": 37, "predicted_ms": 382.93, "draft_n": 50}},
+    {"timings": {"predicted_n": 38, "predicted_ms": 382.93, "draft_n": 50}},
+    {"timings": {"predicted_n": 39, "predicted_ms": 416.757, "draft_n": 55}},
+    {"timings": {"predicted_n": 40, "predicted_ms": 416.757, "draft_n": 55}},
+    {"timings": {"predicted_n": 41, "predicted_ms": 416.757, "draft_n": 55}},
+    {"timings": {"predicted_n": 43, "predicted_ms": 416.757, "draft_n": 55}},
+    {"timings": {"predicted_n": 44, "predicted_ms": 416.757, "draft_n": 55}},
+    {"timings": {"predicted_n": 45, "predicted_ms": 450.918, "draft_n": 60}},
+    {"timings": {"predicted_n": 46, "predicted_ms": 450.918, "draft_n": 60}},
+    {"timings": {"predicted_n": 47, "predicted_ms": 450.918, "draft_n": 60}},
+    {"timings": {"predicted_n": 48, "predicted_ms": 450.918, "draft_n": 60}},
+    {"timings": {"predicted_n": 49, "predicted_ms": 485.112, "draft_n": 65}},
+    {"timings": {"predicted_n": 50, "predicted_ms": 485.112, "draft_n": 65}},
+    {"timings": {"predicted_n": 51, "predicted_ms": 521.418, "draft_n": 70}},
+    {"timings": {"predicted_n": 52, "predicted_ms": 521.418, "draft_n": 70}},
+    {"timings": {"predicted_n": 53, "predicted_ms": 521.418, "draft_n": 70}},
+    {"timings": {"predicted_n": 54, "predicted_ms": 556.605, "draft_n": 75}},
+    {"timings": {"predicted_n": 55, "predicted_ms": 556.605, "draft_n": 75}},
+    {"timings": {"predicted_n": 56, "predicted_ms": 556.605, "draft_n": 75}},
+    {"timings": {"predicted_n": 57, "predicted_ms": 590.293, "draft_n": 80}},
+    {"timings": {"predicted_n": 58, "predicted_ms": 590.293, "draft_n": 80}},
+    {"timings": {"predicted_n": 60, "predicted_ms": 590.293, "draft_n": 80}},
+    {"timings": {"predicted_n": 61, "predicted_ms": 590.293, "draft_n": 80}},
+    {"timings": {"predicted_n": 62, "predicted_ms": 590.293, "draft_n": 80}},
+    {"timings": {"predicted_n": 63, "predicted_ms": 623.942, "draft_n": 85}},
+    {"timings": {"predicted_n": 64, "predicted_ms": 623.942, "draft_n": 85}},
+    {"timings": {"predicted_n": 66, "predicted_ms": 623.942, "draft_n": 85}},
+    {"timings": {"predicted_n": 67, "predicted_ms": 623.942, "draft_n": 85}},
+    {"timings": {"predicted_n": 68, "predicted_ms": 657.398, "draft_n": 90}},
+    {"timings": {"predicted_n": 69, "predicted_ms": 657.398, "draft_n": 90}},
+    {"timings": {"predicted_n": 70, "predicted_ms": 657.398, "draft_n": 90}},
+    {"timings": {"predicted_n": 71, "predicted_ms": 657.398, "draft_n": 90}},
+    {"timings": {"predicted_n": 73, "predicted_ms": 657.398, "draft_n": 90}},
+    {"timings": {"predicted_n": 74, "predicted_ms": 690.74, "draft_n": 95}},
+    {"timings": {"predicted_n": 75, "predicted_ms": 690.74, "draft_n": 95}},
+    {"timings": {"predicted_n": 76, "predicted_ms": 690.74, "draft_n": 95}},
+    {"timings": {"predicted_n": 77, "predicted_ms": 690.74, "draft_n": 95}},
+    {"timings": {"predicted_n": 78, "predicted_ms": 724.564, "draft_n": 100}},
+    {"timings": {"predicted_n": 80, "predicted_ms": 724.564, "draft_n": 100}},
+    {"timings": {"predicted_n": 81, "predicted_ms": 724.564, "draft_n": 100}},
+    {"timings": {"predicted_n": 82, "predicted_ms": 724.564, "draft_n": 100}},
+    {"timings": {"predicted_n": 83, "predicted_ms": 724.564, "draft_n": 100}},
+    {"timings": {"predicted_n": 84, "predicted_ms": 785.452, "draft_n": 105}},
+    {"timings": {"predicted_n": 85, "predicted_ms": 785.452, "draft_n": 105}},
+    {"timings": {"predicted_n": 86, "predicted_ms": 785.452, "draft_n": 105}},
+    {"timings": {"predicted_n": 87, "predicted_ms": 785.452, "draft_n": 105}},
+    {"timings": {"predicted_n": 89, "predicted_ms": 785.452, "draft_n": 105}},
+    {"timings": {"predicted_n": 90, "predicted_ms": 843.493, "draft_n": 110}},
+    {"timings": {"predicted_n": 91, "predicted_ms": 843.493, "draft_n": 110}},
+    {"timings": {"predicted_n": 92, "predicted_ms": 843.493, "draft_n": 110}},
+    {"timings": {"predicted_n": 93, "predicted_ms": 877.413, "draft_n": 115}},
+    {"timings": {"predicted_n": 94, "predicted_ms": 877.413, "draft_n": 115}},
+    {"timings": {"predicted_n": 95, "predicted_ms": 877.413, "draft_n": 115}},
+    {"timings": {"predicted_n": 97, "predicted_ms": 877.413, "draft_n": 115}},
+    {"timings": {"predicted_n": 98, "predicted_ms": 877.413, "draft_n": 115}},
+    {"timings": {"predicted_n": 99, "predicted_ms": 917.73, "draft_n": 120}},
+    {"timings": {"predicted_n": 100, "predicted_ms": 917.73, "draft_n": 120}},
+    {"timings": {"predicted_n": 101, "predicted_ms": 951.808, "draft_n": 125}},
+    {"timings": {"predicted_n": 103, "predicted_ms": 951.808, "draft_n": 125}},
+    {"timings": {"predicted_n": 104, "predicted_ms": 951.808, "draft_n": 125}},
+    {"timings": {"predicted_n": 105, "predicted_ms": 996.793, "draft_n": 130}},
+    {"timings": {"predicted_n": 106, "predicted_ms": 996.793, "draft_n": 130}},
+    {"timings": {"predicted_n": 107, "predicted_ms": 1030.444, "draft_n": 135}},
+    {"timings": {"predicted_n": 108, "predicted_ms": 1030.444, "draft_n": 135}},
+    {"timings": {"predicted_n": 109, "predicted_ms": 1064.07, "draft_n": 140}},
+    {"timings": {"predicted_n": 110, "predicted_ms": 1064.07, "draft_n": 140}},
+    {"timings": {"predicted_n": 111, "predicted_ms": 1064.07, "draft_n": 140}},
+    {"timings": {"predicted_n": 116, "predicted_ms": 1097.662, "draft_n": 145}},
+    {"timings": {"predicted_n": 120, "predicted_ms": 1097.662, "draft_n": 145}},
+    {},
+    {"timings": {"predicted_n": 122, "predicted_ms": 1200.672, "draft_n": 150}}
+  ]
+}

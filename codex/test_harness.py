@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import contextlib
 import io
+import json
 import os
 from pathlib import Path
 import sys
@@ -56,6 +57,24 @@ def main():
     wrong = copy.deepcopy(sampled)
     wrong["chunks"] = wrong["chunks"][::2]
     rejects(lambda: h.steady(wrong, 5, 40))
+    real = json.loads((Path(__file__).parent / "fixtures/swift-long-tool-s1.json").read_text())
+    measured = h.steady(real, 5, 1)
+    assert measured["steady_rounds_M"] == 24
+    assert abs(measured["steady_ms_per_round_D"] - 37.19825) < 1e-9
+    try:
+        h.steady(real, 5, 40)
+    except ValueError as error:
+        assert str(error) == "insufficient steady rounds: 24 < 40"
+    else:
+        raise AssertionError("short real request passed the steady gate")
+    wrong = copy.deepcopy(real)
+    wrong["chunks"].insert(20, {"timings": {"predicted_n": 1, "predicted_ms": 0}})
+    wrong["chunks"].insert(40, {"timings": {"draft_n": None, "predicted_ms": 0}})
+    assert h.steady(wrong, 5, 1) == measured
+    for field, value in (("draft_n", 0), ("predicted_ms", 0), ("draft_n", 155), ("predicted_ms", 1201)):
+        wrong = copy.deepcopy(real)
+        wrong["chunks"][20]["timings"][field] = value
+        rejects(lambda: h.steady(wrong, 5, 1))
     chunks = [{"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "random-id", "function": {"name": "apply_patch", "arguments": "ab"}}]}}]},
               {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "cd"}}]}, "finish_reason": "length"}],
                "timings": sampled["response"]["timings"]}]
