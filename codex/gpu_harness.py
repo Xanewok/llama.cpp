@@ -9,16 +9,18 @@ import re
 import shutil
 import signal
 import socket
+import statistics
 import subprocess
 import time
 
-from attrib import analyze
+from attrib import analyze, union_ns
 
 ROOT = Path(__file__).resolve().parent.parent
 MODEL = Path.home() / "models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf"
 MODEL_SHA = "e3b59faa312a6202d7ac0a2400123956104bc720e77f6ff21c754aec5c3740df"
 VOCAB = Path.home() / "models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json"
 INPUTS = ROOT / "codex/inputs"
+STACK2 = "2b645a655e59d584c66fb491253d5b9f2c2867e2"
 
 
 def sha(path):
@@ -246,15 +248,40 @@ class Harness:
         self.request(dest, "warmup", 0)
         return dest
 
-    def request(self, dest, case, number):
-        body = json.loads((INPUTS / f"{case}.json").read_text())
+    def request(self, dest, case, number, body=None, stream=False):
+        body = json.loads((INPUTS / f"{case}.json").read_text()) if body is None else body
+        body = dict(body)
+        if stream:
+            body.update(stream=True, timings_per_token=True, stream_options={"include_usage": True})
+        (dest / f"{case}-{number}-input.json").write_text(json.dumps(body, indent=2))
         before = self.metrics()
         begin = time.monotonic_ns()
-        response = self.http("/v1/chat/completions", body)
+        if stream:
+            import urllib.request
+            request = urllib.request.Request(f"http://127.0.0.1:{self.args.port}/v1/chat/completions",
+                json.dumps(body).encode(), {"Content-Type": "application/json"})
+            chunks = []
+            done = False
+            with urllib.request.urlopen(request, timeout=self.timeout()) as response:
+                for line in response:
+                    self.timeout()
+                    if not line.startswith(b"data: "):
+                        continue
+                    data = line[6:].strip()
+                    if data == b"[DONE]":
+                        done = True
+                        break
+                    chunks.append(json.loads(data))
+            if not done:
+                raise ValueError("incomplete SSE response")
+            response = completion(chunks)
+        else:
+            chunks = []
+            response = self.http("/v1/chat/completions", body)
         end = time.monotonic_ns()
         after = self.metrics()
-        record = {"case": case, "begin_ns": begin, "end_ns": end, "response": response,
-                  "metrics": {key: after[key] - before[key] for key in before}}
+        record = {"case": case, "max_tokens": body["max_tokens"], "begin_ns": begin, "end_ns": end, "response": response,
+                  "metrics": {key: after[key] - before[key] for key in before}, "chunks": chunks}
         (dest / f"{case}-{number}.json").write_text(json.dumps(record, indent=2))
         if "choices" not in response:
             raise RuntimeError("completion request failed")
@@ -282,6 +309,157 @@ class Harness:
         raise RuntimeError(f"insufficient steady {case} rounds; authoritative rounds={total}")
 
 
+def completion(chunks):
+    message = {"role": "assistant", "content": ""}
+    calls = {}
+    result = {"choices": [{"message": message, "finish_reason": None}]}
+    for chunk in chunks:
+        if "error" in chunk:
+            raise ValueError("SSE completion failed: " + str(chunk["error"]))
+        for key in ("timings", "usage"):
+            if key in chunk:
+                result[key] = chunk[key]
+        for choice in chunk.get("choices", []):
+            if choice.get("index", 0) != 0:
+                raise ValueError("unexpected completion index")
+            if choice.get("finish_reason"):
+                result["choices"][0]["finish_reason"] = choice["finish_reason"]
+            delta = choice.get("delta", {})
+            for key in ("content", "reasoning_content"):
+                if delta.get(key):
+                    message[key] = message.get(key, "") + delta[key]
+            for part in delta.get("tool_calls", []):
+                call = calls.setdefault(part["index"], {"type": "function", "function": {"name": "", "arguments": ""}})
+                if part.get("id"):
+                    call["id"] = part["id"]
+                for key in ("name", "arguments"):
+                    call["function"][key] += part.get("function", {}).get(key, "")
+    if calls:
+        message["tool_calls"] = [calls[i] for i in sorted(calls)]
+    if not result["choices"][0]["finish_reason"] or "timings" not in result:
+        raise ValueError("missing final completion or timings")
+    return result
+
+
+def steady(record, k, minimum):
+    metrics = record["metrics"]
+    rounds, tokens = metrics["drafts"], metrics["draft_tokens"]
+    final = record["response"]["timings"]
+    if rounds <= 0 or rounds != int(rounds) or tokens != final.get("draft_n") or \
+            metrics["accepted_tokens"] != final.get("draft_n_accepted") or not 0 <= k * rounds - tokens <= k * (k - 1) // 2:
+        raise ValueError("draft counters cannot identify full fixed-K verification rounds")
+    points = {}
+    last_tokens = last_ms = 0
+    for chunk in record["chunks"]:
+        timing = chunk.get("timings", {})
+        n, ms = timing.get("draft_n", 0), timing.get("predicted_ms", 0)
+        if n < last_tokens or ms < last_ms or n > tokens or ms > final["predicted_ms"]:
+            raise ValueError("reversed or inconsistent cumulative SSE timing")
+        last_tokens, last_ms = n, ms
+        if n > 0 and n % k == 0 and timing.get("predicted_n", record["max_tokens"]) <= min(record["max_tokens"], final["predicted_n"]) - k - 1:
+            points[n // k] = ms
+    # Drafts shrink near the token limit. Keep full-K counters before that tail and after the first three rounds.
+    intervals = [(b, points[b] - points[a]) for a, b in zip(sorted(points), sorted(points)[1:])
+                 if a >= 3 and b == a + 1 and b < rounds and points[b] > points[a]]
+    if len(intervals) < minimum:
+        raise ValueError(f"insufficient steady rounds: {len(intervals)} < {minimum}")
+    values = [ms for _, ms in intervals]
+    rate = statistics.mean(values)
+    mid = len(values) // 2
+    return {"steady_rounds_M": len(values), "steady_ms_per_round_D": rate,
+            "steady_median_ms_per_round_D": statistics.median(values), "steady_sd_ms_M": statistics.pstdev(values),
+            "early_half_ms_per_round_D": statistics.mean(values[:mid]),
+            "late_half_ms_per_round_D": statistics.mean(values[mid:]),
+            "generation_excess_ms_D": final["predicted_ms"] - rounds * rate,
+            "intervals": [{"round_D": r, "ms_M": ms} for r, ms in intervals]}
+
+
+def suite(h, dest):
+    cold = json.loads((INPUTS / "tool.json").read_text())
+    results = {"cold-tool": h.request(dest, "cold-tool", 1, body=cold)}
+    for seed in (1, 2):
+        for case in ("tool", "think"):
+            body = json.loads((INPUTS / f"long-{case}.json").read_text())
+            body["seed"] = seed
+            label = f"long-{case}-s{seed}"
+            record = h.request(dest, label, 1, body=body, stream=True)
+            record["steady"] = steady(record, h.args.k, h.args.rounds)
+            (dest / f"{label}-steady.json").write_text(json.dumps(record["steady"], indent=2))
+            results[label] = record
+    body = json.loads((INPUTS / "tool.json").read_text())
+    body.update(cache_prompt=True, max_tokens=128)
+    for number in range(1, h.args.short_requests + 1):
+        label = f"short-tool-{number}"
+        record = h.request(dest, label, 1, body=body)
+        if number > 1 and record["response"]["timings"]["cache_n"] <= 0:
+            raise ValueError("agent follow-up did not reuse the prompt cache")
+        results[label] = record
+        message = dict(record["response"]["choices"][0]["message"])
+        calls = message.get("tool_calls", [])
+        message["tool_calls"] = [dict(call, id=f"followup_{number}_{i}") for i, call in enumerate(calls)]
+        if not calls:
+            message.pop("tool_calls", None)
+        body["messages"].append(message)
+        for call in message.get("tool_calls", []):
+            body["messages"].append({"role": "tool", "tool_call_id": call["id"],
+                                     "content": "Fixture result: the command was not executed. Continue with the next step."})
+        body["messages"].append({"role": "user", "content": "Continue fixing the parser. Give the next small tool call."})
+    return results
+
+
+def summarize(results, k):
+    summary = []
+    for index, result in enumerate(results):
+        reference = statistics.mean(result[f"long-tool-s{s}"]["steady"]["steady_ms_per_round_D"] for s in (1, 2))
+        for case, record in result.items():
+            timings = record["response"]["timings"]
+            rounds = record["metrics"]["drafts"]
+            if rounds <= 0:
+                raise ValueError("no authoritative MTP rounds")
+            row = {"boot": index + 1, "arm": "up" if index in (0, 3) else "patch", "case": case,
+                   "rounds_M": rounds, "predicted_ms_M": timings["predicted_ms"],
+                   "whole_request_ms_per_round_D": timings["predicted_ms"] / rounds,
+                   "prompt_ms_M": timings["prompt_ms"], "cached_tokens_M": timings["cache_n"],
+                   "wall_ms_M": (record["end_ns"] - record["begin_ns"]) / 1e6}
+            row["outside_prompt_generation_ms_D"] = row["wall_ms_M"] - timings["prompt_ms"] - timings["predicted_ms"]
+            if "steady" in record:
+                row.update({key: value for key, value in record["steady"].items() if key != "intervals"})
+            else:
+                row.update(reference_steady_ms_per_round_D=reference,
+                           generation_excess_ms_D=timings["predicted_ms"] - rounds * reference)
+            row["request_fixed_ms_estimate_D"] = row["outside_prompt_generation_ms_D"] + row["generation_excess_ms_D"]
+            summary.append(row)
+    paired = []
+    for case in results[0]:
+        rows = [r for r in summary if r["case"] == case]
+        keys = [key for key in rows[0] if "ms" in key and key.endswith(("_M", "_D"))]
+        pairs = [{key: rows[p][key] - rows[u][key] for key in keys} for u, p in ((0, 1), (3, 2))]
+        paired.append({"case": case, "pair_differences_D": pairs,
+                       "patch_minus_up_D": {key: statistics.mean(pair[key] for pair in pairs) for key in keys}})
+    return {"requests": summary, "paired": paired,
+            "fixed_cost_definition": "request_fixed_ms_estimate = wall_ms - prompt_ms - rounds * steady_ms_per_round. Generation excess = predicted_ms - rounds * steady_ms_per_round. These include ramp/tail, HTTP/dispatch/release and content/context effects, not pure graph setup. Short requests use the same boot's long-tool mean as an extrapolation; negative estimates are retained.",
+            "steady_definition": "Server cumulative SSE predicted_ms differences at adjacent full-K draft counters, after round 3 and before the last K+1 output tokens; no time-based trimming.",
+            "k": k}
+
+
+def builds(rows, record, k):
+    full = [row for row in rows if record["begin_ns"] <= row["phases"][0]["begin_ns"] < record["end_ns"]
+            and 0 < row["next_begin_ns"] < record["end_ns"]
+            and [p["phase"] for p in row["phases"]] == ["V", "C", *[f"D{i}" for i in range(1, k + 1)]]]
+    result = {}
+    for label, selected in (("first_three", full[:3]), ("later", full[3:])):
+        counts = {}
+        for row in selected:
+            for phase in row["phases"]:
+                for counter in phase["counters"]:
+                    key = phase["phase"] + ":" + counter["kind"]
+                    counts[key] = counts.get(key, 0) + counter["count"]
+        result[label] = {"rounds_M": len(selected), "counts_M": counts,
+                         "build_union_ms_D": union_ns([(e["begin_ns"], e["end_ns"]) for row in selected for e in row["events"]
+                                                       if e["kind"] in ("llama_build", "meta_build", "cuda_capture", "cuda_instantiate")]) / 1e6}
+    return result
+
+
 def identity(record):
     choices = []
     for choice in record["response"]["choices"]:
@@ -290,7 +468,8 @@ def identity(record):
             message["tool_calls"] = [{key: value for key, value in call.items() if key != "id"}
                                      for call in message["tool_calls"]]
         choices.append({"message": message, "finish_reason": choice.get("finish_reason")})
-    return choices, record["metrics"]
+    timings = record["response"].get("timings", {})
+    return choices, record["metrics"], {key: timings[key] for key in ("predicted_n", "prompt_n", "cache_n") if key in timings}
 
 
 def main():
@@ -305,17 +484,30 @@ def main():
     p.add_argument("--rounds", type=int, default=40)
     p.add_argument("--budget", type=int, default=2400)
     p.add_argument("--port", type=int, default=8398)
+    p.add_argument("--short-requests", type=int, default=8)
+    p.add_argument("--diagnostic-trace", action="store_true", help="trace both A/B arms to attribute startup builds; timings include trace overhead")
     args = p.parse_args()
-    if args.k < 1 or args.rounds < 40 or not 120 < args.budget <= 2400:
+    if args.k not in (3, 5) or args.rounds < 40 or not 120 < args.budget <= 2400 or not 8 <= args.short_requests <= 16:
         raise ValueError("invalid K, round minimum, or budget")
     if args.mode == "ab" and args.trace_patch:
         raise ValueError("graph reuse A/B requires trace-off arms")
     frozen(args.patch)
     if args.mode == "ab":
         frozen(args.up)
+        if (args.up / "SOURCE").read_text().splitlines()[0] != STACK2:
+            raise ValueError("up must be the frozen stack2 base")
+        for case in ("tool", "think"):
+            body = json.loads((INPUTS / f"long-{case}.json").read_text())
+            if body["max_tokens"] < (args.k + 1) * (args.rounds + 5) or body["cache_prompt"]:
+                raise ValueError("long workload token budget is too short or cache is enabled")
     print(json.dumps({"mode": args.mode, "boots": ["trace"] if args.mode == "trace" else ["up", "patch", "patch", "up"],
                       "command": command(args.patch / "bin/round-trace", args.k, args.port), "minimum_steady_rounds": args.rounds,
-                      "budget_s_G": args.budget, "capture": "trace-off up/patch/patch/up" if args.mode == "ab" else "warmup, think/tool, trace"}, indent=2))
+                      "budget_s_G": args.budget, "capture": ("trace-both" if args.diagnostic_trace else "trace-off") + " up/patch/patch/up" if args.mode == "ab" else "warmup, think/tool, trace",
+                      "ab_workload": {"long": "long-tool, long-think; seeds 1 and 2; 2048 max tokens each; SSE server timings",
+                                      "cold": "original tool request immediately after warmup; seed 1; cache_prompt=false",
+                                      "short": f"{args.short_requests} sequential agent follow-ups; cache_prompt=true; 128 max tokens",
+                                      "steady_gate": "at least 40 adjacent full-K interior SSE intervals per long request",
+                                      "fixed_cost": "report prompt, generation excess, and outside prompt/generation separately"}}, indent=2))
     if not args.execute:
         return
     if os.environ.get("RUN_GPU") != "1" or not os.environ.get("CUDA_VISIBLE_DEVICES"):
@@ -355,26 +547,22 @@ def main():
             results = []
             for index, arm in enumerate(("up", "patch", "patch", "up"), 1):
                 root = args.up if arm == "up" else args.patch
-                dest = h.boot(root, f"{index}-{arm}", trace=args.trace_patch and arm == "patch")
-                results.append({case: h.request(dest, case, 1) for case in ("tool", "think")})
+                dest = h.boot(root, f"{index}-{arm}", trace=args.diagnostic_trace)
+                result = suite(h, dest)
+                results.append(result)
+                (out / "ab-results.json").write_text(json.dumps(results, indent=2))
                 h.stop()
                 h.xid()
                 frozen(dest)
-            for case in ("tool", "think"):
+                if args.diagnostic_trace:
+                    rows = h.rows(dest, 0)
+                    (dest / "request-builds.json").write_text(json.dumps({case: builds(rows, record, args.k) for case, record in result.items()}, indent=2))
+            for case in results[0]:
                 expected = identity(results[0][case])
                 if any(identity(result[case]) != expected for result in results[1:]):
                     raise ValueError("A/B completion or authoritative round/counter identity failed: " + case)
             (out / "ab-results.json").write_text(json.dumps(results, indent=2))
-            summary = []
-            for index, result in enumerate(results):
-                for case, record in result.items():
-                    rounds = record["metrics"]["drafts"]
-                    if rounds <= 0:
-                        raise ValueError("no authoritative MTP rounds")
-                    ms = record["response"]["timings"]["predicted_ms"]
-                    summary.append({"boot": index + 1, "arm": "up" if index in (0, 3) else "patch", "case": case,
-                                    "rounds_M": rounds, "predicted_ms_M": ms, "ms_per_round_D": ms / rounds})
-            (out / "ab-summary.json").write_text(json.dumps(summary, indent=2))
+            (out / "ab-summary.json").write_text(json.dumps(summarize(results, args.k), indent=2))
         if pins != {path: sha(Path(path)) for path in pins}:
             raise ValueError("inputs changed during run")
         frozen(args.patch)

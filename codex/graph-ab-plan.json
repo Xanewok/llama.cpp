@@ -73,5 +73,12 @@
   ],
   "minimum_steady_rounds": 40,
   "budget_s_G": 2400,
-  "capture": "trace-off up/patch/patch/up"
+  "capture": "trace-off up/patch/patch/up",
+  "ab_workload": {
+    "long": "long-tool, long-think; seeds 1 and 2; 2048 max tokens each; SSE server timings",
+    "cold": "original tool request immediately after warmup; seed 1; cache_prompt=false",
+    "short": "8 sequential agent follow-ups; cache_prompt=true; 128 max tokens",
+    "steady_gate": "at least 40 adjacent full-K interior SSE intervals per long request",
+    "fixed_cost": "report prompt, generation excess, and outside prompt/generation separately"
+  }
 }

@@ -37,6 +37,66 @@ def main():
     wrong = copy.deepcopy(reference)
     wrong["metrics"]["accepted_tokens"] += 1
     assert h.identity(wrong) != h.identity(reference)
+    sampled = {"max_tokens": 300, "metrics": {"drafts": 50, "draft_tokens": 250, "accepted_tokens": 200},
+               "response": {"timings": {"draft_n": 250, "draft_n_accepted": 200, "predicted_ms": 1540, "predicted_n": 251}},
+               "chunks": [{"timings": {"draft_n": 5 * r, "predicted_ms": 40 + 30 * r, "predicted_n": 1 + 5 * r}} for r in range(1, 51)]}
+    measured = h.steady(sampled, 5, 40)
+    assert measured["steady_rounds_M"] == 45
+    assert measured["steady_ms_per_round_D"] == 30 and measured["generation_excess_ms_D"] == 40
+    for field, value in (("drafts", 100), ("draft_tokens", 249), ("accepted_tokens", 199)):
+        wrong = copy.deepcopy(sampled)
+        wrong["metrics"][field] = value
+        rejects(lambda: h.steady(wrong, 5, 40))
+    wrong = copy.deepcopy(sampled)
+    wrong["chunks"] = wrong["chunks"][:24]
+    rejects(lambda: h.steady(wrong, 5, 40))
+    wrong = copy.deepcopy(sampled)
+    wrong["chunks"][20]["timings"]["predicted_ms"] = 1
+    rejects(lambda: h.steady(wrong, 5, 40))
+    wrong = copy.deepcopy(sampled)
+    wrong["chunks"] = wrong["chunks"][::2]
+    rejects(lambda: h.steady(wrong, 5, 40))
+    chunks = [{"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "random-id", "function": {"name": "apply_patch", "arguments": "ab"}}]}}]},
+              {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": "cd"}}]}, "finish_reason": "length"}],
+               "timings": sampled["response"]["timings"]}]
+    assert h.completion(chunks)["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] == "abcd"
+    rejects(lambda: h.completion(chunks[:1]))
+    rejects(lambda: h.completion([{"error": "broken response"}]))
+    with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
+        fake = SimpleNamespace(args=SimpleNamespace(k=5, rounds=40, short_requests=8))
+        calls = []
+        def request(dest, case, number, body=None, stream=False):
+            calls.append(copy.deepcopy(body))
+            record = copy.deepcopy(sampled)
+            record["response"].update(choices=[{"message": {"role": "assistant", "content": "fixture"}, "finish_reason": "length"}])
+            record["response"]["timings"].update(cache_n=0, prompt_ms=100)
+            record.update(begin_ns=0, end_ns=2000000000)
+            return record
+        fake.request = request
+        rejects(lambda: h.suite(fake, Path(directory)))
+        assert len(calls) == 7 and calls[-1]["cache_prompt"]
+        def cached_request(*args, **kwargs):
+            record = request(*args, **kwargs)
+            if args[1].startswith("short-"):
+                record["response"]["timings"]["cache_n"] = 100
+            return record
+        fake.request = cached_request
+        result = h.suite(fake, Path(directory))
+        assert len(result) == 13
+        assert len(calls[-1]["messages"]) > len(calls[-8]["messages"])
+        variants = [copy.deepcopy(result) for _ in range(4)]
+        for variant in variants[1:3]:
+            for record in variant.values():
+                record["response"]["timings"]["predicted_ms"] -= 40
+                record["end_ns"] -= 40000000
+                if "steady" in record:
+                    record["steady"]["steady_ms_per_round_D"] -= 1
+                    record["steady"]["generation_excess_ms_D"] += 10
+        report = h.summarize(variants, 5)
+        assert report["paired"][1]["patch_minus_up_D"]["steady_ms_per_round_D"] == -1
+        assert report["paired"][0]["patch_minus_up_D"]["generation_excess_ms_D"] == 10
+        assert report["paired"][-1]["patch_minus_up_D"]["generation_excess_ms_D"] == 10
+        assert report["paired"][-1]["patch_minus_up_D"]["request_fixed_ms_estimate_D"] == 10
     guard = h.Harness.__new__(h.Harness)
     guard.env = {"XID_SINCE": "2026-10-03 00:00:00"}
     calls = []
@@ -47,7 +107,7 @@ def main():
     rejects(guard.xid)
     guard.env = {}
     rejects(guard.xid)
-    controls = 6
+    controls = 15
     with tempfile.TemporaryDirectory(dir=Path(__file__).parent) as directory:
         root = Path(directory)
         (root / "bin").mkdir()
