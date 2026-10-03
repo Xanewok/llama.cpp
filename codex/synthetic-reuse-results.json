@@ -1,0 +1,176 @@
+{
+  "fixture": "synthetic",
+  "seeds_M": 16,
+  "rounds_per_run_M": 12,
+  "identity": "token/id/q/logit bytes: up/patch/patch/up for every seed, K, backend",
+  "summary": [
+    {
+      "meta": 0,
+      "k": 3,
+      "arm": "up",
+      "runs_M": 32,
+      "steady_rounds_M": 288,
+      "C_D1_build_union_us_per_round_median_D": 117.25294444444444,
+      "counts": {
+        "C": {
+          "hit_M": 0,
+          "miss_M": 288,
+          "meta_build_M": 0
+        },
+        "D1": {
+          "hit_M": 0,
+          "miss_M": 288,
+          "meta_build_M": 0
+        }
+      },
+      "decode_wall_us_per_round_median_D": 1002.1618888888888
+    },
+    {
+      "meta": 0,
+      "k": 3,
+      "arm": "patch",
+      "runs_M": 32,
+      "steady_rounds_M": 288,
+      "C_D1_build_union_us_per_round_median_D": 0.0,
+      "counts": {
+        "C": {
+          "hit_M": 288,
+          "miss_M": 0,
+          "meta_build_M": 0
+        },
+        "D1": {
+          "hit_M": 288,
+          "miss_M": 0,
+          "meta_build_M": 0
+        }
+      },
+      "decode_wall_us_per_round_median_D": 872.8347777777778
+    },
+    {
+      "meta": 0,
+      "k": 5,
+      "arm": "up",
+      "runs_M": 32,
+      "steady_rounds_M": 288,
+      "C_D1_build_union_us_per_round_median_D": 122.54577777777777,
+      "counts": {
+        "C": {
+          "hit_M": 0,
+          "miss_M": 288,
+          "meta_build_M": 0
+        },
+        "D1": {
+          "hit_M": 0,
+          "miss_M": 288,
+          "meta_build_M": 0
+        }
+      },
+      "decode_wall_us_per_round_median_D": 1355.401888888889
+    },
+    {
+      "meta": 0,
+      "k": 5,
+      "arm": "patch",
+      "runs_M": 32,
+      "steady_rounds_M": 288,
+      "C_D1_build_union_us_per_round_median_D": 0.0,
+      "counts": {
+        "C": {
+          "hit_M": 288,
+          "miss_M": 0,
+          "meta_build_M": 0
+        },
+        "D1": {
+          "hit_M": 288,
+          "miss_M": 0,
+          "meta_build_M": 0
+        }
+      },
+      "decode_wall_us_per_round_median_D": 1217.9642777777776
+    },
+    {
+      "meta": 1,
+      "k": 3,
+      "arm": "up",
+      "runs_M": 32,
+      "steady_rounds_M": 288,
+      "C_D1_build_union_us_per_round_median_D": 989.4043333333334,
+      "counts": {
+        "C": {
+          "hit_M": 0,
+          "miss_M": 288,
+          "meta_build_M": 288
+        },
+        "D1": {
+          "hit_M": 0,
+          "miss_M": 288,
+          "meta_build_M": 288
+        }
+      },
+      "decode_wall_us_per_round_median_D": 2787.770111111111
+    },
+    {
+      "meta": 1,
+      "k": 3,
+      "arm": "patch",
+      "runs_M": 32,
+      "steady_rounds_M": 288,
+      "C_D1_build_union_us_per_round_median_D": 0.0,
+      "counts": {
+        "C": {
+          "hit_M": 288,
+          "miss_M": 0,
+          "meta_build_M": 0
+        },
+        "D1": {
+          "hit_M": 288,
+          "miss_M": 0,
+          "meta_build_M": 0
+        }
+      },
+      "decode_wall_us_per_round_median_D": 1714.126777777778
+    },
+    {
+      "meta": 1,
+      "k": 5,
+      "arm": "up",
+      "runs_M": 32,
+      "steady_rounds_M": 288,
+      "C_D1_build_union_us_per_round_median_D": 987.5635,
+      "counts": {
+        "C": {
+          "hit_M": 0,
+          "miss_M": 288,
+          "meta_build_M": 288
+        },
+        "D1": {
+          "hit_M": 0,
+          "miss_M": 288,
+          "meta_build_M": 288
+        }
+      },
+      "decode_wall_us_per_round_median_D": 3495.0692222222224
+    },
+    {
+      "meta": 1,
+      "k": 5,
+      "arm": "patch",
+      "runs_M": 32,
+      "steady_rounds_M": 288,
+      "C_D1_build_union_us_per_round_median_D": 0.0,
+      "counts": {
+        "C": {
+          "hit_M": 288,
+          "miss_M": 0,
+          "meta_build_M": 0
+        },
+        "D1": {
+          "hit_M": 288,
+          "miss_M": 0,
+          "meta_build_M": 0
+        }
+      },
+      "decode_wall_us_per_round_median_D": 2418.205277777778
+    }
+  ]
+}
