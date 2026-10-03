@@ -698,6 +698,26 @@ ggml_backend_cuda_context::~ggml_backend_cuda_context() {
     std::unique_lock<std::mutex> lock(ggml_cuda_lock);
     ggml_cuda_lock_cv.wait(lock, []{ return ggml_cuda_lock_counter.load(std::memory_order_relaxed) == 0; });
 
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+    ggml_cuda_set_device(device);
+    for (auto & slot : input_slots) {
+        if (slot.pending) {
+            CUDA_CHECK(cudaEventSynchronize(slot.uploaded));
+        }
+        if (slot.uploaded) {
+            CUDA_CHECK(cudaEventDestroy(slot.uploaded));
+        }
+        if (slot.data) {
+            CUDA_CHECK(cudaFreeHost(slot.data));
+        }
+    }
+    if (input_compute_done) {
+        CUDA_CHECK(cudaEventDestroy(input_compute_done));
+    }
+    if (input_stream) {
+        CUDA_CHECK(cudaStreamDestroy(input_stream));
+    }
+#endif
     if (copy_event != nullptr) {
         CUDA_CHECK(cudaEventDestroy(copy_event));
     }
@@ -2621,6 +2641,108 @@ static void ggml_backend_cuda_set_tensor_async(ggml_backend_t backend, ggml_tens
     ggml_round_trace_count("input_api", cuda_ctx->device);
     CUDA_CHECK(cudaMemcpyAsync((char *) tensor->data + offset, data, size, cudaMemcpyHostToDevice, cuda_ctx->stream()));
 }
+
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+static bool ggml_backend_cuda_set_tensor_batch_owned(ggml_backend_t backend, const ggml_backend_tensor_transfer * transfers, size_t n_transfers) {
+    auto * ctx = (ggml_backend_cuda_context *) backend->context;
+    size_t total = 0;
+    for (size_t i = 0; i < n_transfers; ++i) {
+        const auto & t = transfers[i];
+        ggml_backend_buffer_t buffer = t.tensor->view_src ? t.tensor->view_src->buffer : t.tensor->buffer;
+        if (buffer->buft != ggml_backend_cuda_buffer_type(ctx->device)) {
+            return false;
+        }
+        GGML_ASSERT(t.offset <= ggml_nbytes(t.tensor) && t.size <= ggml_nbytes(t.tensor) - t.offset);
+        GGML_ASSERT(t.size <= SIZE_MAX - total);
+        total += t.size;
+    }
+    if (total == 0) {
+        return true;
+    }
+    ggml_cuda_set_device(ctx->device);
+    ggml_round_trace_scope trace_transfer("input", ctx->device, n_transfers, total);
+    ggml_round_trace_count("input_owned", ctx->device);
+    auto & slot = ctx->input_slots[ctx->input_next];
+    // The upload event covers every read of this slot's host bytes.
+    if (slot.pending) {
+        const cudaError_t status = cudaEventQuery(slot.uploaded);
+        if (status == cudaErrorNotReady) {
+            ggml_round_trace_count("input_slot_wait", ctx->device);
+            CUDA_CHECK(cudaEventSynchronize(slot.uploaded));
+        } else {
+            CUDA_CHECK(status);
+        }
+        slot.pending = false;
+    }
+    if (slot.capacity < total) {
+        void * data = nullptr;
+        if (cudaHostAlloc(&data, total, cudaHostAllocDefault) != cudaSuccess) {
+            cudaGetLastError();
+            return false;
+        }
+        if (slot.data) {
+            CUDA_CHECK(cudaFreeHost(slot.data));
+        }
+        slot.data = data;
+        slot.capacity = total;
+    }
+    if (!slot.uploaded) {
+        CUDA_CHECK(cudaEventCreateWithFlags(&slot.uploaded, cudaEventDisableTiming));
+    }
+    if (!ctx->input_stream) {
+        CUDA_CHECK(cudaStreamCreateWithFlags(&ctx->input_stream, cudaStreamNonBlocking));
+        CUDA_CHECK(cudaEventCreateWithFlags(&ctx->input_compute_done, cudaEventDisableTiming));
+    }
+    CUDA_CHECK(cudaEventRecord(ctx->input_compute_done, ctx->stream()));
+    CUDA_CHECK(cudaStreamWaitEvent(ctx->input_stream, ctx->input_compute_done, 0));
+    ctx->input_dsts.clear();
+    ctx->input_srcs.clear();
+    ctx->input_sizes.clear();
+    size_t offset = 0;
+    bool overlap = false;
+    for (size_t i = 0; i < n_transfers; ++i) {
+        const auto & t = transfers[i];
+        if (t.size == 0) {
+            continue;
+        }
+        void * dst = (char *) t.tensor->data + t.offset;
+        for (size_t j = 0; j < ctx->input_dsts.size(); ++j) {
+            const uintptr_t a = (uintptr_t) dst;
+            const uintptr_t b = (uintptr_t) ctx->input_dsts[j];
+            overlap |= a < b + ctx->input_sizes[j] && b < a + t.size;
+        }
+        char * src = (char *) slot.data + offset;
+        memcpy(src, t.data, t.size);
+        ctx->input_dsts.push_back(dst);
+        ctx->input_srcs.push_back(src);
+        ctx->input_sizes.push_back(t.size);
+        offset += t.size;
+    }
+#if CUDART_VERSION >= 13000
+    // Batch copies are unordered; overlapping destinations need stream-ordered copies.
+    if (!overlap) {
+        cudaMemcpyAttributes attrs = {};
+        attrs.srcAccessOrder = cudaMemcpySrcAccessOrderStream;
+        size_t attrs_index = 0;
+        ggml_round_trace_count("input_api", ctx->device);
+        CUDA_CHECK(cudaMemcpyBatchAsync(ctx->input_dsts.data(), ctx->input_srcs.data(), ctx->input_sizes.data(),
+            ctx->input_dsts.size(), &attrs, &attrs_index, 1, ctx->input_stream));
+    } else
+#endif
+    {
+        for (size_t i = 0; i < ctx->input_dsts.size(); ++i) {
+            ggml_round_trace_count("input_api", ctx->device);
+            CUDA_CHECK(cudaMemcpyAsync(ctx->input_dsts[i], ctx->input_srcs[i], ctx->input_sizes[i], cudaMemcpyHostToDevice, ctx->input_stream));
+        }
+    }
+    GGML_UNUSED(overlap);
+    CUDA_CHECK(cudaEventRecord(slot.uploaded, ctx->input_stream));
+    CUDA_CHECK(cudaStreamWaitEvent(ctx->stream(), slot.uploaded, 0));
+    slot.pending = true;
+    ctx->input_next = (ctx->input_next + 1) % 2;
+    return true;
+}
+#endif
 
 static void ggml_backend_cuda_get_tensor_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
@@ -5196,6 +5318,11 @@ static const ggml_backend_i ggml_backend_cuda_interface = {
     /* .event_record            = */ ggml_backend_cuda_event_record,
     /* .event_wait              = */ ggml_backend_cuda_event_wait,
     /* .graph_optimize          = */ ggml_backend_cuda_graph_optimize,
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+    /* .set_tensor_batch_owned  = */ ggml_backend_cuda_set_tensor_batch_owned,
+#else
+    /* .set_tensor_batch_owned  = */ nullptr,
+#endif
 };
 
 static ggml_guid_t ggml_backend_cuda_guid() {

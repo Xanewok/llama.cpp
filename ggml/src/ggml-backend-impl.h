@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-    #define GGML_BACKEND_API_VERSION 3
+    #define GGML_BACKEND_API_VERSION 4
 
     //
     // Backend buffer type
@@ -166,6 +166,10 @@ extern "C" {
 
         // (optional) sort/optimize the nodes in the graph
         void                      (*graph_optimize)    (ggml_backend_t backend, struct ggml_cgraph * cgraph, struct ggml_backend_graph_optimize_params * params);
+
+        // Copy host sources before return and order destination writes with compute. False must have no side effects.
+        // With no transfers, report capability only.
+        bool (*set_tensor_batch_owned)(ggml_backend_t backend, const struct ggml_backend_tensor_transfer * transfers, size_t n_transfers);
     };
 
     struct ggml_backend {
