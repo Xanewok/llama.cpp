@@ -34,6 +34,14 @@ def frozen(root):
     source = (root / "SOURCE").read_text()
     if not re.fullmatch(r"[0-9a-f]{40}", source.splitlines()[0]):
         raise ValueError("invalid SOURCE commit")
+    metadata = {}
+    for line in (root / "SHA256SUMS").read_text().splitlines():
+        digest, name = line.split(None, 1)
+        if name not in {"SOURCE", "bin/SHA256SUMS"} or name in metadata or sha(root / name) != digest:
+            raise ValueError("frozen metadata changed")
+        metadata[name] = digest
+    if set(metadata) != {"SOURCE", "bin/SHA256SUMS"}:
+        raise ValueError("incomplete frozen metadata manifest")
     directory = root / "bin"
     expected = {}
     for line in (directory / "SHA256SUMS").read_text().splitlines():
@@ -94,6 +102,7 @@ class Harness:
         self.env["CUDA_CACHE_PATH"] = str(out / "cuda-cache")
         self.env.pop("LD_PRELOAD", None)
         self.env.pop("LLAMA_ROUND_TRACE", None)
+        self.env.pop("LLAMA_GRAPH_REUSE_DISABLE", None)
 
     def timeout(self, limit=300, reserve=75):
         left = self.deadline - time.monotonic() - reserve
@@ -106,9 +115,12 @@ class Harness:
                               env=self.env, **kwargs)
 
     def xid(self):
-        journal = self.run(["journalctl", "-k", "-b", "--no-pager"], capture_output=True, text=True).stdout
+        since = self.env.get("XID_SINCE")
+        if not since:
+            raise RuntimeError("parent execution requires XID_SINCE")
+        journal = self.run(["journalctl", "-k", "-b", "--since", since, "--no-pager"], capture_output=True, text=True).stdout
         if not journal.strip() or re.search(r"Xid|fallen off", journal):
-            raise RuntimeError("empty/unreadable journal or boot Xid")
+            raise RuntimeError("empty/unreadable journal or Xid since XID_SINCE")
 
     def idle(self):
         self.xid()
@@ -117,6 +129,10 @@ class Harness:
         used = [int(line.strip()) for line in data.splitlines()]
         if len(used) != 2 or sum(used) > 1500:
             raise RuntimeError("selected GPUs are busy or not a pair")
+        utilization = self.run(["nvidia-smi", "--id=" + self.env["CUDA_VISIBLE_DEVICES"],
+                                "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"], capture_output=True, text=True).stdout
+        if any(int(line.strip()) != 0 for line in utilization.splitlines()) or len(utilization.splitlines()) != 2:
+            raise RuntimeError("selected GPUs are not idle")
         with socket.socket() as sock:
             if sock.connect_ex(("127.0.0.1", self.args.port)) == 0:
                 raise RuntimeError("port already occupied")
@@ -198,6 +214,7 @@ class Harness:
         dest.mkdir()
         shutil.copytree(root / "bin", dest / "bin", symlinks=True)
         shutil.copy2(root / "SOURCE", dest / "SOURCE")
+        shutil.copy2(root / "SHA256SUMS", dest / "SHA256SUMS")
         frozen(dest)
         binary = dest / "bin/round-trace"
         self.binary = binary
@@ -205,7 +222,8 @@ class Harness:
         self.env["LLAMA_ROUND_TRACE"] = str(dest / "rounds.jsonl") if trace else ""
         cmd = command(binary, self.args.k, self.args.port)
         (dest / "command.json").write_text(json.dumps({"command": cmd, "CUDA_VISIBLE_DEVICES": self.env["CUDA_VISIBLE_DEVICES"],
-                                                       "LLAMA_ROUND_TRACE": self.env["LLAMA_ROUND_TRACE"]}, indent=2))
+                                                       "LLAMA_ROUND_TRACE": self.env["LLAMA_ROUND_TRACE"],
+                                                       "XID_SINCE": self.env.get("XID_SINCE")}, indent=2))
         if nsys:
             self.session = f"round-trace-{os.getpid()}-{label}"
             cmd = ["nsys", "launch", "--session=" + self.session, "--trace=cuda,nvtx,osrt", "--cuda-graph-trace=node", *cmd]
@@ -279,23 +297,25 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("mode", choices=("trace", "ab"))
     p.add_argument("--execute", action="store_true")
-    p.add_argument("--trace-patch", action="store_true", help="AB: measure total trace-on overhead against up")
-    p.add_argument("--up", type=Path, default=ROOT / "codex/frozen/up")
-    p.add_argument("--patch", type=Path, default=ROOT / "codex/frozen/trace")
+    p.add_argument("--trace-patch", action="store_true", help="unsupported for graph reuse AB; use trace mode separately")
+    p.add_argument("--up", type=Path, default=ROOT / "codex/frozen/graph-up")
+    p.add_argument("--patch", type=Path, default=ROOT / "codex/frozen/graph-patch")
     p.add_argument("--out", type=Path)
-    p.add_argument("--k", type=int, default=int(os.environ.get("K", "3")))
+    p.add_argument("--k", type=int, default=int(os.environ.get("K", "5")))
     p.add_argument("--rounds", type=int, default=40)
-    p.add_argument("--budget", type=int, default=1200)
+    p.add_argument("--budget", type=int, default=2400)
     p.add_argument("--port", type=int, default=8398)
     args = p.parse_args()
-    if args.k < 1 or args.rounds < 40 or args.budget <= 120:
+    if args.k < 1 or args.rounds < 40 or not 120 < args.budget <= 2400:
         raise ValueError("invalid K, round minimum, or budget")
+    if args.mode == "ab" and args.trace_patch:
+        raise ValueError("graph reuse A/B requires trace-off arms")
     frozen(args.patch)
     if args.mode == "ab":
         frozen(args.up)
     print(json.dumps({"mode": args.mode, "boots": ["trace"] if args.mode == "trace" else ["up", "patch", "patch", "up"],
                       "command": command(args.patch / "bin/round-trace", args.k, args.port), "minimum_steady_rounds": args.rounds,
-                      "budget_s_G": args.budget, "capture": "one boot: warmup, unprofiled think/tool, nsys start, think/tool, stop, export"}, indent=2))
+                      "budget_s_G": args.budget, "capture": "trace-off up/patch/patch/up" if args.mode == "ab" else "warmup, think/tool, trace"}, indent=2))
     if not args.execute:
         return
     if os.environ.get("RUN_GPU") != "1" or not os.environ.get("CUDA_VISIBLE_DEVICES"):
