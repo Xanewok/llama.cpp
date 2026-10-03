@@ -4412,3 +4412,45 @@ int32_t llama_sampler_chain_leading_top_k(const llama_sampler * sampler) {
 
     return -1;
 }
+
+std::function<void()> llama_sampler_backend_bindings(llama_sampler * sampler) {
+    if (sampler->iface == &llama_sampler_chain_i) {
+        auto * chain = (llama_sampler_chain *) sampler->ctx;
+        std::vector<std::function<void()>> bindings;
+        for (const auto & entry : chain->samplers) {
+            if (!entry.is_backend) {
+                continue;
+            }
+            auto bind = llama_sampler_backend_bindings(entry.ptr);
+            if (!bind) {
+                return {};
+            }
+            bindings.push_back(std::move(bind));
+        }
+        return [bindings = std::move(bindings)] { for (const auto & bind : bindings) { bind(); } };
+    }
+    if (sampler->iface == &llama_sampler_dist_i) {
+        auto * ctx = (llama_sampler_dist *) sampler->ctx;
+        return [ctx, inputs = ctx->inp_uniforms] { ctx->inp_uniforms = inputs; };
+    }
+    if (sampler->iface == &llama_sampler_penalties_i) {
+        auto * ctx = (llama_sampler_penalties *) sampler->ctx;
+        return [ctx, ids = ctx->inp_token_ids, counts = ctx->inp_counts, n = ctx->n_max, candidates = ctx->has_candidates] {
+            ctx->inp_token_ids = ids;
+            ctx->inp_counts = counts;
+            ctx->n_max = n;
+            ctx->has_candidates = candidates;
+        };
+    }
+    if (sampler->iface == &llama_sampler_logit_bias_i) {
+        auto * ctx = (llama_sampler_logit_bias *) sampler->ctx;
+        return [ctx, bias = ctx->inp_logit_bias, ids = ctx->inp_logit_idxs] {
+            ctx->inp_logit_bias = bias;
+            ctx->inp_logit_idxs = ids;
+        };
+    }
+    if (sampler->iface->backend_set_input && sampler->iface != &llama_sampler_empty_i) {
+        return {};
+    }
+    return [] {};
+}
