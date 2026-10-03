@@ -1,0 +1,16 @@
+{
+  "workload_source": {
+    "path": "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/prefilter2/codex_smoke.py",
+    "sha256": "9e68c11189bc74f1d535ddbd7ac148896b200c2247ff5e6f1d362bc972db763e"
+  },
+  "template_source": {
+    "path": "/home/xanewok/repos/qwen38-weekend/results/weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S3-A-IQ4_XS-e3b59faa312a-pair1/attempts/6508c7ccb5cd49db-01/chat-template.jinja",
+    "sha256": "4af3dcf0e98bf87adf684a4824683ab15fffd64e93ed1170061ef86a15827ba8"
+  },
+  "harness_source": {
+    "path": "/home/xanewok/repos/graph-reuse/codex/gpu_harness.py",
+    "sha256": "da8b6efaf04dea9885cc82837b3630c8a7a004aafa38474a8184fe6052566d42",
+    "copy_scope": "frozen boot, owned PID, HTTP recording and SSE assembly; trace modes removed; matrix command override added"
+  },
+  "copied_inputs": "/home/xanewok/repos/graph-reuse/codex/inputs"
+}
