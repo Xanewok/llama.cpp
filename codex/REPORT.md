@@ -1,3 +1,7 @@
+# graph-reuse-prefill
+
+Confirmed CPU host overhead: fresh meta-plan arenas and dependency retention, with unchanged prefill rebuild counts. The bounded arena fix preserves tested token/logit bytes. Attribution of the recorded GPU penalty remains unresolved. See [REPORT-prefill.md](REPORT-prefill.md) for evidence, controls, frozen builds and canary-first parent commands.
+
 # graph-reuse-safe
 
 Retained C/D graph results and meta plans pass seeded CPU token/id/q/logit byte identity against the supplied base. Binding and epoch mutation controls fail as required. GPU validation remains parent-only.

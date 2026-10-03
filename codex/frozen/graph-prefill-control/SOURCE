@@ -1,0 +1,3 @@
+7dd59ccc76da675de1d8ff5b71af5be2336fd4e4
+Diagnostic overlay: ggml/src/ggml-backend-meta.cpp from 79575de0c906cb84e3433fe7fc4788ebd9ac68cd; remaining CUDA sources from the first-line commit.
+Instrumented unpooled control; meta source SHA256 b028b14da512b352333b11d1b535326b55f96bdfccdaa24992a210873323f60e.

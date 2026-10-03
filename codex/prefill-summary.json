@@ -1,0 +1,326 @@
+[
+  {
+    "arm": "up",
+    "sha256": "dae29521732b298697ef91c07d536b7ec80f88ee0bc3515f162efa1613554a38",
+    "requests": [
+      {
+        "request": 0,
+        "prompt_ms_M": 17508.954,
+        "groups": {
+          "target_prefill": {
+            "ubatches_M": 17,
+            "tokens_M": 534,
+            "misses_M": 5,
+            "hits_M": 12,
+            "meta_builds_M": 5,
+            "meta_executes_D": 17,
+            "arena_creates_M": 0,
+            "arena_bytes_M": 0,
+            "build_union_ms_D": 57.3339,
+            "build_us_per_ubatch_D": 3372.5823529411764,
+            "retention_ms_M": 0.0,
+            "arena_init_ms_M": 0.0,
+            "input_ms_M": 0.216616
+          },
+          "draft_prefill": {
+            "ubatches_M": 17,
+            "tokens_M": 534,
+            "misses_M": 4,
+            "hits_M": 13,
+            "meta_builds_M": 4,
+            "meta_executes_D": 17,
+            "arena_creates_M": 0,
+            "arena_bytes_M": 0,
+            "build_union_ms_D": 1.697323,
+            "build_us_per_ubatch_D": 99.8425294117647,
+            "retention_ms_M": 0.0,
+            "arena_init_ms_M": 0.0,
+            "input_ms_M": 0.852133
+          },
+          "decode": {
+            "ubatches_M": 69,
+            "tokens_M": 147,
+            "misses_M": 33,
+            "hits_M": 36,
+            "meta_builds_M": 33,
+            "meta_executes_D": 69,
+            "arena_creates_M": 2,
+            "arena_bytes_M": 35697024,
+            "build_union_ms_D": 70.981638,
+            "build_us_per_ubatch_D": 1028.719391304348,
+            "retention_ms_M": 0.0,
+            "arena_init_ms_M": 0.820485,
+            "input_ms_M": 0.545374
+          }
+        }
+      },
+      {
+        "request": 1,
+        "prompt_ms_M": 17662.992,
+        "groups": {
+          "target_prefill": {
+            "ubatches_M": 18,
+            "tokens_M": 555,
+            "misses_M": 5,
+            "hits_M": 13,
+            "meta_builds_M": 5,
+            "meta_executes_D": 18,
+            "arena_creates_M": 0,
+            "arena_bytes_M": 0,
+            "build_union_ms_D": 48.353719,
+            "build_us_per_ubatch_D": 2686.317722222222,
+            "retention_ms_M": 0.0,
+            "arena_init_ms_M": 0.0,
+            "input_ms_M": 0.217466
+          },
+          "draft_prefill": {
+            "ubatches_M": 18,
+            "tokens_M": 555,
+            "misses_M": 4,
+            "hits_M": 14,
+            "meta_builds_M": 4,
+            "meta_executes_D": 18,
+            "arena_creates_M": 0,
+            "arena_bytes_M": 0,
+            "build_union_ms_D": 1.670063,
+            "build_us_per_ubatch_D": 92.78127777777779,
+            "retention_ms_M": 0.0,
+            "arena_init_ms_M": 0.0,
+            "input_ms_M": 0.6970010000000001
+          },
+          "decode": {
+            "ubatches_M": 74,
+            "tokens_M": 158,
+            "misses_M": 35,
+            "hits_M": 39,
+            "meta_builds_M": 35,
+            "meta_executes_D": 74,
+            "arena_creates_M": 0,
+            "arena_bytes_M": 0,
+            "build_union_ms_D": 69.531413,
+            "build_us_per_ubatch_D": 939.6136891891892,
+            "retention_ms_M": 0.0,
+            "arena_init_ms_M": 0.0,
+            "input_ms_M": 0.54704
+          }
+        }
+      }
+    ]
+  },
+  {
+    "arm": "patch",
+    "sha256": "dae29521732b298697ef91c07d536b7ec80f88ee0bc3515f162efa1613554a38",
+    "requests": [
+      {
+        "request": 0,
+        "prompt_ms_M": 17265.797,
+        "groups": {
+          "target_prefill": {
+            "ubatches_M": 17,
+            "tokens_M": 534,
+            "misses_M": 5,
+            "hits_M": 12,
+            "meta_builds_M": 5,
+            "meta_executes_D": 17,
+            "arena_creates_M": 0,
+            "arena_bytes_M": 0,
+            "build_union_ms_D": 61.101078,
+            "build_us_per_ubatch_D": 3594.1810588235294,
+            "retention_ms_M": 2.923377,
+            "arena_init_ms_M": 0.0,
+            "input_ms_M": 0.230031
+          },
+          "draft_prefill": {
+            "ubatches_M": 17,
+            "tokens_M": 534,
+            "misses_M": 4,
+            "hits_M": 13,
+            "meta_builds_M": 4,
+            "meta_executes_D": 17,
+            "arena_creates_M": 1,
+            "arena_bytes_M": 23808,
+            "build_union_ms_D": 1.847846,
+            "build_us_per_ubatch_D": 108.69682352941176,
+            "retention_ms_M": 0.12187799999999999,
+            "arena_init_ms_M": 0.007123,
+            "input_ms_M": 0.8295739999999999
+          },
+          "decode": {
+            "ubatches_M": 69,
+            "tokens_M": 147,
+            "misses_M": 10,
+            "hits_M": 59,
+            "meta_builds_M": 10,
+            "meta_executes_D": 69,
+            "arena_creates_M": 2,
+            "arena_bytes_M": 35697024,
+            "build_union_ms_D": 72.345369,
+            "build_us_per_ubatch_D": 1048.4836086956523,
+            "retention_ms_M": 2.677638,
+            "arena_init_ms_M": 0.916423,
+            "input_ms_M": 0.6002949999999999
+          }
+        }
+      },
+      {
+        "request": 1,
+        "prompt_ms_M": 17936.096,
+        "groups": {
+          "target_prefill": {
+            "ubatches_M": 18,
+            "tokens_M": 555,
+            "misses_M": 5,
+            "hits_M": 13,
+            "meta_builds_M": 5,
+            "meta_executes_D": 18,
+            "arena_creates_M": 0,
+            "arena_bytes_M": 0,
+            "build_union_ms_D": 54.675784,
+            "build_us_per_ubatch_D": 3037.5435555555555,
+            "retention_ms_M": 2.7192040000000004,
+            "arena_init_ms_M": 0.0,
+            "input_ms_M": 0.238908
+          },
+          "draft_prefill": {
+            "ubatches_M": 18,
+            "tokens_M": 555,
+            "misses_M": 4,
+            "hits_M": 14,
+            "meta_builds_M": 4,
+            "meta_executes_D": 18,
+            "arena_creates_M": 0,
+            "arena_bytes_M": 0,
+            "build_union_ms_D": 1.958363,
+            "build_us_per_ubatch_D": 108.79794444444445,
+            "retention_ms_M": 0.107283,
+            "arena_init_ms_M": 0.0,
+            "input_ms_M": 0.784308
+          },
+          "decode": {
+            "ubatches_M": 74,
+            "tokens_M": 158,
+            "misses_M": 9,
+            "hits_M": 65,
+            "meta_builds_M": 9,
+            "meta_executes_D": 74,
+            "arena_creates_M": 2,
+            "arena_bytes_M": 35697024,
+            "build_union_ms_D": 62.038063,
+            "build_us_per_ubatch_D": 838.3522027027027,
+            "retention_ms_M": 2.8063280000000006,
+            "arena_init_ms_M": 0.119384,
+            "input_ms_M": 0.600684
+          }
+        }
+      }
+    ]
+  },
+  {
+    "arm": "unpooled",
+    "sha256": "dae29521732b298697ef91c07d536b7ec80f88ee0bc3515f162efa1613554a38",
+    "requests": [
+      {
+        "request": 0,
+        "prompt_ms_M": 17672.867,
+        "groups": {
+          "target_prefill": {
+            "ubatches_M": 17,
+            "tokens_M": 534,
+            "misses_M": 5,
+            "hits_M": 12,
+            "meta_builds_M": 5,
+            "meta_executes_D": 17,
+            "arena_creates_M": 5,
+            "arena_bytes_M": 87516000,
+            "build_union_ms_D": 64.893041,
+            "build_us_per_ubatch_D": 3817.2377058823527,
+            "retention_ms_M": 4.286677000000001,
+            "arena_init_ms_M": 0.714706,
+            "input_ms_M": 0.239046
+          },
+          "draft_prefill": {
+            "ubatches_M": 17,
+            "tokens_M": 534,
+            "misses_M": 4,
+            "hits_M": 13,
+            "meta_builds_M": 4,
+            "meta_executes_D": 17,
+            "arena_creates_M": 4,
+            "arena_bytes_M": 95232,
+            "build_union_ms_D": 1.907006,
+            "build_us_per_ubatch_D": 112.17682352941176,
+            "retention_ms_M": 0.130743,
+            "arena_init_ms_M": 0.019065000000000002,
+            "input_ms_M": 0.8985599999999999
+          },
+          "decode": {
+            "ubatches_M": 69,
+            "tokens_M": 147,
+            "misses_M": 10,
+            "hits_M": 59,
+            "meta_builds_M": 10,
+            "meta_executes_D": 69,
+            "arena_creates_M": 10,
+            "arena_bytes_M": 89352832,
+            "build_union_ms_D": 75.342182,
+            "build_us_per_ubatch_D": 1091.9156811594203,
+            "retention_ms_M": 3.7894579999999993,
+            "arena_init_ms_M": 1.359383,
+            "input_ms_M": 0.638079
+          }
+        }
+      },
+      {
+        "request": 1,
+        "prompt_ms_M": 17681.513,
+        "groups": {
+          "target_prefill": {
+            "ubatches_M": 18,
+            "tokens_M": 555,
+            "misses_M": 5,
+            "hits_M": 13,
+            "meta_builds_M": 5,
+            "meta_executes_D": 18,
+            "arena_creates_M": 5,
+            "arena_bytes_M": 87516000,
+            "build_union_ms_D": 55.071604,
+            "build_us_per_ubatch_D": 3059.5335555555557,
+            "retention_ms_M": 3.54537,
+            "arena_init_ms_M": 0.366194,
+            "input_ms_M": 0.22435
+          },
+          "draft_prefill": {
+            "ubatches_M": 18,
+            "tokens_M": 555,
+            "misses_M": 4,
+            "hits_M": 14,
+            "meta_builds_M": 4,
+            "meta_executes_D": 18,
+            "arena_creates_M": 4,
+            "arena_bytes_M": 95232,
+            "build_union_ms_D": 1.800167,
+            "build_us_per_ubatch_D": 100.00927777777778,
+            "retention_ms_M": 0.105166,
+            "arena_init_ms_M": 0.008636000000000001,
+            "input_ms_M": 0.7218969999999999
+          },
+          "decode": {
+            "ubatches_M": 74,
+            "tokens_M": 158,
+            "misses_M": 9,
+            "hits_M": 65,
+            "meta_builds_M": 9,
+            "meta_executes_D": 74,
+            "arena_creates_M": 9,
+            "arena_bytes_M": 89306112,
+            "build_union_ms_D": 63.510666,
+            "build_us_per_ubatch_D": 858.2522432432432,
+            "retention_ms_M": 3.732541,
+            "arena_init_ms_M": 0.301183,
+            "input_ms_M": 0.622957
+          }
+        }
+      }
+    ]
+  }
+]
