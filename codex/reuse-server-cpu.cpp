@@ -64,7 +64,7 @@ int main(int argc, char ** argv) {
                 task.cli_prompt = prompt;
                 task.params.n_predict = std::atoi(argv[6]);
                 task.params.return_tokens = true;
-                task.params.cache_prompt = requests > 1;
+                task.params.cache_prompt = requests > 1 && (!std::getenv("CPU_CACHE_PROMPT") || std::atoi(std::getenv("CPU_CACHE_PROMPT")));
                 task.params.stream = true;
                 task.params.timings_per_token = true;
                 task.params.sampling.seed = std::strtoul(argv[5], nullptr, 10) + request;

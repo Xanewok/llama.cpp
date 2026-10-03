@@ -96,3 +96,27 @@ for result in results:
         assert all(g["counts_M"].get("graph_hit", 0) == 0 for r in result["requests"] for g in r["groups"].values())
         assert any(g["counts_M"].get("graph_hit", 0) > 0 for p in patches for r in p["requests"] for g in r["groups"].values())
         print("M: reuse-disabled control removes graph hits; bytes remain identical", flush=True)
+
+summary = []
+for row in results:
+    requests = []
+    for record in row["requests"]:
+        groups = {}
+        for name, group in record["groups"].items():
+            build_ms = sum(union_ns([(e["begin_ns"], e["end_ns"]) for e in u["events"]
+                                    if e["kind"] in ("llama_build", "meta_build")]) for u in group["per_ubatch"]) / 1e6
+            n = group["ubatches_M"]
+            groups[name] = {"ubatches_M": n, "tokens_M": group["tokens_M"],
+                           "misses_M": group["counts_M"].get("graph_miss", 0),
+                           "hits_M": group["counts_M"].get("graph_hit", 0),
+                           "meta_builds_M": group["counts_M"].get("meta_build", 0),
+                           "meta_executes_D": group["counts_M"].get("meta_compute", 0) - group["counts_M"].get("meta_plan_create", 0),
+                           "arena_creates_M": group["counts_M"].get("meta_arena", 0),
+                           "arena_bytes_M": group["bytes_M"].get("meta_arena", 0),
+                           "build_union_ms_D": build_ms, "build_us_per_ubatch_D": build_ms * 1000 / n if n else None,
+                           "retention_ms_M": group["host_us_M"].get("meta_retention", 0) / 1000,
+                           "arena_init_ms_M": group["host_us_M"].get("meta_arena", 0) / 1000,
+                           "input_ms_M": group["host_us_M"].get("set_inputs", 0) / 1000}
+        requests.append({"request": record["request"], "prompt_ms_M": record["timings_M"]["prompt_ms"], "groups": groups})
+    summary.append({"arm": row["arm"], "sha256": row["sha256"], "requests": requests})
+(ROOT / "codex/prefill-summary.json").write_text(json.dumps(summary, indent=2) + "\n")
