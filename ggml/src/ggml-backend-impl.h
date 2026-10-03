@@ -145,7 +145,7 @@ extern "C" {
         // (optional) complete all pending operations (required if the backend supports async operations)
         void (*synchronize)(ggml_backend_t backend);
 
-        // (optional) graph plans (not used currently)
+        // (optional) graph plans
         // compute graph with a plan
         ggml_backend_graph_plan_t (*graph_plan_create) (ggml_backend_t backend, const struct ggml_cgraph * cgraph);
         void                      (*graph_plan_free)   (ggml_backend_t backend, ggml_backend_graph_plan_t plan);
@@ -297,6 +297,8 @@ extern "C" {
 #    define GGML_BACKEND_DL_IMPL(reg_fn)
 #    define GGML_BACKEND_DL_SCORE_IMPL(score_fn)
 #endif
+
+GGML_API bool ggml_backend_buffer_reset_is_noop(ggml_backend_buffer_t buffer);
 
 #ifdef  __cplusplus
 }
