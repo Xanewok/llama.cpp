@@ -113,7 +113,7 @@ def plan(cfg, matrix, output):
              'signatures = [',
              '  { class = "hazard", regex = "\\\\bXid\\\\b|fallen off the bus" },',
              '  { class = "timeout", regex = "queue wall budget" },',
-             '  { class = "integrity", regex = "frozen.*changed|inputs changed|model SHA changed" },',
+             '  { class = "integrity", regex = "frozen.*changed|inputs changed|model SHA changed|identity failed" },',
              '  { class = "insufficient_data", regex = "insufficient steady|missing rounds|counter coverage" },',
              '  { class = "deterministic", regex = "boot validation failed" },', ']']
     for stage in ("run", "preflight", "canary"):
@@ -304,6 +304,11 @@ def server_gate(text):
         raise ValueError("server did not confirm np1, context or internal AllReduce")
     if re.search(r"backend offload failed|using CPU sampler|out of memory|CUDA error|illegal memory access", text, re.I):
         raise ValueError("server backend failure or sampling fallback")
+
+
+def canary_gate(results):
+    if not any(record.get("metrics", {}).get("drafts", 0) > 0 for case, record in results.items() if case.startswith("long-")):
+        raise ValueError("canary did not exercise nonempty verification trace")
 
 
 def identity(record):
@@ -524,6 +529,11 @@ def execute(args, cfg):
             dest = harness.boot(frozen, f"{index}-{name}")
             results = suite(harness, dest, cfg)
             failures = validate(results, dest, harness.arm, cfg)
+            if args.canary:
+                try:
+                    canary_gate(results)
+                except ValueError as error:
+                    failures["canary"] = str(error)
             try:
                 server_gate((dest / "server.log").read_text())
             except ValueError as error:

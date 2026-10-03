@@ -112,6 +112,9 @@ class SweepTests(unittest.TestCase):
         r = read('long-tool-s1-1.json', FIXTURES / 'llama-sse')
         with self.assertRaisesRegex(ValueError, 'counter coverage'):
             s.trace_rounds(text, r['metrics'])
+        s.canary_gate({'long-tool': r})
+        with self.assertRaisesRegex(ValueError, 'nonempty verification trace'):
+            s.canary_gate({'long-tool': sampled(zero=True)})
 
     def test_trace_checkpoint_replay(self):
         log = 'accepted 2/5 draft tokens (restore checkpoint)\naccepted 2/3 draft tokens\n'
