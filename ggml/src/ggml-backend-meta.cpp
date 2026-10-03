@@ -2418,7 +2418,7 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
             for (size_t j = 0; j < n_backends; j++) {
                 auto & bcj = backend_ctx->backend_configs[j];
                 for (size_t i = 0; i < n_subgraphs; i++) {
-                    bcj.cgraphs[i].cgraph_main = ggml_new_graph_custom(backend_ctx->ctx.get(), cgraph->n_nodes, /*grads =*/ false);
+                    bcj.cgraphs[i].cgraph_main = ggml_new_graph_custom(backend_ctx->ctx.get(), backend_ctx->max_nnodes, /*grads =*/ false);
                 }
             }
             backend_ctx->cgraphs_aux.resize(n_backends*n_cgraphs_per_device*backend_ctx->max_subgraphs);
