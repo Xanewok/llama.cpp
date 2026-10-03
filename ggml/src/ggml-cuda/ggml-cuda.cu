@@ -2586,16 +2586,25 @@ static bool ggml_backend_cuda_set_tensor_batch_owned(ggml_backend_t backend, con
         slot.pending = false;
     }
     if (slot.capacity < total) {
+        size_t capacity = slot.capacity ? slot.capacity : total;
+        while (capacity < total) {
+            capacity = capacity <= SIZE_MAX / 2 ? capacity * 2 : total;
+        }
         void * data = nullptr;
-        if (cudaHostAlloc(&data, total, cudaHostAllocDefault) != cudaSuccess) {
+        if (cudaHostAlloc(&data, capacity, cudaHostAllocDefault) != cudaSuccess) {
             cudaGetLastError();
-            return false;
+            // Spare capacity must not prevent an upload that fits at its exact size.
+            capacity = total;
+            if (cudaHostAlloc(&data, capacity, cudaHostAllocDefault) != cudaSuccess) {
+                cudaGetLastError();
+                return false;
+            }
         }
         if (slot.data) {
             CUDA_CHECK(cudaFreeHost(slot.data));
         }
         slot.data = data;
-        slot.capacity = total;
+        slot.capacity = capacity;
     }
     if (!slot.uploaded) {
         CUDA_CHECK(cudaEventCreateWithFlags(&slot.uploaded, cudaEventDisableTiming));
