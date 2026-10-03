@@ -1865,6 +1865,11 @@ static bool ggml_backend_sched_is_host_weight(const struct ggml_tensor * t) {
         ggml_backend_buffer_is_host(t->buffer);
 }
 
+static bool ggml_backend_sched_input_staging_enabled() {
+    static const bool enabled = getenv("GGML_SCHED_INPUT_STAGING") && atoi(getenv("GGML_SCHED_INPUT_STAGING")) != 0;
+    return enabled;
+}
+
 // host inputs that ggml_backend_sched_compute_splits uploads in one batch before the per-input copies
 static bool ggml_backend_sched_is_host_transfer(ggml_backend_sched_t sched, struct ggml_tensor * input) {
     if (!ggml_backend_buffer_is_host(input->buffer)) {
@@ -1872,6 +1877,9 @@ static bool ggml_backend_sched_is_host_transfer(ggml_backend_sched_t sched, stru
     }
     if (input->flags & GGML_TENSOR_FLAG_INPUT) {
         return true;
+    }
+    if (!ggml_backend_sched_input_staging_enabled()) {
+        return false;
     }
     ggml_backend_t producer = ggml_backend_sched_get_tensor_backend(sched, input);
     return ggml_backend_buffer_get_usage(input->buffer) == GGML_BACKEND_BUFFER_USAGE_COMPUTE && !producer->iface.synchronize;
@@ -1956,7 +1964,7 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
                 }
             }
         }
-        if (!input_transfers.empty() && (!split_backend->iface.set_tensor_batch_owned ||
+        if (!input_transfers.empty() && (!ggml_backend_sched_input_staging_enabled() || !split_backend->iface.set_tensor_batch_owned ||
                 !split_backend->iface.set_tensor_batch_owned(split_backend, input_transfers.data(), input_transfers.size()))) {
             // Wait before overwriting a pipeline copy slot; sources may be reused as soon as compute returns.
             if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
@@ -2294,7 +2302,7 @@ enum ggml_status ggml_backend_sched_graph_compute_async(ggml_backend_sched_t sch
 }
 
 bool ggml_backend_sched_can_stage_inputs(ggml_backend_sched_t sched, const ggml_cgraph * graph) {
-    if (!ggml_backend_sched_graph_is_alloc(sched, graph) || sched->n_copies != 1 || sched->callback_eval) {
+    if (!ggml_backend_sched_input_staging_enabled() || !ggml_backend_sched_graph_is_alloc(sched, graph) || sched->n_copies != 1 || sched->callback_eval) {
         return false;
     }
     for (int i = 0; i < sched->n_splits; ++i) {

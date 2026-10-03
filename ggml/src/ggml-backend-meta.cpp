@@ -2029,10 +2029,13 @@ struct ggml_backend_meta_context : ggml_backend_meta_graph_plan {
     std::string name;
     size_t n_reduce_steps;
     std::unique_ptr<ggml_backend_meta_graph_plan> spare_plan;
+    bool plan_reuse;
     void *                               comm_ctx       = nullptr;
     ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;
 
     ggml_backend_meta_context(ggml_backend_dev_t meta_dev, const char * params) {
+        const char * reuse = getenv("GGML_META_PLAN_REUSE");
+        plan_reuse = !reuse || atoi(reuse) != 0;
         const size_t n_devs = ggml_backend_meta_dev_n_devs(meta_dev);
         n_reduce_steps = std::ceil(std::log2(n_devs));
         name = "Meta(";
@@ -2804,7 +2807,7 @@ static void ggml_backend_meta_graph_plan_free(ggml_backend_t backend, ggml_backe
     std::unique_ptr<ggml_backend_meta_graph_plan> plan((ggml_backend_meta_graph_plan *) ptr);
     // Keep one host arena, but release all tensor ownership before the next allocation.
     plan->containers.clear();
-    if (!owner->spare_plan || plan->max_nnodes > owner->spare_plan->max_nnodes) {
+    if (owner->plan_reuse && (!owner->spare_plan || plan->max_nnodes > owner->spare_plan->max_nnodes)) {
         owner->spare_plan = std::move(plan);
     }
 }
