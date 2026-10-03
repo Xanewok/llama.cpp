@@ -1,0 +1,133 @@
+id = "graph-reuse-tandem"
+title = "Swift MTP K=5/K=3: up vs prefill-fixed graph reuse vs graph reuse with owned input staging"
+kind = "measure"
+ab = true
+retry = "fresh"
+budget_s = 4200
+est_s = 2596
+startup_grace_s = 90
+signatures = [
+  { class = "hazard", regex = "Xid|fallen off" },
+  { class = "timeout", regex = "queue wall budget" },
+  { class = "integrity", regex = "identity failed|frozen.*changed|inputs changed|model SHA changed|counter identity" },
+  { class = "insufficient_data", regex = "insufficient steady|generated fewer|did not stream|missing authoritative rounds" },
+  { class = "deterministic", regex = "boot validation failed|counters disagree|cold request reused" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/graph-reuse/codex/gpu_ab.sh", "--execute", "--k", "both", "--budget", "3600", "--port", "8398", "--out", "/home/xanewok/repos/graph-reuse/codex/runs/graph-reuse-tandem/full-a{attempt}"]
+cwd = "/home/xanewok/repos/graph-reuse"
+env = { RUN_GPU = "1" }
+ports = [8398]
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/graph-reuse/codex/gpu_ab.sh", "--k", "both", "--budget", "3600"]
+timeout_s = 120
+env = {}
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/graph-reuse/codex/gpu_ab.sh", "--execute", "--canary", "--k", "3", "--budget", "600", "--port", "8398", "--out", "/home/xanewok/repos/graph-reuse/codex/runs/graph-reuse-tandem/canary-a{attempt}"]
+cwd = "/home/xanewok/repos/graph-reuse"
+timeout_s = 600
+env = { RUN_GPU = "1" }
+
+[outputs]
+paths = ["/home/xanewok/repos/graph-reuse/codex/runs/graph-reuse-tandem"]
+
+[fix]
+editable = []
+protected = ["identity", "minimum_steady_rounds", "2048", "768", "SHA256SUMS"]
+
+[pins]
+files = [
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf",
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json",
+  "/home/xanewok/repos/graph-reuse/codex/attrib.py",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/SHA256SUMS",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/SOURCE",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/SHA256SUMS",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libggml-base.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libggml-base.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libggml-cpu.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libggml-cuda.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libggml.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libggml.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libllama-common.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libllama-common.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libllama.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libllama.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libmtmd.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libmtmd.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-prefill/bin/round-trace",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/SHA256SUMS",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/SOURCE",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/SHA256SUMS",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libggml-base.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libggml-base.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libggml-cpu.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libggml-cuda.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libggml.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libggml.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libllama-common.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libllama-common.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libllama.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libllama.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libmtmd.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libmtmd.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/graph-tandem/bin/round-trace",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/SHA256SUMS",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/SOURCE",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/SHA256SUMS",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libggml-base.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libggml-base.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libggml-cpu.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libggml-cuda.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libggml.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libggml.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libllama-common.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libllama-common.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libllama.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libllama.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libmtmd.so",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libmtmd.so.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/graph-reuse/codex/frozen/up/bin/round-trace",
+  "/home/xanewok/repos/graph-reuse/codex/gpu_ab.sh",
+  "/home/xanewok/repos/graph-reuse/codex/gpu_harness.py",
+  "/home/xanewok/repos/graph-reuse/codex/inputs/PROVENANCE.json",
+  "/home/xanewok/repos/graph-reuse/codex/inputs/chat-template.jinja",
+  "/home/xanewok/repos/graph-reuse/codex/inputs/long-think.json",
+  "/home/xanewok/repos/graph-reuse/codex/inputs/long-tool.json",
+  "/home/xanewok/repos/graph-reuse/codex/inputs/think.json",
+  "/home/xanewok/repos/graph-reuse/codex/inputs/tool.json",
+  "/home/xanewok/repos/graph-reuse/codex/inputs/warmup.json",
+]
