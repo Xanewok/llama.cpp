@@ -1537,6 +1537,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
             auto * prev_sched = gf_res_prev_active == gf_res_prev[1].get() && sched_output ? sched_output.get() : sched.get();
             const bool staged = gf_res_prev_active && ggml_backend_sched_can_stage_inputs(get_sched_graph(), gf) &&
                                 ggml_backend_sched_can_stage_inputs(prev_sched, gf_res_prev_active->get_gf());
+            ggml_round_trace_count(staged ? "input_fence_staged" : "input_fence_sync");
             if (!staged) {
                 ggml_backend_sched_synchronize(get_sched_graph());
             }
