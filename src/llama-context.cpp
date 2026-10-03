@@ -1532,9 +1532,14 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         ggml_round_trace_count("graph_hit");
         //LLAMA_LOG_DEBUG("%s: reusing previous graph\n", __func__);
 
-        // Alternating results share storage; input writes must follow the previous compute.
+        // Alternating results share storage; uploads must follow the previous compute.
         if (cparams.pipeline_parallel || gf_res_prev_active != res) {
-            ggml_backend_sched_synchronize(get_sched_graph());
+            auto * prev_sched = gf_res_prev_active == gf_res_prev[1].get() && sched_output ? sched_output.get() : sched.get();
+            const bool staged = gf_res_prev_active && ggml_backend_sched_can_stage_inputs(get_sched_graph(), gf) &&
+                                ggml_backend_sched_can_stage_inputs(prev_sched, gf_res_prev_active->get_gf());
+            if (!staged) {
+                ggml_backend_sched_synchronize(get_sched_graph());
+            }
         }
 
         n_reused++;
