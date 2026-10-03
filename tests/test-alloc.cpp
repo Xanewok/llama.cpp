@@ -8,6 +8,12 @@
 #include <memory>
 #include <vector>
 
+#ifndef _WIN32
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
 //
 // dummy backend with configurable max_buffer_size, tracks allocations
 
@@ -1099,6 +1105,80 @@ static void test_buft_get_alloc_size_n_does_not_allocate() {
     GGML_ASSERT(x[1]->data == nullptr);
 }
 
+// Meta backend: a graph rebuilt in place that first differs after a long chain (here in the branch that
+// ggml_build_forward_select flags GGML_TENSOR_FLAG_COMPUTE) clears the split state cache at that node, which then
+// resolves the whole chain uncached. That must not take stack proportional to the chain length.
+static ggml_backend_meta_split_state test_meta_split_state_mirrored(const ggml_tensor * tensor, void * userdata) {
+    GGML_UNUSED(tensor);
+    GGML_UNUSED(userdata);
+    return {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
+}
+
+static void test_meta_split_state_rebuild(bool select_other) {
+#ifndef _WIN32
+    const int n_chain = 512;
+
+    ggml_backend_load_all();
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+    ggml_backend_dev_t devs[2] = {cpu, cpu};
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, test_meta_split_state_mirrored, nullptr);
+    ggml_gallocr_t galloc = ggml_gallocr_new(ggml_backend_dev_buffer_type(meta));
+
+    // the same memory for both builds, so that the rebuilt graph reuses the tensor addresses
+    std::vector<uint8_t> mem(ggml_tensor_overhead()*(n_chain + 3) + ggml_graph_overhead_custom(n_chain + 3, false));
+
+    for (int build = 0; build < 2; build++) {
+        if (build == 1) {
+            const pid_t pid = fork();
+            GGML_ASSERT(pid >= 0);
+            if (pid != 0) {
+                int status = 0;
+                GGML_ASSERT(waitpid(pid, &status, 0) == pid);
+                if (WIFSIGNALED(status)) {
+                    fprintf(stderr, "rebuild killed by signal %d\n", WTERMSIG(status));
+                }
+                GGML_ASSERT(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+                break;
+            }
+            // a recursive resolution takes ~30 kB per chain node
+            struct rlimit limit;
+            GGML_ASSERT(getrlimit(RLIMIT_STACK, &limit) == 0);
+            limit.rlim_cur = std::min<rlim_t>(limit.rlim_max, 1024*1024);
+            GGML_ASSERT(setrlimit(RLIMIT_STACK, &limit) == 0);
+            limit = {0, 0};
+            setrlimit(RLIMIT_CORE, &limit);
+        }
+
+        ggml_init_params params = {mem.size(), mem.data(), /*no_alloc =*/ true};
+        ggml_context * ctx = ggml_init(params);
+        ggml_tensor * cur = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 1);
+        ggml_set_input(cur);
+        for (int i = 0; i < n_chain; i++) {
+            cur = ggml_scale(ctx, cur, 1.0f);
+        }
+        ggml_tensor * branches[2] = {ggml_scale(ctx, cur, 1.0f), ggml_scale(ctx, cur, 1.0f)};
+        ggml_cgraph * gf = ggml_new_graph_custom(ctx, n_chain + 3, false);
+        ggml_tensor * out = ggml_build_forward_select(gf, branches, 2, select_other ? build : 0);
+        GGML_ASSERT(ggml_gallocr_alloc_graph(galloc, gf));
+
+        const float value = 3.0f;
+        float result = 0.0f;
+        ggml_backend_tensor_set(out, &value, 0, sizeof(value));
+        ggml_backend_tensor_get(out, &result, 0, sizeof(result));
+        GGML_ASSERT(result == value);
+        ggml_free(ctx);
+
+        if (build == 1) {
+            _exit(0);
+        }
+    }
+    ggml_gallocr_free(galloc);
+#else
+    GGML_UNUSED(select_other);
+#endif // _WIN32
+}
+
 static void run(const char * name, void (*f)()) {
     printf("%s ", name);
     fflush(stdout);
@@ -1139,5 +1219,7 @@ int main() {
     run("test_buft_get_alloc_size_n_custom_override", test_buft_get_alloc_size_n_custom_override);
     run("test_buft_get_alloc_size_n_custom_override_ctx_size", test_buft_get_alloc_size_n_custom_override_ctx_size);
     run("test_buft_get_alloc_size_n_does_not_allocate", test_buft_get_alloc_size_n_does_not_allocate);
+    run("test_meta_split_state_rebuild(same)", []() { test_meta_split_state_rebuild(false); });
+    run("test_meta_split_state_rebuild(other)", []() { test_meta_split_state_rebuild(true); });
     return 0;
 }
