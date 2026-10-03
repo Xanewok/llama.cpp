@@ -287,6 +287,14 @@ llama_context::llama_context(
         if (graph_reuse_disable) {
             LLAMA_LOG_WARN("%s: graph reuse disabled\n", __func__);
         }
+
+        // DO NOT MERGE: A/B switch for the multi-ubatch MTP sync; default on
+        const char * LLAMA_MTP_UBATCH_SYNC = getenv("LLAMA_MTP_UBATCH_SYNC");
+        mtp_ubatch_sync = LLAMA_MTP_UBATCH_SYNC ? (atoi(LLAMA_MTP_UBATCH_SYNC) != 0) : mtp_ubatch_sync;
+
+        if (!mtp_ubatch_sync && cparams.ctx_type == LLAMA_CONTEXT_TYPE_MTP) {
+            LLAMA_LOG_WARN("%s: MTP ubatch sync disabled\n", __func__);
+        }
     }
 
     // ref: https://github.com/ggml-org/llama.cpp/pull/17046#discussion_r2503085732
@@ -2175,7 +2183,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
         mtp_multi_ubatch |= has_next_ubatch;
 
         // MTP ubatches update the same KV cache and must complete in order.
-        if (cparams.ctx_type == LLAMA_CONTEXT_TYPE_MTP && mtp_multi_ubatch) {
+        if (mtp_ubatch_sync && cparams.ctx_type == LLAMA_CONTEXT_TYPE_MTP && mtp_multi_ubatch) {
             synchronize();
         }
     } while (has_next_ubatch);
