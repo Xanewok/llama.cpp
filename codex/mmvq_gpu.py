@@ -52,6 +52,8 @@ def parse_bench(raw, repeats, trials):
         weight_bytes = row["k"] * row["m"] // block * size
         if row["weight_bytes"] != weight_bytes or not math.isclose(row["weight_GB_s_D"], weight_bytes / row["us_M"] / 1000, rel_tol=1e-5):
             raise ValueError("bench bandwidth denominator changed")
+        if row["l2_bytes_M"] <= 0 or row["copies_D"] < 1 or row["working_set_bytes_D"] != weight_bytes*row["copies_D"] or row["working_set_bytes_D"] < 4*row["l2_bytes_M"]:
+            raise ValueError("bench working set can fit in cache")
         seen.add(key)
     if seen != expected:
         raise ValueError("incomplete bench output")

@@ -63,16 +63,19 @@ def main():
             for n in (1, 2, 4, 6, 8):
                 for variant in m.VARIANTS:
                     count = k*nrows//block*size
+                    l2 = 32*1024*1024
+                    copies = (4*l2 + count - 1)//count
                     rows.append(dict(type=typ, shape=shape, k=k, m=nrows, ncols=n, variant=variant,
                                      us_M=100.0, weight_GB_s_D=count/100.0/1000, weight_bytes=count,
-                                     nmse_D=0, cpu_nmse_D=0, repeats=5, trials=1, cc=1200))
+                                     nmse_D=0, cpu_nmse_D=0, repeats=5, trials=1, cc=1200,
+                                     l2_bytes_M=l2, copies_D=copies, working_set_bytes_D=count*copies))
     def raw(data):
         return "\n".join(json.dumps(row) for row in data)
     assert len(m.parse_bench(raw(rows), 5, 1)) == 1085
     reject(lambda: m.parse_bench(raw(rows[:-1]), 5, 1))
     reject(lambda: m.parse_bench(raw(rows + rows[:1]), 5, 1))
     for key, value in (("us_M", float("nan")), ("nmse_D", 0.1), ("cpu_nmse_D", 0.1),
-                       ("weight_GB_s_D", 500), ("cc", 890), ("weight_bytes", 100)):
+                       ("weight_GB_s_D", 500), ("cc", 890), ("weight_bytes", 100), ("working_set_bytes_D", 1)):
         changed = copy.deepcopy(rows)
         changed[0][key] = value
         reject(lambda: m.parse_bench(raw(changed), 5, 1))

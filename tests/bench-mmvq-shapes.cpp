@@ -38,6 +38,7 @@ static const bench_shape shapes[] = {
 static const char * variants[] = { "base", "default", "w2r1", "w4r1", "w4r2", "w2r4", "w8r1" };
 
 struct bench_data {
+    void * weights;
     void * x;
     void * y;
     float * dst;
@@ -45,6 +46,9 @@ struct bench_data {
     int m;
     int cc;
     int warp_size;
+    size_t weight_bytes;
+    size_t launch_index;
+    int copies;
     cudaStream_t stream;
 };
 
@@ -88,7 +92,8 @@ static void launch_cols(const bench_data & d, int ncols, int variant) {
     }
 }
 
-static void launch_type(ggml_type type, const bench_data & d, int ncols, int variant) {
+static void launch_type(ggml_type type, bench_data & d, int ncols, int variant) {
+    d.x = static_cast<char *>(d.weights) + d.weight_bytes*(d.launch_index++ % d.copies);
     switch (type) {
         case GGML_TYPE_Q5_K:   launch_cols<GGML_TYPE_Q5_K>(d, ncols, variant); break;
         case GGML_TYPE_Q6_K:   launch_cols<GGML_TYPE_Q6_K>(d, ncols, variant); break;
@@ -137,13 +142,19 @@ static void bench(ggml_type type, const bench_shape & s, int repeats, int trials
     d.m = s.m;
     d.cc = 100*prop.major + 10*prop.minor;
     d.warp_size = prop.warpSize;
+    d.weight_bytes = weights.size();
+    // Model layers evict each other's weights. Keep repeated small shapes out of L2.
+    const size_t cache_target = 4*size_t(std::max(prop.l2CacheSize, 1));
+    d.copies = int((cache_target + weights.size() - 1)/weights.size());
     CUDA_CHECK(cudaStreamCreate(&d.stream));
-    CUDA_CHECK(cudaMalloc(&d.x, weights.size()));
+    CUDA_CHECK(cudaMalloc(&d.weights, weights.size()*d.copies));
     CUDA_CHECK(cudaMalloc(&d.y, sizeof(block_q8_1)*s.k/QK8_1*max_cols));
     CUDA_CHECK(cudaMalloc(&d.dst, sizeof(float)*s.m*max_cols));
     float * input_device;
     CUDA_CHECK(cudaMalloc(&input_device, sizeof(float)*inputs.size()));
-    CUDA_CHECK(cudaMemcpy(d.x, weights.data(), weights.size(), cudaMemcpyHostToDevice));
+    for (int i = 0; i < d.copies; ++i) {
+        CUDA_CHECK(cudaMemcpy(static_cast<char *>(d.weights) + weights.size()*i, weights.data(), weights.size(), cudaMemcpyHostToDevice));
+    }
     CUDA_CHECK(cudaMemcpy(input_device, inputs.data(), sizeof(float)*inputs.size(), cudaMemcpyHostToDevice));
     quantize_row_q8_1_cuda(input_device, nullptr, d.y, type, s.k, s.k, 0, 0, s.k, max_cols, 1, 1, d.stream);
     CUDA_CHECK(cudaStreamSynchronize(d.stream));
@@ -213,9 +224,10 @@ static void bench(ggml_type type, const bench_shape & s, int repeats, int trials
             }
             std::sort(times.begin(), times.end());
             const float us = times[times.size()/2];
-            std::printf("{\"type\":\"%s\",\"shape\":\"%s\",\"k\":%d,\"m\":%d,\"ncols\":%d,\"variant\":\"%s\",\"us_M\":%.6f,\"weight_GB_s_D\":%.6f,\"weight_bytes\":%zu,\"nmse_D\":%.12g,\"cpu_nmse_D\":%.12g,\"repeats\":%d,\"trials\":%d,\"cc\":%d}\n",
+            std::printf("{\"type\":\"%s\",\"shape\":\"%s\",\"k\":%d,\"m\":%d,\"ncols\":%d,\"variant\":\"%s\",\"us_M\":%.6f,\"weight_GB_s_D\":%.6f,\"weight_bytes\":%zu,\"nmse_D\":%.12g,\"cpu_nmse_D\":%.12g,\"repeats\":%d,\"trials\":%d,\"cc\":%d,\"l2_bytes_M\":%d,\"working_set_bytes_D\":%zu,\"copies_D\":%d}\n",
                 ggml_type_name(type), s.name, s.k, s.m, ncols, variants[variant], us,
-                weights.size()/double(us)/1000, weights.size(), error, cpu_error, repeats, trials, d.cc);
+                weights.size()/double(us)/1000, weights.size(), error, cpu_error, repeats, trials, d.cc,
+                prop.l2CacheSize, weights.size()*d.copies, d.copies);
             std::fflush(stdout);
         }
     }
@@ -224,7 +236,7 @@ static void bench(ggml_type type, const bench_shape & s, int repeats, int trials
     CUDA_CHECK(cudaFree(input_device));
     CUDA_CHECK(cudaFree(d.dst));
     CUDA_CHECK(cudaFree(d.y));
-    CUDA_CHECK(cudaFree(d.x));
+    CUDA_CHECK(cudaFree(d.weights));
     CUDA_CHECK(cudaStreamDestroy(d.stream));
 }
 
