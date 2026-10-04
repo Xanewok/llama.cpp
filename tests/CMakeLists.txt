@@ -359,6 +359,9 @@ if (NOT LLAMA_USE_SYSTEM_GGML)
     llama_build_and_test(test-alloc.cpp)
 endif()
 
+llama_build_and_test(test-kv-cells.cpp)
+target_include_directories(test-kv-cells PRIVATE ${PROJECT_SOURCE_DIR}/src)
+
 llama_build(test-export-graph-ops.cpp)
 if (TARGET gguf-model-data)
     target_link_libraries(test-export-graph-ops PRIVATE gguf-model-data)

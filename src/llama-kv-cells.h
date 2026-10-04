@@ -3,6 +3,7 @@
 #include "llama.h"
 #include "llama-cparams.h"
 
+#include <algorithm>
 #include <bitset>
 #include <cassert>
 #include <cstring>
@@ -261,6 +262,30 @@ public:
         }
 
         return false;
+    }
+
+    // Return the lowest freed cell, or size() if no cell becomes empty.
+    uint32_t seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
+        uint32_t first = size();
+        if (seq_id >= 0) {
+            const auto & positions = seq_pos_get(seq_id);
+            auto it = positions.lower_bound({p0, 0});
+            while (it != positions.end() && it->first < p1) {
+                const uint32_t i = (it++)->second;
+                if (seq_rm(i, seq_id)) {
+                    first = std::min(first, i);
+                }
+            }
+        } else {
+            const uint32_t end = used_max_p1();
+            for (uint32_t i = used_min(); i < end; ++i) {
+                if (pos_in(i, p0, p1)) {
+                    rm(i);
+                    first = std::min(first, i);
+                }
+            }
+        }
+        return first;
     }
 
     // return true if the cell becomes empty (i.e. it did not contain seq_id before the call)
