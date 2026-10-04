@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 export CUDA_VISIBLE_DEVICES="" OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 CCACHE_DISABLE=1
 mkdir -p build-tmp build-mask-cpu/mask-controls
 export TMPDIR="$PWD/build-tmp"
-cmake -B build-mask-cpu -DGGML_CUDA=OFF -DGGML_CCACHE=OFF -DBUILD_SHARED_LIBS=OFF -DGGML_OPENMP=OFF -DCMAKE_BUILD_TYPE=Release
+cmake -B build-mask-cpu -DGGML_CUDA=OFF -DGGML_CCACHE=OFF -DBUILD_SHARED_LIBS=OFF -DGGML_OPENMP=OFF -DCMAKE_BUILD_TYPE=Release -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_UI=OFF
 cmake --build build-mask-cpu --target llama-common -j8
 bash codex/build_fixture.sh
 cp build-mask-cpu/host-depth build-mask-cpu/mask-controls/host-depth-good
