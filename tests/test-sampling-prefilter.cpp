@@ -444,14 +444,13 @@ int main(int argc, char ** argv) {
     // four output rows, as in a k = 3 verify; their logits are overwritten below
     const int n_rows = 4;
     {
-        llama_batch batch = llama_batch_init(n_rows, 0, 1);
+        common_batch batch(E.ctx);
         const auto toks = common_tokenize(E.vocab, "a b c d", false, false);
         for (int i = 0; i < n_rows; ++i) {
-            common_batch_add(batch, toks[i % toks.size()], i, { 0 }, true);
+            batch.add(toks[i % toks.size()], i, 0, true);
         }
-        GGML_ASSERT(llama_decode(E.ctx, batch) == 0);
+        GGML_ASSERT(llama_process(E.ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0);
         llama_synchronize(E.ctx);
-        llama_batch_free(batch);
     }
 
     if (draft_vocab_only) {
