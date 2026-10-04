@@ -1,0 +1,23 @@
+Internal ctest changing into directory: /home/xanewok/repos/host-bundle/build-cpu
+Test project /home/xanewok/repos/host-bundle/build-cpu
+    Start 18: test-sampling
+1/7 Test #18: test-sampling ....................   Passed    1.18 sec
+    Start 23: test-batch-alloc
+2/7 Test #23: test-batch-alloc .................   Passed    0.01 sec
+    Start 25: test-server-tokens
+3/7 Test #25: test-server-tokens ...............   Passed    0.30 sec
+    Start 29: test-tp-backend-sampling
+4/7 Test #29: test-tp-backend-sampling .........   Passed   12.11 sec
+    Start 60: test-alloc
+5/7 Test #60: test-alloc .......................   Passed    0.03 sec
+    Start 61: test-kv-cells
+6/7 Test #61: test-kv-cells ....................   Passed    0.35 sec
+    Start 62: test-server-tokens-view
+7/7 Test #62: test-server-tokens-view ..........   Passed    0.01 sec
+
+100% tests passed, 0 tests failed out of 7
+
+Label Time Summary:
+main    =  13.99 sec*proc (7 tests)
+
+Total Test time (real) =  14.00 sec

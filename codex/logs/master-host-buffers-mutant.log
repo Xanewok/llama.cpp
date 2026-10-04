@@ -1,0 +1,10 @@
+error while handling argument "--override-tensor": unknown buffer type
+
+usage:
+-ot,   --override-tensor <tensor name pattern>=<buffer type>,...
+                                        override tensor buffer type
+                                        (env: LLAMA_ARG_OVERRIDE_TENSOR)
+
+
+to show complete usage, run with -h
+test-arg-parser: /home/xanewok/repos/host-bundle/build-master-src/tests/test-arg-parser.cpp:39: void test_tensor_buffers(): Assertion `parsed' failed.

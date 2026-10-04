@@ -1,0 +1,5 @@
+depth 8192, copy ns/call M: 6234.6
+depth 8192, borrow ns/call M: 2.2
+depth 90112, copy ns/call M: 173745.0
+depth 90112, borrow ns/call M: 2.2
+text prompt borrowing and media filtering pass
