@@ -1,0 +1,74 @@
+{
+  "real_native_records": [
+    {
+      "artifact": "/home/xanewok/repos/stack3-rebase/codex/runs/stack3-rebase-cccl-ab/canary-a1/up/0-up/depth-8192.json",
+      "tokens_M": 512,
+      "steady_intervals_M": {
+        "intervals_M": 89,
+        "steady_ms_per_round_D": 35.86380898876404,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 8192,
+          "prompt_ms": 9851.681,
+          "prompt_per_token_ms": 1.2025977783203126,
+          "prompt_per_second": 831.5332175290694,
+          "predicted_n": 512,
+          "predicted_ms": 3467.005,
+          "predicted_per_token_ms": 6.784745596868885,
+          "predicted_per_second": 147.38946150928538,
+          "draft_n": 463,
+          "draft_n_accepted": 418
+        }
+      }
+    },
+    {
+      "artifact": "/home/xanewok/repos/stack3-rebase/codex/runs/stack3-rebase-cccl-ab/canary-a1/up/0-up/depth-32768.json",
+      "tokens_M": 512,
+      "steady_intervals_M": {
+        "intervals_M": 87,
+        "steady_ms_per_round_D": 37.71042528735632,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 32768,
+          "prompt_ms": 40352.434,
+          "prompt_per_token_ms": 1.2314585571289063,
+          "prompt_per_second": 812.0451916233851,
+          "predicted_n": 512,
+          "predicted_ms": 3496.189,
+          "predicted_per_token_ms": 6.841857142857142,
+          "predicted_per_second": 146.15914643058485,
+          "draft_n": 451,
+          "draft_n_accepted": 420
+        }
+      }
+    },
+    {
+      "artifact": "/home/xanewok/repos/stack3-rebase/codex/runs/stack3-rebase-cccl-ab/canary-a1/up/0-up/depth-90112.json",
+      "tokens_M": 512,
+      "steady_intervals_M": {
+        "intervals_M": 272,
+        "steady_ms_per_round_D": 41.21862867647059,
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 90112,
+          "prompt_ms": 130120.982,
+          "prompt_per_token_ms": 1.4439917214133524,
+          "prompt_per_second": 692.5247459322126,
+          "predicted_n": 512,
+          "predicted_ms": 11570.23,
+          "predicted_per_token_ms": 22.64232876712329,
+          "predicted_per_second": 44.16506845585611,
+          "draft_n": 1382,
+          "draft_n_accepted": 233
+        }
+      }
+    }
+  ],
+  "staging_M": {
+    "input_fence_staged": 907,
+    "input_fence_sync": 0,
+    "graph_hit": 4213
+  },
+  "negative_controls": "PASS",
+  "source": "/home/xanewok/repos/stack3-rebase/codex/runs/stack3-rebase-cccl-ab/canary-a1/up/0-up"
+}

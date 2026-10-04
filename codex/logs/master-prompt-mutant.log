@@ -1,0 +1,1 @@
+/home/xanewok/repos/host-bundle/build-master-src/tests/test-server-tokens-view.cpp:15: &borrowed == &text.get_tokens()

@@ -1,0 +1,121 @@
+id = "host-bundle-depth-ab"
+title = "Host bundle vs 98c695111, CCCL 3.4.3 in both arms; Swift 1.5 IQ4_XS TP2 np1 k=5, steady full-K ms/round at 8k/32k/90k; cross-arm identity"
+# up patch patch up: 4 x 350 s x 1.5 + 150 = run 2250; + canary 600 + cleanup 150 = 3000.
+# cpu_evidence: CUDA_VISIBLE_DEVICES='' nice -n 19 python3 codex/host_bundle_parsers.py
+kind = "measure"
+ab = true
+retry = "fresh"
+budget_s = 3000
+est_s = 1800
+startup_grace_s = 300
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "integrity", regex = "frozen bytes changed|inputs changed|model SHA changed|effective params mismatch|frozen file set changed|cross-arm identity failed|path-engaged proof failed|staging-engaged proof failed|canary prompt differs" },
+  { class = "insufficient_data", regex = "too few verify steps|proof inconclusive|missing final token identity|canary prompt has \\d+ tokens|reached only \\d+ cached|R2 reused only" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval/harness/run.sh", "depth", "/home/xanewok/repos/host-bundle/codex/host-bundle.experiment.toml", "--execute", "--out", "/home/xanewok/repos/host-bundle/codex/runs/host-bundle-depth-ab/full-a{attempt}", "--port", "{port}"]
+cwd = "/home/xanewok/repos/qwen38-eval/harness"
+env = { GPUQ_ACTIVE = "1" }
+ports = "dynamic"
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval/harness/run.sh", "depth", "/home/xanewok/repos/host-bundle/codex/host-bundle.experiment.toml", "--preflight", "--out", "/home/xanewok/repos/host-bundle/codex/runs/host-bundle-depth-ab/preflight-plan"]
+timeout_s = 180
+
+[canary]
+cmd = ["python3", "/home/xanewok/repos/host-bundle/codex/host_bundle_canary.py", "--canary", "--out", "/home/xanewok/repos/host-bundle/codex/runs/host-bundle-depth-ab/canary-a{attempt}", "--port", "{port}"]
+env = { GPUQ_ACTIVE = "1" }
+timeout_s = 600
+
+[outputs]
+paths = ["/home/xanewok/repos/host-bundle/codex/runs/host-bundle-depth-ab/full-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["identity", "steady_minimum", "SHA256SUMS", "frozen", "DEPTHS", "ARM_ENV", "engaged", "min_p"]
+
+[pins]
+files = [
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf",
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json",
+  "/home/xanewok/repos/host-bundle/codex/gpu_ab.sh",
+  "/home/xanewok/repos/host-bundle/codex/write_host_bundle_item.py",
+  "/home/xanewok/repos/host-bundle/codex/host_bundle_parsers.py",
+  "/home/xanewok/repos/host-bundle/codex/host_bundle_canary.py",
+  "/home/xanewok/repos/stack3-rebase/codex/runs/stack3-rebase-cccl-ab/canary-a1/patch/pins.json",
+  "/home/xanewok/repos/stack3-rebase/codex/runs/stack3-rebase-cccl-ab/canary-a1/patch/0-patch/command.json",
+  "/home/xanewok/repos/stack3-rebase/codex/runs/stack3-rebase-cccl-ab/canary-a1/patch/0-patch/depth-8192.json",
+  "/home/xanewok/repos/stack3-rebase/codex/runs/stack3-rebase-cccl-ab/canary-a1/patch/0-patch/depth-32768.json",
+  "/home/xanewok/repos/stack3-rebase/codex/runs/stack3-rebase-cccl-ab/canary-a1/patch/0-patch/depth-90112.json",
+  "/home/xanewok/repos/host-bundle/codex/host-results/parsers/results.json",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/SOURCE",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343/build/bin/round-trace",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/PRE-PATCHELF-SHA256SUMS",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/SHA256SUMS",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/SOURCE",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/SHA256SUMS",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libggml-base.so",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libggml-base.so.0",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libggml-cpu.so",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libggml-cuda.so",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libggml.so",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libggml.so.0",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libllama-common.so",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libllama-common.so.0",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libllama.so",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libllama.so.0",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libmtmd.so",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libmtmd.so.0",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/host-bundle/codex/frozen/host-bundle/bin/round-trace",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-apps.csv",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-query.csv",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/xid-lines.txt",
+  "/home/xanewok/repos/qwen38-eval/harness/__init__.py",
+  "/home/xanewok/repos/qwen38-eval/harness/__main__.py",
+  "/home/xanewok/repos/qwen38-eval/harness/agents.py",
+  "/home/xanewok/repos/qwen38-eval/harness/campaign.py",
+  "/home/xanewok/repos/qwen38-eval/harness/depth.py",
+  "/home/xanewok/repos/qwen38-eval/harness/lib.py",
+  "/home/xanewok/repos/qwen38-eval/harness/mkitem.py",
+  "/home/xanewok/repos/qwen38-eval/harness/probe.py",
+  "/home/xanewok/repos/qwen38-eval/harness/stub_server.py",
+  "/home/xanewok/repos/qwen38-eval/harness/run.sh",
+  "/home/xanewok/repos/host-bundle/codex/host-bundle.experiment.toml",
+]
