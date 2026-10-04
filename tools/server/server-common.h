@@ -212,6 +212,9 @@ public:
 
     llama_tokens get_text_tokens() const;
 
+    // The result borrows tokens or storage; do not mutate either while reading it.
+    const llama_tokens & get_text_tokens(llama_tokens & storage) const;
+
     std::vector<char> serialize() const;
     static server_tokens deserialize(const llama_tokens & packed, bool has_mtmd);
 
