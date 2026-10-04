@@ -1,0 +1,26 @@
+q5_K ncols=1 nmse_D=6.38468141252e-14
+q5_K ncols=2 nmse_D=4.88869300708e-14
+q5_K ncols=4 nmse_D=3.92594056042e-14
+q5_K ncols=6 nmse_D=3.6409986753e-14
+q5_K ncols=8 nmse_D=3.80594132705e-14
+q6_K ncols=1 nmse_D=2.31092227602e-13
+q6_K ncols=2 nmse_D=1.77117588385e-13
+q6_K ncols=4 nmse_D=2.21210333838e-13
+q6_K ncols=6 nmse_D=2.09514569141e-13
+q6_K ncols=8 nmse_D=2.39951729424e-14
+q4_K ncols=1 nmse_D=1.143555045e-13
+q4_K ncols=2 nmse_D=1.06297609123e-13
+q4_K ncols=4 nmse_D=1.02123976714e-13
+q4_K ncols=6 nmse_D=9.27550746855e-14
+q4_K ncols=8 nmse_D=3.73766258347e-14
+iq4_xs ncols=1 nmse_D=2.90586190936e-14
+iq4_xs ncols=2 nmse_D=3.92253164873e-14
+iq4_xs ncols=4 nmse_D=3.21413877883e-14
+iq4_xs ncols=6 nmse_D=3.1161867719e-14
+iq4_xs ncols=8 nmse_D=2.42834985271e-14
+q8_0 ncols=1 nmse_D=1.57459644161e-14
+q8_0 ncols=2 nmse_D=1.58562367131e-14
+q8_0 ncols=4 nmse_D=1.41644835164e-14
+q8_0 ncols=6 nmse_D=1.60112057031e-14
+q8_0 ncols=8 nmse_D=1.3849541896e-14
+cases_M=25 wall_ms_M=841.552

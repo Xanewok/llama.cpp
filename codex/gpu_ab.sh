@@ -2,4 +2,4 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export PYTHONDONTWRITEBYTECODE=1
-exec nice -n 19 python3 codex/stack3_gpu.py "$@"
+exec nice -n 19 python3 codex/mmvq_gpu.py ab "$@"

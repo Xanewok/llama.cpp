@@ -1,0 +1,1 @@
+{"real_artifacts": ["/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures", "/home/xanewok/repos/graph-reuse/codex/runs/graph-reuse-tandem/full-a2/k5-1-up/long-tool-s1-1.json"], "steady_rounds_M": 337, "synthetic_bench_cases": 1085, "negative_controls_passed": true}
