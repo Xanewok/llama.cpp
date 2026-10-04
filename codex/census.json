@@ -1,0 +1,587 @@
+[
+  {
+    "path": "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf",
+    "bytes_by_type": {
+      "Q6_K": 9261772800,
+      "F32": 105058304,
+      "IQ4_XS": 1460879360,
+      "Q8_0": 278528000,
+      "Q5_K": 8639938560,
+      "Q4_0": 238878720
+    },
+    "matrix_groups": [
+      {
+        "tensor": "attn_gate",
+        "shape": [
+          5120,
+          6144
+        ],
+        "type": "IQ4_XS",
+        "count": 47
+      },
+      {
+        "tensor": "attn_gate",
+        "shape": [
+          5120,
+          6144
+        ],
+        "type": "Q8_0",
+        "count": 1
+      },
+      {
+        "tensor": "attn_k",
+        "shape": [
+          5120,
+          1024
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "attn_k",
+        "shape": [
+          5120,
+          1024
+        ],
+        "type": "Q8_0",
+        "count": 16
+      },
+      {
+        "tensor": "attn_output",
+        "shape": [
+          6144,
+          5120
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "attn_output",
+        "shape": [
+          6144,
+          5120
+        ],
+        "type": "Q6_K",
+        "count": 15
+      },
+      {
+        "tensor": "attn_output",
+        "shape": [
+          6144,
+          5120
+        ],
+        "type": "Q8_0",
+        "count": 1
+      },
+      {
+        "tensor": "attn_q",
+        "shape": [
+          5120,
+          12288
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "attn_q",
+        "shape": [
+          5120,
+          12288
+        ],
+        "type": "Q6_K",
+        "count": 16
+      },
+      {
+        "tensor": "attn_qkv",
+        "shape": [
+          5120,
+          10240
+        ],
+        "type": "Q6_K",
+        "count": 48
+      },
+      {
+        "tensor": "attn_v",
+        "shape": [
+          5120,
+          1024
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "attn_v",
+        "shape": [
+          5120,
+          1024
+        ],
+        "type": "Q8_0",
+        "count": 16
+      },
+      {
+        "tensor": "eh_proj",
+        "shape": [
+          10240,
+          5120
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "ffn_down",
+        "shape": [
+          17408,
+          5120
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "ffn_down",
+        "shape": [
+          17408,
+          5120
+        ],
+        "type": "Q5_K",
+        "count": 15
+      },
+      {
+        "tensor": "ffn_down",
+        "shape": [
+          17408,
+          5120
+        ],
+        "type": "Q6_K",
+        "count": 49
+      },
+      {
+        "tensor": "ffn_gate",
+        "shape": [
+          5120,
+          17408
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "ffn_gate",
+        "shape": [
+          5120,
+          17408
+        ],
+        "type": "Q5_K",
+        "count": 63
+      },
+      {
+        "tensor": "ffn_gate",
+        "shape": [
+          5120,
+          17408
+        ],
+        "type": "Q6_K",
+        "count": 1
+      },
+      {
+        "tensor": "ffn_up",
+        "shape": [
+          5120,
+          17408
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "ffn_up",
+        "shape": [
+          5120,
+          17408
+        ],
+        "type": "Q5_K",
+        "count": 63
+      },
+      {
+        "tensor": "ffn_up",
+        "shape": [
+          5120,
+          17408
+        ],
+        "type": "Q6_K",
+        "count": 1
+      },
+      {
+        "tensor": "output",
+        "shape": [
+          5120,
+          248320
+        ],
+        "type": "Q6_K",
+        "count": 1
+      },
+      {
+        "tensor": "ssm_alpha",
+        "shape": [
+          5120,
+          48
+        ],
+        "type": "F32",
+        "count": 48
+      },
+      {
+        "tensor": "ssm_beta",
+        "shape": [
+          5120,
+          48
+        ],
+        "type": "F32",
+        "count": 48
+      },
+      {
+        "tensor": "ssm_conv1d",
+        "shape": [
+          4,
+          10240
+        ],
+        "type": "F32",
+        "count": 48
+      },
+      {
+        "tensor": "ssm_out",
+        "shape": [
+          6144,
+          5120
+        ],
+        "type": "Q6_K",
+        "count": 47
+      },
+      {
+        "tensor": "ssm_out",
+        "shape": [
+          6144,
+          5120
+        ],
+        "type": "Q8_0",
+        "count": 1
+      },
+      {
+        "tensor": "token_embd",
+        "shape": [
+          5120,
+          248320
+        ],
+        "type": "IQ4_XS",
+        "count": 1
+      }
+    ]
+  },
+  {
+    "path": "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf",
+    "bytes_by_type": {
+      "Q6_K": 1976217600,
+      "F32": 105058304,
+      "IQ4_XS": 12738478080,
+      "Q8_0": 278528000,
+      "Q5_K": 21626880,
+      "Q4_K": 106168320,
+      "Q4_0": 238878720
+    },
+    "matrix_groups": [
+      {
+        "tensor": "attn_gate",
+        "shape": [
+          5120,
+          6144
+        ],
+        "type": "IQ4_XS",
+        "count": 47
+      },
+      {
+        "tensor": "attn_gate",
+        "shape": [
+          5120,
+          6144
+        ],
+        "type": "Q8_0",
+        "count": 1
+      },
+      {
+        "tensor": "attn_k",
+        "shape": [
+          5120,
+          1024
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "attn_k",
+        "shape": [
+          5120,
+          1024
+        ],
+        "type": "Q8_0",
+        "count": 16
+      },
+      {
+        "tensor": "attn_output",
+        "shape": [
+          6144,
+          5120
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "attn_output",
+        "shape": [
+          6144,
+          5120
+        ],
+        "type": "Q6_K",
+        "count": 15
+      },
+      {
+        "tensor": "attn_output",
+        "shape": [
+          6144,
+          5120
+        ],
+        "type": "Q8_0",
+        "count": 1
+      },
+      {
+        "tensor": "attn_q",
+        "shape": [
+          5120,
+          12288
+        ],
+        "type": "IQ4_XS",
+        "count": 16
+      },
+      {
+        "tensor": "attn_q",
+        "shape": [
+          5120,
+          12288
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "attn_qkv",
+        "shape": [
+          5120,
+          10240
+        ],
+        "type": "IQ4_XS",
+        "count": 47
+      },
+      {
+        "tensor": "attn_qkv",
+        "shape": [
+          5120,
+          10240
+        ],
+        "type": "Q6_K",
+        "count": 1
+      },
+      {
+        "tensor": "attn_v",
+        "shape": [
+          5120,
+          1024
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "attn_v",
+        "shape": [
+          5120,
+          1024
+        ],
+        "type": "Q8_0",
+        "count": 16
+      },
+      {
+        "tensor": "eh_proj",
+        "shape": [
+          10240,
+          5120
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "ffn_down",
+        "shape": [
+          17408,
+          5120
+        ],
+        "type": "IQ4_XS",
+        "count": 63
+      },
+      {
+        "tensor": "ffn_down",
+        "shape": [
+          17408,
+          5120
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "ffn_down",
+        "shape": [
+          17408,
+          5120
+        ],
+        "type": "Q6_K",
+        "count": 1
+      },
+      {
+        "tensor": "ffn_gate",
+        "shape": [
+          5120,
+          17408
+        ],
+        "type": "IQ4_XS",
+        "count": 63
+      },
+      {
+        "tensor": "ffn_gate",
+        "shape": [
+          5120,
+          17408
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "ffn_gate",
+        "shape": [
+          5120,
+          17408
+        ],
+        "type": "Q6_K",
+        "count": 1
+      },
+      {
+        "tensor": "ffn_up",
+        "shape": [
+          5120,
+          17408
+        ],
+        "type": "IQ4_XS",
+        "count": 63
+      },
+      {
+        "tensor": "ffn_up",
+        "shape": [
+          5120,
+          17408
+        ],
+        "type": "Q4_0",
+        "count": 1
+      },
+      {
+        "tensor": "ffn_up",
+        "shape": [
+          5120,
+          17408
+        ],
+        "type": "Q6_K",
+        "count": 1
+      },
+      {
+        "tensor": "output",
+        "shape": [
+          5120,
+          248320
+        ],
+        "type": "Q6_K",
+        "count": 1
+      },
+      {
+        "tensor": "ssm_alpha",
+        "shape": [
+          5120,
+          48
+        ],
+        "type": "F32",
+        "count": 48
+      },
+      {
+        "tensor": "ssm_beta",
+        "shape": [
+          5120,
+          48
+        ],
+        "type": "F32",
+        "count": 48
+      },
+      {
+        "tensor": "ssm_conv1d",
+        "shape": [
+          4,
+          10240
+        ],
+        "type": "F32",
+        "count": 48
+      },
+      {
+        "tensor": "ssm_out",
+        "shape": [
+          6144,
+          5120
+        ],
+        "type": "IQ4_XS",
+        "count": 29
+      },
+      {
+        "tensor": "ssm_out",
+        "shape": [
+          6144,
+          5120
+        ],
+        "type": "Q4_K",
+        "count": 6
+      },
+      {
+        "tensor": "ssm_out",
+        "shape": [
+          6144,
+          5120
+        ],
+        "type": "Q5_K",
+        "count": 1
+      },
+      {
+        "tensor": "ssm_out",
+        "shape": [
+          6144,
+          5120
+        ],
+        "type": "Q6_K",
+        "count": 11
+      },
+      {
+        "tensor": "ssm_out",
+        "shape": [
+          6144,
+          5120
+        ],
+        "type": "Q8_0",
+        "count": 1
+      },
+      {
+        "tensor": "token_embd",
+        "shape": [
+          5120,
+          248320
+        ],
+        "type": "IQ4_XS",
+        "count": 1
+      }
+    ]
+  }
+]
