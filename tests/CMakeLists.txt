@@ -365,7 +365,7 @@ if (TARGET gguf-model-data)
     target_compile_definitions(test-export-graph-ops PRIVATE LLAMA_HF_FETCH)
 endif()
 
-if (GGML_CUDA AND NOT GGML_BACKEND_DL)
+if (GGML_CUDA AND NOT GGML_BACKEND_DL AND (NOT WIN32 OR NOT BUILD_SHARED_LIBS))
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
     set_source_files_properties(bench-mmvq-shapes.cpp PROPERTIES LANGUAGE CUDA)
