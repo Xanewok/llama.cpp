@@ -1065,18 +1065,17 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
 
     // [0, 16): one ubatch, no outputs; [16, 48): a ubatch without outputs, then one ending in n_rows output rows
     auto decode = [&](llama_context * lctx, bool split_outputs = false) {
-        llama_batch batch = llama_batch_init(64, 0, 1);
+        common_batch batch(lctx);
         for (uint32_t pos = 0; pos < 16; pos++) {
-            common_batch_add(batch, tokens[pos], pos, {0}, false);
+            batch.add(tokens[pos], pos, 0, false);
         }
-        int rc = llama_decode(lctx, batch);
-        common_batch_clear(batch);
+        int rc = llama_process(lctx, LLAMA_PROCESS_TYPE_DECODE, batch.get());
+        batch.clear();
         for (uint32_t pos = 16; pos < tokens.size() && rc == 0; pos++) {
             const bool output = split_outputs ? pos == 30 || pos == 31 || pos == 46 || pos == 47 : pos + n_rows >= tokens.size();
-            common_batch_add(batch, tokens[pos], pos, {0}, output);
+            batch.add(tokens[pos], pos, 0, output);
         }
-        rc = rc == 0 ? llama_decode(lctx, batch) : rc;
-        llama_batch_free(batch);
+        rc = rc == 0 ? llama_process(lctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) : rc;
         if (rc != 0) {
             throw std::runtime_error("failed to decode batch");
         }
@@ -1294,14 +1293,14 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
 
         std::vector<int> count(n_vocab, 0);
         const llama_pos pos_last = llama_pos(tokens.size() - 1);
-        llama_batch batch = llama_batch_init(1, 0, 1);
+        common_batch batch(ctx.get());
         for (int d = 0; d < n_draws && ok; d++) {
             if (d > 0) {
                 // re-decode the last token: same logits, a fresh uniform draw
                 llama_memory_seq_rm(llama_get_memory(ctx.get()), 0, pos_last, -1);
-                common_batch_clear(batch);
-                common_batch_add(batch, tokens.back(), pos_last, {0}, true);
-                if (llama_decode(ctx.get(), batch) != 0) {
+                batch.clear();
+                batch.add(tokens.back(), pos_last, 0, true);
+                if (llama_process(ctx.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
                     throw std::runtime_error("failed to decode batch");
                 }
             }
@@ -1314,7 +1313,6 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
             // commit the draw so the next decode draws a new uniform
             llama_sampler_accept(chain.get(), id);
         }
-        llama_batch_free(batch);
 
         if (ok) {
             double tv = 0.0;
