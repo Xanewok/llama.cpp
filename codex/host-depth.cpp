@@ -48,6 +48,89 @@ static void write_tensor(std::ofstream & out, ggml_tensor * t) {
     require(bool(out), "mask write failed");
 }
 
+static void compact_test(llama_kv_cache & cache, const batch_storage & query, int depth, int rows) {
+    auto ub = query.ub;
+    std::vector<llama_pos> positions(4*rows);
+    for (int i = 0; i < rows; ++i) {
+        positions[i] = query.pos[i];
+        positions[rows + i] = positions[2*rows + i] = query.pos[i];
+    }
+    ub.n_pos = 4;
+    ub.pos = positions.data();
+    const uint32_t prefix = cache.get_kq_mask_prefix(ub, depth, true);
+    require(prefix == uint32_t(depth - 256), "wrong compact prefix");
+    ggml_context_ptr ref_ctx(ggml_init({8*ggml_tensor_overhead(), nullptr, true}));
+    auto * reference = ggml_new_tensor_4d(ref_ctx.get(), GGML_TYPE_F16, depth, rows, 1, 1);
+    ggml_backend_buffer_ptr ref_buffer(ggml_backend_alloc_ctx_tensors_from_buft(ref_ctx.get(), ggml_backend_cpu_buffer_type()));
+    ggml_context_ptr ctx(ggml_init({64*ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true}));
+    auto * suffix = ggml_new_tensor_4d(ctx.get(), GGML_TYPE_F16, depth - prefix, rows, 1, 1);
+    ggml_set_input(suffix);
+    auto * zeros = ggml_fill(ctx.get(), ggml_new_tensor_4d(ctx.get(), GGML_TYPE_F16, prefix, rows, 1, 1), 0.0f);
+    auto * compact = ggml_concat(ctx.get(), zeros, suffix, 0);
+    ggml_set_output(compact);
+    auto * graph = ggml_new_graph(ctx.get());
+    ggml_build_forward_expand(graph, compact);
+    auto * cpu_dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    ggml_backend_dev_t devs[] = {cpu_dev, cpu_dev};
+    auto * meta_dev = ggml_backend_meta_device(devs, 2, [](const ggml_tensor *, void *) {
+        return ggml_backend_meta_split_state{GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
+    }, nullptr);
+    ggml_backend_ptr meta(ggml_backend_dev_init(meta_dev, nullptr));
+    ggml_backend_ptr cpu(ggml_backend_cpu_init());
+    ggml_backend_cpu_set_n_threads(cpu.get(), 4);
+    ggml_backend_t backends[] = {meta.get(), cpu.get()};
+    auto * sched = ggml_backend_sched_new(backends, nullptr, 2, 2048, false, true);
+    ggml_backend_sched_set_tensor_backend(sched, zeros, meta.get());
+    ggml_backend_sched_set_tensor_backend(sched, compact, meta.get());
+    require(ggml_backend_sched_alloc_graph(sched, graph), "compact graph allocation failed");
+    require(ggml_backend_sched_get_tensor_backend(sched, compact) == meta.get(), "compact mask did not stay on meta backend");
+    require(ggml_backend_sched_get_tensor_backend(sched, zeros) == meta.get(), "zero prefix did not stay on meta backend");
+    require(ggml_backend_sched_get_tensor_backend(sched, zeros->src[0]) == meta.get(), "zero shape would require a host upload");
+    std::vector<char> actual(ggml_nbytes(reference));
+    auto check = [&] {
+        cache.set_input_kq_mask(reference, &ub, true);
+        cache.set_input_kq_mask(suffix, &ub, true, prefix);
+        if (std::getenv("MASK_UPLOAD_WRONG_CONTROL")) {
+            ((ggml_fp16_t *) suffix->data)[0] = ggml_fp32_to_fp16(-INFINITY);
+        }
+        require(ggml_backend_sched_graph_compute(sched, graph) == GGML_STATUS_SUCCESS, "compact compute failed");
+        ggml_backend_tensor_get(compact, actual.data(), 0, actual.size());
+        require(std::memcmp(reference->data, actual.data(), actual.size()) == 0, "compact mask differs from host mask");
+    };
+    check();
+    std::printf("M,compact,%d,%d,host_set,%.3f\n", depth, rows, timed([&] { cache.set_input_kq_mask(suffix, &ub, true, prefix); }));
+    std::printf("D,compact,%d,%d,upload_bytes_per_device,%zu\n", depth, rows, ggml_nbytes(suffix));
+    auto & cells = const_cast<llama_kv_cells &>(cache.get_cells(0));
+    const int cell = depth - 2;
+    const auto saved_pos = cells.pos_get(cell);
+    const auto saved_ext = cells.ext_get(cell);
+    cells.pos_add(cell, ub.pos[0] - saved_pos);
+    auto ext = saved_ext; ext.y = ub.pos[rows] + 1;
+    cells.ext_set(cell, ext);
+    check();
+    cells.pos_add(cell, saved_pos - ub.pos[0]); cells.ext_set(cell, saved_ext);
+    const auto previous = actual;
+    cache.seq_cp(0, 1, 17, 18); cache.seq_rm(0, 17, 18);
+    require(cache.get_kq_mask_prefix(ub, depth, true) == 0, "sequence mutation did not invalidate prefix");
+    cache.set_input_kq_mask(reference, &ub, true);
+    require(std::memcmp(reference->data, previous.data(), previous.size()) != 0, "stale mask negative control missed mutation");
+    cache.seq_cp(1, 0, 17, 18); cache.seq_rm(1, 17, 18);
+    const auto old_pos = cells.pos_get(18);
+    cells.pos_add(18, ub.pos[0] - old_pos); ext = cells.ext_get(18); const auto old_ext = ext;
+    ext.y = ub.pos[rows] + 1; cells.ext_set(18, ext);
+    require(cache.get_kq_mask_prefix(ub, depth, true) == 0, "M-RoPE mutation did not invalidate prefix");
+    cells.pos_add(18, old_pos - ub.pos[0]); cells.ext_set(18, old_ext);
+    cells.pos_add(19, depth);
+    require(cache.get_kq_mask_prefix(ub, depth, true) == 0, "future position did not invalidate prefix");
+    cells.pos_add(19, -depth);
+    cache.seq_rm(0, depth - 256, -1);
+    require(cache.get_kq_mask_prefix(ub, depth, true) >= prefix, "tail removal invalidated a visible prefix");
+    check();
+    batch_storage restore(256, depth - 256);
+    cache.apply_ubatch(slot(256, depth - 256), restore.ub);
+    ggml_backend_sched_free(sched);
+}
+
 static void cache_test(llama_model & model, int depth, bool draft, std::ofstream & out) {
     auto hp = model.hparams;
     hp.no_alloc = true;
@@ -82,6 +165,7 @@ static void cache_test(llama_model & model, int depth, bool draft, std::ofstream
         llama_token dummy[6] = {}; query.ub.token = dummy;
         std::printf("M,%s,%d,%d,position_input,%.3f\n", kind, depth, rows, timed([&] { pos_input.set_input(&query.ub); }));
         query.ub.token = nullptr;
+        compact_test(cache, query, depth, rows);
         std::printf("M,%s,%d,%d,mask_f16,%.3f\n", kind, depth, rows, timed([&] { cache.set_input_kq_mask(m16, &query.ub, true); }));
         std::printf("M,%s,%d,%d,mask_f32,%.3f\n", kind, depth, rows, timed([&] { cache.set_input_kq_mask(m32, &query.ub, true); }));
         std::printf("M,%s,%d,%d,find_slot,%.3f\n", kind, depth, rows, timed([&] { sink += cache.find_slot(query.ub, false).size(); }));
@@ -208,10 +292,21 @@ static void logits_test(llama_model & model, int depth, bool draft, std::ofstrea
 
 int main(int argc, char ** argv) {
     try {
-        require(argc == 3, "usage: host-depth MASKS LOGITS");
+        require(argc == 3 || argc == 4, "usage: host-depth MASKS LOGITS [CPU_MODEL]");
         require(std::getenv("CUDA_VISIBLE_DEVICES") && !*std::getenv("CUDA_VISIBLE_DEVICES"), "CPU-only guard");
         llama_log_set([](ggml_log_level level, const char * text, void *) { if (level >= GGML_LOG_LEVEL_WARN) { fputs(text, stderr); } }, nullptr);
         llama_backend_init();
+        if (argc == 4) {
+            auto mp = llama_model_default_params(); mp.n_gpu_layers = 0; mp.load_mtp = true;
+            llama_model_ptr real(llama_model_load_from_file(argv[3], mp));
+            require(bool(real), "CPU model load failed");
+            std::ofstream logits(argv[2], std::ios::binary);
+            require(bool(logits), "logits open failed");
+            logits_test(*real, 8192, false, logits);
+            logits_test(*real, 8192, true, logits);
+            std::puts("PASS: real CPU target and MTP logits finite (zero historical KV, metadata depth 8192)");
+            return 0;
+        }
         auto meta = get_gguf_ctx(LLM_ARCH_QWEN35, false, 32);
         gguf_set_val_u32(meta.get(), "qwen35.block_count", 5);
         gguf_set_val_u32(meta.get(), "qwen35.nextn_predict_layers", 1);
@@ -229,6 +324,18 @@ int main(int argc, char ** argv) {
         uint32_t sections[] = {4, 4, 8, 0};
         gguf_set_arr_data(meta.get(), "qwen35.rope.dimension_sections", GGUF_TYPE_UINT32, sections, 4);
         auto mp = llama_model_default_params(); mp.n_gpu_layers = 0; mp.load_mtp = true;
+        auto * cpu_dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+        ggml_backend_dev_t cpu_pair[] = {cpu_dev, cpu_dev, nullptr};
+        if (std::getenv("MASK_UPLOAD_META")) {
+            gguf_set_val_u32(meta.get(), "qwen35.embedding_length", 64);
+            gguf_set_val_u32(meta.get(), "qwen35.feed_forward_length", 96);
+            gguf_set_val_u32(meta.get(), "qwen35.attention.head_count", 2);
+            gguf_set_val_u32(meta.get(), "qwen35.attention.head_count_kv", 2);
+            gguf_set_val_u32(meta.get(), "qwen35.ssm.inner_size", 64);
+            gguf_set_val_u32(meta.get(), "qwen35.ssm.time_step_rank", 2);
+            gguf_set_val_u32(meta.get(), "qwen35.ssm.group_count", 2);
+            mp.devices = cpu_pair; mp.split_mode = LLAMA_SPLIT_MODE_TENSOR; mp.n_gpu_layers = 99;
+        }
         tensor_data_params tp = {1729, 0.1f};
         llama_model_ptr model(llama_model_init_from_user(meta.get(), set_tensor_data, &tp, mp));
         require(bool(model), "tiny model creation failed");
