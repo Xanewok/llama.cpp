@@ -2,6 +2,7 @@
 #include "common.h"
 #include "download.h"
 #include "llama.h"
+#include "../ggml/src/ggml-backend-impl.h"
 #include "speculative.h"
 
 #include <cmath>
@@ -13,6 +14,31 @@
 
 #undef NDEBUG
 #include <cassert>
+
+static const char * host_buffer_name(ggml_backend_buffer_type_t) {
+    return "test-host";
+}
+
+static ggml_backend_buffer_type_t host_buffer_type(ggml_backend_dev_t) {
+    static ggml_backend_buffer_type buft = *ggml_backend_cpu_buffer_type();
+    buft.iface.get_name = host_buffer_name;
+    return &buft;
+}
+
+static void test_tensor_buffers() {
+    ggml_backend_load_all();
+    auto * cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    assert(cpu);
+    auto saved = cpu->iface.get_host_buffer_type;
+    cpu->iface.get_host_buffer_type = host_buffer_type;
+    common_params params;
+    const char * argv[] = {"test", "-m", "test.gguf", "--override-tensor", "token_embd\\.weight=test-host"};
+    const bool parsed = common_params_parse(5, const_cast<char **>(argv), params, LLAMA_EXAMPLE_COMMON);
+    cpu->iface.get_host_buffer_type = saved;
+    assert(parsed);
+    assert(params.tensor_buft_overrides[0].buft == host_buffer_type(cpu));
+    assert(std::string(params.tensor_buft_overrides[0].pattern) == "token_embd\\.weight");
+}
 
 static void test(void) {
     common_params params;
@@ -397,8 +423,12 @@ static void test(void) {
     printf("test-arg-parser: all tests OK\n\n");
 }
 
-int main(void) {
+int main(int argc, char ** argv) {
     try {
+        test_tensor_buffers();
+        if (argc == 2 && std::string(argv[1]) == "--tensor-buffers-only") {
+            return 0;
+        }
         test();
     } catch (std::exception & e) {
         fprintf(stderr, "test-arg-parser: exception: %s\n", e.what());
