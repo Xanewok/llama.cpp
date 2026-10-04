@@ -1,0 +1,30 @@
+{
+    "base:logit_bias": {
+        "returncode": -6,
+        "M_seconds": 0.8952344530262053
+    },
+    "base:penalties": {
+        "returncode": -6,
+        "M_seconds": 0.5915635389974341
+    },
+    "base:leading_bias": {
+        "returncode": -6,
+        "M_seconds": 0.8612305489950813
+    },
+    "double:leading_bias": {
+        "returncode": -6,
+        "M_seconds": 0.9959979749983177
+    },
+    "after-top-k:leading_bias": {
+        "returncode": -6,
+        "M_seconds": 1.1131543549709022
+    },
+    "restored:leading_bias": {
+        "returncode": 0,
+        "M_seconds": 0.2855363090056926
+    },
+    "restored:tp": {
+        "returncode": 0,
+        "M_seconds": 14.464730241976213
+    }
+}
