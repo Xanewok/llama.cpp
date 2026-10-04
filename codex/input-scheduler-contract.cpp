@@ -34,7 +34,7 @@ static void meta_contract() {
     auto * ctx = ggml_init({1024*1024, nullptr, true});
     auto * input = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 4);
     ggml_set_input(input);
-    auto * buffer = ggml_backend_meta_alloc_ctx_tensors_from_buft(ctx, ggml_backend_dev_buffer_type(dev));
+    auto * buffer = ggml_backend_alloc_ctx_tensors_from_buft(ctx, ggml_backend_dev_buffer_type(dev));
     require(buffer != nullptr, "meta allocation failed");
     float data[] = {4, 3, 2, 1}, result[4];
     ggml_backend_tensor_transfer transfer{input, data, 0, sizeof(data)};
