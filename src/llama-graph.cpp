@@ -41,7 +41,10 @@ static ggml_tensor * build_attn_inp_kq_mask(
 
     // when the mask has to be copied to the devices that hold the cache, build its all-visible prefix there
     // and set only the remaining columns on the host
-    const uint32_t prefix = mctx->get_kq_mask_copied() ? mctx->get_kq_mask_prefix(ubatch, cparams.causal_attn) : 0;
+    const uint32_t candidate = mctx->get_kq_mask_copied() && type == GGML_TYPE_F16 && n_stream == 1 && n_tokens <= 16
+        ? mctx->get_kq_mask_prefix(ubatch, cparams.causal_attn) : 0;
+    // LOCAL: measured on 2x RTX 5060 Ti (meta, TP=2): below this size the extra kernels can cost more than the upload
+    const uint32_t prefix = candidate >= 32768 ? candidate : 0;
 
     ggml_tensor * res = ggml_new_tensor_4d(ctx, type, n_kv - prefix, n_tokens/n_stream, 1, n_stream);
     ggml_set_input(res);
