@@ -1,0 +1,273 @@
+diff --git a/codex/REPORT.md b/codex/REPORT.md
+index 470df4cb3..4cd4fa6a9 100644
+--- a/codex/REPORT.md
++++ b/codex/REPORT.md
+@@ -50,7 +50,7 @@ At 90k the removed per-GPU payload is 1,976,832 bytes (D). Saving formula: `remo
+ - Exact F16 masks on `Meta(CPU,CPU)` at n_kv 8192 and 90112, one and six rows, n_pos=4, with same-position M-RoPE exclusions, tail removal, future-position edits, and sequence membership changes: PASS. The 8k composition is tested directly even though the serving threshold disables it.
+ - Full model graphs on a tiny Qwen35 target and MTP model with two CPU meta shards, verify/draft shape changes and cache mutations: PASS. A separate archive with graph compression forced off produced byte-identical masks and logits (`build-cpu/meta-*` versus `build-cpu/full-meta-*`). The test edits only copied source/archives under `build-cpu/mask-controls`.
+ - Original ff5611656 CPU artifacts versus patch: 43,646,976 mask bytes and 6,656 logit bytes match (M); SHA256 records in `codex/mask-upload-identity.json`.
+-- Wrong suffix injection fails with `compact mask differs from host mask`; stale host mask injection fails with `sequence mutation retained stale mask`; removing `positions.size() != n_used` from the prefix certificate in a test archive fails with `sequence mutation did not invalidate prefix`. Restoring the production archive passes. These are negative controls, not an unfixed baseline correctness bug.
++- Wrong suffix injection fails with `compact mask differs from host mask`; stale host mask injection fails with `sequence mutation retained stale mask`; removing `positions.size() != n_used` from the prefix certificate in a test archive fails with `sequence mutation did not invalidate prefix`; removing `cells.used_max_p1() != n_used` fails with `hole inside prefix did not invalidate prefix`; removing both graph-reuse guards (the `can_reuse_kq_mask` recheck and the setter assert) changes the Meta logits after an ownership change and a hole inside a reused compact graph's prefix (Meta-only schedule `2,2,3,3`). Restoring the production archive passes. These are negative controls, not an unfixed baseline correctness bug.
+ - `/home/xanewok/models/Qwen3.5-4B-UD-Q4_K_XL.gguf`: CPU target and MTP logits finite at metadata depth 8192, n_pos=4, six-row and one-row decodes (M). Historical KV is zero and populated by metadata only; this is API/graph smoke coverage, not a real long-prompt inference benchmark. See `codex/mask-upload-real-model.txt`.
+ 
+ Median host setter times, microseconds (M, 101 samples with ten inner calls, same run; compact includes certificate checking):
+@@ -64,7 +64,7 @@ Target verify plus five draft setters: 31.991 -> 3.879 us at 90k (D from M media
+ 
+ ## Parent-only GPU A/B
+ 
+-`codex/gpu_ab.sh` and `gpu_ab.py` retain host-step's frozen-root layout and request shapes: renamed `bin/host-depth-server`, `SOURCE`, `bin/SHA256SUMS`, root `SHA256SUMS`; 8192/90112 repeated-token prompts, ignore EOS, 512 output tokens, seed 1729, probabilistic MTP k=5, target/draft backend sampling, tensor split, q8_0 target KV and f16 draft KV. Up SOURCE is enforced as ff5611656. Full order is up/patch/patch/up. Every request is written before evaluating boot gates.
++`codex/gpu_ab.sh` and `gpu_ab.py` retain host-step's frozen-root layout and request shapes: renamed `bin/host-depth-server`, `SOURCE`, `bin/SHA256SUMS`, root `SHA256SUMS`; 8192/90112 repeated-token prompts, ignore EOS, 512 output tokens, seed 1729, probabilistic MTP k=5, target/draft backend sampling, tensor split, q8_0 target KV and f16 draft KV. Up SOURCE is enforced as ff5611656 and patch SOURCE as c211ca41d. Full order is up/patch/patch/up. Every request is written before evaluating boot gates.
+ 
+ The harness checks frozen file hashes and loaded library paths, selected GPU memory, RAM availability, reusable port binding, boot identity, word-bounded kernel hazards since cutoff, exact child PID termination, wall budget, prefill/cache/length/full-K-interior metrics, native token IDs and acceptance counters. Unknown partial timing rows are skipped. Budget failures are classified as budget, not socket failures.
+ 
+diff --git a/codex/check-mask-upload.sh b/codex/check-mask-upload.sh
+index e0e80d0b8..a5f9c7c8c 100644
+--- a/codex/check-mask-upload.sh
++++ b/codex/check-mask-upload.sh
+@@ -27,35 +27,54 @@ for control in MASK_UPLOAD_WRONG_CONTROL HOST_DEPTH_STALE_CONTROL; do
+ done
+ python3 - <<'PY_INNER'
+ from pathlib import Path
+-s = Path('src/llama-graph.cpp').read_text()
+-needle = 'const uint32_t prefix = candidate >= 32768 ? candidate : 0;'
+-assert s.count(needle) == 1
+-Path('build-cpu/mask-controls/llama-graph.cpp').write_text(s.replace(needle, 'const uint32_t prefix = 0;'))
+-s = Path('src/llama-kv-cache.cpp').read_text()
+-needle = 'cells.used_max_p1() != n_used || positions.size() != n_used'
+-assert s.count(needle) == 1
+-Path('build-cpu/mask-controls/llama-kv-cache.cpp').write_text(s.replace(needle, 'cells.used_max_p1() != n_used'))
++def mutate(src, dst, needle, replacement):
++    s = Path(src).read_text()
++    assert s.count(needle) == 1, needle
++    Path(dst).parent.mkdir(parents=True, exist_ok=True)
++    Path(dst).write_text(s.replace(needle, replacement))
++c = 'build-cpu/mask-controls'
++mutate('src/llama-graph.cpp', f'{c}/llama-graph/llama-graph.cpp',
++       'const uint32_t prefix = candidate >= 32768 ? candidate : 0;', 'const uint32_t prefix = 0;')
++cert = 'cells.used_max_p1() != n_used || positions.size() != n_used'
++mutate('src/llama-kv-cache.cpp', f'{c}/owner-cert/llama-kv-cache.cpp', cert, 'cells.used_max_p1() != n_used')
++mutate('src/llama-kv-cache.cpp', f'{c}/hole-cert/llama-kv-cache.cpp', cert, 'positions.size() != n_used')
++mutate('src/llama-graph.cpp', f'{c}/stale-reuse/llama-graph.cpp',
++       '        res &= mctx->get_kq_mask_prefix(ubatch, cparams.causal_attn) >= kq_mask->src[0]->ne[0];\n', '')
++mutate('src/llama-kv-cache.cpp', f'{c}/stale-reuse/llama-kv-cache.cpp',
++       'GGML_ASSERT(prefix == 0 || get_kq_mask_prefix(*ubatch, n_kv, causal_attn) >= prefix);', '')
+ PY_INNER
+-# Keep the production source and archive unchanged; replace one object in each test archive.
+-for source in llama-graph llama-kv-cache; do
+-    c++ -O3 -DNDEBUG -DGGML_USE_CPU -Isrc -Ibuild-cpu/src -Iinclude -Iggml/include -c "build-cpu/mask-controls/$source.cpp" -o "build-cpu/mask-controls/$source.cpp.o"
+-    cp build-cpu/src/libllama.a "build-cpu/mask-controls/$source.a"
+-    ar r "build-cpu/mask-controls/$source.a" "build-cpu/mask-controls/$source.cpp.o"
+-    LLAMA_LIB="build-cpu/mask-controls/$source.a" bash codex/build_fixture.sh
+-    if [[ $source == llama-graph ]]; then
+-        MASK_UPLOAD_META=1 build-cpu/host-depth build-cpu/full-meta-masks.bin build-cpu/full-meta-logits.bin > codex/mask-upload-full-meta.csv 2> codex/mask-upload-full-meta.log
+-        cmp build-cpu/meta-masks.bin build-cpu/full-meta-masks.bin
+-        cmp build-cpu/meta-logits.bin build-cpu/full-meta-logits.bin
+-    else
+-        if build-cpu/host-depth build-cpu/control-masks.bin build-cpu/control-logits.bin > /dev/null 2> codex/mask-upload-broken-cert.txt; then
+-            echo "broken certificate escaped" >&2
+-            exit 1
+-        fi
+-        rg -q 'sequence mutation did not invalidate prefix' codex/mask-upload-broken-cert.txt
+-    fi
++# Keep the production source and archive unchanged; replace mutated objects in each test archive.
++for control in llama-graph owner-cert hole-cert stale-reuse; do
++    dir=build-cpu/mask-controls/$control
++    cp build-cpu/src/libllama.a "$dir/libllama.a"
++    for source in "$dir"/*.cpp; do
++        c++ -O3 -DNDEBUG -DGGML_USE_CPU -Isrc -Ibuild-cpu/src -Iinclude -Iggml/include -c "$source" -o "$source.o"
++        (cd "$dir" && ar r libllama.a "$(basename "$source").o")
++    done
++    LLAMA_LIB="$dir/libllama.a" bash codex/build_fixture.sh
++    case $control in
++        llama-graph)
++            MASK_UPLOAD_META=1 build-cpu/host-depth build-cpu/full-meta-masks.bin build-cpu/full-meta-logits.bin > codex/mask-upload-full-meta.csv 2> codex/mask-upload-full-meta.log
++            cmp build-cpu/meta-masks.bin build-cpu/full-meta-masks.bin
++            cmp build-cpu/meta-logits.bin build-cpu/full-meta-logits.bin ;;
++        owner-cert|hole-cert)
++            if build-cpu/host-depth build-cpu/control-masks.bin build-cpu/control-logits.bin > /dev/null 2> "codex/mask-upload-$control.txt"; then
++                echo "broken certificate escaped: $control" >&2
++                exit 1
++            fi
++            [[ $control == owner-cert ]] && expected='sequence mutation did not invalidate prefix' || expected='hole inside prefix did not invalidate prefix'
++            rg -q "$expected" "codex/mask-upload-$control.txt" ;;
++        stale-reuse)
++            # Both reuse guards removed: a compact graph reused after a mutation inside its prefix must change logits.
++            if MASK_UPLOAD_META=1 build-cpu/host-depth build-cpu/control-masks.bin build-cpu/control-logits.bin > /dev/null 2> codex/mask-upload-stale-reuse.txt \
++                    && cmp -s build-cpu/control-logits.bin build-cpu/full-meta-logits.bin; then
++                echo "stale compact graph reuse escaped" >&2
++                exit 1
++            fi ;;
++    esac
+ done
+ cp build-cpu/mask-controls/host-depth-good build-cpu/host-depth
+ if [[ $# -gt 0 ]]; then
+     build-cpu/host-depth build-cpu/real-model-unused.bin build-cpu/real-model-logits.bin "$1" > codex/mask-upload-real-model.txt 2> codex/mask-upload-real-model.log
+ fi
+-echo 'PASS: exact compact masks, Meta logits against full host masks, wrong/stale bytes and broken certificate detected'
++echo 'PASS: exact compact masks, Meta logits against full host masks, wrong/stale bytes, broken owner/hole certificate and stale graph reuse detected'
+diff --git a/codex/gpu_ab.py b/codex/gpu_ab.py
+index 7d56bcf83..a5e940d76 100644
+--- a/codex/gpu_ab.py
++++ b/codex/gpu_ab.py
+@@ -161,6 +161,8 @@ def main():
+         digests[arm] = sorted(files[k] for k in files if Path(k).parent == root / "bin")
+     if (roots["up"] / "SOURCE").read_text().splitlines()[0] != 'ff5611656cc790cf22db6281d03e226262589e6f':
+         raise ValueError("frozen bytes changed: wrong upstream SOURCE")
++    if (roots["patch"] / "SOURCE").read_text().splitlines()[0] != 'c211ca41d02cf399602542b3a7f7187e97101c62':
++        raise ValueError("frozen bytes changed: wrong patch SOURCE")
+     if (roots["up"] / "SOURCE").read_text() == (roots["patch"] / "SOURCE").read_text() or digests["up"] == digests["patch"]:
+         raise ValueError("frozen bytes changed: up and patch arms are not distinct builds")
+     if sha(args.draft_vocab) != args.draft_vocab_sha:
+@@ -334,7 +336,7 @@ def exit_code(reason):
+     # gpuq: 3/7 halt the queue as hazards; the daemon detects Xid itself, so never return them from here.
+     if "port busy" in reason:
+         return 4
+-    if re.search(r"frozen bytes changed|model bytes changed|draft vocab changed|identity failed", reason):
++    if re.search(r"frozen bytes changed|model bytes changed|draft vocab changed|identity failed|missing final token identity", reason):
+         return 6
+     if "insufficient" in reason:
+         return 8
+diff --git a/codex/host-depth.cpp b/codex/host-depth.cpp
+index ad234e8b2..da50ea142 100644
+--- a/codex/host-depth.cpp
++++ b/codex/host-depth.cpp
+@@ -123,6 +123,14 @@ static void compact_test(llama_kv_cache & cache, const batch_storage & query, in
+     cells.pos_add(19, depth);
+     require(cache.get_kq_mask_prefix(ub, depth, true) == 0, "future position did not invalidate prefix");
+     cells.pos_add(19, -depth);
++    cache.seq_rm(0, 17, 18);
++    require(cells.used_max_p1() == uint32_t(depth) && cells.get_used() == uint32_t(depth - 1), "hole setup failed");
++    require(cache.get_kq_mask_prefix(ub, depth, true) == 0, "hole inside prefix did not invalidate prefix");
++    {
++        batch_storage refill(1, 17);
++        cache.apply_ubatch(slot(1, 17), refill.ub);
++    }
++    require(cache.get_kq_mask_prefix(ub, depth, true) == prefix, "refilled hole changed prefix");
+     cache.seq_rm(0, depth - 256, -1);
+     require(cache.get_kq_mask_prefix(ub, depth, true) >= prefix, "tail removal invalidated a visible prefix");
+     check();
+@@ -250,7 +258,26 @@ static void logits_test(llama_model & model, int depth, bool draft, std::ofstrea
+     std::vector<float> hidden(model.hparams.n_embd, 0.1f);
+     auto * batch = llama_batch_ext_init(context.get());
+     int step = 0, next_pos = depth - 6;
+-    for (int rows : {6, 1, 1, 1, 1, 1, 1, 1}) {
++    std::vector<int> schedule = {6, 1, 1, 1, 1, 1, 1, 1};
++    if (std::getenv("MASK_UPLOAD_META")) {
++        // Row changes at 8 and 10 force a fresh compact graph; 9 and 11 mutate inside its prefix and must not reuse it.
++        schedule.insert(schedule.end(), {2, 2, 3, 3});
++    }
++    for (int rows : schedule) {
++        if (step == 8) {
++            cache->seq_cp(1, 0, depth - 6, depth - 5);
++            cache->seq_rm(1, depth - 6, depth - 5);
++        }
++        if (step == 9) {
++            cache->seq_cp(0, 1, 19, 20);
++            cache->seq_rm(0, 19, 20);
++        }
++        if (step == 10) {
++            cache->seq_cp(1, 0, 19, 20);
++            cache->seq_rm(1, 19, 20);
++        }
++        // seq_rm moves the head to the freed cells; free more than the ubatch refills so a hole stays.
++        if (step == 11) { cache->seq_rm(0, 17, 21); }
+         if (step == 6) {
+             cache->seq_cp(0, 1, depth - 6, depth - 5);
+             cache->seq_rm(0, depth - 6, depth - 5);
+diff --git a/codex/mask-upload-hole-cert.txt b/codex/mask-upload-hole-cert.txt
+new file mode 100644
+index 000000000..05e923718
+--- /dev/null
++++ b/codex/mask-upload-hole-cert.txt
+@@ -0,0 +1 @@
++hole inside prefix did not invalidate prefix
+diff --git a/codex/mask-upload-identity.json b/codex/mask-upload-identity.json
+index 3d33b9ec5..28899e428 100644
+--- a/codex/mask-upload-identity.json
++++ b/codex/mask-upload-identity.json
+@@ -12,7 +12,7 @@
+     "sha256": "b2993089fa7abad68be7883ff84ce052ecb4dbbcea9991c8db8ace7acb1ba7fe"
+   },
+   "meta_logits": {
+-    "bytes_M": 6656,
+-    "sha256": "049e90d3302332c1c00d1c3ea3de19dd7da8393116bf1f7e90f1d9f723fe1bad"
++    "bytes_M": 11776,
++    "sha256": "3445a59214b4512282d6f0da6c4511114e2ed12bea5a36c89d2a12b190221e14"
+   }
+ }
+diff --git a/codex/mask-upload-broken-cert.txt b/codex/mask-upload-owner-cert.txt
+similarity index 100%
+rename from codex/mask-upload-broken-cert.txt
+rename to codex/mask-upload-owner-cert.txt
+diff --git a/codex/mask-upload-stale-reuse.txt b/codex/mask-upload-stale-reuse.txt
+new file mode 100644
+index 000000000..0d2c27fcf
+--- /dev/null
++++ b/codex/mask-upload-stale-reuse.txt
+@@ -0,0 +1,6 @@
++llama_context: n_ctx_seq (8448) > n_ctx_train (256) -- possible training context overflow
++llama_context: n_ctx_seq (8448) > n_ctx_train (256) -- possible training context overflow
++llama_context: n_ctx_seq (90368) > n_ctx_train (256) -- possible training context overflow
++~llama_context:     Meta() compute buffer size of   2.0701 MiB, does not match expectation of   1.4149 MiB
++llama_context: n_ctx_seq (90368) > n_ctx_train (256) -- possible training context overflow
++~llama_context:     Meta() compute buffer size of   2.0701 MiB, does not match expectation of   1.3929 MiB
+diff --git a/codex/test_gpu.py b/codex/test_gpu.py
+index 565f37595..a7a91cac9 100644
+--- a/codex/test_gpu.py
++++ b/codex/test_gpu.py
+@@ -13,10 +13,11 @@ os.chdir(root)
+ fixtures = Path("/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures")
+ h.fixture_test(fixtures)
+ base = subprocess.check_output(["git", "rev-parse", "ff5611656"], text=True).strip()
++patch = subprocess.check_output(["git", "rev-parse", "c211ca41d"], text=True).strip()
+ with tempfile.TemporaryDirectory(dir=root / "build-tmp") as tmp:
+     temp = Path(tmp)
+     roots = []
+-    for arm, source in (("up", base), ("patch", "1"*40)):
++    for arm, source in (("up", base), ("patch", patch), ("other", "1"*40)):
+         frozen = temp / arm; (frozen / "bin").mkdir(parents=True)
+         (frozen / "bin/host-depth-server").write_bytes((arm + " CPU plan fixture, never execute").encode())
+         (frozen / "SOURCE").write_text(source + "\n")
+@@ -32,6 +33,23 @@ with tempfile.TemporaryDirectory(dir=root / "build-tmp") as tmp:
+     for flags, order in (([], ["up", "patch", "patch", "up"]), (["--canary"], ["patch"]), (["--canary", "--canary-arm", "up"], ["up"])):
+         plan = json.loads(subprocess.check_output(cmd + flags, text=True))
+         assert plan["order"] == order and plan["stage_estimate_s_G"] <= .7*plan["budget_s"]
++    def synthetic(depth, rounds=50, tokens=True):
++        chunks, n = [], 0
++        for r in range(1, rounds + 1):
++            for t in range(3):
++                n += 1
++                chunks.append({"tokens": [n] if tokens else [], "timings": {"predicted_ms": 40.0*r + t, "predicted_n": n,
++                    "draft_n": 5*r, "draft_n_accepted": 2*r, "prompt_n": depth, "cache_n": 0}})
++        chunks.append({"stop": True, "tokens": [], "timings": dict(chunks[-1]["timings"])})
++        return {"request": {}, "chunks": chunks}
++    ref = temp / "ref"; ref.mkdir()
++    for depth in (8192, 90112):
++        (ref / f"depth-{depth}.json").write_text(json.dumps(synthetic(depth)))
++    plan = json.loads(subprocess.check_output(cmd + ["--canary", "--identity-reference", str(ref)], text=True))
++    assert plan["order"] == ["patch"] and all(str((ref / f"depth-{d}.json").resolve()) in plan["pins"] for d in (8192, 90112))
++    (ref / "depth-90112.json").write_text(json.dumps(synthetic(90112, tokens=False)))
++    result = subprocess.run(cmd + ["--canary", "--identity-reference", str(ref)], text=True, capture_output=True)
++    assert result.returncode == 6 and "missing final token identity" in result.stdout
+     result = subprocess.run(cmd + ["--execute-parent"], text=True, capture_output=True)
+     assert result.returncode != 0 and "parent execution requires" in result.stdout
+     result = subprocess.run(cmd + ["--canary", "--budget", "100"], text=True, capture_output=True)
+@@ -39,6 +57,12 @@ with tempfile.TemporaryDirectory(dir=root / "build-tmp") as tmp:
+     result = subprocess.run(["python3", "codex/gpu_ab.py", "--up", str(roots[1]), "--patch", str(roots[0]),
+                              "--model", str(model), "--model-sha", h.sha(model)], text=True, capture_output=True)
+     assert result.returncode == 6 and "wrong upstream" in result.stdout
++    result = subprocess.run(["python3", "codex/gpu_ab.py", "--up", str(roots[0]), "--patch", str(roots[2]),
++                             "--model", str(model), "--model-sha", h.sha(model)], text=True, capture_output=True)
++    assert result.returncode == 6 and "wrong patch" in result.stdout
++    assert h.exit_code("INVALID: depth 90112: token or acceptance identity failed") == 6
++    assert h.exit_code("INVALID: depth 8192: insufficient full-K interior intervals: 3 < 40") == 8
++    assert h.exit_code("port busy: [Errno 98]") == 4
+     (roots[0] / "bin/host-depth-server").write_bytes(b"changed bytes")
+     try:
+         h.frozen(roots[0])
+@@ -46,4 +70,4 @@ with tempfile.TemporaryDirectory(dir=root / "build-tmp") as tmp:
+         assert "frozen bytes changed" in str(e)
+     else:
+         raise AssertionError("changed binary escaped pin gate")
+-print("PASS: recorded parsers, frozen controls, base SOURCE, parent guard, budget, full and canary plans")
++print("PASS: recorded parsers, frozen controls, base and patch SOURCE, exit codes, parent guard, budget, full and canary plans")

@@ -1,0 +1,25 @@
+PASS: judge test (hole/future/ownership reuse steps) compact Meta logits == forced-full Meta logits (11776 B)
+== good: Meta split inputs naming the mask (unique)
+      2 [attn_inp_kq_mask (   0K)]
+      4 [attn_inp_kq_mask ( 132K)]
+     10 [attn_inp_kq_mask (  16K)]
+     10 [attn_inp_kq_mask ( 176K)]
+      4 [attn_inp_kq_mask (   1K)]
+      4 [attn_inp_kq_mask (   1M)]
+      2 [attn_inp_kq_mask (  33K)]
+      2 [attn_inp_kq_mask ( 353K)]
+      2 [attn_inp_kq_mask (   3K)]
+      2 [attn_inp_kq_mask (  49K)]
+      2 [attn_inp_kq_mask ( 529K)]
+      2 [attn_inp_kq_mask (  96K)]
+== full: Meta split inputs naming the mask (unique)
+      4 [attn_inp_kq_mask ( 132K)]
+     10 [attn_inp_kq_mask (  16K)]
+     10 [attn_inp_kq_mask ( 176K)]
+      6 [attn_inp_kq_mask (   1M)]
+      2 [attn_inp_kq_mask (  33K)]
+      2 [attn_inp_kq_mask ( 353K)]
+      2 [attn_inp_kq_mask (  49K)]
+      2 [attn_inp_kq_mask ( 529K)]
+      2 [attn_inp_kq_mask (  96K)]
+rc=0

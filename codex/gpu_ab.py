@@ -161,6 +161,8 @@ def main():
         digests[arm] = sorted(files[k] for k in files if Path(k).parent == root / "bin")
     if (roots["up"] / "SOURCE").read_text().splitlines()[0] != 'ff5611656cc790cf22db6281d03e226262589e6f':
         raise ValueError("frozen bytes changed: wrong upstream SOURCE")
+    if (roots["patch"] / "SOURCE").read_text().splitlines()[0] != 'c211ca41d02cf399602542b3a7f7187e97101c62':
+        raise ValueError("frozen bytes changed: wrong patch SOURCE")
     if (roots["up"] / "SOURCE").read_text() == (roots["patch"] / "SOURCE").read_text() or digests["up"] == digests["patch"]:
         raise ValueError("frozen bytes changed: up and patch arms are not distinct builds")
     if sha(args.draft_vocab) != args.draft_vocab_sha:
@@ -334,7 +336,7 @@ def exit_code(reason):
     # gpuq: 3/7 halt the queue as hazards; the daemon detects Xid itself, so never return them from here.
     if "port busy" in reason:
         return 4
-    if re.search(r"frozen bytes changed|model bytes changed|draft vocab changed|identity failed", reason):
+    if re.search(r"frozen bytes changed|model bytes changed|draft vocab changed|identity failed|missing final token identity", reason):
         return 6
     if "insufficient" in reason:
         return 8

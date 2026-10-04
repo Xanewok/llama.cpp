@@ -1,0 +1,61 @@
+Traceback (most recent call last):
+  File "<string>", line 6, in <module>
+  File "/usr/lib/python3.12/ast.py", line 66, in literal_eval
+    node_or_string = parse(node_or_string.lstrip(" \t"), mode='eval')
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/ast.py", line 52, in parse
+    return compile(source, filename, mode, flags,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<unknown>", line 1
+    "if (cells.used_max_p1() != n_used 
+    ^
+SyntaxError: unterminated string literal (detected at line 1)
+K1_no_hole_check,NEEDLE_FAIL
+Traceback (most recent call last):
+  File "<string>", line 6, in <module>
+  File "/usr/lib/python3.12/ast.py", line 66, in literal_eval
+    node_or_string = parse(node_or_string.lstrip(" \t"), mode='eval')
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/ast.py", line 52, in parse
+    return compile(source, filename, mode, flags,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<unknown>", line 1
+    "if (cells.used_max_p1() != n_used 
+    ^
+SyntaxError: unterminated string literal (detected at line 1)
+K2_no_owner_check,NEEDLE_FAIL
+K3_no_mrope_tie,shipped=killed(cpu: M-RoPE mutation did not invalidate prefix),judge=killed(cpu: M-RoPE mutation did not invalidate prefix)
+K4_no_future,shipped=killed(cpu: future position did not invalidate prefix),judge=killed(cpu: future position did not invalidate prefix)
+K5_no_n_used_cap,shipped=SURVIVED,judge=SURVIVED
+K6_no_suffix_reserve,shipped=killed(cpu: wrong compact prefix),judge=killed(cpu: wrong compact prefix)
+Traceback (most recent call last):
+  File "<string>", line 6, in <module>
+  File "/usr/lib/python3.12/ast.py", line 66, in literal_eval
+    node_or_string = parse(node_or_string.lstrip(" \t"), mode='eval')
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/ast.py", line 52, in parse
+    return compile(source, filename, mode, flags,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<unknown>", line 1
+    "GGML_ASSERT(prefix == 0 
+    ^
+SyntaxError: unterminated string literal (detected at line 1)
+K7_no_setter_assert,NEEDLE_FAIL
+judge/mutants.sh: line 36: 3745361 Aborted                 (core dumped) MASK_UPLOAD_META=1 "$bin" "$OUT/$TAG-$name-mmasks.bin" "$OUT/$TAG-$name-mlogits.bin" > "$OUT/$TAG-$name-meta.csv" 2> "$OUT/$TAG-$name-meta.log"
+judge/mutants.sh: line 36: 3748243 Aborted                 (core dumped) MASK_UPLOAD_META=1 "$bin" "$OUT/$TAG-$name-mmasks.bin" "$OUT/$TAG-$name-mlogits.bin" > "$OUT/$TAG-$name-meta.csv" 2> "$OUT/$TAG-$name-meta.log"
+G1_no_reuse_recheck,shipped=killed(meta: warning: 30	../sysdeps/unix/sysv/linux/wait4.c: No such file or directory),judge=killed(meta: warning: 30	../sysdeps/unix/sysv/linux/wait4.c: No such file or directory)
+G4_fill_negzero,shipped=SURVIVED,judge=SURVIVED
+Traceback (most recent call last):
+  File "<string>", line 6, in <module>
+  File "/usr/lib/python3.12/ast.py", line 66, in literal_eval
+    node_or_string = parse(node_or_string.lstrip(" \t"), mode='eval')
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/ast.py", line 52, in parse
+    return compile(source, filename, mode, flags,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<unknown>", line 1
+    "GGML_ASSERT(prefix == 0 
+    ^
+SyntaxError: unterminated string literal (detected at line 1)
+G1K7_no_reuse_guards,NEEDLE_FAIL
+rc=0

@@ -27,35 +27,54 @@ for control in MASK_UPLOAD_WRONG_CONTROL HOST_DEPTH_STALE_CONTROL; do
 done
 python3 - <<'PY_INNER'
 from pathlib import Path
-s = Path('src/llama-graph.cpp').read_text()
-needle = 'const uint32_t prefix = candidate >= 32768 ? candidate : 0;'
-assert s.count(needle) == 1
-Path('build-cpu/mask-controls/llama-graph.cpp').write_text(s.replace(needle, 'const uint32_t prefix = 0;'))
-s = Path('src/llama-kv-cache.cpp').read_text()
-needle = 'cells.used_max_p1() != n_used || positions.size() != n_used'
-assert s.count(needle) == 1
-Path('build-cpu/mask-controls/llama-kv-cache.cpp').write_text(s.replace(needle, 'cells.used_max_p1() != n_used'))
+def mutate(src, dst, needle, replacement):
+    s = Path(src).read_text()
+    assert s.count(needle) == 1, needle
+    Path(dst).parent.mkdir(parents=True, exist_ok=True)
+    Path(dst).write_text(s.replace(needle, replacement))
+c = 'build-cpu/mask-controls'
+mutate('src/llama-graph.cpp', f'{c}/llama-graph/llama-graph.cpp',
+       'const uint32_t prefix = candidate >= 32768 ? candidate : 0;', 'const uint32_t prefix = 0;')
+cert = 'cells.used_max_p1() != n_used || positions.size() != n_used'
+mutate('src/llama-kv-cache.cpp', f'{c}/owner-cert/llama-kv-cache.cpp', cert, 'cells.used_max_p1() != n_used')
+mutate('src/llama-kv-cache.cpp', f'{c}/hole-cert/llama-kv-cache.cpp', cert, 'positions.size() != n_used')
+mutate('src/llama-graph.cpp', f'{c}/stale-reuse/llama-graph.cpp',
+       '        res &= mctx->get_kq_mask_prefix(ubatch, cparams.causal_attn) >= kq_mask->src[0]->ne[0];\n', '')
+mutate('src/llama-kv-cache.cpp', f'{c}/stale-reuse/llama-kv-cache.cpp',
+       'GGML_ASSERT(prefix == 0 || get_kq_mask_prefix(*ubatch, n_kv, causal_attn) >= prefix);', '')
 PY_INNER
-# Keep the production source and archive unchanged; replace one object in each test archive.
-for source in llama-graph llama-kv-cache; do
-    c++ -O3 -DNDEBUG -DGGML_USE_CPU -Isrc -Ibuild-cpu/src -Iinclude -Iggml/include -c "build-cpu/mask-controls/$source.cpp" -o "build-cpu/mask-controls/$source.cpp.o"
-    cp build-cpu/src/libllama.a "build-cpu/mask-controls/$source.a"
-    ar r "build-cpu/mask-controls/$source.a" "build-cpu/mask-controls/$source.cpp.o"
-    LLAMA_LIB="build-cpu/mask-controls/$source.a" bash codex/build_fixture.sh
-    if [[ $source == llama-graph ]]; then
-        MASK_UPLOAD_META=1 build-cpu/host-depth build-cpu/full-meta-masks.bin build-cpu/full-meta-logits.bin > codex/mask-upload-full-meta.csv 2> codex/mask-upload-full-meta.log
-        cmp build-cpu/meta-masks.bin build-cpu/full-meta-masks.bin
-        cmp build-cpu/meta-logits.bin build-cpu/full-meta-logits.bin
-    else
-        if build-cpu/host-depth build-cpu/control-masks.bin build-cpu/control-logits.bin > /dev/null 2> codex/mask-upload-broken-cert.txt; then
-            echo "broken certificate escaped" >&2
-            exit 1
-        fi
-        rg -q 'sequence mutation did not invalidate prefix' codex/mask-upload-broken-cert.txt
-    fi
+# Keep the production source and archive unchanged; replace mutated objects in each test archive.
+for control in llama-graph owner-cert hole-cert stale-reuse; do
+    dir=build-cpu/mask-controls/$control
+    cp build-cpu/src/libllama.a "$dir/libllama.a"
+    for source in "$dir"/*.cpp; do
+        c++ -O3 -DNDEBUG -DGGML_USE_CPU -Isrc -Ibuild-cpu/src -Iinclude -Iggml/include -c "$source" -o "$source.o"
+        (cd "$dir" && ar r libllama.a "$(basename "$source").o")
+    done
+    LLAMA_LIB="$dir/libllama.a" bash codex/build_fixture.sh
+    case $control in
+        llama-graph)
+            MASK_UPLOAD_META=1 build-cpu/host-depth build-cpu/full-meta-masks.bin build-cpu/full-meta-logits.bin > codex/mask-upload-full-meta.csv 2> codex/mask-upload-full-meta.log
+            cmp build-cpu/meta-masks.bin build-cpu/full-meta-masks.bin
+            cmp build-cpu/meta-logits.bin build-cpu/full-meta-logits.bin ;;
+        owner-cert|hole-cert)
+            if build-cpu/host-depth build-cpu/control-masks.bin build-cpu/control-logits.bin > /dev/null 2> "codex/mask-upload-$control.txt"; then
+                echo "broken certificate escaped: $control" >&2
+                exit 1
+            fi
+            [[ $control == owner-cert ]] && expected='sequence mutation did not invalidate prefix' || expected='hole inside prefix did not invalidate prefix'
+            rg -q "$expected" "codex/mask-upload-$control.txt" ;;
+        stale-reuse)
+            # Both reuse guards removed: a compact graph reused after a mutation inside its prefix must change logits.
+            if MASK_UPLOAD_META=1 build-cpu/host-depth build-cpu/control-masks.bin build-cpu/control-logits.bin > /dev/null 2> codex/mask-upload-stale-reuse.txt \
+                    && cmp -s build-cpu/control-logits.bin build-cpu/full-meta-logits.bin; then
+                echo "stale compact graph reuse escaped" >&2
+                exit 1
+            fi ;;
+    esac
 done
 cp build-cpu/mask-controls/host-depth-good build-cpu/host-depth
 if [[ $# -gt 0 ]]; then
     build-cpu/host-depth build-cpu/real-model-unused.bin build-cpu/real-model-logits.bin "$1" > codex/mask-upload-real-model.txt 2> codex/mask-upload-real-model.log
 fi
-echo 'PASS: exact compact masks, Meta logits against full host masks, wrong/stale bytes and broken certificate detected'
+echo 'PASS: exact compact masks, Meta logits against full host masks, wrong/stale bytes, broken owner/hole certificate and stale graph reuse detected'

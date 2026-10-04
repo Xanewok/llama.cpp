@@ -1,0 +1,4 @@
+K1_no_hole_check,shipped=SURVIVED,judge=killed(cpu: judge: hole inside prefix did not invalidate prefix)
+K2_no_owner_check,shipped=killed(cpu: sequence mutation did not invalidate prefix),judge=killed(cpu: sequence mutation did not invalidate prefix)
+K7_no_setter_assert,shipped=SURVIVED,judge=SURVIVED
+G1K7_no_reuse_guards,shipped=killed(meta logits != forced-full),judge=killed(meta logits != forced-full)

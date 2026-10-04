@@ -123,6 +123,14 @@ static void compact_test(llama_kv_cache & cache, const batch_storage & query, in
     cells.pos_add(19, depth);
     require(cache.get_kq_mask_prefix(ub, depth, true) == 0, "future position did not invalidate prefix");
     cells.pos_add(19, -depth);
+    cache.seq_rm(0, 17, 18);
+    require(cells.used_max_p1() == uint32_t(depth) && cells.get_used() == uint32_t(depth - 1), "hole setup failed");
+    require(cache.get_kq_mask_prefix(ub, depth, true) == 0, "hole inside prefix did not invalidate prefix");
+    {
+        batch_storage refill(1, 17);
+        cache.apply_ubatch(slot(1, 17), refill.ub);
+    }
+    require(cache.get_kq_mask_prefix(ub, depth, true) == prefix, "refilled hole changed prefix");
     cache.seq_rm(0, depth - 256, -1);
     require(cache.get_kq_mask_prefix(ub, depth, true) >= prefix, "tail removal invalidated a visible prefix");
     check();
@@ -250,7 +258,26 @@ static void logits_test(llama_model & model, int depth, bool draft, std::ofstrea
     std::vector<float> hidden(model.hparams.n_embd, 0.1f);
     auto * batch = llama_batch_ext_init(context.get());
     int step = 0, next_pos = depth - 6;
-    for (int rows : {6, 1, 1, 1, 1, 1, 1, 1}) {
+    std::vector<int> schedule = {6, 1, 1, 1, 1, 1, 1, 1};
+    if (std::getenv("MASK_UPLOAD_META")) {
+        // Row changes at 8 and 10 force a fresh compact graph; 9 and 11 mutate inside its prefix and must not reuse it.
+        schedule.insert(schedule.end(), {2, 2, 3, 3});
+    }
+    for (int rows : schedule) {
+        if (step == 8) {
+            cache->seq_cp(1, 0, depth - 6, depth - 5);
+            cache->seq_rm(1, depth - 6, depth - 5);
+        }
+        if (step == 9) {
+            cache->seq_cp(0, 1, 19, 20);
+            cache->seq_rm(0, 19, 20);
+        }
+        if (step == 10) {
+            cache->seq_cp(1, 0, 19, 20);
+            cache->seq_rm(1, 19, 20);
+        }
+        // seq_rm moves the head to the freed cells; free more than the ubatch refills so a hole stays.
+        if (step == 11) { cache->seq_rm(0, 17, 21); }
         if (step == 6) {
             cache->seq_cp(0, 1, depth - 6, depth - 5);
             cache->seq_rm(0, depth - 6, depth - 5);
