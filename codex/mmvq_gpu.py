@@ -96,7 +96,8 @@ def bench_item(harness, root, out, canary, repeats, trials):
     if result.returncode != 1 or "variant disagrees with baseline" not in (out / "negative.log").read_text():
         raise ValueError("bench negative control did not fail at the comparison gate")
     for variant in VARIANTS:
-        report = {"canary": canary, "variant": variant, "rows": [row for row in rows if row["variant"] == variant]}
+        report = {"canary": canary, "variant": variant, "source": (root / "SOURCE").read_text().splitlines()[0],
+                  "raw_file": str(out / "bench.raw.jsonl"), "rows": [row for row in rows if row["variant"] == variant]}
         path = out / f"bench-{variant}.json"
         path.write_text(json.dumps(report, indent=2))
         shutil.copy2(path, ROOT / "codex" / path.name)
@@ -137,6 +138,8 @@ def ab_item(harness, roots, out, canary):
             summary[kind] = {"mean_ms_per_round_D": means, "patch_minus_up_ms_D": means["patch"] - means["up"],
                              "acceptance_D": acceptance, "acceptance_drift": abs(acceptance["patch"] - acceptance["up"]) > 0.05}
     (out / "summary.json").write_text(json.dumps(summary, indent=2))
+    if any(result["acceptance_drift"] for result in summary.values()):
+        raise ValueError("A/B acceptance drift confounds the speed comparison")
 
 
 def main():
@@ -158,7 +161,7 @@ def main():
     args.budget = args.budget or (600 if args.canary else 1800 if args.mode == "bench" else 1200)
     if args.canary and args.mode == "bench":
         args.repeats, args.trials = 5, 1
-    estimate = (300 if args.canary else 900) if args.mode == "bench" else (180 if args.canary else 720) if args.mode == "ab" else 540
+    estimate = (300 if args.canary else math.ceil(455 + 445*(args.repeats/100)*(args.trials/7))) if args.mode == "bench" else (180 if args.canary else 720) if args.mode == "ab" else 540
     if not 1 <= args.repeats <= 1000 or not 1 <= args.trials <= 15 or args.rounds < 40 or estimate > 0.7*args.budget or (args.canary and args.budget > 600):
         raise ValueError("invalid settings or stage estimate exceeds budget margin")
     roots = {"up": args.up.resolve(), "patch": args.patch.resolve()}
