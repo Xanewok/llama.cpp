@@ -574,6 +574,9 @@ struct common_sampler * common_sampler_init(
     }
 
     const int32_t candidate_k = common_sampler_prefilter_k(params);
+    if (prefilter_dup_bias) {
+        params.backend_sampling = false;
+    }
     const bool use_candidates = params.backend_sampling && candidate_k > 0 && candidate_k < 256 && !prefilter_dup_bias;
 
     if (grmr && params.backend_sampling && !use_candidates) {

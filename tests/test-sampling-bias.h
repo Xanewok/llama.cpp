@@ -129,4 +129,11 @@ static void test_sampling_bias(
         }
         printf("leading bias %s: tie, nonfinite, grammar-first, grammar-retry, budget fallbacks identical\n", finite ? "finite" : "-INF");
     }
+
+    common_params_sampling duplicate;
+    duplicate.backend_sampling = true;
+    duplicate.top_k = k;
+    duplicate.logit_bias = {{ low, lift }, { low, 0.5f }};
+    common_sampler_ptr fallback(common_sampler_init(model, duplicate));
+    GGML_ASSERT(common_sampler_get_backend(fallback.get()) == nullptr);
 }
