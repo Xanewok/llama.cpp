@@ -1,0 +1,21 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"resp_O8WnN1DGJZ3UNoKOINPg8rIWXIY0JX2q","object":"response","status":"in_progress"}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","response":{"id":"resp_O8WnN1DGJZ3UNoKOINPg8rIWXIY0JX2q","object":"response","status":"in_progress"}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","item":{"id":"rs_fQ4Fk7fRiBrnyKo1IuyZXsPJzfY3RlFb","summary":[],"type":"reasoning","content":[],"encrypted_content":"","status":"in_progress"}}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","delta":".","item_id":"rs_fQ4Fk7fRiBrnyKo1IuyZXsPJzfY3RlFb"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","delta":" Where","item_id":"rs_fQ4Fk7fRiBrnyKo1IuyZXsPJzfY3RlFb"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","delta":"'s","item_id":"rs_fQ4Fk7fRiBrnyKo1IuyZXsPJzfY3RlFb"}
+
+event: response.reasoning_text.delta
+data: {"type":"response.reasoning_text.delta","delta":" `","item_id":"rs_fQ4Fk7fRiBrnyKo1IuyZXsPJzfY3RlFb"}
+

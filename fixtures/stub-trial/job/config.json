@@ -1,0 +1,52 @@
+{
+    "job_name": "run2-local-0-pallets__click-3239",
+    "jobs_dir": "/home/xanewok/repos/swe-fresh/proof/run2-local/attempts/agent-0-pallets__click-3239/harbor",
+    "agent_timeout_multiplier": 0.4,
+    "n_concurrent_trials": 1,
+    "quiet": true,
+    "agents": [
+        {
+            "name": "codex",
+            "model_name": "openai/local-benchmark",
+            "extra_allowed_hosts": [
+                "172.17.0.1"
+            ],
+            "kwargs": {
+                "version": "0.160.0",
+                "reasoning_effort": "xhigh",
+                "config": {
+                    "model_context_window": 98304,
+                    "model_auto_compact_token_limit": 88000,
+                    "web_search": "disabled",
+                    "project_doc_max_bytes": 0,
+                    "model_provider": "local",
+                    "model_providers": {
+                        "local": {
+                            "name": "Local relay",
+                            "base_url": "http://172.17.0.1:42039/v1",
+                            "wire_api": "responses",
+                            "requires_openai_auth": false,
+                            "supports_websockets": false,
+                            "request_max_retries": 2,
+                            "stream_max_retries": 2,
+                            "stream_idle_timeout_ms": 900000
+                        }
+                    }
+                }
+            },
+            "env": {
+                "OPENAI_API_KEY": "sk-s****mmy",
+                "OPENAI_BASE_URL": "http://172.17.0.1:42039/v1"
+            }
+        }
+    ],
+    "datasets": [
+        {
+            "name": "swe-rebench/swe-rebench-leaderboard",
+            "ref": "sha256:ebe7444e313a0d8db94fa541139826eaebe2b0abcd4900c6f73e750494910dca",
+            "task_names": [
+                "swe-rebench/pallets__click-3239"
+            ]
+        }
+    ]
+}

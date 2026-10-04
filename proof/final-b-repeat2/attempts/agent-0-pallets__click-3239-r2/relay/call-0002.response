@@ -1,0 +1,33 @@
+event: response.created
+data: {"type": "response.created", "response": {"id": "resp_stub_4", "object": "response", "status": "in_progress", "model": "local-benchmark", "output": []}}
+
+event: response.in_progress
+data: {"type": "response.in_progress", "response": {"id": "resp_stub_4", "object": "response", "status": "in_progress", "model": "local-benchmark", "output": []}}
+
+event: response.output_item.added
+data: {"type": "response.output_item.added", "output_index": 0, "item": {"type": "message", "id": "msg_4", "role": "assistant", "status": "in_progress", "content": []}}
+
+event: response.content_part.added
+data: {"type": "response.content_part.added", "item_id": "msg_4", "output_index": 0, "content_index": 0, "part": {"type": "output_text", "text": "", "annotations": []}}
+
+event: response.output_text.delta
+data: {"type": "response.output_text.delta", "item_id": "msg_4", "output_index": 0, "content_index": 0, "delta": "STUB "}
+
+event: response.output_text.delta
+data: {"type": "response.output_text.delta", "item_id": "msg_4", "output_index": 0, "content_index": 0, "delta": "DONE: "}
+
+event: response.output_text.delta
+data: {"type": "response.output_text.delta", "item_id": "msg_4", "output_index": 0, "content_index": 0, "delta": "no "}
+
+event: response.output_text.delta
+data: {"type": "response.output_text.delta", "item_id": "msg_4", "output_index": 0, "content_index": 0, "delta": "fix "}
+
+event: response.output_text.delta
+data: {"type": "response.output_text.delta", "item_id": "msg_4", "output_index": 0, "content_index": 0, "delta": "attempted. "}
+
+event: response.output_item.done
+data: {"type": "response.output_item.done", "output_index": 0, "item": {"type": "message", "id": "msg_4", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": "STUB DONE: no fix attempted.", "annotations": []}]}}
+
+event: response.completed
+data: {"type": "response.completed", "response": {"id": "resp_stub_4", "object": "response", "status": "completed", "model": "local-benchmark", "output": [{"type": "message", "id": "msg_4", "role": "assistant", "status": "completed", "content": [{"type": "output_text", "text": "STUB DONE: no fix attempted.", "annotations": []}]}], "usage": {"input_tokens": 12000, "output_tokens": 12, "total_tokens": 12012, "input_tokens_details": {"cached_tokens": 0}, "output_tokens_details": {"reasoning_tokens": 0}}}}
+

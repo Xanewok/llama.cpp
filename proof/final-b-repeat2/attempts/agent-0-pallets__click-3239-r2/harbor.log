@@ -1,0 +1,33 @@
+/home/xanewok/.cache/uv/archive-v0/kqizvhnMHoa5bwFxJc3UT/lib/python3.13/site-packages/harbor/trial/network_policy.py:157: UserWarning: Run-specific allowlist host(s) ['172.17.0.1'] are ignored because the effective network policy is public.
+  agent_phase = resolve_agent_phase_policy(
+/home/xanewok/.cache/uv/archive-v0/kqizvhnMHoa5bwFxJc3UT/lib/python3.13/site-packages/harbor/trial/network_policy.py:157: UserWarning: Run-specific allowlist host(s) ['172.17.0.1'] are ignored because the effective network policy is public.
+  agent_phase = resolve_agent_phase_policy(
+/home/xanewok/.cache/uv/archive-v0/kqizvhnMHoa5bwFxJc3UT/lib/python3.13/site-packages/harbor/trial/network_policy.py:157: UserWarning: Run-specific allowlist host(s) ['172.17.0.1'] are ignored because the effective network policy is public.
+  agent_phase = resolve_agent_phase_policy(
+  1/1 Mean: 0.000 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 0:02:04 0:00:00
+
+swe-rebench-leaderboard • codex • local-benchmark
+┏━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━┓
+┃ Trials ┃ Exceptions ┃  Mean ┃
+┡━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━┩
+│      1 │          0 │ 0.000 │
+└────────┴────────────┴───────┘
+
+┏━━━━━━━━┳━━━━━━━┓
+┃ Reward ┃ Count ┃
+┡━━━━━━━━╇━━━━━━━┩
+│ 0.0    │     1 │
+└────────┴───────┘
+
+Job Info
+Total runtime: 2m 4s
+Results written to 
+/home/xanewok/repos/swe-fresh/proof/final-b-repeat2/attempts/agent-0-pallets__cl
+ick-3239-r2/harbor/final-b-repeat2-0-pallets__click-3239-r2/result.json
+Inspect results by running `harbor view 
+/home/xanewok/repos/swe-fresh/proof/final-b-repeat2/attempts/agent-0-pallets__cl
+ick-3239-r2/harbor`
+Share results by running `harbor upload 
+/home/xanewok/repos/swe-fresh/proof/final-b-repeat2/attempts/agent-0-pallets__cl
+ick-3239-r2/harbor/final-b-repeat2-0-pallets__click-3239-r2`
+

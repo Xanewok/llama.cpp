@@ -1,0 +1,45 @@
+{
+  "tasks": [
+    "pallets__click-3239"
+  ],
+  "items": [
+    [
+      "pallets__click-3239",
+      1
+    ],
+    [
+      "pallets__click-3239",
+      2
+    ]
+  ],
+  "args": {
+    "command": "run",
+    "model": "local-benchmark",
+    "engine": "stub",
+    "context": "98304",
+    "compact": "88000",
+    "cap_s": "1200",
+    "agents": "1",
+    "codex_version": "0.160.0",
+    "harbor_version": "0.23.0",
+    "reasoning": "xhigh",
+    "provider": "local",
+    "dataset_ref": "None",
+    "dataset_path": "data/dl/swe-rebench-leaderboard",
+    "campaign": "/home/xanewok/repos/swe-fresh/proof/final-b-repeat2",
+    "tasks": "pallets__click-3239",
+    "tasks_file": "None",
+    "upstream_port": "18305",
+    "upstream_host": "127.0.0.1",
+    "relay_bind": "172.17.0.1",
+    "metrics_url": "http://127.0.0.1:18305",
+    "budget_s": "3600",
+    "hard_timeout_s": "1500.0",
+    "repeat": "2",
+    "canary": "False"
+  },
+  "runner_sha256": "0357d843b7e1c5359e703393b2e5169d3a884484053949d034453fa1076ca73a",
+  "relay_sha256": "ba98e391a8146ca32a317d555344b5751e73968d5fdaab0abdc8ed54ec9e09ff",
+  "harbor_version_output": "0.23.0",
+  "started_epoch": 1791066892.5198953
+}

@@ -1,0 +1,62 @@
+{
+  "updated_epoch": 1791067144.781767,
+  "state": "complete",
+  "valid": true,
+  "gates": [],
+  "model": "local-benchmark",
+  "tasks": 2,
+  "solved": 0,
+  "unsolved": 2,
+  "timeouts": 0,
+  "invalid_tasks": 0,
+  "wall_seconds": 2400.0,
+  "wall_scope": "sum of scored agent walls; unsolved/timeout score the cap",
+  "solved_wall_seconds": 0,
+  "campaign_elapsed_seconds": 252.22933917300543,
+  "cap_s": 1200,
+  "output_tokens": 72.0,
+  "prefill_seconds": null,
+  "decode_seconds": 1.6,
+  "decode_tps": 37.5,
+  "decode_tps_delivery": 136.60435866334788,
+  "peak_context_tokens": 12012,
+  "draft_acceptance": 0.65,
+  "acceptance_source": "engine_counter_delta",
+  "compactions": 0,
+  "runaway_calls": 0,
+  "http_500_calls": 0,
+  "tool_calls": 2,
+  "metrics_scope": "exclusive_server_whole_campaign",
+  "metrics_delta": {
+    "draft_accepted_total": 52.0,
+    "tokens_predicted_seconds_total": 1.6,
+    "tokens_predicted_total": 60.0,
+    "draft_tokens_total": 80.0
+  },
+  "per_task": [
+    {
+      "task": "pallets__click-3239",
+      "run": 1,
+      "status": "unsolved",
+      "scored_wall_s": 1200.0,
+      "peak_context_tokens": 9012,
+      "calls": 2,
+      "output_tokens": 36,
+      "decode_tps": 45.0,
+      "draft_acceptance": null,
+      "compactions": 0
+    },
+    {
+      "task": "pallets__click-3239",
+      "run": 2,
+      "status": "unsolved",
+      "scored_wall_s": 1200.0,
+      "peak_context_tokens": 12012,
+      "calls": 2,
+      "output_tokens": 36,
+      "decode_tps": 30.0,
+      "draft_acceptance": null,
+      "compactions": 0
+    }
+  ]
+}

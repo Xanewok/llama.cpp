@@ -1,0 +1,18 @@
+event: response.created
+data: {"type": "response.created", "response": {"id": "resp_stub_1", "object": "response", "status": "in_progress", "model": "local-benchmark", "output": []}}
+
+event: response.in_progress
+data: {"type": "response.in_progress", "response": {"id": "resp_stub_1", "object": "response", "status": "in_progress", "model": "local-benchmark", "output": []}}
+
+event: response.output_item.added
+data: {"type": "response.output_item.added", "output_index": 0, "item": {"type": "function_call", "id": "fc_1", "call_id": "call_stub_1", "name": "exec_command", "arguments": "", "status": "in_progress"}}
+
+event: response.function_call_arguments.delta
+data: {"type": "response.function_call_arguments.delta", "item_id": "fc_1", "output_index": 0, "delta": "{\"cmd\": \"echo stub-tool-ran > /tmp/stub-marker; pwd; ls | head -5\", \"yield_time_ms\": 2000}"}
+
+event: response.output_item.done
+data: {"type": "response.output_item.done", "output_index": 0, "item": {"type": "function_call", "id": "fc_1", "call_id": "call_stub_1", "name": "exec_command", "arguments": "{\"cmd\": \"echo stub-tool-ran > /tmp/stub-marker; pwd; ls | head -5\", \"yield_time_ms\": 2000}", "status": "completed"}}
+
+event: response.completed
+data: {"type": "response.completed", "response": {"id": "resp_stub_1", "object": "response", "status": "completed", "model": "local-benchmark", "output": [{"type": "function_call", "id": "fc_1", "call_id": "call_stub_1", "name": "exec_command", "arguments": "{\"cmd\": \"echo stub-tool-ran > /tmp/stub-marker; pwd; ls | head -5\", \"yield_time_ms\": 2000}", "status": "completed"}], "usage": {"input_tokens": 7500, "output_tokens": 24, "total_tokens": 7524, "input_tokens_details": {"cached_tokens": 0}, "output_tokens_details": {"reasoning_tokens": 0}}}}
+

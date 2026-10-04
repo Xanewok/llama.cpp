@@ -1,0 +1,39 @@
+{
+    "job_name": "run1-builtin-0-pallets__click-3239",
+    "jobs_dir": "/home/xanewok/repos/swe-fresh/proof/run1-builtin/attempts/agent-0-pallets__click-3239/harbor",
+    "agent_timeout_multiplier": 0.4,
+    "n_concurrent_trials": 1,
+    "quiet": true,
+    "agents": [
+        {
+            "name": "codex",
+            "model_name": "openai/local-benchmark",
+            "extra_allowed_hosts": [
+                "172.17.0.1"
+            ],
+            "kwargs": {
+                "version": "0.160.0",
+                "reasoning_effort": "xhigh",
+                "config": {
+                    "model_context_window": 98304,
+                    "model_auto_compact_token_limit": 88000,
+                    "web_search": "disabled",
+                    "project_doc_max_bytes": 0
+                }
+            },
+            "env": {
+                "OPENAI_API_KEY": "****",
+                "OPENAI_BASE_URL": "http://172.17.0.1:33901/v1"
+            }
+        }
+    ],
+    "datasets": [
+        {
+            "name": "swe-rebench/swe-rebench-leaderboard",
+            "ref": "sha256:ebe7444e313a0d8db94fa541139826eaebe2b0abcd4900c6f73e750494910dca",
+            "task_names": [
+                "swe-rebench/pallets__click-3239"
+            ]
+        }
+    ]
+}

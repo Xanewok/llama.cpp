@@ -1,0 +1,158 @@
+{
+ "id": "17e798a2-13e7-4522-896c-f5596bab0751",
+ "task_name": "swe-rebench/pallets__click-3239",
+ "trial_name": "pallets__click-3239__woLwNHF",
+ "trial_uri": "file:///home/xanewok/repos/swe-fresh/results/cal-llama-v2/canary/attempts/agent-0-pallets__click-3239-r1/harbor/canary-0-pallets__click-3239-r1/pallets__click-3239__woLwNHF",
+ "task_id": {
+  "path": "/home/xanewok/repos/swe-fresh/data/dl/swe-rebench-leaderboard/pallets__click-3239"
+ },
+ "source": "swe-rebench-leaderboard",
+ "task_checksum": "98384beeb085c4fbee2c20678fa2c45c0a506cdde284a4ae8ee0259ac5d32456",
+ "config": {
+  "task": {
+   "path": "/home/xanewok/repos/swe-fresh/data/dl/swe-rebench-leaderboard/pallets__click-3239",
+   "git_url": null,
+   "git_commit_id": null,
+   "name": null,
+   "ref": null,
+   "overwrite": false,
+   "download_dir": null,
+   "source": "swe-rebench-leaderboard"
+  },
+  "trial_name": "pallets__click-3239__woLwNHF",
+  "trials_dir": "/home/xanewok/repos/swe-fresh/results/cal-llama-v2/canary/attempts/agent-0-pallets__click-3239-r1/harbor/canary-0-pallets__click-3239-r1",
+  "install_only": false,
+  "timeout_multiplier": 1.0,
+  "agent_timeout_multiplier": 0.1,
+  "verifier_timeout_multiplier": null,
+  "agent_setup_timeout_multiplier": null,
+  "environment_build_timeout_multiplier": null,
+  "agent": {
+   "name": "codex",
+   "import_path": null,
+   "model_name": "openai/local-benchmark",
+   "n_concurrent": null,
+   "concurrency_group": null,
+   "skills": [],
+   "override_timeout_sec": null,
+   "override_setup_timeout_sec": null,
+   "max_timeout_sec": null,
+   "resume_trajectory": false,
+   "load_trajectory": null,
+   "extra_allowed_hosts": [
+    "172.17.0.1"
+   ],
+   "kwargs": {
+    "version": "0.160.0",
+    "reasoning_effort": "xhigh",
+    "config": {
+     "model_context_window": 98304,
+     "model_auto_compact_token_limit": 88000,
+     "web_search": "disabled",
+     "project_doc_max_bytes": 0,
+     "model_provider": "local",
+     "model_providers": {
+      "local": {
+       "name": "Local relay",
+       "base_url": "http://172.17.0.1:41891/v1",
+       "wire_api": "responses",
+       "requires_openai_auth": false,
+       "supports_websockets": false,
+       "request_max_retries": 2,
+       "stream_max_retries": 2,
+       "stream_idle_timeout_ms": 900000
+      }
+     }
+    }
+   },
+   "env": {
+    "OPENAI_API_KEY": "sk-s****mmy",
+    "OPENAI_BASE_URL": "http://172.17.0.1:41891/v1"
+   },
+   "mcp_servers": []
+  },
+  "user_agent": null,
+  "environment": {
+   "type": "docker",
+   "import_path": null,
+   "force_build": false,
+   "delete": true,
+   "cpu_enforcement_policy": "auto",
+   "memory_enforcement_policy": "auto",
+   "override_cpus": null,
+   "override_memory_mb": null,
+   "override_storage_mb": null,
+   "override_gpus": null,
+   "override_tpu": null,
+   "mounts": null,
+   "extra_docker_compose": [],
+   "kwargs": {},
+   "extra_allowed_hosts": []
+  },
+  "verifier": {
+   "override_timeout_sec": null,
+   "max_timeout_sec": null,
+   "disable": false
+  },
+  "artifacts": [],
+  "extra_instruction_paths": [],
+  "extra_instructions": [],
+  "job_id": "f9478d32-ba9e-4a52-a283-38fab7580112",
+  "source_trial": null
+ },
+ "agent_info": {
+  "name": "codex",
+  "version": "0.160.0",
+  "model_info": {
+   "name": "local-benchmark",
+   "provider": "openai"
+  }
+ },
+ "agent_result": {
+  "n_input_tokens": 1907027,
+  "n_cache_tokens": 1867552,
+  "n_output_tokens": 21888,
+  "cost_usd": null,
+  "model_usage": {
+   "openai/local-benchmark": {
+    "n_input_tokens": 1907027,
+    "n_cache_tokens": 1867552,
+    "n_output_tokens": 21888,
+    "cost_usd": null
+   }
+  },
+  "rollout_details": null,
+  "metadata": null
+ },
+ "verifier_result": {
+  "rewards": {
+   "reward": 1.0
+  }
+ },
+ "verifier_environment_mode": "shared",
+ "exception_info": {
+  "exception_type": "AgentTimeoutError",
+  "exception_message": "Agent execution timed out after 300.0 seconds",
+  "exception_traceback": "phase\n    raise AgentTimeoutError(\n        f\"Agent execution timed out after {timeout_sec} seconds\"\n    ) from exc\nharbor.trial.errors.AgentTimeoutError: Agent execution timed out after 300.0 seconds\n",
+  "occurred_at": "2026-10-04T00:54:58.397243Z"
+ },
+ "started_at": "2026-10-04T00:48:11.090490Z",
+ "finished_at": "2026-10-04T00:55:17.459494Z",
+ "environment_setup": {
+  "started_at": "2026-10-04T00:48:11.138177Z",
+  "finished_at": "2026-10-04T00:48:14.064068Z"
+ },
+ "agent_setup": {
+  "started_at": "2026-10-04T00:48:14.064116Z",
+  "finished_at": "2026-10-04T00:49:57.925868Z"
+ },
+ "agent_execution": {
+  "started_at": "2026-10-04T00:49:57.925984Z",
+  "finished_at": "2026-10-04T00:54:58.390837Z"
+ },
+ "verifier": {
+  "started_at": "2026-10-04T00:55:03.368602Z",
+  "finished_at": "2026-10-04T00:55:05.593357Z"
+ },
+ "step_results": null
+}

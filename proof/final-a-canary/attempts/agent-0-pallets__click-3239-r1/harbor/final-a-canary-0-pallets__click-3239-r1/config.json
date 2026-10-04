@@ -1,0 +1,51 @@
+{
+    "job_name": "final-a-canary-0-pallets__click-3239-r1",
+    "jobs_dir": "/home/xanewok/repos/swe-fresh/proof/final-a-canary/attempts/agent-0-pallets__click-3239-r1/harbor",
+    "agent_timeout_multiplier": 0.4,
+    "n_concurrent_trials": 1,
+    "quiet": true,
+    "agents": [
+        {
+            "name": "codex",
+            "model_name": "openai/local-benchmark",
+            "extra_allowed_hosts": [
+                "172.17.0.1"
+            ],
+            "kwargs": {
+                "version": "0.160.0",
+                "reasoning_effort": "xhigh",
+                "config": {
+                    "model_context_window": 98304,
+                    "model_auto_compact_token_limit": 88000,
+                    "web_search": "disabled",
+                    "project_doc_max_bytes": 0,
+                    "model_provider": "local",
+                    "model_providers": {
+                        "local": {
+                            "name": "Local relay",
+                            "base_url": "http://172.17.0.1:37303/v1",
+                            "wire_api": "responses",
+                            "requires_openai_auth": false,
+                            "supports_websockets": false,
+                            "request_max_retries": 2,
+                            "stream_max_retries": 2,
+                            "stream_idle_timeout_ms": 900000
+                        }
+                    }
+                }
+            },
+            "env": {
+                "OPENAI_API_KEY": "sk-s****mmy",
+                "OPENAI_BASE_URL": "http://172.17.0.1:37303/v1"
+            }
+        }
+    ],
+    "datasets": [
+        {
+            "path": "data/dl/swe-rebench-leaderboard",
+            "task_names": [
+                "pallets__click-3239"
+            ]
+        }
+    ]
+}

@@ -1,0 +1,33 @@
+{
+  "tasks": [
+    "pallets__click-3239"
+  ],
+  "args": {
+    "command": "run",
+    "model": "local-benchmark",
+    "engine": "stub",
+    "context": "98304",
+    "compact": "88000",
+    "cap_s": "1200",
+    "agents": "1",
+    "codex_version": "0.160.0",
+    "harbor_version": "0.23.0",
+    "reasoning": "xhigh",
+    "provider": "builtin",
+    "dataset_path": "None",
+    "campaign": "/home/xanewok/repos/swe-fresh/proof/run1-builtin",
+    "tasks": "pallets__click-3239",
+    "tasks_file": "None",
+    "upstream_port": "18301",
+    "upstream_host": "127.0.0.1",
+    "relay_bind": "172.17.0.1",
+    "metrics_url": "None",
+    "budget_s": "3600",
+    "hard_timeout_s": "1500.0",
+    "canary": "False"
+  },
+  "runner_sha256": "3350da9619d98f4fd78802339076ad922c8ed929428cc5dc6512dea91aa73e5f",
+  "relay_sha256": "80e6090780dfd2ce83167c82ebcbd64e0b23b6a46df437f05b5e0072f26b7ca3",
+  "harbor_version_output": "0.23.0",
+  "started_epoch": 1791065536.5011969
+}

@@ -1,0 +1,44 @@
+{
+    "task": {
+        "path": "data/dl/swe-rebench-leaderboard/pallets__click-3239",
+        "source": "swe-rebench-leaderboard"
+    },
+    "trial_name": "pallets__click-3239__nfm9Dua",
+    "trials_dir": "/home/xanewok/repos/swe-fresh/proof/final-b-repeat2/attempts/agent-0-pallets__click-3239-r2/harbor/final-b-repeat2-0-pallets__click-3239-r2",
+    "agent_timeout_multiplier": 0.4,
+    "agent": {
+        "name": "codex",
+        "model_name": "openai/local-benchmark",
+        "extra_allowed_hosts": [
+            "172.17.0.1"
+        ],
+        "kwargs": {
+            "version": "0.160.0",
+            "reasoning_effort": "xhigh",
+            "config": {
+                "model_context_window": 98304,
+                "model_auto_compact_token_limit": 88000,
+                "web_search": "disabled",
+                "project_doc_max_bytes": 0,
+                "model_provider": "local",
+                "model_providers": {
+                    "local": {
+                        "name": "Local relay",
+                        "base_url": "http://172.17.0.1:43497/v1",
+                        "wire_api": "responses",
+                        "requires_openai_auth": false,
+                        "supports_websockets": false,
+                        "request_max_retries": 2,
+                        "stream_max_retries": 2,
+                        "stream_idle_timeout_ms": 900000
+                    }
+                }
+            }
+        },
+        "env": {
+            "OPENAI_API_KEY": "sk-s****mmy",
+            "OPENAI_BASE_URL": "http://172.17.0.1:43497/v1"
+        }
+    },
+    "job_id": "56b6adaa-8c13-4164-b811-53e87e8bad7a"
+}

@@ -1,0 +1,4 @@
+data/dl/
+results/
+proof/*/attempts/*/harbor/*/*/verifier/test-stdout.txt
+__pycache__/

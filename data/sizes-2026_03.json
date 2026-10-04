@@ -1,0 +1,442 @@
+{
+ "pgmpy__pgmpy-3137": {
+  "size": 1499429856,
+  "digest": "sha256:59c70ad80ed211d327d106b792c5cebae78ffe35932a7540c5dd1e871cd573c0"
+ },
+ "tox-dev__tox-3904": {
+  "size": 1288078570,
+  "digest": "sha256:c07d892532885ac2fc4d26e2014555455c7ce9a6ce32884d0eaa6759ba72a3c7"
+ },
+ "geopython__pygeoapi-2338": {
+  "size": 2148974649,
+  "digest": "sha256:b544e9c9d385026b5bc6984d4dab2dcb6ed227f5b74dd26c562467db38017476"
+ },
+ "graphistry__pygraphistry-1107_interface": {
+  "size": 1525112199,
+  "digest": "sha256:cdcd4a55adec0228cb0b4661e818b60eef63aed78040938b7c2b6ac8b400eb87"
+ },
+ "databricks__dbt-databricks-1428": {
+  "size": 1497241709,
+  "digest": "sha256:6f8a87b157e081ac2f738f239cf8fc99f4d7f3648e781feb8f38e12999ebc734"
+ },
+ "copier-org__copier-2646": {
+  "size": 1261246255,
+  "digest": "sha256:bb745d823b4f629441f1db4cab88719e352cf430dccabf7e59ad9003b75b6d4c"
+ },
+ "oemof__tespy-921": {
+  "size": 1624708307,
+  "digest": "sha256:089f077576aad46c55fffe9bcae1bc7e44f3963fd624c58c45e8943c9eebab01"
+ },
+ "nesquena__hermes-webui-1818": {
+  "size": 1257422685,
+  "digest": "sha256:3dfbacf1f9bae59ad9cee8439f7c6d982cb6fdef72fe9be1c779de253f7734e6"
+ },
+ "hiero-ledger__hiero-sdk-python-2007_interface": {
+  "size": 1324948411,
+  "digest": "sha256:ede2b4b9b3d858a71f63366698b3635df1ce70ac6406647a92fe02169a4c2e07"
+ },
+ "tobymao__sqlglot-7479": {
+  "size": 1398059293,
+  "digest": "sha256:73e012bfeb6198988d5567a556ed85639779375f17c58c06103d879427f33036"
+ },
+ "agentscope-ai__qwenpaw-3278": {
+  "size": 1896769558,
+  "digest": "sha256:e6935dfe3819e0083542e7a2c9009d2276cf426fb0fe9966569335a93ba25d78"
+ },
+ "python-wheel-build__fromager-1106": {
+  "size": 1334957304,
+  "digest": "sha256:5a80c46c2118e3119855830851f56270b45b809dc032682852595d4901f99453"
+ },
+ "mempalace__mempalace-1004": {
+  "size": 1507471864,
+  "digest": "sha256:c589dcb730f57a262677f9d7b3a2fd9721b524937d0083e446289f30cc0f5654"
+ },
+ "idaholab__montepy-933_interface": {
+  "size": 1285414201,
+  "digest": "sha256:d79f83f33b0f25749596dd0038adecb80e9b443300200890dca0f6d23488567c"
+ },
+ "agronholm__anyio-1134": {
+  "size": 1264574824,
+  "digest": "sha256:d7997027864d2bfb32d649e7e544381f5d1b161df8f1682c719d222d66489dc0"
+ },
+ "astropy__astropy-19438": {
+  "size": 1462304258,
+  "digest": "sha256:4875091c77368bb0e941168e2a344806f68934c8d40c32c1156d1b793007891a"
+ },
+ "getmoto__moto-9841": {
+  "size": 1394749738,
+  "digest": "sha256:25cb9ea1e18acfadbf1a8b4a5746153746cd994e138c01f295d83813ab63a171"
+ },
+ "hiero-ledger__hiero-sdk-python-1914_interface": {
+  "size": 1324830033,
+  "digest": "sha256:7379c707cc7e9f690d07a08c3abfc1f97b9f70fd283bc2084040a052b79af57f"
+ },
+ "stanfordnlp__dspy-9478_interface": {
+  "size": 1977214116,
+  "digest": "sha256:0f51cbb2664fdd86069c39ef5529021dad3c2d35d8f7a9720221e754e5ceb3ea"
+ },
+ "koxudaxi__datamodel-code-generator-3046": {
+  "size": 1305318772,
+  "digest": "sha256:77fe48867b411d845cbfe4b02ab159f3bb81710c1f0047a31b37a7b3548e575a"
+ },
+ "ucfopen__canvasapi-716": {
+  "size": 1252878638,
+  "digest": "sha256:6eb2cb4155cf4e7a75b451a3c3f7edcc0966d34a945ed99e7d66ef588c9c7e85"
+ },
+ "apache__iceberg-python-3295": {
+  "size": 1672119316,
+  "digest": "sha256:10595208bda942416f6673a2629c9fb66bd5226818bbe62ce1ef99a3bef8e6d1"
+ },
+ "raullenchai__rapid-mlx-289": {
+  "size": 1424177655,
+  "digest": "sha256:c518273fc729729206db46632ff3ae99052e00d2279aad795302692b4a6e02b0"
+ },
+ "pandas-dev__pandas-64796": {
+  "size": 1713336266,
+  "digest": "sha256:cb14408965bce56e0b95b76b9f1dd7fee0367ffe7d559f0a1ea2223599bc26a6"
+ },
+ "cs-si__eodag-2176": {
+  "size": 1633225409,
+  "digest": "sha256:abdf3c8dd48ac05e351489c400a6b9625beeb2d2eda641b84056151d88cb0dfb"
+ },
+ "vprusso__toqito-1484_interface": {
+  "size": 1514062480,
+  "digest": "sha256:bbb57b0dbdece1061a5f280bc442d8dd01442fba5758c1700d468af4f3b8db84"
+ },
+ "python-scim__scim2-models-139_interface": {
+  "size": 1390567434,
+  "digest": "sha256:5be1e1effdcb99f7cffa80dc9fb14ace2c895039cc6c12451ec3e3d3c705d229"
+ },
+ "reframe-hpc__reframe-3660_interface": {
+  "size": 1424405240,
+  "digest": "sha256:355ae30f4e2b801092b01136c226484e180a06c58da51eff1fb1964b6dde10c8"
+ },
+ "alibaba__opensandbox-816": {
+  "size": 1392603158,
+  "digest": "sha256:eb2223e2f7957ad3f8bf3a69946fed4ca7b9abc309ec9c14f388786785d02ea0"
+ },
+ "pdm-project__pdm-3759": {
+  "size": 1280103025,
+  "digest": "sha256:7a012a5bfd460d638b74d3de84426cd1fa2141aec3914c4f9171071491f5ac93"
+ },
+ "schemathesis__schemathesis-3933": {
+  "size": 1432302595,
+  "digest": "sha256:d22a0afcdf2a51b0931457ee4cffb1bcbabb57eb27f3ff4787a97f504bb91d74"
+ },
+ "tobymao__sqlglot-7457": {
+  "size": 1397894429,
+  "digest": "sha256:cb6163acbc55a287e669b8e144c75f29e5c1ae5ab0a2f8cf2ee3b908e1c59e89"
+ },
+ "keras-team__keras-22330": {
+  "size": 4273950643,
+  "digest": "sha256:b06d059502353cd6a7a581133f239b00d4f1441c2a3df4bff078a0d2eee334fe"
+ },
+ "sigma67__ytmusicapi-909_interface": {
+  "size": 1242238960,
+  "digest": "sha256:e86fc82c391bcf08d3166ab51e1a71beab2529cb6641e3af37bbdb4d99f3ee36"
+ },
+ "graphistry__pygraphistry-1277": {
+  "size": 1526234499,
+  "digest": "sha256:0a7cd08998007ee1a2fd25d8e7a2479aae78e559853aac1f5c13205fdbaddc33"
+ },
+ "dagster-io__dagster-33605": {
+  "size": 2814299002,
+  "digest": "sha256:98a0b69301022cba2ac7520a8ab1891c2a490cf4ec4ba889d6ce36a29f40831b"
+ },
+ "schemathesis__schemathesis-3778": {
+  "size": 1430301133,
+  "digest": "sha256:1e68e997325f09328dac5c48eb3ac85c50012f2571bf099fe92e72e346de117a"
+ },
+ "python-wheel-build__fromager-1124": {
+  "size": 1334993459,
+  "digest": "sha256:62103850e36c30400d4fb7861a4cf7688b278cbc3d62c0debeaf5a8026b594d7"
+ },
+ "keras-team__keras-22642": {
+  "size": 4329866252,
+  "digest": "sha256:6441ecaa2a206b685e32f0e0ef592147d70494b9a8f2d30a08eb1ba97cac2604"
+ },
+ "raullenchai__rapid-mlx-228": {
+  "size": 1423807380,
+  "digest": "sha256:4d04e8b05b4483be4f0c178c29717e5656c1731432bf45c8e5e89c5625989228"
+ },
+ "tobymao__sqlglot-7187": {
+  "size": 1396505649,
+  "digest": "sha256:43c43d77e3bed15361140767e3f3fd84811e0bad5b58f6afcba83f79b8e58303"
+ },
+ "pypa__twine-1309": {
+  "size": 1259650552,
+  "digest": "sha256:0ab70a15a784fc15cfeb1840e0634284c71de499e507a75847a268617668f9d3"
+ },
+ "tox-dev__tox-3846": {
+  "size": 1287900682,
+  "digest": "sha256:269a32558d3aeac5f9e9b6fc451302667b83a85f260f0b915babe1838b50b3bc"
+ },
+ "nesquena__hermes-webui-330_interface": {
+  "size": 1240460501,
+  "digest": "sha256:a186f0d34c375bc133a49b9cd390d9501627acc4d7b8d4feb262607c29d499d4"
+ },
+ "astronomy-commons__hats-648": {
+  "size": 2200123167,
+  "digest": "sha256:3f4d6c1a9aff8170d74c55ad11a524e0dea6abe7becb558d2aa12ae8f191d439"
+ },
+ "marshmallow-code__marshmallow-2925_interface": {
+  "size": 1242783776,
+  "digest": "sha256:967a07ee58cd51e937b4f6575c89d1c37bdc24ba18003914a50bc5d1e7f50589"
+ },
+ "agronholm__anyio-1121": {
+  "size": 1264599316,
+  "digest": "sha256:063bb968109c70a3fe617d9d30287a3a43d549eb1091b27a030a9af2a74c2320"
+ },
+ "pyinfra-dev__pyinfra-1679_interface": {
+  "size": 1298119021,
+  "digest": "sha256:006ad338382e2b70f773394f9161c0471b0af066d40e504858c22442150c7563"
+ },
+ "ultraplot__ultraplot-696": {
+  "size": 1639491997,
+  "digest": "sha256:93adcb08a95ee7fb4a6a7451ca82160730b895e914e7a25353266785f1e51e7d"
+ },
+ "zauberzeug__nicegui-5914": {
+  "size": 1666719067,
+  "digest": "sha256:024b25ca4989cf7eabd6156a29e520229f1f30e1d2bf600df0382ad4b4ac408e"
+ },
+ "scrapy__scrapy-7351_interface": {
+  "size": 1314243240,
+  "digest": "sha256:e2dac643fa183d405b22f193717d2a932aa6f0116fec89f3ef7811bb0cdbb8dc"
+ },
+ "holoviz__param-1117": {
+  "size": 1241471798,
+  "digest": "sha256:c10bc0ad51b00c59ed8fa4366ee722c38e83dfaa620a7cc229f78489ccbaf010"
+ },
+ "destine-climate-dt__aqua-2768": {
+  "size": 2594196423,
+  "digest": "sha256:27c1cb79a2c9ccedd5929a60ab19891f561da13a3fc9cfbf94ead487a29df038"
+ },
+ "pypa__build-1027": {
+  "size": 1306345544,
+  "digest": "sha256:740e391fead0b931c80ae2ad4279d20822f385d84c26c4b2c80d70426f9f2250"
+ },
+ "harumiweb__exstruct-113": {
+  "size": 1436559478,
+  "digest": "sha256:a3234ba6d5ca57a07137b6e70c870111a00d4ca638329745ef65bde1a75c865e"
+ },
+ "pypsa__pypsa-1653": {
+  "size": 1814729095,
+  "digest": "sha256:816b556e593792201bdb32055bf05533c037aeb4d2b7cd78702bd691b9e59b26"
+ },
+ "koxudaxi__datamodel-code-generator-3070": {
+  "size": 1305373819,
+  "digest": "sha256:7c1b9b88231ef9aa9a532fa82b498d47e46f8eebdb381f8ed1a415521abbec6e"
+ },
+ "meltano__meltano-9950": {
+  "size": 1589598620,
+  "digest": "sha256:2ddfef1ea390993bb585cd76a4757de152d9c30ba5f46833ddd1cce7accbf786"
+ },
+ "raullenchai__rapid-mlx-227": {
+  "size": 1423813840,
+  "digest": "sha256:813471001c6124fea572da82a6767c21df0dcd37ba73302c18b60ded3834df6d"
+ },
+ "astronomy-commons__lsdb-1349": {
+  "size": 1806119176,
+  "digest": "sha256:44300fa3f5ab7ea4c7bb8bb68e60f1faa75f199faf5769d1911d6ee970a71c0c"
+ },
+ "pennylaneai__pennylane-9298": {
+  "size": 1645243589,
+  "digest": "sha256:fab072dc01e046ad71303bf9830e6a34b69713644b8822cc16f8231c01e206c9"
+ },
+ "macbre__sql-metadata-625_interface": {
+  "size": 1240989471,
+  "digest": "sha256:5cece931a26478cd7247ba8ccbcd6c2865aa0437aeed4ac84f23744a9f53ef85"
+ },
+ "sunpy__sunpy-8548_interface": {
+  "size": 1741659355,
+  "digest": "sha256:0337a22656ee2c2ebfcc07ef51d9f8d4fbe09ddcf3b96589f226b5dfe7118393"
+ },
+ "pallets-eco__wtforms-892_interface": {
+  "size": 1263170120,
+  "digest": "sha256:a6acd91ccba5088831d0e70cd22f5129878fd2611d71b45b449b3d05fb90fdd4"
+ },
+ "huggingface__huggingface_hub-4056": {
+  "size": 1423601355,
+  "digest": "sha256:cbfae263dff792cc7c763057905869c548bf37733352ff999b3d7d4278c87677"
+ },
+ "deltares__hydrolib-core-1049_interface": {
+  "size": 1924951812,
+  "digest": "sha256:04d3d1ba2f09b9ef8a0d200fc93a18ccdf26e3722ed7853d751720cdb3fc2f07"
+ },
+ "conan-io__conan-19735_interface": {
+  "size": 1281108852,
+  "digest": "sha256:564734fbebe544567e2e47bac7362ae68a749ffdaa7401dd273903d3552277fa"
+ },
+ "line__line-bot-sdk-python-981_interface": {
+  "size": 1320288327,
+  "digest": "sha256:11b622466b7f8734ef20f3e5d595b533a8eb11d01f033a7e929c4e1269b4b1d4"
+ },
+ "microsoft__qcodes-8039": {
+  "size": 1849127284,
+  "digest": "sha256:ce91b642dde511eb1e07e8b2fe846d3d599ec54c9feb9f2eaf6a91c820060f24"
+ },
+ "olofk__fusesoc-776_interface": {
+  "size": 1260797516,
+  "digest": "sha256:1e971791d4ce192eae296747d46dff477cb2ce2c47e08b2ed9d0108ee5a85ad9"
+ },
+ "scikit-learn__scikit-learn-33565": {
+  "size": 1993993211,
+  "digest": "sha256:aa5735206e98b81466c33d5013d5fd993a8925a08c3ba607b7c75179e4b47149"
+ },
+ "pallets__click-3239": {
+  "size": 1240390884,
+  "digest": "sha256:e63b10ca62e0f45c923e76e7f6bc9b50eebda772e7fbaea932697c660011439f"
+ },
+ "pandas-dev__pandas-64816": {
+  "size": 1711154138,
+  "digest": "sha256:61b56c1e56c4d07a03cb0ab6d9d1321e944066a4c3e61c64ccc4edc5eeabcdb5"
+ },
+ "hkuds__openharness-217": {
+  "size": 1399090652,
+  "digest": "sha256:ad0997cf2e90f0a31f3e6f8fd5cba18ced7f364ae3a62bd59f4c9e1d88b7678d"
+ },
+ "unit8co__darts-3065": {
+  "size": 1881277498,
+  "digest": "sha256:ce882b8e668e4a6d5452c6612cd5dc9227839f21efc3bde67437603e4d14b7d0"
+ },
+ "pyinfra-dev__pyinfra-1665": {
+  "size": 1298121342,
+  "digest": "sha256:138a496547f392c77a1d472fd259e3c3fff6dd20bf5cba084335888857f395a3"
+ },
+ "aallan__vera-662_interface": {
+  "size": 1414048847,
+  "digest": "sha256:df4186e7c28e56430996dd8a591560aee41f732092daa3d5804e8b9d7dc8b367"
+ },
+ "getmoto__moto-9903": {
+  "size": 1395677698,
+  "digest": "sha256:1ed9546bda6fa62086d94a212d9b84bc71d9d9049eafe75cafe63b2a07712e5b"
+ },
+ "con__nwb2bids-347_interface": {
+  "size": 1634066883,
+  "digest": "sha256:69c4cbb9a5bcae8b2ce1c8c0301e0dffa3e636d94211bdaf5858d2d28c2dca4e"
+ },
+ "zarr-developers__virtualizarr-979": {
+  "size": 1535031614,
+  "digest": "sha256:d8b6d05d6e668a53fb4356aaabaa40d99f7cdfacf2d0e6145e2dc7fcd68fba74"
+ },
+ "keras-team__keras-22316": {
+  "size": 4301402277,
+  "digest": "sha256:2a85415e1bcc6b0e03d08d36e0d922d9428d4b4fc0b6299dadf4c36d9f6a6520"
+ },
+ "tox-dev__tox-3931": {
+  "size": 1288359397,
+  "digest": "sha256:6c44571aa2f3c2e01be2ba54b3330efcb4b5ba0d00983aa4a309d27853804896"
+ },
+ "pyinfra-dev__pyinfra-1630": {
+  "size": 1298106208,
+  "digest": "sha256:866ee2ffb5683f7962c13d76eacf3d58042f1642721c2a30aac990e7c54c112e"
+ },
+ "sqlfluff__sqlfluff-7622": {
+  "size": 1392855807,
+  "digest": "sha256:5e919fea583debd492b7ecc353946ca115481fbae94897ae7a7c98c61bafb0ca"
+ },
+ "celestoai__smolvm-172": {
+  "size": 1597148315,
+  "digest": "sha256:1e98e815c22a8283da72a1a607d0417847f8b0a8f5150186f4a384991cf6dcd2"
+ },
+ "zauberzeug__nicegui-5858": {
+  "size": 1667076734,
+  "digest": "sha256:0774c1c1d9caf26fc590c840482c262c82a76ccc5150c9dd58501114371bc2d2"
+ },
+ "containers__ramalama-2487": {
+  "size": 1351688252,
+  "digest": "sha256:83c25b0d920972784ad492e74b0b3e9342ece11cc3d4ebe987d0dbc6de066de9"
+ },
+ "spack__spack-52244": {
+  "size": 1533733833,
+  "digest": "sha256:69ea3673932d1fdaa2f4062d24368ebc69b9b9a734ac847fdc530f0ae0b5b26f"
+ },
+ "conan-io__conan-19750": {
+  "size": 1281161262,
+  "digest": "sha256:4161da9a64b97cb6755a6c4416bb0ad46ae6bf4b255ca2bf9153c4414430152c"
+ },
+ "koxudaxi__datamodel-code-generator-3071": {
+  "size": 1305313958,
+  "digest": "sha256:6d502a62840d7e04c91858da36e84686a6f210bab2bbd73d3e6f5f6321bc8c3a"
+ },
+ "pipecat-ai__pipecat-4283": {
+  "size": 1967624871,
+  "digest": "sha256:a1d83525e3bc633544b04f43643ef6f250504f9ca7d1c811f67adbdb928142cd"
+ },
+ "beever-ai__beever-atlas-102": {
+  "size": 1826570212,
+  "digest": "sha256:e4eea111ce131cc84d1cb865f550fc6c5025ebea496e030977be1c93ea5cf0be"
+ },
+ "kubeflow__pipelines-13112": {
+  "size": 1363901675,
+  "digest": "sha256:842b24c98e1b2c1145b8826b90a95e0634a3520cd523b3d3ae6940201ec2e79a"
+ },
+ "cpp-linter__cpp-linter-hooks-206_interface": {
+  "size": 1241444086,
+  "digest": "sha256:98ca02972a37398d2bb690785f79a94a07396be022f547d640b27d950d92a179"
+ },
+ "genericmappingtools__pygmt-4463": {
+  "size": 2581078893,
+  "digest": "sha256:cda2d1c6477043c2e8c21e88e57e9faef2edc07d574aff334ce622b7a499fe22"
+ },
+ "alibaba__opensandbox-426": {
+  "size": 1377187705,
+  "digest": "sha256:ef42f236420583d047755c7eb33a873f22690f8874c2a33324b4131ded3af8b2"
+ },
+ "vprusso__toqito-1538": {
+  "size": 1514477451,
+  "digest": "sha256:4a79ab796ad10cb18c3d805895977fbf119b16db4a9bd4b815678459846a6b86"
+ },
+ "delgan__loguru-1451": {
+  "size": 1365563220,
+  "digest": "sha256:181bd51aa34ebe84d749819dfbe9a2d3d215ff8f6406d897d790f876bc5f36db"
+ },
+ "sqlfluff__sqlfluff-7617": {
+  "size": 1392853287,
+  "digest": "sha256:3ef30a4b7bbc707a57b1de77c31d2bf54509e6a12a829153bf7546f87bbe7ff2"
+ },
+ "raullenchai__rapid-mlx-341_interface": {
+  "size": 1424429999,
+  "digest": "sha256:23b439c47a1a4f6477c806d9e7d692d13c8b852076657cbc1de52e5564a96b0b"
+ },
+ "itsdnns__docsight-437": {
+  "size": 1427279658,
+  "digest": "sha256:2a5f7d8b1131ed2fa4435bf50aa789f871271150ddabc607e000331ba74690be"
+ },
+ "pycqa__isort-2491": {
+  "size": 1247710060,
+  "digest": "sha256:8f6c834300883cb779eb720b8d9af2bd5f5c38c67f615748eb87a2c019851e4b"
+ },
+ "sqlfluff__sqlfluff-7615": {
+  "size": 1393087762,
+  "digest": "sha256:b736f3429143f3e832840e8f3b6e3d9d33f0a737c73582dff690eef75f6eabe1"
+ },
+ "azure-samples__azure-search-openai-demo-3025": {
+  "size": 1752495669,
+  "digest": "sha256:bce9248023a367a3173d20eaf2a56ad6a54aad45829327933e8d55b942cf041b"
+ },
+ "nesquena__hermes-webui-2056": {
+  "size": 1261882285,
+  "digest": "sha256:7404a1ff916987bed0ada9b44bc4e74b1970bc5144efc3817f1e16dc70370b78"
+ },
+ "psd-tools__psd-tools-593": {
+  "size": 1439119924,
+  "digest": "sha256:eb1277e5cc12e3f6986b35ac1d4e454f4c7679b2bd078d4598db38b2f9fc6838"
+ },
+ "schemathesis__schemathesis-4087": {
+  "size": 1469452637,
+  "digest": "sha256:85fae37fcacb6479d21c3d4dc1c769a5d27884a2dc60d3c8f8c1f7557c97a58f"
+ },
+ "youssofal__mtplx-21": {
+  "size": 1346955079,
+  "digest": "sha256:32510a901064f5d405f3d4313a4556d924c94e72b2b0993296a43f04de83370e"
+ },
+ "meltano__meltano-9929": {
+  "size": 1589581605,
+  "digest": "sha256:3ecc39249a32afc5644386f75b81852384aa9dfaf9b306a18195ebb0b8bc17bb"
+ },
+ "pandas-dev__pandas-64797": {
+  "size": 1713538694,
+  "digest": "sha256:336cc8527088755a853128b8fa0d297f4982d04bfb2daef3b5ef4b10b7ee8b5b"
+ }
+}

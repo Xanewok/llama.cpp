@@ -1,0 +1,32 @@
+{
+    "task": {
+        "name": "swe-rebench/pallets__click-3239",
+        "ref": "sha256:8fbcad7e49812282f070a392067cc4049f68e85f86b2335aabe9566ed0c24828",
+        "source": "swe-rebench/swe-rebench-leaderboard"
+    },
+    "trial_name": "pallets__click-3239__yyvZ7Qa",
+    "trials_dir": "/home/xanewok/repos/swe-fresh/proof/run1-builtin/attempts/agent-0-pallets__click-3239/harbor/run1-builtin-0-pallets__click-3239",
+    "agent_timeout_multiplier": 0.4,
+    "agent": {
+        "name": "codex",
+        "model_name": "openai/[REDACTED]-benchmark",
+        "extra_allowed_hosts": [
+            "172.17.0.1"
+        ],
+        "kwargs": {
+            "version": "0.160.0",
+            "reasoning_effort": "xhigh",
+            "config": {
+                "model_context_window": 98304,
+                "model_auto_compact_token_limit": 88000,
+                "web_search": "disabled",
+                "project_doc_max_bytes": 0
+            }
+        },
+        "env": {
+            "OPENAI_API_KEY": "****",
+            "OPENAI_BASE_URL": "http://172.17.0.1:33901/v1"
+        }
+    },
+    "job_id": "c094de6b-6df8-48bf-a2f1-cffed1fd7ce2"
+}
