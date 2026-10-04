@@ -793,11 +793,17 @@ static void llama_sampler_chain_backend_apply(
           struct ggml_context       * ctx,
           struct ggml_cgraph        * gf,
           struct llama_sampler_data * data) {
+    llama_sampler_chain_backend_apply_range(smpl, ctx, gf, data, 0, llama_sampler_chain_n(smpl));
+}
+
+void llama_sampler_chain_backend_apply_range(
+        llama_sampler * smpl, ggml_context * ctx, ggml_cgraph * gf, llama_sampler_data * data, int32_t begin, int32_t end) {
     auto * chain = (llama_sampler_chain *) smpl->ctx;
 
     GGML_ASSERT(chain->is_init && "llama_sampler_chain_backend_init() not called");
 
-    for (auto & smpl : chain->samplers) {
+    for (int32_t i = begin; i < end; ++i) {
+        auto & smpl = chain->samplers[i];
         if (!smpl.is_backend) {
             break;
         }
@@ -3904,6 +3910,18 @@ struct llama_sampler_logit_bias : public llama_sampler_backend {
     struct ggml_tensor * inp_logit_idxs;
 };
 
+static bool llama_sampler_logit_bias_backend_valid(const llama_sampler_logit_bias & ctx) {
+    std::vector<llama_token> ids;
+    for (const auto & lb : ctx.logit_bias) {
+        if (lb.token < 0 || lb.token >= ctx.n_vocab) {
+            return false;
+        }
+        ids.push_back(lb.token);
+    }
+    std::sort(ids.begin(), ids.end());
+    return std::adjacent_find(ids.begin(), ids.end()) == ids.end();
+}
+
 static const char * llama_sampler_logit_bias_name(const struct llama_sampler * smpl) {
     auto * ctx = (llama_sampler_logit_bias *) smpl->ctx;
     return ctx->get_name();
@@ -3978,10 +3996,12 @@ static void llama_sampler_logit_bias_backend_apply(
         ggml_set_input(sctx->inp_logit_idxs);
     }
 
-    ggml_tensor * cur = ggml_fill(ctx, data->logits, 0.0f);
-
-    cur = ggml_reshape_2d(ctx, cur, 1, ggml_nelements(cur));
+    ggml_tensor * cur = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 1, data->candidates ? sctx->n_vocab : data->logits->ne[0]);
+    cur = ggml_fill(ctx, cur, 0.0f);
     cur = ggml_set_rows(ctx, cur, sctx->inp_logit_bias, sctx->inp_logit_idxs);
+    if (data->candidates) {
+        cur = ggml_get_rows(ctx, cur, data->candidates);
+    }
     cur = ggml_reshape_1d(ctx, cur, ggml_nelements(cur));
 
     data->logits = ggml_add(ctx, data->logits, cur);
@@ -4026,13 +4046,9 @@ static bool llama_sampler_logit_bias_backend_init(
 
     auto * sctx = (llama_sampler_logit_bias *) smpl->ctx;
 
-    sctx->init(true);
-
-    if (sctx->logit_bias.empty()) {
-        return true;
-    }
-
-    return true;
+    const bool res = llama_sampler_logit_bias_backend_valid(*sctx);
+    sctx->init(res);
+    return res;
 }
 
 static struct llama_sampler_i llama_sampler_logit_bias_i = {
@@ -4394,18 +4410,28 @@ void llama_perf_sampler_reset(struct llama_sampler * chain) {
     ctx->n_sample    = 0;
 }
 
-int32_t llama_sampler_chain_leading_top_k(const llama_sampler * sampler) {
+int32_t llama_sampler_chain_leading_top_k(const llama_sampler * sampler, int32_t * n_prefix) {
     if (sampler == nullptr || sampler->iface != &llama_sampler_chain_i) {
         return -1;
     }
 
     const auto * chain = (const llama_sampler_chain *) sampler->ctx;
-    for (const auto & entry : chain->samplers) {
+    for (size_t i = 0; i < chain->samplers.size(); ++i) {
+        const auto & entry = chain->samplers[i];
+        if (entry.ptr->iface == &llama_sampler_logit_bias_i) {
+            if (!llama_sampler_logit_bias_backend_valid(*(const llama_sampler_logit_bias *) entry.ptr->ctx)) {
+                return -1;
+            }
+            continue;
+        }
         if (entry.ptr->iface == &llama_sampler_empty_i) {
             continue;
         }
         if (entry.ptr->iface != &llama_sampler_top_k_i) {
             return -1;
+        }
+        if (n_prefix) {
+            *n_prefix = i;
         }
         return ((const llama_sampler_top_k *) entry.ptr->ctx)->k;
     }

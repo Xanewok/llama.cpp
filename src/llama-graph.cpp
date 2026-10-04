@@ -3891,41 +3891,45 @@ void llm_graph_context::build_sampling() const {
     // multi-output graphs can still vary with the number of output rows
     ggml_tensor * logits_t = ggml_pad(ctx0, res->t_logits, 0, 1, 0, 0);
 
-    // Tensor split: each device holds a vocab slice of the logits. Every chain starts with top-k (enforced in
-    // llama_context::set_sampler), so the union of the per-device top-k is a superset of the global top-k and the
-    // chain picks exactly as it would from the full row. One gather brings the candidates to every device.
-    ggml_tensor * cand   = nullptr; // [n_cand, 2, n_cols]: candidate logits, then their vocab ids as F32
-    int64_t       n_cand = 0;
-    if (sampling_n_shards > 0) {
-        int32_t k = 0;
-        for (const auto & entry : samplers) {
-            const int32_t k_seq = llama_sampler_chain_leading_top_k(entry.second);
-            GGML_ASSERT(k_seq > 0);
-            k = std::max(k, k_seq);
+    for (const auto & entry : samplers) {
+        if (entry.second->iface->backend_reset) {
+            entry.second->iface->backend_reset(entry.second);
         }
+    }
 
-        const int64_t n_vocab = logits_t->ne[0];
-        const int64_t n_cols  = logits_t->ne[1];
+    // Each shard selects from biased logits; their union contains the global biased top-k.
+    const auto gather_candidates = [&](ggml_tensor * logits, int32_t k) {
+        const int64_t n_vocab = logits->ne[0];
+        const int64_t n_cols  = logits->ne[1];
+        const int64_t n_cand  = int64_t(k) * sampling_n_shards;
         GGML_ASSERT(sampling_vocab_ids != nullptr && sampling_vocab_ids->ne[0] == n_vocab);
 
-        n_cand = int64_t(k) * sampling_n_shards;
-
-        // slice-local indices, see the TOP_K/GET_ROWS rules in ggml-backend-meta
-        ggml_tensor * idx  = ggml_top_k(ctx0, logits_t, n_cand);
-        ggml_tensor * vals = ggml_get_rows(ctx0, ggml_reshape_3d(ctx0, logits_t, 1, n_vocab, n_cols), idx);
+        ggml_tensor * idx  = ggml_top_k(ctx0, logits, n_cand);
+        ggml_tensor * vals = ggml_get_rows(ctx0, ggml_reshape_3d(ctx0, logits, 1, n_vocab, n_cols), idx);
         ggml_tensor * ids  = ggml_get_rows(ctx0,
                 ggml_repeat_4d(ctx0, ggml_reshape_3d(ctx0, sampling_vocab_ids, 1, n_vocab, 1), 1, n_vocab, n_cols, 1), idx);
 
         vals = ggml_reshape_3d(ctx0, vals, n_cand, 1, n_cols);
         ids  = ggml_reshape_3d(ctx0, ids,  n_cand, 1, n_cols);
 
-        cand = ggml_backend_meta_gather(ctx0, ggml_concat(ctx0, vals, ids, 1));
+        ggml_tensor * cand = ggml_backend_meta_gather(ctx0, ggml_concat(ctx0, vals, ids, 1));
         ggml_set_name(cand, "sampling_candidates");
-    }
+        return cand;
+    };
 
-    for (const auto & entry : samplers) {
-        if (entry.second->iface->backend_reset) {
-            entry.second->iface->backend_reset(entry.second);
+    ggml_tensor * cand_unbiased = nullptr;
+    int32_t k_unbiased = 0;
+    if (sampling_n_shards > 0) {
+        for (const auto & entry : samplers) {
+            int32_t n_prefix = 0;
+            const int32_t k = llama_sampler_chain_leading_top_k(entry.second, &n_prefix);
+            GGML_ASSERT(k > 0);
+            if (n_prefix == 0) {
+                k_unbiased = std::max(k_unbiased, k);
+            }
+        }
+        if (k_unbiased > 0) {
+            cand_unbiased = gather_candidates(logits_t, k_unbiased);
         }
     }
 
@@ -3938,6 +3942,23 @@ void llm_graph_context::build_sampling() const {
         const bool active = it != sampling_rows.end();
         const auto & rows = active ? it->second : dummy_row;
         const int i_out   = active ? 1          : 0;
+
+        ggml_tensor * cand = cand_unbiased;
+        int32_t n_prefix = 0;
+        if (sampling_n_shards > 0) {
+            const int32_t k = llama_sampler_chain_leading_top_k(sampler, &n_prefix);
+            if (n_prefix > 0) {
+                llama_sampler_data prefix = {
+                    /*.logits     =*/ logits_t,
+                    /*.probs      =*/ nullptr,
+                    /*.sampled    =*/ nullptr,
+                    /*.candidates =*/ ggml_cast(ctx0, sampling_vocab_ids, GGML_TYPE_I32),
+                };
+                llama_sampler_chain_backend_apply_range(sampler, ctx0, gf, &prefix, 0, n_prefix);
+                cand = gather_candidates(prefix.logits, k);
+            }
+        }
+        const int64_t n_cand = cand ? cand->ne[0] : 0;
 
         for (uint32_t i = 0; i < rows.size(); ++i) {
             ggml_tensor * logits_seq = nullptr;
@@ -3961,7 +3982,11 @@ void llm_graph_context::build_sampling() const {
             };
 
             assert(sampler->iface->backend_apply);
-            sampler->iface->backend_apply(sampler, ctx0, gf, &data);
+            if (n_prefix > 0) {
+                llama_sampler_chain_backend_apply_range(sampler, ctx0, gf, &data, n_prefix, llama_sampler_chain_n(sampler));
+            } else {
+                sampler->iface->backend_apply(sampler, ctx0, gf, &data);
+            }
 
             if (data.sampled != nullptr) {
                 if (active) {

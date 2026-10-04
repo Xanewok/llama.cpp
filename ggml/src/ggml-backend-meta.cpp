@@ -937,6 +937,13 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_calculate_split_st
             }
             return ret;
         }
+        if (tensor->op == GGML_OP_GET_ROWS && src_ss[0].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED &&
+                is_simple_split(src_ss[1], GGML_BACKEND_SPLIT_AXIS_0)) {
+            // Split global ids select rows from the same replicated table on each device.
+            ggml_backend_meta_split_state ret = src_ss[1];
+            ret.axis = GGML_BACKEND_SPLIT_AXIS_1;
+            return ret;
+        }
 
         ggml_backend_meta_split_state split_state;
         switch (tensor->op) {

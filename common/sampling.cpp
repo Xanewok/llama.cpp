@@ -135,6 +135,7 @@ struct common_sampler {
 
     // prefilter: the caller guarantees that nothing ahead of the chain reads the row (see common_sampler_sample)
     void set_logits(const common_sampler_row & row, bool prefilter, bool full = false) {
+        cur_biased = false;
         const float *       sampled_probs  = full ? nullptr : row.cand_probs;
         const float *       sampled_logits = full ? nullptr : row.cand_logits;
         const llama_token * sampled_ids    = full ? nullptr : row.cand_ids;
@@ -163,6 +164,7 @@ struct common_sampler {
                     return;
                 }
                 cur.resize(prefilter_k);
+                cur_biased = !prefilter_bias.empty();
             }
         } else {
             const auto * logits = row.logits();
@@ -192,6 +194,18 @@ struct common_sampler {
     std::vector<llama_logit_bias> prefilter_bias; // the chain's logit bias, by token
 
     llama_sampler * backend_candidates = nullptr;
+    bool cur_biased = false;
+
+    void apply_chain() {
+        if (!cur_biased) {
+            llama_sampler_apply(chain, &cur_p);
+            return;
+        }
+        // Certified backend candidates already contain the leading bias; keep the original suffix RNG.
+        for (int32_t i = 1; i < llama_sampler_chain_n(chain); ++i) {
+            llama_sampler_apply(llama_sampler_chain_get(chain, i), &cur_p);
+        }
+    }
 
     // raw logits go into cur, as the chain's logit bias adds the bias itself; selection is on the biased logit.
     // Returns false, leaving cur to be refilled, when a tie among the k + 1 best could make the chain's own
@@ -560,7 +574,7 @@ struct common_sampler * common_sampler_init(
     }
 
     const int32_t candidate_k = common_sampler_prefilter_k(params);
-    const bool use_candidates = params.backend_sampling && candidate_k > 0 && candidate_k < 256 && prefilter_bias.empty();
+    const bool use_candidates = params.backend_sampling && candidate_k > 0 && candidate_k < 256 && !prefilter_dup_bias;
 
     if (grmr && params.backend_sampling && !use_candidates) {
         LOG_WRN("%s: backend sampling is not compatible with grammar, disabling\n", __func__);
@@ -592,6 +606,10 @@ struct common_sampler * common_sampler_init(
     result->prefilter_bias = std::move(prefilter_bias);
     if (use_candidates) {
         result->backend_candidates = llama_sampler_chain_init(lparams);
+        if (!result->prefilter_bias.empty()) {
+            llama_sampler_chain_add(result->backend_candidates, llama_sampler_init_logit_bias(
+                    llama_vocab_n_tokens(vocab), result->prefilter_bias.size(), result->prefilter_bias.data()));
+        }
         llama_sampler_chain_add(result->backend_candidates, llama_sampler_init_top_k(candidate_k + 1));
     }
 
@@ -801,7 +819,6 @@ llama_token common_sampler_sample_row(struct common_sampler * gsmpl, const commo
 
     auto & grmr  = gsmpl->grmr;
     auto & rbudget = gsmpl->rbudget;
-    auto & chain = gsmpl->chain;
     auto & cur_p = gsmpl->cur_p; // initialized by set_logits
 
     // The first draw needs the whole row only if something ahead of the chain reads it: the reasoning budget while
@@ -842,7 +859,7 @@ llama_token common_sampler_sample_row(struct common_sampler * gsmpl, const commo
         llama_sampler_apply(grmr, &cur_p);
     }
 
-    llama_sampler_apply(chain, &cur_p);
+    gsmpl->apply_chain();
 
     id = cur_p.data[cur_p.selected].id;
 
@@ -873,7 +890,7 @@ llama_token common_sampler_sample_row(struct common_sampler * gsmpl, const commo
         llama_sampler_apply(grmr,  &cur_p);
     }
 
-    llama_sampler_apply(chain, &cur_p);
+    gsmpl->apply_chain();
 
     GGML_ASSERT(cur_p.selected != -1 && "no selected token during sampling - check your sampling configuration");
 

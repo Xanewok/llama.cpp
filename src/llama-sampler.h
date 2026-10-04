@@ -42,9 +42,9 @@ void llama_sampler_backend_begin(llama_sampler * sampler);
 // Restore graph inputs without copying or advancing sampler state. Empty for unsupported bindings.
 std::function<void()> llama_sampler_backend_bindings(llama_sampler * sampler);
 
-// k of the chain's first non-empty sampler if that sampler is top-k, else -1.
-// When k > 0 the chain can only ever pick among the k highest logits, so it may start from any superset of them.
-int32_t llama_sampler_chain_leading_top_k(const llama_sampler * sampler);
+// k after empty samplers and pointwise logit biases, else -1. n_prefix excludes top-k.
+int32_t llama_sampler_chain_leading_top_k(const llama_sampler * sampler, int32_t * n_prefix = nullptr);
+void llama_sampler_chain_backend_apply_range(llama_sampler * sampler, ggml_context * ctx, ggml_cgraph * gf, llama_sampler_data * data, int32_t begin, int32_t end);
 
 struct llama_sampler * llama_sampler_init_dry_testing(
         float   dry_multiplier,
