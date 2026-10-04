@@ -7,6 +7,7 @@
 #include "llama.h"
 #include "llama-cpp.h"
 #include "sampling.h"
+#include "test-sampling-bias.h"
 
 // TODO: replace with #include "llama-ext.h" in the future
 #include "../src/llama-arch.h"
@@ -1108,6 +1109,8 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
     };
 
     const int32_t k = 20;
+
+    test_sampling_bias(model.get(), make_ctx, [&](llama_context * ctx) { decode(ctx); }, ref, { i_row0, i_row0 + 1, i_row0 + 2, i_row0 + 3 });
 
     {
         common_params_sampling params;

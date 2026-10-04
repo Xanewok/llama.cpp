@@ -2,6 +2,7 @@
 #include "llama.h"
 #include "llama-cpp.h"
 #include "common.h"
+#include "test-sampling-bias.h"
 
 #ifdef NDEBUG
 #undef NDEBUG
@@ -95,6 +96,8 @@ struct test_context {
 
         llama_context_params cparams = llama_context_default_params();
         cparams.n_ctx = 512;
+        cparams.n_threads = 8;
+        cparams.n_threads_batch = 8;
         cparams.n_batch = 512;
         if (n_ubatch > 0) {
             cparams.n_ubatch = n_ubatch;
@@ -2053,6 +2056,26 @@ static void test_backend_top_p_on_top_p_candidates(const test_params & params) {
     printf("backend top-p on top-p candidates test PASSED\n");
 }
 
+static void test_backend_leading_bias(const test_params & params) {
+    const std::string prompt = "Hello";
+    const auto raw = decode_raw_logits(params, prompt);
+    const auto make_ctx = [&](llama_sampler * chain) {
+        std::vector<llama_sampler_seq_config> configs = {{ 0, chain }};
+        test_context test_ctx(params, configs);
+        return std::move(test_ctx.ctx);
+    };
+    const auto decode = [&](llama_context * ctx) {
+        common_batch batch(ctx);
+        batch.add(llama_vocab_bos(llama_model_get_vocab(params.model.get())), 0, 0, false);
+        const auto tokens = common_tokenize(llama_model_get_vocab(params.model.get()), prompt, false);
+        for (size_t i = 0; i < tokens.size(); ++i) {
+            batch.add(tokens[i], i + 1, 0, i + 1 == tokens.size());
+        }
+        GGML_ASSERT(llama_process(ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0);
+    };
+    test_sampling_bias(params.model.get(), make_ctx, decode, {raw}, {-1});
+}
+
 struct backend_test_case {
     std::string name;
     void (*fn)(const test_params &);
@@ -2060,6 +2083,7 @@ struct backend_test_case {
 };
 
 static const backend_test_case BACKEND_TESTS[] = {
+    { "leading_bias", test_backend_leading_bias, true },
     { "greedy",          test_backend_greedy_sampling,         true  },
     { "logit_bias",      test_backend_logit_bias_sampling,     true  },
     { "penalties",       test_backend_penalties_sampling,      true  },
