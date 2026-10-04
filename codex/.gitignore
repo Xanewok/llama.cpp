@@ -6,3 +6,8 @@ reuse-results/
 input-results/
 runs/
 __pycache__/
+
+/host-results/identity/*.bin.stats.json
+/host-results/launch/
+/host-results/parsers/native-identity/
+/host-results/parsers/recorded-journal.txt

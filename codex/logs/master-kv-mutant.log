@@ -1,0 +1,1 @@
+/home/xanewok/repos/host-bundle/build-master-src/tests/test-kv-cells.cpp:70: a.seq_rm(s, range.first, range.second) == reference(b, s, range.first, range.second)
