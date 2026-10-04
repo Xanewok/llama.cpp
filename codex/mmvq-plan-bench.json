@@ -1,0 +1,1 @@
+{"mode": "bench", "canary": false, "estimate_s_G": 900, "budget_s": 1800, "repeats": 100, "trials": 7, "rounds_min": 40, "boots": []}
