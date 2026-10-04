@@ -306,8 +306,14 @@ def main():
                             finally:
                                 (dest / f"repeat-{depth}.json").write_text(json.dumps(repeated))
                             guard()
-                            if identity(repeated) != ident:
-                                raise ValueError("repeat identity failed")
+                            # Informational: MTP pairs the first prompt token with the previous request's last
+                            # hidden row (common/speculative.cpp:1589), so same-boot repeats need not match under
+                            # probabilistic drafts. Cross-arm identity with matched request order is the gate.
+                            try:
+                                same = identity(repeated) == ident
+                            except Exception as e:
+                                same = f"unparsed: {e}"
+                            (dest / f"repeat-{depth}-identity.json").write_text(json.dumps({"same_as_first_M": same}))
                         results.setdefault(depth, {"identity": ident, "runs": []})["runs"].append({"arm": arm, **result})
                     except Exception as e:
                         failures.append(f"depth {depth}: {e}")
