@@ -368,12 +368,6 @@ public:
         return -1;
     }
 
-    const std::set<std::pair<llama_pos, uint32_t>> & seq_get_pos(llama_seq_id seq_id) const {
-        assert(seq_id >= 0 && seq_id < LLAMA_MAX_SEQ);
-
-        return seq_pos[seq_id];
-    }
-
     // the minimum position of sequence seq_id currently present in any of the cells
     // return -1 if the sequence is not present
     llama_pos seq_pos_min(llama_seq_id seq_id) const {
