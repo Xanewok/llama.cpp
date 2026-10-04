@@ -1,0 +1,23 @@
+Judge of topic/mask-upload (c211ca41d impl, 7614332fc report/harness). CPU only, nice 19, -j8.
+
+Reproduced (M):
+  bash codex/check-mask-upload.sh            PASS (as shipped and after fixes.patch)
+  ff5611656 rebuilt from git archive: masks b2993089..., logits 3d28cd89... == patch non-meta artifacts
+  python3 codex/test_gpu.py                  PASS (as shipped and after fixes.patch)
+Judge additions:
+  judge/run-judge.sh   judge test (hole + ownership mutations inside a reused compact graph's prefix);
+                       compact Meta logits == forced-full Meta logits; GGML_SCHED_DEBUG split inputs:
+                       compact graphs upload only attn_inp_kq_mask of 512 B (1 row) / 3 KiB (6 rows); no zero/shape leaf crosses.
+  judge/mutants.sh     mutation results (shipped test before fixes / judge test):
+    K1 drop used_max_p1 hole check      SURVIVED / killed      <- test gap, fixed in codex/host-depth.cpp
+    K2 drop ownership check             killed / killed
+    K3 drop M-RoPE tie loop             killed / killed
+    K4 drop future-cell loop            killed / killed
+    K5 drop min(prefix, n_used)         SURVIVED / SURVIVED    equivalent while n_kv <= pad256(used_max_p1)
+    K6 allow prefix == n_kv             killed / killed
+    K7 drop setter assert               SURVIVED / SURVIVED    backstop, redundant with G1
+    G1 drop can_reuse recheck           killed (setter GGML_ASSERT abort) / killed
+    G1+K7 drop both reuse guards        killed (meta logits) / killed
+    G4 FILL -0.0f                       SURVIVED / SURVIVED    numerically equivalent; production device mask bytes are only checked via logits
+fixes.patch: hole certificate test, Meta-only stale-reuse schedule, hole-cert and stale-reuse negative controls,
+             patch SOURCE pin (c211ca41d...), missing token identity -> exit 6, harness tests for these.
