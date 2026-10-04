@@ -1,0 +1,12 @@
+    "missing VRAM rank",
+    "token identity 8192",
+    "no overlap 8192",
+    "token identity 32768",
+    "no overlap 32768"
+  ],
+  "vram_min_free_mib_M": {
+    "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46": 2593,
+    "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f": 2708
+  },
+  "parser_gates": "native token/draft identity, final timings, prefill replay, steady intervals, overlap, VRAM, fault signatures"
+}

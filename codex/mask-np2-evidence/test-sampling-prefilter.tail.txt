@@ -1,0 +1,12 @@
+`)
+Grammar triggered on token 248058 (`<tool_call>`)
+[verify, 3 drafts, from function name] first token chi2 p = 0.463, accepted 0/6000
+
+[ties: tied pair cut by top-p] candidates differ from the full-row chain in 0 of 20 draws
+
+[ties: tie groups inside the top k and at the k-th place] candidates differ from the full-row chain in 0 of 20 draws
+
+per-seed streams: 35671 bytes, fnv1a e97ea9873285a3f9
+~llama_context:        CPU compute buffer size is  15.6335 MiB, matches expectation of  15.6335 MiB
+
+OK (0 failures)

@@ -1,0 +1,79 @@
+id = "mask-np2-depth"
+kind = "depth"
+title = "Multistream compact KQ mask: frozen stack3 CCCL 3.4.3 vs mask-np2; TP2, np2, k5; both input staging; strict token/draft identity"
+plan = ["up", "patch", "patch", "up"]
+protected = ["identity", "steady_minimum", "SHA256SUMS", "frozen", "DEPTHS", "ARM_ENV", "min_overlap", "streams"]
+devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
+out = "/home/xanewok/repos/mask-np2/codex/results/mask-np2-depth"
+
+[model]
+id = "swift15-iq4-xs"
+path = "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf"
+bytes = 15475951296
+sha = "e3b59faa312a6202d7ac0a2400123956104bc720e77f6ff21c754aec5c3740df"
+
+[draft_vocab]
+path = "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json"
+sha = "e30af79520ade5b7ddb851d75cf271f07d407dc768bf646e4517607d562a65a6"
+
+[arms.up]
+label = "stack3-rebase-cccl343 + input staging"
+commit = "98c695111df5b5517245b184ef4e818333cf5776"
+root = "/home/xanewok/repos/qwen38-weekend/frozen/stack3-rebase-cccl343"
+repo = "/home/xanewok/repos/stack3-rebase"
+bin = "build/bin"
+exe = "build/bin/round-trace"
+env = { GGML_SCHED_INPUT_STAGING = "1", LD_LIBRARY_PATH = "{root}/build/bin" }
+
+[arms.patch]
+label = "multistream compact mask + input staging"
+commit = "979c112d95bc1774d503b7d5b508e269f5218213"
+root = "/home/xanewok/repos/mask-np2/codex/frozen/mask-np2"
+repo = "/home/xanewok/repos/mask-np2"
+bin = "bin"
+exe = "bin/mask-np2-srv"
+env = { GGML_SCHED_INPUT_STAGING = "1", LD_LIBRARY_PATH = "{root}/bin" }
+
+[server]
+args = ["-m", "{model}", "-c", "{ctx}", "-np", "{np}", "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0",
+        "-sm", "tensor", "--tensor-split", "50,50", "-ngl", "99", "-b", "2048", "-ub", "128",
+        "--spec-type", "draft-mtp", "--spec-draft-n-max", "5", "--spec-draft-n-min", "0", "--spec-draft-p-min", "0",
+        "--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16",
+        "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--backend-sampling",
+        "--spec-draft-vocab", "{draft_vocab}", "--cache-ram", "0", "--metrics", "-t", "8", "-tb", "8",
+        "--host", "127.0.0.1", "--port", "{port}"]
+knobs = ["GGML_SCHED_INPUT_STAGING", "LLAMA_ROUND_TRACE", "GGML_SCHED_DEBUG"]
+boot_cap_s = 300
+request_cap_s = 900
+
+[depth]
+depths = [8192, 32768, 90112]
+k = 5
+streams = 2
+identity = "cross-arm"
+distinct_builds = true
+min_steady_intervals = 40
+min_predicted = 256
+min_overlap = 0.8
+slot_ctx = 102400
+fixtures = "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures"
+request = { seed = 1729, n_predict = 512, temperature = 1, top_k = 20, top_p = 0.95, min_p = 0.05 }
+wall_s = 1100
+
+[canary]
+plan = ["patch"]
+depths = [32768]
+proofs = []
+
+[budget]
+canary_s = 600
+margin = 1.25
+cleanup_s = 150
+est_s = 6000
+startup_grace_s = 300
+preflight_s = 300
+
+[outputs]
+run = "full-a{attempt}"
+canary = "canary-a{attempt}"
+preflight = "preflight-plan"

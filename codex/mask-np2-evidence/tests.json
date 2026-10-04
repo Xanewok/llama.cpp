@@ -1,0 +1,59 @@
+{
+  "test-kv-mask": {
+    "status": "PASS",
+    "cases_M": 296,
+    "ctest_wall_s_M": 8.74
+  },
+  "test-alloc": {
+    "status": "PASS",
+    "cases_M": 16
+  },
+  "test-sampling": {
+    "status": "PASS"
+  },
+  "test-batch-alloc": {
+    "status": "PASS",
+    "cases_M": 50,
+    "assertions_M": 327
+  },
+  "test-input-upload": {
+    "status": "PASS",
+    "command": "test-llama-archs --input-upload"
+  },
+  "test-tp-sampling": {
+    "status": "PASS",
+    "command": "test-llama-archs --tp-sampling -s 42"
+  },
+  "test-reasoning-budget": {
+    "status": "PASS",
+    "cases_M": 12
+  },
+  "test-server-tokens": {
+    "status": "PASS",
+    "fixture": "models/ggml-vocab-qwen2.gguf"
+  },
+  "test-sampling-prefilter": {
+    "status": "PASS",
+    "draws_M": 4000,
+    "seed_stream_bytes_M": 35671,
+    "fnv1a": "e97ea9873285a3f9"
+  },
+  "test-recurrent-state-rollback": {
+    "status": "BASELINE FAILURE",
+    "arms": [
+      "98c695111",
+      "979c112d9"
+    ],
+    "rc_M": 1,
+    "rollback": "PASS",
+    "multi_seq_split_replay": {
+      "first": "seq 0 pos 16",
+      "max_diff_M": 13.4578,
+      "nmse_M": 0.018913
+    }
+  },
+  "test-backend-ops": {
+    "status": "NOT RUN",
+    "reason": "Brief explicitly forbids this executable; CPU exception requested, unanswered."
+  }
+}

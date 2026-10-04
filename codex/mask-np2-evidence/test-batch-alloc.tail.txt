@@ -1,0 +1,12 @@
+  mtp_uses_n_embd_out (2 assertion(s))                                          [PASS]
+  mtp_falls_back_to_n_embd_when_no_override
+  mtp_falls_back_to_n_embd_when_no_override (2 assertion(s))                    [PASS]
+  dflash_uses_n_embd_inp_enc
+  dflash_uses_n_embd_inp_enc (3 assertion(s))                                   [PASS]
+mtp_embd_width (7 assertion(s))                                                 [PASS]
+
+tests      : 50
+assertions : 327
+failures   : 0
+exceptions : 0
+skipped    : 0

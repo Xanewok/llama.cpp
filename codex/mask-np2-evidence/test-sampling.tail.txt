@@ -1,0 +1,12 @@
+Sampler queue kpm OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue kmp OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue pkm OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue pmk OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue mkp OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue mpk OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+OK
+llama_sampler_init_top_k (40)              :  131.375 us/iter
+llama_sampler_init_top_p (0.8f, 1)         : 10488.094 us/iter
+llama_sampler_init_min_p (0.2f, 1)         : 2103.719 us/iter
+llama_sampler_init_typical(0.5f, 1)        : 19220.781 us/iter
+llama_sampler_init_xtc (1.0f, 0.1f, 1, 1)  : 9157.031 us/iter

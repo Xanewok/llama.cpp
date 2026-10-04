@@ -1,0 +1,12 @@
+[
+  {
+    "mutant": "wrong-stream",
+    "rc": 1,
+    "expected_failure": "full mask differs from cell oracle"
+  },
+  {
+    "mutant": "old-gate",
+    "rc": 1,
+    "expected_failure": "production multistream compact gate failed"
+  }
+]

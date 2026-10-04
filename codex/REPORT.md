@@ -1,132 +1,119 @@
-# stack3
+# Multistream compact KQ masks
 
-CPU-verified consolidation on `topic/stack3`. Graph retention and prefill pooling default ON; owned input staging defaults OFF. GPU integration identity, speed, and the first-large-prompt latency are unmeasured here. No GPU execution/query, CUDA application, network request, server process named `llama-server`, push, or submission ran.
+Labels: M = measured/observed; D = derived; G = guess. Commit IDs, source lines, seeds, flags, configured depths, thresholds, and workload parameters are identifiers.
 
-Labels: M observed/measured, D calculated from measurements, G estimate or hypothesis. Commit IDs, paths, seeds, K values, flags, architecture names, and configured limits are identifiers, not measurements.
+## Conclusion and commit
 
-## Provenance
+`979c112d95bc1774d503b7d5b508e269f5218213` - `kv-cache : allow compact masks for multiple streams`.
 
-Base: `0dba27b9002b8347c6f14a9f4a1651b3478065ef`, the frozen stack2 descendant of `68d99c67d`. `codex/provenance.json` records full IDs and successful `git merge-base --is-ancestor <commit> 0dba27b90` checks. The source topics below come from the read-only `~/repos/qwen38-eval/serving/llama-patches.yaml` and PLAN Lever ledger. These are the actual stack2 copies, rather than the original topic IDs.
+The production change is one condition in `src/llama-graph.cpp:45`: use `n_tokens/n_stream <= 16` without requiring `n_stream == 1`. Any active stream count works. No sampling code, arithmetic kernel, public API, or optimization knob changes.
 
-| Existing lever | Actual stack2 commits | Source branch |
-| --- | --- | --- |
-| fmq | `b0118d2ff`, `5926c67a7`, `68d99c67d` | `topic/fattn-mma-quant-kv` |
-| input-upload | `e7071647c` | `topic/host-input-upload` |
-| verify-sampling | `70036f47d` | `topic/backend-verify-sampling` |
-| draft-vocab | `faee46be9`, `b8668a92e` | `topic/mtp-draft-vocab` |
-| verify-prefill | `46c388284`, `0dba27b90` | `topic/verify-prefill` |
-| resync | `df5f4fa3e` | `topic/fix-server-noncanonical-resync` |
-| checkpoint-skip | `740ca4aa0`, `e6f9d8ba2` | `topic/ckpt-skip-draft-kv` |
-| checkpoint-pool | `a4adcd97c` | `topic/ckpt-buffer-pool` |
-| prefilter | `63cf1afe6`, `6f562b8b9`, `adcbc2f0e` | `topic/sampler-topk-prefilter` |
-| probabilistic-draft | `eaefd4746` | `topic/pr27694-probabilistic-draft` |
-| masked-mtp-hidden | `2f649b4bc` | `topic/mtp-h-nextn-masked` |
+M: mask bytes, production graph logits, and concurrent CPU server tokens/draft counts match the full-mask control. The CUDA build passed and is frozen. GPU speed and GPU VRAM changes are unmeasured. Existing tests are not entirely green: recurrent multi-sequence replay fails identically on the baseline, and `test-backend-ops` was not run under the explicit prohibition.
 
-## Integration commits
+## Design and dependencies
 
-| Input | Topic commit | Purpose |
-| --- | --- | --- |
-| `c23324d5f` | `772e1cde3` | Iterative split-state resolution and existing test-alloc regression |
-| `dfeef7917` | `b9de10f47` | Required round trace dependency; LLAMA_ROUND_TRACE unset is inert; DO NOT MERGE upstream |
-| `7839e00ba` | `67eccbd71` | Shared allocation epochs and retained meta split plans |
-| `58ecab9bb` | `aab941526` | Output/catch-up scheduler retention and sampler binding snapshots |
-| `eac50e4a4` | `7b177636d` | Fetch deferred logits before graph invalidation |
-| `0654a0c0f` | `a4c2bb3d8` | Meta storage helper declarations |
-| `79575de0c` | `e67c557cd` | Prefill/allocation trace scopes and required server fixture |
-| `19814e139` | `5ac8b1e13` | One spare host arena per meta backend |
-| `cd5638edd` | `2f635cf2d` | Hash visited tensors in the ownership traversal |
-| `b4dc5515a` | `b22fe8e8b` | Retain graph-array high-water capacity |
-| `19759fb85` | `710b61582` | Owned CUDA upload slots and event ordering |
-| `6918e7773` | `6fb301b31` | Stage synchronous host producers; capability-checked fence bypass |
-| `new` | `735c2342c` | Runtime switches and requested defaults |
-| `new` | `f5d476035` | Separate geometric staging growth change |
-| `selected fixtures` | `fbb208fdc` | CPU identity, allocation, ownership, and negative controls |
-| `selected harness` | `b8a3c2786` | Parent-only GPU identity gate and frozen baseline manifests |
-| `new` | `06af71301` | Real memory-fixture parser and exact-PID signal cleanup |
+`src/llama-kv-cache.cpp:1552` already takes the minimum certified prefix across every query's actual cache stream. Density, sequence membership, causal visibility, and M-RoPE ties are checked. `src/llama-kv-cache.cpp:1640` fills each suffix row from that stream, with `(n_kv - offset)*i`. `src/llama-graph.cpp:85` rechecks the certificate before reusing a compact graph. These functions are unchanged.
 
-Tests/docs-only source commits were not cherry-picked as a series. Only fixtures used here were copied from `import/graph-reuse-tandem`; the old harness paths and baseline trace assumptions were adapted. No upstream package or external repository was written.
+A short or invalid stream disables compact masks for the entire ubatch. Independent prefix lengths would require a different graph representation; this patch retains the existing exact rectangular layout and portable `GGML_OP_FILL`/`GGML_OP_CONCAT`, including capability checks and fallback.
 
-### Conflict resolutions
+M: the fix applies cleanly to master `050439614` after only these mask commits, in order:
 
-- `7839e00ba`, `ggml/src/ggml-backend-meta.cpp`: retained the meta fix's `ggml_backend_meta_calculate_split_state` and explicit pending-state vector. Moved the incoming recursive mutex guard to the iterative `ggml_backend_meta_get_split_state(stc, ...)` entry, protecting the complete lookup/clear/DFS/store sequence. The public overload retains its existing guard. The recursive mutex permits nesting. The incoming plan/container retention code merged independently and remains intact.
-- `79575de0c`, `codex/reuse-server-cpu.cpp`: modify/delete conflict because its earlier test-only introduction was skipped. Kept the required fixture, then copied its final tandem version and added `CPU_TEMP` to test greedy and seeded requests. No additional production conflict occurred.
+- `ce19806d9` - `kv-cache : fill dense sequence masks from position indexes`.
+- `77464fdba` - `kv-cache : take the dense-prefix mask path for M-RoPE positions`.
+- `24ac966c7` - `kv-cache : build visible mask prefixes on the meta backend`.
 
-## Flags and contracts
+The application check used copies under `build-cherry-pick/`. No other branch was changed. The standalone `tests/test-kv-mask.cpp` avoids unrelated stack test dependencies. A separate build of this minimal master combination was not performed.
 
-| Environment | Default | Effect |
-| --- | --- | --- |
-| `LLAMA_MTP_GRAPH_REUSE` | `1` | `0` avoids the output child scheduler and requires the active result for a reuse hit. Older same-result reuse remains available. |
-| `GGML_META_PLAN_REUSE` | `1` | `0` frees plans rather than retaining the spare host arena. Dependency hashing remains part of the safe retention implementation. |
-| `GGML_SCHED_INPUT_STAGING` | `0` | `1` enables owned backend uploads, batching from synchronous host producers, and supported alternating-graph fence bypass. |
-| `LLAMA_GRAPH_REUSE_DISABLE` | unset | Existing broad control: `1` forces all llama graph misses. |
-| `LLAMA_ROUND_TRACE` | unset | Env-gated private instrumentation; excluded from production upstream packaging. |
+CUDA's existing concat loop uses each source's dimension-3 stride (`ggml/src/ggml-cuda/concat.cu:148`) and copies F16 bits as integers. No CUDA implementation changes are needed.
 
-The first two switches are read when their context/backend is created. Staging is read at the first scheduler use and is fixed for that process. Sweeps restart the same frozen executable with different environments.
+## CPU exactness
 
-Design evidence: `src/llama-context.cpp:1521` selects a shared-storage output scheduler; `:1533` requires a valid allocation and exact graph-parameter compatibility; `src/llama-graph.cpp:1281` restores sampler bindings before setting inputs; `ggml/src/ggml-backend.cpp:2212` rejects wrong UID/stale epoch in public compute. `ggml/src/ggml-backend-meta.cpp:1221` uses a heap-backed DFS with bounded call stack; `:2231` retains reachable tensor owners under the mutex; `:2766` forces complete topology rebuilding when a spare plan is selected; `:2780` releases container ownership before pooling. Device arithmetic and sampling draws were not changed by the consolidation.
+M PASS: `test-kv-mask`, M 296 cases, both F16 and F32. Every full-mask element is checked against an independent cell oracle; Meta(CPU,CPU) reconstruction is compared byte-for-byte with the full mask. Coverage: unequal depths, reversed stream order, two and three streams, all pairs of accept lengths 0..3, rejected-tail `seq_rm`, holes, sequence-membership and future-position edits, causal/non-causal masks, M-RoPE ties, and per-stream rows 1/4/6/16. The test verifies that the zero-prefix shape stays on Meta. CTest wall time: M 8.74 s.
 
-### First-large-prompt staging change
+M PASS: isolated wrong-stream mutant `v_cells.at(0)` exits M 1 with `full mask differs from cell oracle`. Restoring the old production gate exits M 1 with `production multistream compact gate failed`. Production sources/objects are not replaced. See `codex/mask-np2-evidence/mutants.json`.
 
-`ggml/src/ggml-cuda/ggml-cuda.cu:2589` now doubles each slot's capacity until the next input batch fits, with overflow-safe growth. The upload-completion wait still precedes reuse/free. If spare-capacity allocation fails, it retries at the exact requested size and leaves the old allocation intact until replacement succeeds.
+M PASS: `codex/mask-np2-graph.cpp` runs actual production graphs on Meta(CPU,CPU), with unequal two/three-stream depths, mixed-threshold fallback, per-stream 16-row queries, graph reuse, and cache holes after compact construction. Patch compact callbacks: M 10; baseline: M 0. All M 107,520 output-logit bytes match. Digest: `codex/mask-np2-evidence/graph.json`.
 
-M: the CPU delayed-queue build of the actual production upload function requires M 16 allocations for M 256 increasing transfers and preserves every copied byte. The exact-size-growth mutant fails `linear staging allocation growth`; the removed retry fails `exact-size fallback refused`; all three event-wait mutants fail. `codex/input-contract-results.json` records M 1 positive implementation and M 5 rejected mutations. This proves allocation and ordering contracts, not GPU latency. G: avoiding repeated pinned allocation as the prefill mask grows may reduce the reported first-prompt penalty; the full reported penalty is not attributed or claimed fixed.
+M PASS: original Qwen3.5-4B GGUF, two simultaneous HTTP requests per temperature, `-np 2`, MTP k=3, probabilistic host drafts, q8_0 target KV, f16 draft KV, staging enabled. Both arms return M 48 identical token IDs per request and identical counters:
 
-## CPU verification
+| Temperature | Slot | Drafted, M | Accepted, M |
+|---|---:|---:|---:|
+| 0 | 0 | 45 | 32 |
+| 0 | 1 | 59 | 27 |
+| 1 | 0 | 42 | 32 |
+| 1 | 1 | 47 | 31 |
 
-All builds/tests ran with `CUDA_VISIBLE_DEVICES=""`, nice priority 19, Release CPU libraries, at most `-j8` build workers, and at most eight compute threads (four per CPU rank in Meta). The exact stack2 source was archived into ignored `codex/base-src`; only the baseline test executables link a standalone trace helper. Stack2 production libraries carry no trace overlay; only their test executables link the standalone helper.
+Seeds: 1729/1730. Boot-plus-request wall times: temp 0 up/patch M 14.272/13.515 s; temp 1 up/patch M 12.262/12.637 s. These are identity checks, not performance results. The real-model context is below the threshold; the production graph fixture separately exercises compact masks at long depths.
 
-Reproduce: `CUDA_VISIBLE_DEVICES="" nice -n 19 bash codex/run_cpu.sh`. CMake uses `-DGGML_CUDA=OFF -DCMAKE_BUILD_TYPE=Release -DGGML_OPENMP_FETCH=OFF -DLLAMA_BUILD_UI=OFF`. The command builds but never executes the target named `llama-server`; optional HTTP-capable CPU copies are named `cpu-serving`. Server checks use the in-process `server_context` fixture.
+The control server is renamed `cpu-serving`. `codex/mask_np2_baseline.py` freezes unchanged server/common/ggml bytes and relinks the sole changed production object from `git show 98c695111:src/llama-graph.cpp`. It checks that no other production file differs. An early copy raced a rebuild and was discarded; all reported comparisons use the corrected full-mask library.
 
-- M PASS: `test-alloc`, M 16 cases, including same/other-branch rebuilds under the M 1 MiB child stack. Loading a separately linked recursive meta-source mutant makes the other-branch child die with signal 11 and the parent exit -6. See `codex/test-alloc.log`, `codex/negative-meta.log`, and `build-negative-meta-recursive/result.log`.
-- M PASS: `reuse-contract`, M 3 contracts: sampler binding/uniform bytes and committed draws, public UID/epoch rejection, borrowed meta-input ownership through M 40 container rotations. M 2 binding/epoch mutant libraries exit 1 with the intended failures (`codex/negative-results.json`).
-- M PASS: `input-scheduler-contract`, CPU/Meta dispatch, synchronous-producer batching, capability refusal, allocation/direct-input fallback, late-rank drain, and fence decisions. M PASS: `test-llama-archs --tp-sampling` and `test-sampling`.
-- M PASS: synthetic M 128 runs and real-model M 64 runs, interleaved stack2/stack3/stack3/stack2, K=3/K=5, CPU/Meta(CPU,CPU), raw token/ID/q/probability/logit bytes identical. M 8 synthetic seeds and M 4 real seeds; M 12 rounds per run, with M 9 retained after trimming. `codex/{synthetic,real}-reuse-results.json` retains counts and derived timings. Baseline build/allocator counters are unavailable because its production libraries have no instrumentation; zero baseline counters mean uninstrumented, not zero work.
-- M PASS: `LLAMA_MTP_GRAPH_REUSE=0` removes the M 18 retained C/D1 hits in the synthetic control, yielding M 0, with identical bytes (`codex/reuse-flag-results.json`).
-- M PASS: server identity, M 30 runs across M 6 backend/temperature/seed cases, M 2 requests per boot. The five arms are exact stack2, stack3 defaults, staging ON, retained graph reuse OFF, and spare pooling OFF. Every token ID and final-target-logit byte matches. M 6 perturbed-token controls are rejected (`codex/cpu-identity-results.json`).
-- M PASS: repeated cold prefill, M 3 arms and M 2 requests per arm. Default target arena creations M 0 per request; `GGML_META_PLAN_REUSE=0` creates M 5, requesting M 87,516,000 arena bytes per request, and fails the allocation contract. Disabling all graph reuse removes hits and preserves bytes (`codex/prefill-summary.json`).
-- M PASS: owned Meta input fixture, M 8 runs across real/synthetic, K=3/K=5 and two seeds. Every token/ID/q/logit byte matches the saved stack2 reference. M 18 staged C/D1 decisions per run and M 0 host fences (`codex/owned-input-results.json`).
+M PASS: `test-alloc` (M 16 cases), `test-sampling`, `test-batch-alloc` (M 50 cases, M 327 assertions), `test-llama-archs --input-upload`, `test-llama-archs --tp-sampling -s 42`, `test-reasoning-budget` (M 12 cases), and `test-server-tokens`.
 
-No arithmetic operator changed. `test-backend-ops` was not run, honoring the explicit prohibition; transport/scheduler behavior is covered by the targeted contracts above.
+M PASS: `test-sampling-prefilter`, its default M 4,000 draws, including wrong-law control, grammar transitions, budget forcing, seeded trajectories, and rejection verification. The M 35,671-byte seed stream has FNV1a `e97ea9873285a3f9`. A larger 20,000-draw invocation was interrupted; the successful run uses the test's default.
 
-Fixture: `~/models/Qwen3.5-4B-UD-Q4_K_XL.gguf`. Direct Meta candidate/q checks use the worktree-only untied target-head adaptation, which duplicates quantized embedding bytes; draft weights remain the original compact head. Server identity uses the original tied-head model: Meta target backend sampling correctly falls back to CPU (`set_sampler` log); the draft still exercises the Meta path. These are CPU contracts, not Swift GPU validation.
+Baseline failure: `tests/test-recurrent-state-rollback.cpp:test_multi_seq_split_replay`. Both patch and `98c695111` exit M 1 with M maximum logit difference 13.4578, M NMSE 0.018913, first mismatch `seq 0 pos 16`; checkpoint rollback passes on both. Its context is below the compact threshold. This failure is unchanged.
 
-### CPU decode timing
+Not run: `test-backend-ops`. Hard rule 1 says "Do not run ... test-backend-ops", whereas proof item 2 requests its CPU run. A CPU-only exception was requested but not received; the prohibition was retained.
 
-D medians of per-run mean decode wall, ms/round, from the M trace intervals. These exclude host sampling/readback outside the decode scope and establish no GPU speed. Host load was uncontrolled.
+## CPU fill costs
 
-| Backend / K | Synthetic stack2 D | Synthetic stack3 D | Real stack2 D | Real stack3 D |
-| --- | ---: | ---: | ---: | ---: |
-| CPU / 3 | 1.111 | 0.926 | 178.460 | 173.811 |
-| CPU / 5 | 1.405 | 1.281 | 209.423 | 205.685 |
-| Meta(CPU,CPU) / 3 | 2.831 | 1.899 | 251.639 | 248.092 |
-| Meta(CPU,CPU) / 5 | 3.706 | 2.691 | 389.689 | 356.203 |
+M medians over M 51 samples of M 20 calls, nice 19, during CPU load from CUDA compilation. F16 host mask fill only, two streams, four rows each; backend FILL/CONCAT and GPU transfers are excluded.
 
-## CUDA freeze and parent GPU item
+| Depth | Full fill, M us | Compact suffix fill, M us |
+|---|---:|---:|
+| 8k | 4.101 | 3.902 |
+| 32k | 12.458 | 2.139 |
+| 90k | 35.086 | 2.435 |
 
-M PASS: CUDA Release compile/link with toolkit `/usr/local/cuda-13.2`, `CMAKE_CUDA_ARCHITECTURES=120a`, `GGML_CUDA_NCCL=OFF`, and `CMAKE_CUDA_COMPILER_FORCED=ON` to suppress the device/ABI probe. `GGML_OPENMP_FETCH=OFF` and `LLAMA_BUILD_UI=OFF` avoid downloads. Command: `CUDA_VISIBLE_DEVICES="" nice -n 19 bash codex/freeze_stack3.sh`. No CUDA application was run.
+At 8k both calls use the same full-mask path; the difference is timing variation. `codex/mask-np2-evidence/cpu-fill.csv` also records one-row and six-row shapes.
 
-Frozen candidate: `codex/frozen/stack3`, source `b8a3c2786f240c95487f217acda45abf7f9d8bcd`, executable `bin/round-trace`, pinned libraries and two-level SHA manifests. M 23 payload files per arm verify. The renamed stack2 copy and all its libraries match the original read-only weekend manifest exactly. One inherited compiler warning remains at `src/llama-model.cpp:1526` (`-Wsign-compare`); that source file is unchanged from stack2. See `codex/{cmake,build}-cuda.log` and `codex/frozen-check-results.json`.
+## Bytes and workspace
 
-The parent-only draft is `codex/stack3-identity.toml`, invoked by `codex/gpu_ab.sh` and `codex/stack3_gpu.py`; it reuses the frozen/hash/PID/SSE helpers from graph-reuse. Fixed S5 configuration: Swift 1.5 IQ4_XS, tensor split 50/50, internal AllReduce, target q8_0 KV, draft f16 KV, probabilistic MTP K=5, backend sampling, draft vocabulary subset, `-np 2`. New optimization flags are sanitized per boot. Trace is OFF.
+D bytes per GPU per paired round below assume equal aligned visible depth `d`, `n_kv=d+256`, prefix `d` when above threshold, and no padding boundary crossing. V+C+D masks total 4+4+3=11 rows per stream at k=3, or 6+6+5=17 at the copied experiment's k=5. Bytes = `2 bytes * 2 streams * rows * mask_width`. Aggregate mirrored H2D bytes across both GPUs are twice the table. Unequal depths use the minimum certificate; invalid density/ownership restores full upload.
 
-Canary: one staging-ON boot with one roughly 32k seeded request, one short temp-0 request and its exact repeat, plus simultaneous short two-stream requests. Full order: stack2/default/staged/staged/default/stack2. Every boot records all requests before gates; a failed boot gets no performance summary. Full output comparison preserves content/reasoning/function arguments/finish reason as canonical UTF-8 completion bytes, omitting random tool-call IDs and timing fields. It does not capture GPU proposal/q/logit bytes.
+| Depth | k=3 before, D B | k=3 after, D B | k=5 before, D B | k=5 after, D B |
+|---|---:|---:|---:|---:|
+| 8k (8192) | 371,712 | 371,712 | 574,464 | 574,464 |
+| 32k (32768) | 1,453,056 | 11,264 | 2,245,632 | 17,408 |
+| 90k (90112) | 3,976,192 | 11,264 | 6,145,024 | 17,408 |
 
-Gates: frozen/model/input hashes; per-request cold prompt size/cache and generated-length bounds; at least 40 interior fixed-K SSE intervals (configured minimum) for each sequential request; authoritative counters; two-stream generation overlap greater than the configured 0.5 s and a configured per-stream rate band; exact output comparison; word-bounded kernel fault detection; exact PID plus start time for stop. Concurrent request-local Prometheus deltas overlap, so their pair-wide delta alone is reconciled with both final SSE counters. The summaries retain steady ms/round, cold long-prompt time, request wall, and paired deltas per arm.
+These are derived aligned examples, not measured GPU transfers. A certificate of 32512 remains full even at `n_kv=32768`; a cached smaller valid prefix can leave a larger suffix.
 
-M PASS parser replay on real artifacts: `~/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/`, `fixtures/xid-lines.txt`, and the task-named `~/repos/graph-reuse/codex/runs/graph-reuse-tandem/full-a2/k5-1-up/long-tool-s1-1.json`. The short recorded fixture fails the configured 40-round gate. Mutations reject altered outputs, missing/inconsistent counters, missing final chunks, cold-size/cache/length errors, missing overlap, impossible rates, tampered frozen bytes/metadata, empty/faulted journal, missing metrics, forbidden execution, and budgets. Mocked one-boot canary and full interleaving pass without processes or sockets. Transport and actual Swift size/overlap behavior remain real-canary checks. Test-supplied prompt sizes/arrival timestamps are not GPU measurements.
+D mask bytes saved are zero at 8k when both streams are below threshold. G GPU saving is 0.8-2.0 ms per round at 90k, retaining the parent's estimate. No GPU speed is measured. CUDA CONCAT launches one kernel per stream, so byte reduction alone does not predict latency.
 
-Budget estimates: G 620 s full, G 160 s canary, D sum 780 s. Configured full/canary limits are 960/240 s, total 1200 s (20 min); D 70% margins are 672/168/840 s. Estimates include hashing, snapshots, idle/load, warm-up, requests, stop, and journal checks. The recorded M 8,412-token up prompt took M 10,339.168 ms; extrapolating to 32k is only a G sizing assumption, not a measured prefill rate at that depth. Expiry records `budget`, not a valid speed result.
+KV/model storage is unchanged. Prefix and concat intermediates can increase D logical mask storage by one full mask at concatenation: np2/k5 verify at 90k gives D 2,168,832 B per device before allocator reuse. GPU peak allocation is unknown. M: the synthetic three-stream CPU graph reports Meta compute storage 6.6573 MiB versus initial expected 4.9967 MiB (D difference 1.6606 MiB). The A/B samples minimum free VRAM per GPU.
 
-M PASS: full and one-boot canary dry plans; exact M 65-file pin inventory; `CUDA_VISIBLE_DEVICES="" PYTHONDONTWRITEBYTECODE=1 nice -n 19 /home/xanewok/repos/gpuq/bin/gpuq submit --check /home/xanewok/repos/stack3/codex/stack3-identity.toml` returns `valid`. Only `--check` was executed. The draft has `ab=true`, `retry=fresh`, unique attempt outputs, protected identity/size/hash thresholds, and no editable runtime files.
+## CUDA freeze and GPU draft
 
-Additional parent-harness checks read the real `fixtures/nvidia-smi-query.csv` directly, reject malformed/impossible memory rows, and exercise the wait-for-release loop with a busy-then-idle replay. GPUq supplies ownership/utilization debounce, RAM, and boot-ID gates. The termination handler stops the exact owned PID before unwinding HTTP workers, restores the prior handler, and records `interrupted`; its mocked signal control passes. Reproduce parser/control tests with `CUDA_VISIBLE_DEVICES="" PYTHONDONTWRITEBYTECODE=1 nice -n 19 python3 codex/test_stack3_gpu.py`.
+M PASS: `bash codex/freeze_mask_np2.sh`. CUDA 13.2, NCCL off, arch 120a as in the reference script, CCCL v3.4.3 from the supplied local directory via `FETCHCONTENT_SOURCE_DIR_CCCL`, `FETCHCONTENT_FULLY_DISCONNECTED=ON`, compiler probing forced off, at most `-j8`. No CUDA executable was run.
 
-The requested SP/overnight/items destination is outside the worktree and conflicts with hard rule 4. No file there was modified. The parent can copy the validated worktree TOML to `SP/overnight/items/stack3-identity.toml`; all paths and pins already reference this worktree. No GPU submission occurred.
+Freeze: `codex/frozen/mask-np2`, source `979c112d95bc1774d503b7d5b508e269f5218213`, executable `bin/mask-np2-srv`. M PASS: top-level/bin SHA256SUMS. All ELF RUNPATHs use `$ORIGIN`; CUDA libraries additionally use `/usr/local/cuda-13.2/lib64`. Payloads stay local/ignored; provenance/manifests are committed.
 
-## Risks and open items
+`codex/mask-np2.experiment.toml`: original ABBA plan, depths 8192/32768/90112, streams=2, slot_ctx=102400, min_overlap=0.8, k=5, strict cross-arm token/draft identity. Up is the supplied stack3 CCCL 3.4.3 freeze; patch is this freeze; both set `GGML_SCHED_INPUT_STAGING=1`.
 
-- GPU byte identity, CUDA capture/replay, np2 scheduling, and actual steady/request latency remain untested. Run the real canary and full identity gate before serving stack3. CPU identity does not prove GPU numerical identity.
-- Geometric growth reduces allocation frequency in the CPU contract. It does not establish the cause or removal of the reported first-large-prompt penalty. Staging stays OFF.
-- Two pinned slots per CUDA backend retain high-water capacity; D less than four times the largest successfully staged payload in total per backend, plus one spare meta host arena. Host RSS/pinned high water and CUDA backpressure were not measured.
-- The graph reuse/shared-scheduler primitives are preserved from the adopted source. Pipeline parallelism and evaluation callbacks still avoid the child scheduler; GPU cross-context stress is not covered.
-- Preserve ignored frozen binary payloads and model adaptations for the parent queue. `codex/PROMPT.md` is the user's pre-existing untracked file and was not staged.
+`codex/gpu_ab.sh` uses the existing depth harness's frozen checks and owned PID/process-group cleanup, plus current-boot kernel fault checks before/after. Canary: one patch boot at 32k, capped at 600 seconds. Full run: 7200-second cap. G estimate 1100 s per boot x 4 = 4400 s, below D 70% of the cap. The canary validates one boot's native identity; cross-arm equality requires the full ABBA run.
+
+M PASS: `--fixtures`, `--capture`, and `--preflight`. Parsers/gates replay real GPU fixtures and `results/2026-10-04-duo-np2-depth/canary-a2/1-patch`: native tokens/draft counters, final timings, steady intervals, prefill replay, overlap, malformed/missing VRAM rows, bounded fault signatures. Token corruption and absent overlap fail. These recordings are parser evidence, not patch measurements. See `codex/mask-np2-evidence/harness-parsers.json`.
+
+The inherited np2 experiment disabled identity because time-dependent ubatch composition can change even same-build outputs/counters. This draft retains the requested strict gate. Such variation can invalidate an A/B; do not relax the gate to claim speed.
+
+## Defaults and remaining work
+
+Compact masks remain off for non-Meta backends, F32 masks, disabled KQV offload, more than 16 tokens per stream, certified prefix below 32768, SWA, Alibi, or invalid density/visibility. No new environment knob. Input staging and target backend sampling remain off by default; this experiment enables both in both arms. Existing MTP graph/Meta plan reuse defaults are unchanged.
+
+Parent: queue canary, then ABBA; validate GPU identity and VRAM before using timings. CPU backend-ops coverage needs the explicit prohibition lifted. Recurrent replay needs a separate investigation.
+
+## Reproduction
+
+CPU commands: `CUDA_VISIBLE_DEVICES=""`, `nice -n 19`, at most eight threads, `TMPDIR=$PWD/build-tmp`. Configure `cmake -B build-cpu -DGGML_CUDA=OFF` with Release/tests on and ccache/OpenMP fetch/UI downloads off; build with `-j8`.
+
+- `ctest --test-dir build-cpu -R '^test-kv-mask$' --output-on-failure`.
+- `python3 codex/mask_np2_baseline.py`.
+- `python3 codex/mask_np2_cpu_identity.py`, `LLAMACPP_TEST_MODELFILE=/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf`; localhost sockets must be allowed.
+- Compile `codex/mask-np2-graph.cpp` against CPU llama/common/ggml libraries; run with an output path and EXPECT_COMPACT=1. Rerun with `LD_LIBRARY_PATH=$PWD/build-cpu-up/bin`, EXPECT_COMPACT=0; compare files with `cmp`.
+- `python3 codex/mask_np2_mutants.py`.
+- `bash codex/gpu_ab.sh --fixtures`.
+- `bash codex/gpu_ab.sh --preflight --port 18129 --out build-tmp/np2-preflight` (CPU only).
+- Parent through gpuq: `bash codex/gpu_ab.sh --canary --out FRESH_DIR`, then `--execute` into a different fresh directory. Neither GPU stage was run here.
+
+Evidence summaries/tails/hashes: `codex/mask-np2-evidence/`. Full logs and binaries: worktree `build*` directories. The following topic commit records tools, report, experiment, and frozen manifests without another production fix.

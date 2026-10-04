@@ -1,0 +1,2 @@
+0.00.000.350 I main: using seed 1893777517, stdev 0.100000
+test_input_upload: ordering, fallback, dropped-transfer negative control: OK

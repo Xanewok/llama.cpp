@@ -1,0 +1,12 @@
+0.01.467.365 W model has unused tensor blk.32.ffn_gate.weight (size = 13271040 bytes) -- ignoring
+0.01.467.369 W model has unused tensor blk.32.ffn_down.weight (size = 13271040 bytes) -- ignoring
+0.01.467.374 W model has unused tensor blk.32.ffn_up.weight (size = 13271040 bytes) -- ignoring
+0.01.467.381 W model has unused tensor blk.32.nextn.eh_proj.weight (size = 13926400 bytes) -- ignoring
+0.01.467.386 W model has unused tensor blk.32.nextn.enorm.weight (size = 10240 bytes) -- ignoring
+0.01.467.390 W model has unused tensor blk.32.nextn.hnorm.weight (size = 10240 bytes) -- ignoring
+0.01.467.402 W model has unused tensor blk.32.nextn.shared_head_norm.weight (size = 10240 bytes) -- ignoring
+0.03.139.770 I run_tests: testing with cache fill 0x00
+0.52.890.793 I test_rollback: recurrent rollback checkpoint restored successfully
+0.55.713.943 W llama_context: n_ctx is not divisible by n_seq_max - rounding down to 512
+0.56.336.398 W llama_context: n_ctx is not divisible by n_seq_max - rounding down to 512
+1.05.841.512 E test_multi_seq_split_replay: multi-seq split replay logits mismatch (max diff 13.4578, nmse 0.018913, first at seq 0 pos 16)

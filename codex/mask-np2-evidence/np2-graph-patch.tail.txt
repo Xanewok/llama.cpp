@@ -1,0 +1,5 @@
+llama_context: n_ctx_seq (35840) > n_ctx_train (256) -- possible training context overflow
+llama_context: n_ctx_seq (35840) > n_ctx_train (256) -- possible training context overflow
+llama_context: n_ctx_seq (35840) > n_ctx_train (256) -- possible training context overflow
+~llama_context:     Meta() compute buffer size of   6.6573 MiB, does not match expectation of   4.9967 MiB
+M: production compact callbacks 10

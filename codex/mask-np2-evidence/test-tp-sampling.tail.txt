@@ -1,0 +1,12 @@
+0.00.000.308 I main: using seed 42, stdev 0.100000
+test_tp_sampling: devices CPU, CPU
+test_tp_sampling: sampler detach and replacement retains the scheduler: OK
+test_tp_sampling: verify candidates and deferred logits, 64 seeds x 4 rows: OK
+test_tp_sampling: fallback logits across two ubatches: OK
+test_tp_sampling: top-k candidates, 4 rows: OK
+test_tp_sampling: top-k + greedy, 4 rows: OK
+test_tp_sampling: top-k + top-p + min-p + temp + dist, 4 rows: OK
+test_tp_sampling: top-k + temp + dist distribution, 4000 draws, TV 0.038: OK
+set_sampler: seq_id = 0: backend sampling with SPLIT_MODE_TENSOR needs every device's vocab slice (one plain segment) to hold at least top-k rows; using CPU
+test_tp_sampling: vocab slice smaller than top-k: sampler refused, OK
+test_tp_sampling: OK
