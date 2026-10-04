@@ -44,6 +44,7 @@ struct bench_data {
     int k;
     int m;
     int cc;
+    int warp_size;
     cudaStream_t stream;
 };
 
@@ -52,7 +53,7 @@ static void launch(const bench_data & d) {
     const int nwarps = nw ? nw : calc_nwarps(type, ncols, get_device_table_id(d.cc));
     const int rows = nr ? nr : calc_rows_per_block(ncols, get_device_table_id(d.cc), false, nwarps);
     const dim3 grid((d.m + rows - 1)/rows);
-    const dim3 block(ggml_cuda_get_physical_warp_size(), nwarps);
+    const dim3 block(d.warp_size, nwarps);
     const uint3 one = init_fastdiv_values(1);
     const ggml_cuda_mm_fusion_args_device fusion{};
     const ggml_cuda_kernel_launch_params params(grid, block, 0, d.stream);
@@ -135,6 +136,7 @@ static void bench(ggml_type type, const bench_shape & s, int repeats, int trials
     d.k = s.k;
     d.m = s.m;
     d.cc = 100*prop.major + 10*prop.minor;
+    d.warp_size = prop.warpSize;
     CUDA_CHECK(cudaStreamCreate(&d.stream));
     CUDA_CHECK(cudaMalloc(&d.x, weights.size()));
     CUDA_CHECK(cudaMalloc(&d.y, sizeof(block_q8_1)*s.k/QK8_1*max_cols));
