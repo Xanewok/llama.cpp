@@ -1,0 +1,69 @@
+{
+  "masks": {
+    "bytes_M": 43646976,
+    "sha256": "b2993089fa7abad68be7883ff84ce052ecb4dbbcea9991c8db8ace7acb1ba7fe"
+  },
+  "logits": {
+    "bytes_M": 6656,
+    "sha256": "3d28cd891f7ff3477e85b92037faa8e1a62f1096302042e1c73c4839c4b39633",
+    "min_M": -0.13218790292739868,
+    "max_M": 0.12944170832633972
+  },
+  "negative_control": {
+    "exit_M": 1,
+    "error": "negative control: sequence mutation retained stale mask"
+  },
+  "production_guard_negative_control": {
+    "exit_M": 1,
+    "error": "negative control: sequence mutation retained stale mask",
+    "mutation": "remove positions.size() == n_used from the dense-prefix guard"
+  },
+  "rounds": [
+    {
+      "cache": "target",
+      "depth": 8192,
+      "base_us_M": 79.899,
+      "patch_us_M": 3.848,
+      "base_us_D": 80.379,
+      "patch_us_D": 3.8609999999999998
+    },
+    {
+      "cache": "draft",
+      "depth": 8192,
+      "base_us_M": 79.859,
+      "patch_us_M": 3.797,
+      "base_us_D": 79.686,
+      "patch_us_D": 3.785
+    },
+    {
+      "cache": "target-verify-plus-five-drafts",
+      "depth": 8192,
+      "base_us_D": 80.494,
+      "patch_us_D": 3.811,
+      "saving_ms_D": 0.07668299999999999
+    },
+    {
+      "cache": "target",
+      "depth": 90112,
+      "base_us_M": 869.968,
+      "patch_us_M": 33.843,
+      "base_us_D": 883.798,
+      "patch_us_D": 33.546
+    },
+    {
+      "cache": "draft",
+      "depth": 90112,
+      "base_us_M": 884.504,
+      "patch_us_M": 33.834,
+      "base_us_D": 882.4219999999999,
+      "patch_us_D": 33.489
+    },
+    {
+      "cache": "target-verify-plus-five-drafts",
+      "depth": 90112,
+      "base_us_D": 879.608,
+      "patch_us_D": 33.596,
+      "saving_ms_D": 0.846012
+    }
+  ]
+}
