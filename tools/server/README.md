@@ -115,6 +115,12 @@ For the full list of features, please refer to [server's changelog](https://gith
 | `--spec-draft-type-v, -ctvd, --cache-type-v-draft TYPE` | KV cache data type for V for the draft model<br/>allowed values: f32, f16, bf16, q8_0, q4_0, q4_1, iq4_nl, q5_0, q5_1<br/>(default: f16)<br/>(env: LLAMA_ARG_SPEC_DRAFT_CACHE_TYPE_V) |
 
 
+### Tensor placement
+
+`--override-tensor` accepts device and host buffer type names. For example, `--override-tensor 'token_embd\.weight=CUDA_Host' --load-mode none` places the token embedding weights in CUDA pinned host memory. The host buffer name depends on the backend; an unknown name prints the available types. Use `--load-mode none` to allocate the requested host buffer rather than use a memory mapping.
+
+A device buffer can also be selected with this option. Device placement consumes device memory and can use a different implementation of the embedding lookup. Keep the default placement when byte-identical CPU results are required.
+
 ### Sampling params
 
 | Argument | Explanation |
