@@ -155,6 +155,8 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
     # these tests are disabled on Windows because they use internal functions not exported with LLAMA_API (when building with shared libraries)
     llama_build_and_test(test-unicode.cpp)
     llama_build_and_test(test-sampling.cpp)
+    llama_build_and_test(test-kv-cells.cpp)
+    target_include_directories(test-kv-cells PRIVATE ${PROJECT_SOURCE_DIR}/src)
     llama_build(test-sampling-prefilter.cpp) # needs a model path: a Qwen3-Coder style chat template
     llama_build_and_test(test-reasoning-budget.cpp)
     llama_build_and_test(test-grammar-parser.cpp)
