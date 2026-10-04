@@ -595,6 +595,12 @@ PRE_MAP = {'FWD': 'GEMM', 'KV_GDN': 'GDN', 'KV_ATTN': 'ATTN', 'COMM': 'COMM', 'E
 PRE_PRIORITY = ('FWD', 'KV_GDN', 'KV_ATTN', 'COMM', 'ELEM', 'SAMP', 'COPY')
 
 
+# Host work between ubatches (graph build, sampler, scheduler) leaves the GPU idle for 30-130 ms on llama (-ub 128, 2 GPUs): a
+# threshold below that cuts one prefill into per-ubatch runs and the longest "run" is 1/150 of it (full-a1: 0.3 s of 45.7 s).
+# Must stay above the per-step host gap and below any non-prefill activity that is allowed to split the window.
+RUN_GAP_MS = 1000.0
+
+
 def marker_runs(marked, gap_ns):
     runs, cur = [], [marked[0]]
     for k in marked[1:]:
@@ -606,13 +612,12 @@ def marker_runs(marked, gap_ns):
     return runs
 
 
-def prefill_budget(tr, model, engine, tokens, min_markers=64, window_ms=None, batch_tokens=None, run_gap_ms=25.0):
-    """Window = the longest run of prefill marker kernels (decode rounds between batches split runs), or --window.
-    Shares by class, overall and per quarter of the prompt."""
+def prefill_budget(tr, model, engine, tokens, min_markers=64, window_ms=None, batch_tokens=None, run_gap_ms=RUN_GAP_MS):
+    """Window = the longest span of prefill marker kernels, or --window. Shares by class, overall and per quarter of the prompt."""
     d = tr.devs[0]
     mk = MARKERS[engine]
     marked = [k for k in tr.by_dev[d] if mk.search(tr.names[k[3]])]
-    runs = []
+    runs, warn = [], []
     if window_ms:
         a, b = tr.t0 + window_ms[0] * 1e6, tr.t0 + window_ms[1] * 1e6
     else:
@@ -623,6 +628,10 @@ def prefill_budget(tr, model, engine, tokens, min_markers=64, window_ms=None, ba
         if len(best) < min_markers:
             raise Reject(f'longest contiguous prefill run has {len(best)} marker kernels (< {min_markers})')
         a, b = best[0][0], best[-1][1]
+        outside = sum(1 for k in marked if k[1] <= a or k[0] >= b)
+        if outside > 0.05 * len(marked):
+            warn.append(f'{outside} of {len(marked)} prefill marker kernels lie outside the chosen window '
+                        f'({len(runs)} runs split at gaps > {run_gap_ms:g} ms): window may be a fragment of the prefill')
     if len(tr.devs) < model['tp']:
         raise Reject(f"trace has kernels on {len(tr.devs)} device(s), model expects tp={model['tp']}")
     part, ks = partition(tr, d, a, b, PRE_PRIORITY)
@@ -653,7 +662,7 @@ def prefill_budget(tr, model, engine, tokens, min_markers=64, window_ms=None, ba
     mid_depths = [int(tokens * (q + .5) / 4) for q in range(4)]
     out = {'kind': 'prefill', 'engine': engine, 'tokens': tokens, 'window_ms': wall_ms, 'tok_per_s': tokens / wall_ms * 1e3,
            'ms_per_1k_tokens': wall_ms / tokens * 1e3, 'batch_tokens': bt, 'n_markers': len(marked), 'n_runs': len(runs),
-           'ms_by_class': ms(part), 'share_pct': shares(part),
+           'warnings': warn, 'ms_by_class': ms(part), 'share_pct': shares(part),
            'kernel_sum_share_pct': {PRE_MAP[c]: 100 * v / sum(ks.values()) for c, v in ks.items()},
            'quarters': [{'approx_depth_tokens': mid_depths[q], 'share_pct': shares(quarters[q]),
                          'window_ms': sum(quarters[q].values()) / 1e6} for q in range(4)],
@@ -736,6 +745,7 @@ def prefill_md(t, title):
               f"{f['compute']:.0f} ms ({t['floor_notes']['compute']}). Headroom vs the larger floor: {t['headroom_ms']:.0f} ms "
               f"({t['headroom_pct_of_window']:.0f}% of the window).", '',
           'Top kernels GPU0 (ms, calls): ' + '; '.join(f"{k['kernel']} {k['ms']:.0f} ({k['calls']})" for k in t['top_kernels_gpu0'][:8]), '']
+    L += [f'WARNING: {w}' for w in t.get('warnings', [])]
     return '\n'.join(L)
 
 

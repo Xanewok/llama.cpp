@@ -4,6 +4,7 @@ Run: CUDA_VISIBLE_DEVICES= nice -n 19 python3 -m unittest -v   (tests/__init__.p
 Published reference values: SP/gpu-sampling/items/96b-attrib.md (llama P/B traces), SP/queue/done/47 + attrib-item47-np1-P.out,
 ~/repos/draft-anatomy/codex/REPORT.md (HQ idle-run: 197 steps, weight+head 17.664+2.026 ms).
 """
+import json
 import os
 import shutil
 import sqlite3
@@ -178,6 +179,73 @@ class NegativeControls(unittest.TestCase):
             bad = mutate(HQ, ['update CUPTI_ACTIVITY_KIND_KERNEL set graphId = NULL'], t)
             with self.assertRaisesRegex(ap.Reject, 'no graph-replayed kernels'):
                 ap.decode_budget(ap.Trace(bad), HQM, 8192, 'hq', k=3, min_rounds=30)
+
+
+FULL_A1 = Path(__file__).resolve().parent.parent / 'runs/attrib-llama/full-a1'
+MMQ = 'void mul_mat_q<(ggml_type)23, 128, false>(char const*, int*)'
+SYN_MS = 1_000_000
+
+
+def synthetic_prefill(path, n_ubatch=20, mmq_per_ubatch=100, host_gap_ms=40.0, dead_ms=0.0, extra=()):
+    """Two devices, one marker run per ubatch (kernels 0.2 ms apart) and `host_gap_ms` of host work between ubatches, as at -ub 128."""
+    db = sqlite3.connect(path)
+    db.execute('create table StringIds (id integer primary key, value text)')
+    db.execute('create table CUPTI_ACTIVITY_KIND_KERNEL (start, end, deviceId, demangledName, correlationId, globalPid)')
+    db.executemany('insert into StringIds values (?, ?)', [(1, MMQ), (2, 'rms_norm_f32')])
+    rows, cid, t = [], 0, 1_000_000
+    for _ in range(n_ubatch):
+        for i in range(mmq_per_ubatch):
+            for dev in (0, 1):
+                cid += 1
+                rows.append((t, t + 150_000, dev, 2 if i % 4 == 3 else 1, cid, 0))
+            t += 200_000
+        t += int(host_gap_ms * SYN_MS)
+    for off_ms in extra:
+        for dev in (0, 1):
+            rows.append((t + int(off_ms * SYN_MS), t + int(off_ms * SYN_MS) + 100_000, dev, 1, 0, 0))
+    db.executemany('insert into CUPTI_ACTIVITY_KIND_KERNEL values (?,?,?,?,?,?)', rows)
+    db.commit()
+    db.close()
+
+
+class PrefillWindow(unittest.TestCase):
+    def budget(self, **kw):
+        with tempfile.TemporaryDirectory(dir=SP) as t:
+            f = Path(t) / 'syn.sqlite'
+            synthetic_prefill(f, **kw)
+            return ap.prefill_budget(ap.Trace(f, need_runtime=False), LL, 'llama', 20 * 128, min_markers=64)
+
+    def test_host_gaps_between_ubatches_do_not_split_the_window(self):
+        # Negative control: with the old 25 ms run gap the window was one ubatch (full-a1: 0.3 s of a 45.7 s prefill).
+        r = self.budget()
+        self.assertEqual(r['n_runs'], 1)
+        span = 20 * (100 * 0.2 + 40) - 40
+        self.assertGreater(r['window_ms'], span - 0.5)
+        self.assertLessEqual(r['window_ms'], span)
+        self.assertEqual(r['warnings'], [])
+        self.assertAlmostEqual(r['tok_per_s'], 20 * 128 / r['window_ms'] * 1e3, places=6)
+
+    def test_old_gap_threshold_would_pick_one_ubatch(self):
+        with tempfile.TemporaryDirectory(dir=SP) as t:
+            f = Path(t) / 'syn.sqlite'
+            synthetic_prefill(f)
+            r = ap.prefill_budget(ap.Trace(f, need_runtime=False), LL, 'llama', 2560, min_markers=64, run_gap_ms=25.0)
+        self.assertLess(r['window_ms'], 25)
+        self.assertTrue(any('outside the chosen window' in w for w in r['warnings']))
+
+    def test_a_much_later_stray_marker_run_does_not_extend_the_window(self):
+        r = self.budget(extra=[5000.0])
+        self.assertEqual(r['n_runs'], 2)
+        self.assertLess(r['window_ms'], 20 * (100 * 0.2 + 40))
+
+    @unittest.skipUnless((FULL_A1 / 'prefill-32k.sqlite').exists(), 'full-a1 trace missing')
+    def test_full_a1_prefill_agrees_with_the_server(self):
+        # server: prompt_ms 45706 for 32769 tokens (runs.json); the profiler adds < 2%.
+        runs = json.loads((FULL_A1 / 'runs.json').read_text())
+        w = next(x for x in runs['windows'] if x['name'] == 'prefill-32k')
+        r = ap.prefill_budget(ap.Trace(FULL_A1 / 'prefill-32k.sqlite', need_runtime=False), LL, 'llama', 32768)
+        self.assertAlmostEqual(r['tok_per_s'], w['prompt_per_second'], delta=0.03 * w['prompt_per_second'])
+        self.assertEqual(r['warnings'], [])
 
 
 if __name__ == '__main__':
