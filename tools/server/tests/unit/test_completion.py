@@ -94,6 +94,87 @@ def test_completion_stream_vs_non_stream():
     assert content_stream == res_non_stream.body["content"]
 
 
+@pytest.mark.parametrize("return_tokens", [False, True])
+@pytest.mark.parametrize("text,stop,n_predict", [
+    ("\u2554A\u2554B", [], None),
+    ("hello there", ["hello!"], None),
+    ("hello there", ["hello"], None),
+    ("\u2554A", [], 1),
+])
+def test_completion_stream_buffered_tokens(text, stop, n_predict, return_tokens):
+    global server
+    server.start()
+    tokenized = server.make_request("POST", "/tokenize", data={"content": text})
+    assert tokenized.status_code == 200
+    expected_tokens = tokenized.body["tokens"]
+    if text.startswith("\u2554"):
+        assert len(expected_tokens) > len(text)
+
+    request = {
+        "prompt": "Repeat exactly: " + text,
+        "grammar": 'root ::= "' + text + '"',
+        "n_predict": n_predict or 32,
+        "temperature": 0.0,
+        "seed": 42,
+        "cache_prompt": False,
+        "return_tokens": True,
+        "n_probs": 5,
+        "stop": stop,
+    }
+    non_stream = server.make_request("POST", "/completion", data=request)
+    assert non_stream.status_code == 200
+    chunks = list(server.make_stream_request("POST", "/completion", data={
+        **request, "stream": True, "return_tokens": return_tokens,
+    }))
+    tokens = [tok for chunk in chunks for tok in chunk["tokens"]]
+    assert tokens == non_stream.body["tokens"]
+    assert len(tokens) == chunks[-1]["timings"]["predicted_n"]
+    assert len(tokens) == non_stream.body["timings"]["predicted_n"]
+
+    probs = [prob for chunk in chunks for prob in chunk.get("completion_probabilities", [])]
+    assert [prob["id"] for prob in probs] == tokens
+    if non_stream.body["stop_type"] != "word":
+        assert probs == non_stream.body["completion_probabilities"]
+    if n_predict is None:
+        assert "".join(chunk["content"] for chunk in chunks) == non_stream.body["content"]
+    if not stop and n_predict is None:
+        assert non_stream.body["content"] == text
+        assert any(len(chunk["tokens"]) > 1 for chunk in chunks)
+        assert bytes(b for prob in probs for b in prob["bytes"]).decode() == text
+
+
+@pytest.mark.parametrize("logprobs", [False, True])
+def test_completion_stream_buffered_tokens_chat(logprobs):
+    global server
+    server.start()
+    text = "\u2554A\u2554B"
+    request = {
+        "messages": [{"role": "user", "content": "Repeat exactly: " + text}],
+        "grammar": 'root ::= "' + text + '"',
+        "max_tokens": 32,
+        "temperature": 0.0,
+        "seed": 42,
+        "cache_prompt": False,
+        "logprobs": logprobs,
+    }
+    if logprobs:
+        request["top_logprobs"] = 5
+    non_stream = server.make_request("POST", "/v1/chat/completions", data=request)
+    assert non_stream.status_code == 200
+    chunks = list(server.make_stream_request("POST", "/v1/chat/completions", data={
+        **request, "stream": True,
+    }))
+    choices = [choice for chunk in chunks for choice in chunk["choices"]]
+    assert "".join(choice["delta"].get("content", "") or "" for choice in choices) == text
+    assert non_stream.body["choices"][0]["message"]["content"] == text
+    assert choices[-1]["finish_reason"] == "stop"
+    if logprobs:
+        probs = [prob for choice in choices for prob in (choice.get("logprobs") or {}).get("content", [])]
+        assert len(probs) == non_stream.body["usage"]["completion_tokens"] - 1
+        assert probs == non_stream.body["choices"][0]["logprobs"]["content"][:-1]
+        assert bytes(b for prob in probs for b in prob["bytes"]).decode() == text
+
+
 def test_completion_with_openai_library():
     global server
     server.start()
