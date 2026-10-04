@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Frozen mask A/B. Only the parent may select --execute-parent."""
+"""Frozen mask upload A/B. Only the parent may select --execute-parent."""
 import argparse
 import copy
 import csv
@@ -51,6 +51,12 @@ def frozen(root):
     return binary, files
 
 
+def loaded_outside(pid, root):
+    libs = {line.split()[-1] for line in Path(f"/proc/{pid}/maps").read_text().splitlines()
+            if re.search(r"/lib(llama|ggml|mtmd)[^/]*\.so", line)}
+    return sorted(p for p in libs if not Path(p).resolve().is_relative_to(root))
+
+
 def gpu_memory(raw, devices):
     rows = list(csv.DictReader(io.StringIO(raw)))
     found = {}
@@ -90,10 +96,14 @@ def analyze(record, minimum=40):
 
 
 def identity(record):
-    final = next((c for c in reversed(record["chunks"]) if c.get("stop") is True), None)
-    if final is None or not final.get("tokens"):
+    chunks = record["chunks"]
+    final = next((c for c in reversed(chunks) if c.get("stop") is True), None)
+    # A streamed final chunk carries empty tokens/content (server-context.cpp send_final_response); only the
+    # partial chunks hold them, so concatenate. A non-streamed reply is a single final chunk with all tokens.
+    tokens = [t for c in chunks for t in (c.get("tokens") or [])]
+    if final is None or not tokens:
         raise ValueError("missing final token identity")
-    return final["tokens"], final.get("content", ""), {k: final["timings"].get(k) for k in ("predicted_n", "draft_n", "draft_n_accepted", "prompt_n", "cache_n")}
+    return tokens, {k: final["timings"].get(k) for k in ("predicted_n", "draft_n", "draft_n_accepted", "prompt_n", "cache_n")}
 
 
 def fixture_test(directory):
@@ -129,9 +139,14 @@ def main():
     p.add_argument("--model", type=Path); p.add_argument("--model-sha")
     p.add_argument("--devices", default="GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f")
     p.add_argument("--out", type=Path, default=Path("codex/gpu-runs"))
-    p.add_argument("--port", type=int, default=8096)
+    p.add_argument("--port", type=int, default=int(os.environ.get("GPUQ_PORT", "8096")))
+    p.add_argument("--draft-vocab", type=Path,
+                   default=Path("/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json"))
+    p.add_argument("--draft-vocab-sha", default="e30af79520ade5b7ddb851d75cf271f07d407dc768bf646e4517607d562a65a6")
     p.add_argument("--budget", type=int, default=3600)
     p.add_argument("--canary", action="store_true")
+    p.add_argument("--canary-arm", choices=("up", "patch"), default="patch")
+    p.add_argument("--identity-reference", type=Path)
     p.add_argument("--execute-parent", action="store_true")
     args = p.parse_args()
     if args.self_test:
@@ -140,24 +155,43 @@ def main():
         p.error("provide frozen roots, model and model SHA")
     roots = {"up": args.up.resolve(), "patch": args.patch.resolve()}
     binaries, pins = {}, {}
+    digests = {}
     for arm, root in roots.items():
         binaries[arm], files = frozen(root); pins.update(files)
+        digests[arm] = sorted(files[k] for k in files if Path(k).parent == root / "bin")
+    if (roots["up"] / "SOURCE").read_text().splitlines()[0] != 'ff5611656cc790cf22db6281d03e226262589e6f':
+        raise ValueError("frozen bytes changed: wrong upstream SOURCE")
+    if (roots["up"] / "SOURCE").read_text() == (roots["patch"] / "SOURCE").read_text() or digests["up"] == digests["patch"]:
+        raise ValueError("frozen bytes changed: up and patch arms are not distinct builds")
+    if sha(args.draft_vocab) != args.draft_vocab_sha:
+        raise ValueError("draft vocab changed")
+    pins[str(args.draft_vocab.resolve())] = args.draft_vocab_sha
     if sha(args.model) != args.model_sha:
         raise ValueError("model bytes changed")
     pins[str(args.model.resolve())] = args.model_sha
     for script in (Path(__file__), Path(__file__).with_name("gpu_ab.sh")):
         pins[str(script.resolve())] = sha(script)
-    order = ["patch"] if args.canary else ["up", "patch", "patch", "up"]
+    order = [args.canary_arm] if args.canary else ["up", "patch", "patch", "up"]
     budget = min(args.budget, 600) if args.canary else args.budget
     estimate = 400 if args.canary else 480 * len(order)
     if estimate > .7 * budget:
         raise ValueError("stage estimate exceeds 70 percent of wall budget")
+    reference = {}
+    if args.identity_reference:
+        for depth in (8192, 90112):
+            path = args.identity_reference / f"depth-{depth}.json"
+            pins[str(path.resolve())] = sha(path)
+            record = json.loads(path.read_text())
+            analyze(record)
+            reference[depth] = identity(record)
     plan = {"order": order, "depths": [8192, 90112], "k": 5, "pins": pins,
             "stage_estimate_s_G": estimate, "budget_s": budget, "steady_minimum": 40}
     if not args.execute_parent:
         print(json.dumps(plan, indent=2)); return
     if os.environ.get("GPUQ_ACTIVE") != "1" or not os.environ.get("CUDA_VISIBLE_DEVICES"):
         raise ValueError("parent execution requires GPUQ_ACTIVE=1 and visible GPUs")
+    if args.canary and args.canary_arm == "patch" and not reference:
+        raise ValueError("patch canary requires --identity-reference from the upstream canary boot")
     args.out.mkdir(parents=True, exist_ok=False)
     (args.out / "pins.json").write_text(json.dumps(plan, indent=2))
     start = time.monotonic(); cutoff = str(time.time())
@@ -184,7 +218,7 @@ def main():
     def http(path, body=None):
         request = urllib.request.Request(f"http://127.0.0.1:{args.port}" + path,
             data=None if body is None else json.dumps(body).encode(), headers={"Content-Type": "application/json"})
-        return urllib.request.urlopen(request, timeout=min(3 if path == "/health" else 240, left()))
+        return urllib.request.urlopen(request, timeout=min(3, left()) if path == "/health" else left())
 
     def stop():
         nonlocal proc
@@ -209,17 +243,21 @@ def main():
                 time.sleep(min(2, left())); guard()
             with socket.socket() as sock:
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                sock.bind(("127.0.0.1", args.port))
+                try:
+                    sock.bind(("127.0.0.1", args.port))
+                except OSError as e:
+                    raise RuntimeError(f"port busy: {e}")
             binary, _ = frozen(roots[arm])
             dest = args.out / f"{i}-{arm}"; dest.mkdir()
             command = [str(binary), "-m", str(args.model.resolve()), "-c", "102400", "-np", "1", "-fa", "on",
                 "-ctk", "q8_0", "-ctv", "q8_0", "--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16",
                 "-sm", "tensor", "--tensor-split", "50,50", "-ngl", "99", "-b", "2048", "-ub", "128",
                 "--spec-type", "draft-mtp", "--spec-draft-n-max", "5", "--spec-draft-n-min", "0", "--spec-draft-p-min", "0",
-                "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--metrics", "-t", "8", "-tb", "8",
+                "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--backend-sampling",
+                "--spec-draft-vocab", str(args.draft_vocab.resolve()), "--cache-ram", "0", "--metrics", "-t", "8", "-tb", "8",
                 "--host", "127.0.0.1", "--port", str(args.port)]
             with (dest / "server.log").open("w") as log:
-                proc = subprocess.Popen(command, stdout=log, stderr=log, env=env)
+                proc = subprocess.Popen(command, stdout=log, stderr=log, env=dict(env, LD_LIBRARY_PATH=str(binary.parent)))
                 (dest / "pid").write_text(str(proc.pid))
                 (dest / "command.json").write_text(json.dumps(command))
                 deadline = time.monotonic() + min(180, left())
@@ -229,6 +267,9 @@ def main():
                     try:
                         with http("/health") as reply:
                             if json.load(reply).get("status") == "ok":
+                                outside = loaded_outside(proc.pid, roots[arm])
+                                if outside:
+                                    raise ValueError("frozen bytes changed: loaded outside frozen root: " + ", ".join(outside))
                                 break
                     except (urllib.error.URLError, TimeoutError):
                         pass
@@ -264,23 +305,9 @@ def main():
                             raise ValueError("length or prefill gate failed")
                         if len(ident[0]) != result["timings"]["predicted_n"]:
                             raise ValueError("token count gate failed")
-                        if depth in results and results[depth]["identity"] != ident:
+                        expected = reference.get(depth, results.get(depth, {}).get("identity"))
+                        if expected is not None and expected != ident:
                             raise ValueError("token or acceptance identity failed")
-                        if args.canary and depth == 8192:
-                            # A second identical request in the same boot tests RNG reset and the identity gate.
-                            repeated = {"chunks": []}
-                            try:
-                                with http("/completion", dict(record["request"], stream=False)) as reply:
-                                    repeated["chunks"].append(json.load(reply))
-                            except Exception as e:
-                                repeated["error"] = str(e)
-                                if isinstance(e, urllib.error.HTTPError):
-                                    repeated["error_body"] = e.read().decode(errors="replace")
-                            finally:
-                                (dest / f"repeat-{depth}.json").write_text(json.dumps(repeated))
-                            guard()
-                            if identity(repeated) != ident:
-                                raise ValueError("repeat identity failed")
                         results.setdefault(depth, {"identity": ident, "runs": []})["runs"].append({"arm": arm, **result})
                     except Exception as e:
                         failures.append(f"depth {depth}: {e}")
@@ -303,5 +330,20 @@ def main():
         stop()
 
 
+def exit_code(reason):
+    # gpuq: 3/7 halt the queue as hazards; the daemon detects Xid itself, so never return them from here.
+    if "port busy" in reason:
+        return 4
+    if re.search(r"frozen bytes changed|model bytes changed|draft vocab changed|identity failed", reason):
+        return 6
+    if "insufficient" in reason:
+        return 8
+    return 1
+
+
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"{type(e).__name__}: {e}", flush=True)
+        raise SystemExit(exit_code(str(e)))

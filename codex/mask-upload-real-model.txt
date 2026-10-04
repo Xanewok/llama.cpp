@@ -1,0 +1,4 @@
+STATE_BYTES,tiny_target,8192,52691548
+M,tiny_target,8192,6,checkpoint_size,0.461
+M,tiny_target,8192,6,checkpoint_copy,7285.794
+PASS: real CPU target and MTP logits finite (zero historical KV, metadata depth 8192)

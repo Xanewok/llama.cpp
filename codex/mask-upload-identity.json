@@ -1,0 +1,18 @@
+{
+  "masks": {
+    "bytes_M": 43646976,
+    "sha256": "b2993089fa7abad68be7883ff84ce052ecb4dbbcea9991c8db8ace7acb1ba7fe"
+  },
+  "logits": {
+    "bytes_M": 6656,
+    "sha256": "3d28cd891f7ff3477e85b92037faa8e1a62f1096302042e1c73c4839c4b39633"
+  },
+  "meta_masks": {
+    "bytes_M": 43646976,
+    "sha256": "b2993089fa7abad68be7883ff84ce052ecb4dbbcea9991c8db8ace7acb1ba7fe"
+  },
+  "meta_logits": {
+    "bytes_M": 6656,
+    "sha256": "049e90d3302332c1c00d1c3ea3de19dd7da8393116bf1f7e90f1d9f723fe1bad"
+  }
+}
