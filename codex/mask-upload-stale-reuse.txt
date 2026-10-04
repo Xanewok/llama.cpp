@@ -1,0 +1,6 @@
+llama_context: n_ctx_seq (8448) > n_ctx_train (256) -- possible training context overflow
+llama_context: n_ctx_seq (8448) > n_ctx_train (256) -- possible training context overflow
+llama_context: n_ctx_seq (90368) > n_ctx_train (256) -- possible training context overflow
+~llama_context:     Meta() compute buffer size of   2.0701 MiB, does not match expectation of   1.4149 MiB
+llama_context: n_ctx_seq (90368) > n_ctx_train (256) -- possible training context overflow
+~llama_context:     Meta() compute buffer size of   2.0701 MiB, does not match expectation of   1.3929 MiB

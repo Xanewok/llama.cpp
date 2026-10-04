@@ -1,0 +1,1 @@
+compact mask differs from host mask

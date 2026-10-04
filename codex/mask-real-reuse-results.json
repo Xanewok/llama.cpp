@@ -1,0 +1,176 @@
+{
+  "fixture": "real",
+  "seeds_M": 1,
+  "rounds_per_run_M": 12,
+  "identity": "token/id/q/logit bytes: up/patch/patch/up for every seed, K, backend",
+  "summary": [
+    {
+      "meta": 0,
+      "k": 3,
+      "arm": "up",
+      "runs_M": 2,
+      "steady_rounds_M": 18,
+      "C_D1_build_union_us_per_round_median_D": 0.0,
+      "decode_wall_us_per_round_median_D": 151641.294,
+      "counts": {
+        "C": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        },
+        "D1": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        }
+      }
+    },
+    {
+      "meta": 0,
+      "k": 3,
+      "arm": "patch",
+      "runs_M": 2,
+      "steady_rounds_M": 18,
+      "C_D1_build_union_us_per_round_median_D": 0.0,
+      "decode_wall_us_per_round_median_D": 154924.2671666667,
+      "counts": {
+        "C": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        },
+        "D1": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        }
+      }
+    },
+    {
+      "meta": 0,
+      "k": 5,
+      "arm": "up",
+      "runs_M": 2,
+      "steady_rounds_M": 18,
+      "C_D1_build_union_us_per_round_median_D": 0.0,
+      "decode_wall_us_per_round_median_D": 190515.3633888889,
+      "counts": {
+        "C": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        },
+        "D1": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        }
+      }
+    },
+    {
+      "meta": 0,
+      "k": 5,
+      "arm": "patch",
+      "runs_M": 2,
+      "steady_rounds_M": 18,
+      "C_D1_build_union_us_per_round_median_D": 0.0,
+      "decode_wall_us_per_round_median_D": 189764.75544444442,
+      "counts": {
+        "C": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        },
+        "D1": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        }
+      }
+    },
+    {
+      "meta": 1,
+      "k": 3,
+      "arm": "up",
+      "runs_M": 2,
+      "steady_rounds_M": 18,
+      "C_D1_build_union_us_per_round_median_D": 0.0,
+      "decode_wall_us_per_round_median_D": 238316.1087222222,
+      "counts": {
+        "C": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        },
+        "D1": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        }
+      }
+    },
+    {
+      "meta": 1,
+      "k": 3,
+      "arm": "patch",
+      "runs_M": 2,
+      "steady_rounds_M": 18,
+      "C_D1_build_union_us_per_round_median_D": 0.0,
+      "decode_wall_us_per_round_median_D": 238131.83916666667,
+      "counts": {
+        "C": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        },
+        "D1": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        }
+      }
+    },
+    {
+      "meta": 1,
+      "k": 5,
+      "arm": "up",
+      "runs_M": 2,
+      "steady_rounds_M": 18,
+      "C_D1_build_union_us_per_round_median_D": 0.0,
+      "decode_wall_us_per_round_median_D": 325481.95105555555,
+      "counts": {
+        "C": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        },
+        "D1": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        }
+      }
+    },
+    {
+      "meta": 1,
+      "k": 5,
+      "arm": "patch",
+      "runs_M": 2,
+      "steady_rounds_M": 18,
+      "C_D1_build_union_us_per_round_median_D": 0.0,
+      "decode_wall_us_per_round_median_D": 324202.2482777778,
+      "counts": {
+        "C": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        },
+        "D1": {
+          "hit_M": 18,
+          "miss_M": 0,
+          "meta_build_M": 0
+        }
+      }
+    }
+  ]
+}

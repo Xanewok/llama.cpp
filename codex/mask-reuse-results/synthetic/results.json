@@ -1,0 +1,802 @@
+[
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 3,
+    "seed": 1,
+    "boot": 1,
+    "arm": "up",
+    "bytes_M": 20832,
+    "sha256": "e8e3c7c809ffc0cda41e838d815ab59ec2e9ff8a3f14d30c06e1a304ec7e6e02",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 912.2706666666667,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 3,
+    "seed": 1,
+    "boot": 2,
+    "arm": "patch",
+    "bytes_M": 20832,
+    "sha256": "e8e3c7c809ffc0cda41e838d815ab59ec2e9ff8a3f14d30c06e1a304ec7e6e02",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 804.9756666666667,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 3,
+    "seed": 1,
+    "boot": 3,
+    "arm": "patch",
+    "bytes_M": 20832,
+    "sha256": "e8e3c7c809ffc0cda41e838d815ab59ec2e9ff8a3f14d30c06e1a304ec7e6e02",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1380.7817777777777,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 3,
+    "seed": 1,
+    "boot": 4,
+    "arm": "up",
+    "bytes_M": 20832,
+    "sha256": "e8e3c7c809ffc0cda41e838d815ab59ec2e9ff8a3f14d30c06e1a304ec7e6e02",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 808.299,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 3,
+    "seed": 2,
+    "boot": 1,
+    "arm": "up",
+    "bytes_M": 20832,
+    "sha256": "8448875b8e9c0383f55025b67e907125a816d6c0a94c43bbe23274375a93f024",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 812.2636666666667,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 3,
+    "seed": 2,
+    "boot": 2,
+    "arm": "patch",
+    "bytes_M": 20832,
+    "sha256": "8448875b8e9c0383f55025b67e907125a816d6c0a94c43bbe23274375a93f024",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 835.5218888888888,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 3,
+    "seed": 2,
+    "boot": 3,
+    "arm": "patch",
+    "bytes_M": 20832,
+    "sha256": "8448875b8e9c0383f55025b67e907125a816d6c0a94c43bbe23274375a93f024",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 875.6275555555555,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 3,
+    "seed": 2,
+    "boot": 4,
+    "arm": "up",
+    "bytes_M": 20832,
+    "sha256": "8448875b8e9c0383f55025b67e907125a816d6c0a94c43bbe23274375a93f024",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 804.377,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 5,
+    "seed": 1,
+    "boot": 1,
+    "arm": "up",
+    "bytes_M": 32736,
+    "sha256": "2ca8ad8df9606ca7a41d6461a3ef86bea2b6630093c110456fd08f5db4e960d1",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1128.296111111111,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 5,
+    "seed": 1,
+    "boot": 2,
+    "arm": "patch",
+    "bytes_M": 32736,
+    "sha256": "2ca8ad8df9606ca7a41d6461a3ef86bea2b6630093c110456fd08f5db4e960d1",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1119.9962222222223,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 5,
+    "seed": 1,
+    "boot": 3,
+    "arm": "patch",
+    "bytes_M": 32736,
+    "sha256": "2ca8ad8df9606ca7a41d6461a3ef86bea2b6630093c110456fd08f5db4e960d1",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1142.033111111111,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 5,
+    "seed": 1,
+    "boot": 4,
+    "arm": "up",
+    "bytes_M": 32736,
+    "sha256": "2ca8ad8df9606ca7a41d6461a3ef86bea2b6630093c110456fd08f5db4e960d1",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1132.8195555555556,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 5,
+    "seed": 2,
+    "boot": 1,
+    "arm": "up",
+    "bytes_M": 32736,
+    "sha256": "78f74f377b6374be254f5f54f2a5a934077e97a2ab9b5e539089e0d04d818a3c",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1135.340888888889,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 5,
+    "seed": 2,
+    "boot": 2,
+    "arm": "patch",
+    "bytes_M": 32736,
+    "sha256": "78f74f377b6374be254f5f54f2a5a934077e97a2ab9b5e539089e0d04d818a3c",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1162.41,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 5,
+    "seed": 2,
+    "boot": 3,
+    "arm": "patch",
+    "bytes_M": 32736,
+    "sha256": "78f74f377b6374be254f5f54f2a5a934077e97a2ab9b5e539089e0d04d818a3c",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1146.189,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 0,
+    "k": 5,
+    "seed": 2,
+    "boot": 4,
+    "arm": "up",
+    "bytes_M": 32736,
+    "sha256": "78f74f377b6374be254f5f54f2a5a934077e97a2ab9b5e539089e0d04d818a3c",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1142.9482222222223,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 3,
+    "seed": 1,
+    "boot": 1,
+    "arm": "up",
+    "bytes_M": 20832,
+    "sha256": "411e7e2ea5db3f7d7ae0d2c638c1ce5352bfbc8b22d4f056425e7d40ed12ae8c",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1638.079888888889,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 3,
+    "seed": 1,
+    "boot": 2,
+    "arm": "patch",
+    "bytes_M": 20832,
+    "sha256": "411e7e2ea5db3f7d7ae0d2c638c1ce5352bfbc8b22d4f056425e7d40ed12ae8c",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1568.628888888889,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 3,
+    "seed": 1,
+    "boot": 3,
+    "arm": "patch",
+    "bytes_M": 20832,
+    "sha256": "411e7e2ea5db3f7d7ae0d2c638c1ce5352bfbc8b22d4f056425e7d40ed12ae8c",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1567.1683333333333,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 3,
+    "seed": 1,
+    "boot": 4,
+    "arm": "up",
+    "bytes_M": 20832,
+    "sha256": "411e7e2ea5db3f7d7ae0d2c638c1ce5352bfbc8b22d4f056425e7d40ed12ae8c",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1601.6396666666667,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 3,
+    "seed": 2,
+    "boot": 1,
+    "arm": "up",
+    "bytes_M": 20832,
+    "sha256": "7d0000d80b2a41388a5b959ebfac5cce269debc7c7488e3387113b80af1ab5b5",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1576.6861111111111,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 3,
+    "seed": 2,
+    "boot": 2,
+    "arm": "patch",
+    "bytes_M": 20832,
+    "sha256": "7d0000d80b2a41388a5b959ebfac5cce269debc7c7488e3387113b80af1ab5b5",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1785.4575555555555,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 3,
+    "seed": 2,
+    "boot": 3,
+    "arm": "patch",
+    "bytes_M": 20832,
+    "sha256": "7d0000d80b2a41388a5b959ebfac5cce269debc7c7488e3387113b80af1ab5b5",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1636.078,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 3,
+    "seed": 2,
+    "boot": 4,
+    "arm": "up",
+    "bytes_M": 20832,
+    "sha256": "7d0000d80b2a41388a5b959ebfac5cce269debc7c7488e3387113b80af1ab5b5",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1652.6726666666666,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 5,
+    "seed": 1,
+    "boot": 1,
+    "arm": "up",
+    "bytes_M": 32736,
+    "sha256": "33881007e5d19bba1738a63f84dafb41b737fba75701217a642f53c8ab517b58",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 2612.3487777777777,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 5,
+    "seed": 1,
+    "boot": 2,
+    "arm": "patch",
+    "bytes_M": 32736,
+    "sha256": "33881007e5d19bba1738a63f84dafb41b737fba75701217a642f53c8ab517b58",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 2420.8665555555554,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 5,
+    "seed": 1,
+    "boot": 3,
+    "arm": "patch",
+    "bytes_M": 32736,
+    "sha256": "33881007e5d19bba1738a63f84dafb41b737fba75701217a642f53c8ab517b58",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 2309.1949999999997,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 5,
+    "seed": 1,
+    "boot": 4,
+    "arm": "up",
+    "bytes_M": 32736,
+    "sha256": "33881007e5d19bba1738a63f84dafb41b737fba75701217a642f53c8ab517b58",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 2273.581,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 5,
+    "seed": 2,
+    "boot": 1,
+    "arm": "up",
+    "bytes_M": 32736,
+    "sha256": "4f72223548733f7ae927de57b2c8874b1ac8db7a6e4f923239a8758208da9973",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 2229.837777777778,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 5,
+    "seed": 2,
+    "boot": 2,
+    "arm": "patch",
+    "bytes_M": 32736,
+    "sha256": "4f72223548733f7ae927de57b2c8874b1ac8db7a6e4f923239a8758208da9973",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 2415.231333333333,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 5,
+    "seed": 2,
+    "boot": 3,
+    "arm": "patch",
+    "bytes_M": 32736,
+    "sha256": "4f72223548733f7ae927de57b2c8874b1ac8db7a6e4f923239a8758208da9973",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 2270.4247777777778,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  },
+  {
+    "fixture": "synthetic",
+    "meta": 1,
+    "k": 5,
+    "seed": 2,
+    "boot": 4,
+    "arm": "up",
+    "bytes_M": 32736,
+    "sha256": "4f72223548733f7ae927de57b2c8874b1ac8db7a6e4f923239a8758208da9973",
+    "steady_rounds_M": 9,
+    "C_D1_build_union_us_per_round_D": 0.0,
+    "decode_wall_us_per_round_D": 1747.1257777777778,
+    "counts": {
+      "C": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      },
+      "D1": {
+        "hit_M": 9,
+        "miss_M": 0,
+        "meta_build_M": 0
+      }
+    }
+  }
+]
