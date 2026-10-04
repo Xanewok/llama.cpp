@@ -1528,7 +1528,7 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
         }
         std::unordered_set<llama_token> unique;
         for (llama_token id : draft_vocab_ids) {
-            if (id < 0 || id >= vocab.n_tokens() || !unique.insert(id).second) {
+            if (id < 0 || (uint32_t) id >= vocab.n_tokens() || !unique.insert(id).second) {
                 throw std::invalid_argument("invalid or duplicate draft vocabulary id");
             }
         }
