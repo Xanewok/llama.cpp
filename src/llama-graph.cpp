@@ -43,7 +43,7 @@ static ggml_tensor * build_attn_inp_kq_mask(
 
     auto * backend = ggml_backend_sched_get_backend(sched, 0);
     const bool is_meta = ggml_backend_dev_type(ggml_backend_get_device(backend)) == GGML_BACKEND_DEVICE_TYPE_META;
-    const uint32_t candidate = is_meta && cparams.offload_kqv && type == GGML_TYPE_F16 && n_stream == 1 && n_tokens <= 16 && n_kv >= 32768
+    const uint32_t candidate = is_meta && cparams.offload_kqv && type == GGML_TYPE_F16 && n_tokens/n_stream <= 16 && n_kv >= 32768
         ? mctx->get_kq_mask_prefix(ubatch, cparams.causal_attn) : 0;
     // Below this size, the extra kernels can cost more than the upload.
     const uint32_t prefix = candidate >= 32768 ? candidate : 0;
