@@ -367,3 +367,7 @@ if (TARGET gguf-model-data)
     target_link_libraries(test-export-graph-ops PRIVATE gguf-model-data)
     target_compile_definitions(test-export-graph-ops PRIVATE LLAMA_HF_FETCH)
 endif()
+
+llama_build_and_test(test-server-tokens-view.cpp)
+target_include_directories(test-server-tokens-view PRIVATE ${PROJECT_SOURCE_DIR}/tools/server)
+target_link_libraries(test-server-tokens-view PRIVATE server-context)
