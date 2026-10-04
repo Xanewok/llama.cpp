@@ -1,0 +1,38 @@
+[
+  {
+    "commit": "c35e649a2c4af3d76e6fe87e64c50aca5a22f379",
+    "fix": "kv",
+    "standalone_cherry_pick": "PASS",
+    "test": "test-kv-cells",
+    "positive_M": 0,
+    "mutant_exit_M": 1,
+    "mutation": [
+      "first = std::min(first, i);",
+      "first = i;"
+    ]
+  },
+  {
+    "commit": "ef1a40f39d4aff85349682a3717b784ddf67c4eb",
+    "fix": "prompt",
+    "standalone_cherry_pick": "PASS",
+    "test": "test-server-tokens-view",
+    "positive_M": 0,
+    "mutant_exit_M": 1,
+    "mutation": [
+      "    if (!has_mtmd) {\n        return tokens;\n    }\n    storage = get_text_tokens();",
+      "    if (false) {\n        return tokens;\n    }\n    storage = get_text_tokens();"
+    ]
+  },
+  {
+    "commit": "85b13faf2576036101dec17563cc9bb47f439934",
+    "fix": "host-buffers",
+    "standalone_cherry_pick": "PASS",
+    "test": "test-arg-parser",
+    "positive_M": 0,
+    "mutant_exit_M": -6,
+    "mutation": [
+      "        auto * host_buft = ggml_backend_dev_host_buffer_type(dev);",
+      "        auto * host_buft = (ggml_backend_buffer_type_t) nullptr;"
+    ]
+  }
+]

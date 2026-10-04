@@ -1,0 +1,5 @@
+used 8192, capacity ns/call M: 50791.9
+used 8192, indexed ns/call M: 47.4
+used 90112, capacity ns/call M: 50973.4
+used 90112, indexed ns/call M: 67.4
+KV range removal matches capacity scan

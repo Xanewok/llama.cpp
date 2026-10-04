@@ -1,0 +1,6 @@
+PASS M: meta=0 temp=0 seed=1729; token/logit bytes and draft counts; negative controls
+PASS M: meta=0 temp=1 seed=1729; token/logit bytes and draft counts; negative controls
+PASS M: meta=0 temp=1 seed=2718; token/logit bytes and draft counts; negative controls
+PASS M: meta=1 temp=0 seed=1729; token/logit bytes and draft counts; negative controls
+PASS M: meta=1 temp=1 seed=1729; token/logit bytes and draft counts; negative controls
+PASS M: meta=1 temp=1 seed=2718; token/logit bytes and draft counts; negative controls
