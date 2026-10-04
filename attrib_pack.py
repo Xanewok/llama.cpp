@@ -160,8 +160,8 @@ class Trace:
         return [c for c in cs[i0:] if c[0] < b and c[1] > a]
 
 
-def partition(tr, d, a, b, priority=PRIORITY):
-    """ns of [a,b) per class on device d; exact cover of the window. Returns (ns by class, kernel-sum ns by class)."""
+def sweep(tr, d, a, b, priority=PRIORITY):
+    """Exact cover of [a,b) on device d as [(start, end, class)] (no kernel or copy running = IDLE), plus kernel-sum ns by class."""
     if b <= a:
         raise ValueError('empty window')
     ev = []
@@ -180,21 +180,29 @@ def partition(tr, d, a, b, priority=PRIORITY):
             ev.append((e, -1, 'COPY'))
     ev.sort(key=lambda x: (x[0], x[1]))
     cnt = collections.Counter()
-    out = collections.Counter()
+    segs = []
     t = a
     i = 0
     n = len(ev)
     while i < n:
         te = ev[i][0]
         if te > t:
-            act = next((c for c in priority if cnt[c] > 0), 'IDLE')
-            out[act] += te - t
+            segs.append((t, te, next((c for c in priority if cnt[c] > 0), 'IDLE')))
             t = te
         while i < n and ev[i][0] == te:
             cnt[ev[i][2]] += ev[i][1]
             i += 1
     if b > t:
-        out['IDLE'] += b - t
+        segs.append((t, b, 'IDLE'))
+    return segs, ksum
+
+
+def partition(tr, d, a, b, priority=PRIORITY):
+    """ns of [a,b) per class on device d; exact cover of the window. Returns (ns by class, kernel-sum ns by class)."""
+    segs, ksum = sweep(tr, d, a, b, priority)
+    out = collections.Counter()
+    for s, e, c in segs:
+        out[c] += e - s
     if sum(out.values()) != b - a:
         raise ValueError('accounting does not cover the window')
     return out, ksum
@@ -387,12 +395,12 @@ def head_ns(tr, d, a, b):
     return (ks[-1][1] - ks[-1][0]) if ks else 0
 
 
-def gap_segments(tr, rnd, blocks_runtime):
-    """llama: split each inter-block gap into readback / cpu_pre / inputs / launch latency (attrib_v2), device 0."""
+def gap_segment_intervals(tr, rnd, blocks_runtime):
+    """llama: split each inter-block gap into readback / cpu_pre / inputs / launch latency (attrib_v2), device 0.
+    Returns [(name, start_ns, end_ns)]."""
     d = tr.devs[0]
     R = blocks_runtime
-    starts = [r[0] for r in R['sync_runtime']]
-    seg = collections.defaultdict(float)
+    out = []
     seq = [b for _, b in rnd['phases']] + [rnd['next']]
     h2d_calls = R['h2d']
     for b1, b2 in zip(seq, seq[1:]):
@@ -412,7 +420,14 @@ def gap_segments(tr, rnd, blocks_runtime):
         for name, (x, y) in marks.items():
             x, y = max(x, e1), min(y, s2)
             if y > x:
-                seg[name] += y - x
+                out.append((name, x, y))
+    return out
+
+
+def gap_segments(tr, rnd, blocks_runtime):
+    seg = collections.defaultdict(float)
+    for name, x, y in gap_segment_intervals(tr, rnd, blocks_runtime):
+        seg[name] += y - x
     return seg
 
 

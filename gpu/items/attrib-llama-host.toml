@@ -1,0 +1,55 @@
+id = "attrib-llama-host"
+title = "Attribution pack, llama.cpp stack2 Swift 1.5 IQ4_XS np1 k=5 (S5 flags): nsys CPU sampling (dwarf backtraces) names the host functions that fill STEP at 8k and ~90k"
+kind = "measure"
+budget_s = 1500
+est_s = 700
+ab = false
+retry = "fresh"
+startup_grace_s = 600
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "insufficient_data" }
+signatures = [
+  { class = "integrity", regex = "frozen.*changed|draft vocab changed|model missing or wrong size" },
+  { class = "insufficient_data", regex = "REJECTED|window did not close|request ended before the window|no CPU samples" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/attrib-pack/gpu/attrib_llama_host.sh"]
+cwd = "/home/xanewok/repos/attrib-pack"
+env = { DRY_RUN = "0", CANARY = "0", BUDGET_S = "1350", OUT = "/home/xanewok/repos/attrib-pack/runs/attrib-llama-host/full-a{attempt}", PORT = "{port}" }
+ports = "dynamic"
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/attrib-pack/gpu/attrib_llama_host.sh"]
+timeout_s = 120
+env = { DRY_RUN = "1", OUT = "/home/xanewok/repos/attrib-pack/runs/attrib-llama-host/preflight" }
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/attrib-pack/gpu/attrib_llama_host.sh"]
+cwd = "/home/xanewok/repos/attrib-pack"
+timeout_s = 600
+env = { DRY_RUN = "0", CANARY = "1", BUDGET_S = "560", OUT = "/home/xanewok/repos/attrib-pack/runs/attrib-llama-host/canary-a{attempt}", PORT = "{port}" }
+
+[outputs]
+paths = ["/home/xanewok/repos/attrib-pack/runs/attrib-llama-host"]
+
+[fix]
+editable = []
+protected = ["REJECTED", "min_rounds", "min-samples", "SHA256SUMS"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/attrib-pack/gpu/attrib_llama_host.sh",
+  "/home/xanewok/repos/attrib-pack/gpu/llama_drive.py",
+  "/home/xanewok/repos/attrib-pack/gpu/make_manifest.py",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs.sha256",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs/agg.py",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs/corpus.txt",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs/chat-template.jinja",
+  "/home/xanewok/repos/attrib-pack/attrib_pack.py",
+  "/home/xanewok/repos/attrib-pack/host_sampling.py",
+  "/home/xanewok/repos/attrib-pack/models/llama-swift15-iq4xs.json",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack2/build/bin/weekend-srv",
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf",
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json",
+]

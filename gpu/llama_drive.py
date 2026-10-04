@@ -14,6 +14,7 @@ Exit: 0 ok, 2 request/nsys failure, 5 prefill was not cold.
 """
 import argparse
 import json
+import shlex
 import subprocess
 import sys
 import threading
@@ -37,8 +38,11 @@ def nsys(*args, timeout=300):
     return subprocess.run([NSYS, *args], capture_output=True, text=True, timeout=timeout)
 
 
-def nsys_start(session, out):
-    r = nsys('start', f'--session={session}', '--sample=none', '--cpuctxsw=none', '-o', str(out), timeout=60)
+NO_SAMPLING = ['--sample=none', '--cpuctxsw=none']
+
+
+def nsys_start(session, out, sample_args=None):
+    r = nsys('start', f'--session={session}', *(sample_args or NO_SAMPLING), '-o', str(out), timeout=60)
     if r.returncode:
         raise RuntimeError(f'nsys start failed: {r.stdout[-300:]} {r.stderr[-300:]}')
 
@@ -99,14 +103,14 @@ def stream_request(url, body, on_first_token):
     return t_submit, t_first, final
 
 
-def run_decode(url, session, out, name, prompt, k, delay, window, n_predict, seed, twin_n=1000):
+def run_decode(url, session, out, name, prompt, k, delay, window, n_predict, seed, twin_n=1000, sample_args=None):
     state = {'err': None, 'opened': None, 'closing': None, 'closed': None}
     pre = agg.prefill(url, prompt, 0, seed)  # un-profiled: leaves the prompt and its checkpoint cached for the replays
 
     def capture():
         try:
             time.sleep(delay)
-            nsys_start(session, out / name)
+            nsys_start(session, out / name, sample_args)
             state['opened'] = time.monotonic()
             time.sleep(window)
             state['closing'] = time.monotonic()  # before the call: nsys stop returns after the report is written
@@ -147,8 +151,8 @@ def run_decode(url, session, out, name, prompt, k, delay, window, n_predict, see
     return res
 
 
-def run_prefill(url, session, out, name, prompt, depth, k, seed):
-    nsys_start(session, out / name)
+def run_prefill(url, session, out, name, prompt, depth, k, seed, sample_args=None):
+    nsys_start(session, out / name, sample_args)
     t0 = time.monotonic()
     err = None
     try:
@@ -177,6 +181,8 @@ def main():
     ap.add_argument('--n-predict', type=int, default=4000)
     ap.add_argument('--twin-n', type=int, default=1000)
     ap.add_argument('--tokens', default='', help='CPU rehearsal only: name=prompt_tokens,... overrides')
+    ap.add_argument('--nsys-sample-args', default='', help='nsys start flags replacing the default "--sample=none --cpuctxsw=none" '
+                    '(attrib-llama-host: CPU sampling + backtraces); empty keeps the CUDA-trace-only behaviour')
     a = ap.parse_args()
     for kv in filter(None, a.tokens.split(',')):
         n, v = kv.split('=')
@@ -184,7 +190,10 @@ def main():
     url = f'http://127.0.0.1:{a.port}'
     names = a.windows.split(',')
     a.out.mkdir(parents=True, exist_ok=True)
+    sample_args = shlex.split(a.nsys_sample_args) or None
     runs = {'k': a.k, 'windows': []}
+    if sample_args:
+        runs['nsys_sample_args'] = sample_args
 
     def save():
         (a.out / 'runs.json').write_text(json.dumps(runs, indent=1))
@@ -203,9 +212,9 @@ def main():
         print(f'[{time.strftime("%T")}] window {n}', flush=True)
         try:
             if kind == 'decode':
-                res = run_decode(url, a.session, a.out, n, prompts[n], a.k, a.delay, a.window, a.n_predict, seed, a.twin_n)
+                res = run_decode(url, a.session, a.out, n, prompts[n], a.k, a.delay, a.window, a.n_predict, seed, a.twin_n, sample_args)
             else:
-                res = run_prefill(url, a.session, a.out, n, prompts[n], depth, a.k, seed)
+                res = run_prefill(url, a.session, a.out, n, prompts[n], depth, a.k, seed, sample_args)
         except Exception as e:  # noqa: BLE001
             res = {'name': n, 'kind': kind, 'capture_error': repr(e)}
         runs['windows'].append(res)
