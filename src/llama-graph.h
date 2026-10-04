@@ -418,7 +418,7 @@ public:
     ggml_tensor * get_k_idxs_lid() const { return self_k_idxs_lid; }
 
     ggml_tensor * get_kq_mask_mla() const { return self_kq_mask_mla_cnv; }
-    ggml_tensor * get_kq_mask_lid() const { return self_kq_mask_lid; }
+    ggml_tensor * get_kq_mask_lid() const { return self_kq_mask_lid_cnv; }
 
     ggml_tensor * self_k_idxs_mla = nullptr; // I64 [n_batch]
     ggml_tensor * self_k_idxs_lid = nullptr; // I64 [n_batch]

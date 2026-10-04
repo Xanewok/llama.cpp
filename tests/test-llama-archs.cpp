@@ -1400,6 +1400,135 @@ static int test_input_upload() {
     return ok ? 0 : 1;
 }
 
+// KQ masks seen by attention must not depend on how the mask input reaches the device. A cache whose devices
+// cannot read host memory in place (here: a meta device over two CPUs) builds the visible mask prefix in the
+// graph and uploads only the rest; its masks must match byte for byte those of a plain CPU context.
+struct kq_mask_capture {
+    std::vector<uint8_t> bytes;  // the first attention mask of every graph compute, concatenated
+    size_t n_masks   = 0;
+    size_t n_compact = 0;        // masks whose prefix came from the graph
+    bool   seen      = false;    // the current compute already captured its mask
+};
+
+static bool kq_mask_capture_cb(struct ggml_tensor * t, bool ask, void * user_data) {
+    auto * cap = (kq_mask_capture *) user_data;
+    const bool is_attn = t->op == GGML_OP_FLASH_ATTN_EXT || t->op == GGML_OP_SOFT_MAX;
+    if (ask) {
+        return is_attn && !cap->seen;
+    }
+    if (is_attn && !cap->seen) {
+        const ggml_tensor * mask = t->op == GGML_OP_FLASH_ATTN_EXT ? t->src[3] : t->src[1];
+        GGML_ASSERT(mask != nullptr && ggml_is_contiguous(mask));
+        const size_t off = cap->bytes.size();
+        cap->bytes.resize(off + ggml_nbytes(mask));
+        ggml_backend_tensor_get(mask, cap->bytes.data() + off, 0, ggml_nbytes(mask));
+        cap->n_masks++;
+        cap->n_compact += mask->op == GGML_OP_CONCAT;
+        cap->seen = true;
+    }
+    return true;
+}
+
+static bool test_kq_mask_prefix(const size_t seed, const float stdev) {
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+
+    gguf_context_ptr gguf_ctx = get_gguf_ctx(LLM_ARCH_LLAMA, false);
+
+    struct run_result {
+        kq_mask_capture   cap;
+        std::vector<float> logits;
+    };
+
+    auto run = [&](const std::vector<ggml_backend_dev_t> & devs, llama_split_mode split_mode, bool flash_attn) {
+        run_result r;
+
+        llama_model_params mparams = llama_model_default_params();
+        mparams.progress_callback = silent_model_load_progress;
+        std::vector<ggml_backend_dev_t> devs_copy = devs;
+        devs_copy.push_back(nullptr);
+        mparams.devices    = devs_copy.data();
+        mparams.split_mode = split_mode;
+
+        tensor_data_params tparams = { seed, stdev };
+        llama_model_ptr model(llama_model_init_from_user(gguf_ctx.get(), set_tensor_data, &tparams, mparams));
+        if (!model) {
+            throw std::runtime_error("failed to create llama model");
+        }
+
+        llama_context_params cparams = llama_context_default_params();
+        cparams.n_ctx             = 1024;
+        cparams.n_ubatch          = 64;
+        cparams.n_seq_max         = 2;
+        cparams.kv_unified        = true;
+        cparams.n_threads         = 4;
+        cparams.n_threads_batch   = 4;
+        cparams.flash_attn_type   = flash_attn ? LLAMA_FLASH_ATTN_TYPE_ENABLED : LLAMA_FLASH_ATTN_TYPE_DISABLED;
+        cparams.cb_eval           = kq_mask_capture_cb;
+        cparams.cb_eval_user_data = &r.cap;
+        llama_context_ptr lctx(llama_init_from_model(model.get(), cparams));
+        if (!lctx) {
+            throw std::runtime_error("failed to create llama context");
+        }
+
+        llama_memory_t mem = llama_get_memory(lctx.get());
+        const uint32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model.get()));
+        const std::vector<llama_token> tokens = get_tokens(1024, n_vocab, seed);
+
+        llama_pos n_past = 0;
+        auto decode = [&](uint32_t n) {
+            common_batch batch(lctx.get());
+            for (uint32_t i = 0; i < n; i++) {
+                batch.add(tokens[n_past], n_past, 0, true);
+                n_past++;
+            }
+            r.cap.seen = false;
+            if (llama_process(lctx.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get())) {
+                throw std::runtime_error("failed to decode batch");
+            }
+            for (uint32_t i = 0; i < n; i++) {
+                const float * logits = llama_get_logits_ith(lctx.get(), i);
+                r.logits.insert(r.logits.end(), logits, logits + n_vocab);
+            }
+        };
+
+        decode(64*9 + 24);          // prefill ubatches, the later ones past one padding block
+        decode(1);
+        decode(4);
+        decode(4);                  // same shape: graph reuse with a grown prefix
+        llama_memory_seq_rm(mem, 0, n_past - 2, -1);
+        n_past -= 2;
+        decode(4);                  // rewind as after rejected draft tokens
+        llama_memory_seq_cp(mem, 0, 1, 100, 101);
+        llama_memory_seq_rm(mem, 0, 100, 101);
+        decode(4);                  // a cell of another sequence inside the prefix
+        decode(1);
+        llama_memory_seq_rm(mem, 1, -1, -1);
+        decode(1);                  // fills the freed cell with a late position
+        decode(4);
+        llama_memory_seq_rm(mem, 0, 200, 210);
+        decode(4);                  // holes inside the prefix
+        decode(1);
+        decode(6);
+        decode(64*3);               // more prefill, until the holes are filled again
+        decode(4);
+        decode(1);
+        return r;
+    };
+
+    // the tensor split requires flash attention
+    const run_result ref = run({cpu}, LLAMA_SPLIT_MODE_LAYER, true);
+    const run_result dut = run({cpu, cpu}, LLAMA_SPLIT_MODE_TENSOR, true);
+
+    const bool same_masks = ref.cap.n_masks == dut.cap.n_masks && ref.cap.bytes == dut.cap.bytes;
+    const double nmse_val = nmse(ref.logits, dut.logits);
+    const bool ok = same_masks && ref.cap.n_compact == 0 && dut.cap.n_compact > 0 && nmse_val <= 1e-4;
+    LOG("kq mask prefix: masks ref %zu dut %zu, %s, built in graph ref %zu dut %zu, logits NMSE %.2e: %s\n",
+        ref.cap.n_masks, dut.cap.n_masks, same_masks ? "identical" : "DIFFERENT",
+        ref.cap.n_compact, dut.cap.n_compact, nmse_val, ok ? "OK" : "FAIL");
+    return ok;
+}
+
 int main(int argc, char ** argv) {
     // init the logger at max verbosity. filter with a custom callback respecting the user-configure verbosity
     common_log_set_verbosity_thold(LOG_LEVEL_DEBUG);
@@ -1511,7 +1640,11 @@ int main(int argc, char ** argv) {
         if (!out.empty()) {
             return save_models(arch_filter, seed, stdev, verbosity, out);
         }
-        return test_backends(arch_filter, seed, stdev, verbosity, target_backend);
+        int ret = test_backends(arch_filter, seed, stdev, verbosity, target_backend);
+        if (target_backend == nullptr && arch_matches(arch_filter, LLM_ARCH_LLAMA) && !test_kq_mask_prefix(seed, stdev)) {
+            ret = 1;
+        }
+        return ret;
     } catch (const std::exception & err) {
         fprintf(stderr, "encountered runtime error: %s\n", err.what());
         return -1;
