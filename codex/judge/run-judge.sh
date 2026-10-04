@@ -12,7 +12,7 @@ link() { # $1 src $2 lib $3 out
     -Wl,--end-group -pthread -ldl -lm -lssl -lcrypto
 }
 link codex/judge/host-depth-judge.cpp build-mask-cpu/src/libllama.a "$OUT/hd-good"
-link codex/judge/host-depth-judge.cpp build-mask-cpu/mask-controls/llama-graph.a "$OUT/hd-full"
+link codex/judge/host-depth-judge.cpp build-mask-cpu/mask-controls/llama-graph/libllama.a "$OUT/hd-full"
 "$OUT/hd-good" "$OUT/good-masks.bin" "$OUT/good-logits.bin" > "$OUT/good.csv" 2> "$OUT/good.log"
 MASK_UPLOAD_META=1 "$OUT/hd-good" "$OUT/good-mmasks.bin" "$OUT/good-mlogits.bin" > "$OUT/good-meta.csv" 2> "$OUT/good-meta.log"
 MASK_UPLOAD_META=1 "$OUT/hd-full" "$OUT/full-mmasks.bin" "$OUT/full-mlogits.bin" > "$OUT/full-meta.csv" 2> "$OUT/full-meta.log"
