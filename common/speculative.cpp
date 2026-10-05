@@ -1395,6 +1395,24 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
 };
 
 
+// diagnostics: LLAMA_MTP_DUMP=<file> logs every MTP draft step; LLAMA_MTP_DUMP_KV=<dir> saves the draft seq state after D1
+static FILE * mtp_dump_file() {
+    static FILE * f = [] {
+        const char * p = std::getenv("LLAMA_MTP_DUMP");
+        return p ? std::fopen(p, "w") : nullptr;
+    }();
+    return f;
+}
+
+static uint64_t mtp_fnv(const void * data, size_t n) {
+    uint64_t h = 1469598103934665603ull;
+    const uint8_t * b = (const uint8_t *) data;
+    for (size_t i = 0; i < n; ++i) {
+        h = (h ^ b[i]) * 1099511628211ull;
+    }
+    return h;
+}
+
 struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     common_params_speculative_draft params; // reuses the draft-model params slot (ctx_tgt/ctx_dft)
 
@@ -1444,6 +1462,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     };
     std::vector<deferred_batch> deferred;
     bool fuse_catchup = false;
+    bool fuse_split   = false;
+    int  dump_round   = 0;
 
     std::vector<int>                i_last;
     std::vector<std::vector<float>> chain_h;
@@ -1528,6 +1548,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         const char * fuse = std::getenv("LLAMA_MTP_FUSE_CATCHUP");
         fuse_catchup = fuse && std::atoi(fuse) != 0 && !chain_heads && !is_mem_shared;
         SPC_INF("- MTP catch-up fused into the first draft step: %s\n", fuse_catchup ? "yes" : "no");
+        const char * split = std::getenv("LLAMA_MTP_FUSE_SPLIT");
+        fuse_split = split && std::atoi(split) != 0;
     }
 
     ~common_speculative_impl_draft_mtp() override {
@@ -1577,9 +1599,19 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             return;
         }
 
+        // diagnostics: LLAMA_MTP_FUSE_NEGCTL=1 pairs t[i] with h[i] (unshifted), =2 drops the accepted prefix
+        static const int negctl = [] {
+            const char * v = std::getenv("LLAMA_MTP_FUSE_NEGCTL");
+            return v ? std::atoi(v) : 0;
+        }();
+        if (negctl == 2) {
+            return;
+        }
+
         for (int32_t i = 0; i <= db.n_accepted && db.pos0 + i < pos_end; ++i) {
             const int32_t idx = batch.add(db.tokens[i], db.pos0 + i, seq_id, false);
-            const float * h = i == 0 ? db.h0.data() : verify_h[seq_id].data() + (size_t) (i - 1) * n_embd;
+            const float * h = negctl == 1 ? verify_h[seq_id].data() + (size_t) i * n_embd
+                            : i == 0 ? db.h0.data() : verify_h[seq_id].data() + (size_t) (i - 1) * n_embd;
             batch.set_embd(idx, { h, 1, (size_t) n_embd });
         }
     }
@@ -1631,6 +1663,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             }
         }
 
+        auto * ctx_tgt = this->params.ctx_tgt;
+        auto * ctx_dft = this->params.ctx_dft;
+
+        const size_t row_bytes = (size_t) n_embd * sizeof(float);
+
         for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
             if (i_batch_beg[seq_id] < 0) {
                 continue;
@@ -1642,11 +1679,6 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             pos_beg_prev[seq_id]   = pos_beg;
             pending_h_prev[seq_id] = pending_h[seq_id];
         }
-
-        auto * ctx_tgt = this->params.ctx_tgt;
-        auto * ctx_dft = this->params.ctx_dft;
-
-        const size_t row_bytes = (size_t) n_embd * sizeof(float);
 
         std::vector<bool> defer(n_seq, false);
         if (fuse_catchup) {
@@ -1710,6 +1742,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     llama_set_nextn_layer_offset(ctx_dft, head);
                 }
 
+                if (FILE * f = mtp_dump_file()) {
+                    fprintf(f, "C rows %d pos %d..%d\n", batch.size(), batch.size() ? batch_in.tokens[0].pos[0] : -1,
+                            batch.size() ? batch_in.tokens[n_tokens - 1].pos[0] : -1);
+                }
                 ggml_round_trace_begin("C", batch.size());
                 const int32_t rc = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
                 ggml_round_trace_end(rc);
@@ -1776,6 +1812,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         int n_drafting = 0;
         std::vector<bool> drafting(n_seq);
 
+        dump_round++;
+
         for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
             auto & dp = dparams[seq_id];
 
@@ -1784,9 +1822,21 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 if (dp.drafting) {
                     GGML_ASSERT(dp.pos0 == db.pos0 + db.n_accepted + 1);
                 }
+                if (FILE * f = mtp_dump_file()) {
+                    fprintf(f, "R %d seq %d deferred pos0 %d n_acc %d h0 %016llx\n", dump_round, seq_id, db.pos0, db.n_accepted,
+                            (unsigned long long) mtp_fnv(db.h0.data(), db.h0.size()*sizeof(float)));
+                }
                 add_deferred(seq_id, dp.drafting ? dp.pos0 : std::numeric_limits<llama_pos>::max());
                 db.tokens.clear();
             }
+        }
+
+        if (fuse_split && batch.size() > 0) {
+            ggml_round_trace_begin("C", batch.size());
+            const int rc = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
+            ggml_round_trace_end(rc);
+            GGML_ASSERT(rc == 0);
+            batch.clear();
         }
 
         for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
@@ -1818,6 +1868,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
             i_last[seq_id] = idx;
 
+            if (FILE * f = mtp_dump_file()) {
+                fprintf(f, "R %d seq %d query pos0 %d id_last %d h %016llx\n", dump_round, seq_id, dp.pos0, dp.id_last,
+                        (unsigned long long) mtp_fnv(pending_h[seq_id].data(), (size_t) n_embd*sizeof(float)));
+            }
+
             if (chain_heads) {
                 chain_h[seq_id].assign(pending_h[seq_id].begin(), pending_h[seq_id].end());
             }
@@ -1844,11 +1899,32 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
             const std::string trace_phase = ggml_round_trace_enabled() ? "D" + std::to_string(i + 1) : "";
             ggml_round_trace_begin(trace_phase.c_str(), batch.size());
+            const int n_rows_step = batch.size();
             int ret = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
             ggml_round_trace_end(ret);
             if (ret != 0) {
                 SPC_ERR("llama_process[%d] returned %d\n", i, ret);
                 break;
+            }
+
+            if (i == 0 && mtp_dump_file()) {
+                for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
+                    if (!drafting[seq_id]) {
+                        continue;
+                    }
+                    const size_t sz = llama_state_seq_get_size_ext(ctx_dft, seq_id, 0);
+                    std::vector<uint8_t> buf(sz);
+                    llama_state_seq_get_data_ext(ctx_dft, buf.data(), sz, seq_id, 0);
+                    fprintf(mtp_dump_file(), "R %d seq %d kv_state %zu %016llx\n", dump_round, seq_id, sz,
+                            (unsigned long long) mtp_fnv(buf.data(), sz));
+                    if (const char * dir = std::getenv("LLAMA_MTP_DUMP_KV")) {
+                        const std::string path = std::string(dir) + "/r" + std::to_string(dump_round) + "-s" + std::to_string(seq_id) + ".bin";
+                        if (FILE * fk = std::fopen(path.c_str(), "wb")) {
+                            fwrite(buf.data(), 1, sz, fk);
+                            fclose(fk);
+                        }
+                    }
+                }
             }
 
             // rebuild the batch for the next step: the growing-KV paths re-add only the
@@ -1867,6 +1943,16 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 const float * h_row = llama_get_embeddings_nextn_ith(ctx_dft, i_last[seq_id]);
 
                 const auto * cur_p = common_sampler_get_candidates(smpl, true);
+
+                if (FILE * f = mtp_dump_file()) {
+                    fprintf(f, "R %d seq %d D%d rows %d sampled %d hout %016llx cand", dump_round, seq_id, i + 1, n_rows_step, id_sampled,
+                            (unsigned long long) mtp_fnv(h_row, (size_t) n_embd*sizeof(float)));
+                    for (size_t c = 0; c < std::min<size_t>(10, cur_p->size); ++c) {
+                        fprintf(f, " %d:%.9g:%.9g", cur_p->data[c].id, cur_p->data[c].p, cur_p->data[c].logit);
+                    }
+                    fprintf(f, "\n");
+                    fflush(f);
+                }
 
                 for (int k = 0; k < std::min(3, (int) cur_p->size); ++k) {
                     SPC_DBG(" - seq_id %d, draft candidate %3d, pos %3d: %6d (%8.3f) '%s'\n",
@@ -1960,6 +2046,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         }
 
         const int32_t i_h = std::min<int32_t>(n_accepted, n_rows - 1);
+        if (FILE * f = mtp_dump_file()) {
+            fprintf(f, "A seq %d n_accepted %d n_rows %d\n", seq_id, (int) n_accepted, n_rows);
+        }
         if (!deferred[seq_id].tokens.empty()) {
             GGML_ASSERT(n_accepted < deferred[seq_id].tokens.size());
             deferred[seq_id].n_accepted = i_h;

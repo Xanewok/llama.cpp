@@ -3336,7 +3336,9 @@ private:
             }
 
             if (!draft.empty()) {
-                const bool use_ckpt_tgt =
+                // diagnostics: LLAMA_DIAG_FORCE_REPLAY=1 forces the target checkpoint + replay path
+                static const bool force_replay = std::getenv("LLAMA_DIAG_FORCE_REPLAY") != nullptr;
+                const bool use_ckpt_tgt = force_replay ||
                     ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL ||
                    (ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS && draft.size() > llama_n_rs_seq(ctx_tgt));
 
@@ -4277,7 +4279,8 @@ private:
 
                 const uint32_t n_rollback = slot.spec_draft.size() + 1 - accepted.size();
 
-                const bool use_ckpt_tgt =
+                static const bool force_replay = std::getenv("LLAMA_DIAG_FORCE_REPLAY") != nullptr;
+                const bool use_ckpt_tgt = force_replay ||
                     ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL ||
                     (ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS && n_rollback > llama_n_rs_seq(ctx_tgt));
 
