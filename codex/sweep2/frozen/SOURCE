@@ -1,0 +1,4 @@
+56b59124a2750fd202827ff358c2fad42f953ad7
+CUDA 13.2; CCCL v3.4.3 local; arch 120a; NCCL OFF; Release; bench target only
+581dacd21ad3c632a149c3152cc98539727846b23e4e5a82afcd687102593d13  tests/bench-mmvq-shapes.cpp
+0bdbc130fbe82215fd97d022aa85ff7b1715e5c26df10bd933ead11a7f1e2f82  tests/CMakeLists.txt

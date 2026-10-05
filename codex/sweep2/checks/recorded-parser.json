@@ -1,0 +1,1 @@
+{"legacy_rows_M": {"r1": 1085, "r2": 62}, "recorded_artifact": "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq6-bench/a1/raw", "remapped_schema_tests": "full/canary/optional/ranking; no new GPU measurements", "negative_controls": "passed"}

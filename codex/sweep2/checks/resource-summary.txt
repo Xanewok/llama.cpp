@@ -1,0 +1,6 @@
+Compiler reports (M); retained specializations have zero stack/spill bytes.
+w1r4: regs all=55..189, n6=96..166; max smem=0 bytes
+w1r8: regs all=88..255, n6=149..235; max smem=0 bytes
+w2r8: regs all=88..255, n6=150..239; max smem=8192 bytes
+w4r4: regs all=56..193, n6=96..162; max smem=12288 bytes
+w2r6: regs all=72..237, n6=126..201; max smem=6144 bytes

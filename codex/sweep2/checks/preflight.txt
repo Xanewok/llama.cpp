@@ -1,0 +1,3 @@
+selftest ok
+preflight ok
+preflight wall seconds (M): 1.06

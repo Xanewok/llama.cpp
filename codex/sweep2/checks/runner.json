@@ -1,0 +1,7 @@
+{
+  "normal_rc": 0,
+  "negative_rc": 1,
+  "timeout_rc": 7,
+  "timeout_wall_s_M": 1.002,
+  "exact_pid_children_reaped": true
+}

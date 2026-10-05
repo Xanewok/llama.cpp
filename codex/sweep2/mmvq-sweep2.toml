@@ -1,0 +1,61 @@
+id = "mmvq-sweep2"
+title = "MMVQ sweep 2: more rows per block and fewer warps; n=6 first, then 5/7/8; frozen bench on RTX 5060 Ti; production dispatch unchanged"
+# G: canary 40 s + mandatory 640 s + optional 120 s = 800 s <= 0.7 x 1200 s. Caps: canary 240 s + run 900 s.
+priority = 68
+kind = "measure"
+budget_s = 1200
+est_s = 800
+ab = false
+retry = "fresh"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "integrity", regex = "frozen bytes changed|ggml libs resolve outside frozen dir|unresolved libraries|device 0 is not an RTX 5060 Ti|negative control did not fail|correctness failure|kernel hazard journal unavailable|output directory already contains measurement data|rows outside band|bench_tools: integrity" },
+  { class = "insufficient_data", regex = "bench_tools: insufficient data" },
+  { class = "timeout", regex = "hit its cap" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/run.sh", "--run"]
+cwd = "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2"
+env = { CUDA_VISIBLE_DEVICES = "0", BUDGET_S = "900", OUT = "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/a{attempt}" }
+ports = []
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/run.sh", "--preflight"]
+env = { CUDA_VISIBLE_DEVICES = "", OUT = "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/preflight" }
+timeout_s = 300
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/run.sh", "--canary"]
+env = { CUDA_VISIBLE_DEVICES = "0", OUT = "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/canary-a{attempt}" }
+timeout_s = 240
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/a{attempt}"]
+
+[fix]
+editable = []
+protected = ["REFUSE", "frozen", "budget"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/bench_tools.py",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/run.sh",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/SOURCE",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/SOURCE.sha256",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/bench-mmvq-shapes",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/libggml.so",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mmvq-sweep2/frozen/libggml-cuda.so.0.25.3",
+]

@@ -1,0 +1,1 @@
+MemAvailable minimum observed: 22648080 KiB (M); polling 0.1 s
