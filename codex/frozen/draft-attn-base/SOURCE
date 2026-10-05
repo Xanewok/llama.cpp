@@ -1,0 +1,3 @@
+98c695111df5b5517245b184ef4e818333cf5776
+topic/stack3-mask-rebase 98c695111 (= stack3-mask rebased onto llama.cpp master 050439614) built with -DGGML_CUDA_CCCL_VERSION=v3.4.3 (CUB DeviceTopK enabled; CUDA 13.2 bundles CCCL 3.2.0, which falls back to DeviceSegmentedRadixSort since #29792); CUDA 13.2; NCCL OFF; arch 120a; Release; LLAMA_USE_PREBUILT_UI=OFF (no embedded web UI). Byte copy of ~/repos/stack3-rebase/codex/frozen/stack3-rebase-cccl343/bin (llama-server = copy of round-trace); measured by gpuq stack3-rebase-cccl-ab 2026-10-04 (-0.47/-0.58/-0.40 ms/round at 8k/32k/90k vs the CCCL 3.2 rebase build, identity passed).
+probe source: b43e648073f4c3b70c4916be8765dccefa55a913; N_THREADS=8; shared driver for both arms

@@ -1,0 +1,12 @@
+M: base; nvcc 13.2 compile-only, same flags plus --resource-usage
+ptxas info    : Compiling entry function '_Z18flash_attn_ext_f16ILi256ELi256ELi1ELi8ELb0ELb0ELb0EL9ggml_type1EEvPKcS2_S2_S2_S2_PKiPfP6float2ffffjfi5uint3iiiiiiiiiiiliiliiiiil' for 'sm_120a'
+ptxas info    : Function properties for _Z18flash_attn_ext_f16ILi256ELi256ELi1ELi8ELb0ELb0ELb0EL9ggml_type1EEvPKcS2_S2_S2_S2_PKiPfP6float2ffffjfi5uint3iiiiiiiiiiiliiliiiiil
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 226 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 323.312 ms
+M: patch; nvcc 13.2 compile-only, same flags plus --resource-usage
+ptxas info    : Compiling entry function '_Z18flash_attn_ext_f16ILi256ELi256ELi1ELi8ELb0ELb0ELb0EL9ggml_type1EEvPKcS2_S2_S2_S2_PKiPfP6float2ffffjfi5uint3iiiiiiiiiiiliiliiiiil' for 'sm_120a'
+ptxas info    : Function properties for _Z18flash_attn_ext_f16ILi256ELi256ELi1ELi8ELb0ELb0ELb0EL9ggml_type1EEvPKcS2_S2_S2_S2_PKiPfP6float2ffffjfi5uint3iiiiiiiiiiiliiliiiiil
+    16 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 226 registers, used 1 barriers, 16 bytes cumulative stack size
+ptxas info    : Compile time = 326.384 ms

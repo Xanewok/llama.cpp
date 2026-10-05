@@ -1,0 +1,119 @@
+{
+  "labels": {
+    "M": "recorded",
+    "D": "arithmetic",
+    "G": "unmeasured candidate"
+  },
+  "8k": {
+    "trace": "/home/xanewok/repos/attrib-pack/runs/attrib-host-s3m/full-a1/decode-8k.sqlite",
+    "rows": [
+      {
+        "M_gpu": 0,
+        "M_grid_x": 36,
+        "M_threads": 128,
+        "M_registers_per_thread": 226,
+        "M_shared_bytes": 65680,
+        "M_samples": 334,
+        "M_us": 47.59554491017964,
+        "M_range_us": [
+          44.896,
+          48.832
+        ],
+        "D_kv_bytes": 16777216,
+        "D_effective_gbs": 352.4955125876019,
+        "D_fraction_of_448_gbs": 0.7868203405973258,
+        "kernel": "void flash_attn_ext_f16<(int)256, (int)256, (int)1, (int)8, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)"
+      },
+      {
+        "M_gpu": 0,
+        "M_grid_x": 72,
+        "M_threads": 128,
+        "M_registers_per_thread": 226,
+        "M_shared_bytes": 33792,
+        "M_samples": 96,
+        "M_us": 54.96397916666666,
+        "M_range_us": [
+          53.6,
+          56.224
+        ],
+        "D_kv_bytes": 16777216,
+        "D_effective_gbs": 305.24020011590926,
+        "D_fraction_of_448_gbs": 0.6813397324015832,
+        "kernel": "void flash_attn_ext_f16<(int)256, (int)256, (int)1, (int)8, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)"
+      },
+      {
+        "M_gpu": 1,
+        "M_grid_x": 36,
+        "M_threads": 128,
+        "M_registers_per_thread": 226,
+        "M_shared_bytes": 65680,
+        "M_samples": 334,
+        "M_us": 47.417215568862275,
+        "M_range_us": [
+          44.704,
+          49.12
+        ],
+        "D_kv_bytes": 16777216,
+        "D_effective_gbs": 353.8211976119742,
+        "D_fraction_of_448_gbs": 0.7897794589552996,
+        "kernel": "void flash_attn_ext_f16<(int)256, (int)256, (int)1, (int)8, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)"
+      },
+      {
+        "M_gpu": 1,
+        "M_grid_x": 72,
+        "M_threads": 128,
+        "M_registers_per_thread": 226,
+        "M_shared_bytes": 33792,
+        "M_samples": 96,
+        "M_us": 54.888072916666665,
+        "M_range_us": [
+          52.961,
+          55.872
+        ],
+        "D_kv_bytes": 16777216,
+        "D_effective_gbs": 305.66232531923396,
+        "D_fraction_of_448_gbs": 0.6822819761590043,
+        "kernel": "void flash_attn_ext_f16<(int)256, (int)256, (int)1, (int)8, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)"
+      }
+    ]
+  },
+  "90k": {
+    "trace": "/home/xanewok/repos/attrib-pack/runs/attrib-host-s3m/full-a1/decode-90k.sqlite",
+    "rows": [
+      {
+        "M_gpu": 0,
+        "M_grid_x": 36,
+        "M_threads": 128,
+        "M_registers_per_thread": 226,
+        "M_shared_bytes": 65680,
+        "M_samples": 397,
+        "M_us": 441.39508816120906,
+        "M_range_us": [
+          440.003,
+          445.219
+        ],
+        "D_kv_bytes": 184549376,
+        "D_effective_gbs": 418.10473417093783,
+        "D_fraction_of_448_gbs": 0.9332694959172719,
+        "kernel": "void flash_attn_ext_f16<(int)256, (int)256, (int)1, (int)8, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)"
+      },
+      {
+        "M_gpu": 1,
+        "M_grid_x": 36,
+        "M_threads": 128,
+        "M_registers_per_thread": 226,
+        "M_shared_bytes": 65680,
+        "M_samples": 397,
+        "M_us": 440.8851460957179,
+        "M_range_us": [
+          439.555,
+          443.587
+        ],
+        "D_kv_bytes": 184549376,
+        "D_effective_gbs": 418.5883276728348,
+        "D_fraction_of_448_gbs": 0.934348945698292,
+        "kernel": "void flash_attn_ext_f16<(int)256, (int)256, (int)1, (int)8, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)"
+      }
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 1.248s
+
+OK
+M: recorded-artifact parsers and negative controls passed
+M: recorded-artifact parsers and negative controls passed

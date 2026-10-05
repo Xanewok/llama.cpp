@@ -1,0 +1,3 @@
+M: /home/xanewok/repos/attrib-pack/runs/attrib-hq/full-a2/hq.3.sqlite
+_ZN10flashinfer34BatchPrefillWithPagedKVCacheKernelINS_12KernelTraitsILNS_8MaskModeE1ELj64ELj1ELj4ELj16ELj16ELj4ELj1ELNS_15PosEncodingModeE0E13__nv_bfloat1613__nv_fp8_e4m3S4_fiNS_16DefaultAttentionILb0ELb0ELb0ELb0EEEEE11PagedParamsEEvT0_
+M: serve.log:111: (Worker_TP0 pid=2940761) INFO 10-04 03:47:33 [flashinfer.py:909] FlashInfer resolved query dtypes: prefill=torch.bfloat16, decode=torch.bfloat16, decode_backend=xqa, kv_cache_dtype=torch.float8_e4m3fn, arch=sm120
