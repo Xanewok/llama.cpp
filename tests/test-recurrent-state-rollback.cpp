@@ -499,10 +499,10 @@ struct selected_recurrent_state : llama_io_write_i {
     }
 };
 
-static selected_recurrent_state selected_state(llama_context * ctx) {
+static selected_recurrent_state selected_state(llama_context * ctx, llama_seq_id seq = 0) {
     llama_synchronize(ctx);
     selected_recurrent_state state;
-    llama_get_memory(ctx)->state_write(state, 0);
+    llama_get_memory(ctx)->state_write(state, seq);
     return state;
 }
 
@@ -530,13 +530,31 @@ static uint64_t hash_bytes(uint64_t hash, const void * ptr, size_t n) {
 
 // Compare these fingerprints between frozen builds with the same workload and backend.
 static test_status test_state_movers(const common_params & params, llama_model * model) {
-    auto ctx = make_ctx(params, model, 0);
+    const int n_seq = params.n_parallel;
+    if (n_seq < 1 || n_seq > 2) {
+        return test_status::FAIL;
+    }
+    auto cparams = common_context_params_to_llama(params);
+    cparams.n_seq_max = n_seq;
+    cparams.n_rs_seq = 8;
+    cparams.n_batch = std::max(cparams.n_batch, uint32_t(6 * n_seq));
+    cparams.n_ubatch = std::max(cparams.n_ubatch, uint32_t(6 * n_seq));
+    auto ctx = init_ctx(model, cparams, 0);
     if (!ctx || llama_n_rs_seq(ctx.get()) < 6) {
         return test_status::FAIL;
     }
     const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
     const auto prompt = common_tokenize(ctx.get(), "The quick brown fox", true);
-    if (!decode_tokens(ctx.get(), prompt)) {
+    auto prefill = [&]() {
+        common_batch batch(ctx.get());
+        for (int seq = 0; seq < n_seq; ++seq) {
+            for (size_t i = 0; i < prompt.size(); ++i) {
+                batch.add(prompt[i], i, seq, false);
+            }
+        }
+        return llama_process(ctx.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0;
+    };
+    if (!prefill()) {
         return test_status::FAIL;
     }
     std::mt19937 rng(1729);
@@ -550,14 +568,22 @@ static test_status test_state_movers(const common_params & params, llama_model *
     for (size_t trial = 0; trial < accepts.size(); ++trial) {
         const int accepted = accepts[trial];
         common_batch batch(ctx.get());
-        for (int i = 0; i < 6; ++i) {
-            batch.add((31 * (pos + i) + 7) % n_vocab, pos + i, 0, false);
+        for (int seq = 0; seq < n_seq; ++seq) {
+            for (int i = 0; i < 6; ++i) {
+                batch.add((31 * (pos + i) + 7 + seq) % n_vocab, pos + i, seq, false);
+            }
         }
-        if (llama_process(ctx.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0 ||
-            (accepted < 6 && !llama_memory_seq_rm(llama_get_memory(ctx.get()), 0, pos + accepted, -1))) {
+        if (llama_process(ctx.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
             return test_status::FAIL;
         }
-        const auto actual = selected_state(ctx.get());
+        std::vector<selected_recurrent_state> actuals;
+        for (int seq = 0; seq < n_seq; ++seq) {
+            if (accepted < 6 && !llama_memory_seq_rm(llama_get_memory(ctx.get()), seq, pos + accepted, -1)) {
+                return test_status::FAIL;
+            }
+            actuals.push_back(selected_state(ctx.get(), seq));
+        }
+        const auto & actual = actuals[0];
         if (actual.states.empty()) {
             return test_status::FAIL;
         }
@@ -586,21 +612,32 @@ static test_status test_state_movers(const common_params & params, llama_model *
                 return test_status::FAIL;
             }
         }
-        uint64_t hash = UINT64_C(14695981039346656037);
-        for (const auto & [name, value] : actual.states) {
-            hash = hash_bytes(hash, value.data.data(), value.data.size() * sizeof(float));
-        }
         pos += accepted;
-        if (!decode_one(ctx.get(), (31 * pos + 7) % n_vocab, pos)) {
+        common_batch probe(ctx.get());
+        for (int seq = 0; seq < n_seq; ++seq) {
+            probe.add((31 * pos + 7 + seq) % n_vocab, pos, seq, true);
+        }
+        if (llama_process(ctx.get(), LLAMA_PROCESS_TYPE_DECODE, probe.get()) != 0) {
             return test_status::FAIL;
         }
-        const float * logits = llama_get_logits_ith(ctx.get(), 0);
-        const int token = std::max_element(logits, logits + n_vocab) - logits;
-        hash = hash_bytes(hash, logits, n_vocab * sizeof(float));
-        printf("STATE_MOVERS trial=%zu accepted=%d state_logits_hash=%016llx token=%d\n", trial, accepted, (unsigned long long) hash, token);
+        for (int seq = 0; seq < n_seq; ++seq) {
+            uint64_t hash = UINT64_C(14695981039346656037);
+            for (const auto & [name, value] : actuals[seq].states) {
+                hash = hash_bytes(hash, value.data.data(), value.data.size() * sizeof(float));
+            }
+            const float * logits = llama_get_logits_ith(ctx.get(), seq);
+            const int token = std::max_element(logits, logits + n_vocab) - logits;
+            hash = hash_bytes(hash, logits, n_vocab * sizeof(float));
+            printf("STATE_MOVERS trial=%zu seq=%d accepted=%d state_logits_hash=%016llx token=%d\n", trial, seq, accepted, (unsigned long long) hash, token);
+        }
         ++pos;
         if (trial == 5) {
-            if (!llama_memory_seq_rm(llama_get_memory(ctx.get()), 0, 0, -1) || !decode_tokens(ctx.get(), prompt)) {
+            for (int seq = 0; seq < n_seq; ++seq) {
+                if (!llama_memory_seq_rm(llama_get_memory(ctx.get()), seq, 0, -1)) {
+                    return test_status::FAIL;
+                }
+            }
+            if (!prefill()) {
                 return test_status::FAIL;
             }
             pos = prompt.size();
