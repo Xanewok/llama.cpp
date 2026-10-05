@@ -1,0 +1,11 @@
+[  2%] Built target llama-common-base
+[  2%] Built target cpp-httplib
+[  6%] Built target ggml-base
+[ 12%] Built target ggml-cpu
+[ 66%] Built target ggml-cuda
+[ 66%] Built target ggml
+[ 81%] Built target llama
+[100%] Built target llama-common
+[100%] Building CXX object tests/CMakeFiles/test-backend-ops.dir/test-backend-ops.cpp.o
+[100%] Linking CXX executable ../bin/test-backend-ops
+[100%] Built target test-backend-ops

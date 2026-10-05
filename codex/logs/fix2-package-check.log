@@ -1,0 +1,4 @@
+M: master cumulative patch applies to a7b94df2c and reproduces topic/q8-1row-general-master; D 8 files
+M: stack cumulative patch applies to 6ef137376 and reproduces e7f0447e9; D 8 files
+M: master applied file modes match topic objects
+M: stack applied file modes match topic objects

@@ -1,0 +1,8 @@
+M: type=f16 kv=8192 CPU seconds=0.191 nmse64=4.48347749e-12 nmse32=4.36894375e-12 dropped_split_nmse=0.0172322536 native_reference_nmse=0.000166688238 padding_identical=1
+M: type=q8_0 kv=8192 CPU seconds=0.174 nmse64=4.20100677e-12 nmse32=4.40676704e-12 dropped_split_nmse=0.0172376912 native_reference_nmse=0 padding_identical=1
+M: type=f16 kv=32768 CPU seconds=0.800 nmse64=1.33858343e-11 nmse32=1.27751294e-11 dropped_split_nmse=0.019350619 native_reference_nmse=0.000739506661 padding_identical=1
+M: type=q8_0 kv=32768 CPU seconds=0.754 nmse64=1.3966669e-11 nmse32=1.34292157e-11 dropped_split_nmse=0.0193531247 native_reference_nmse=0 padding_identical=1
+M: type=f16 kv=90112 CPU seconds=2.182 nmse64=4.34202801e-11 nmse32=4.27491746e-11 dropped_split_nmse=0.0205033477 native_reference_nmse=0.00196556161 padding_identical=1
+M: type=q8_0 kv=90112 CPU seconds=2.070 nmse64=5.61224804e-11 nmse32=5.40851668e-11 dropped_split_nmse=0.0205059626 native_reference_nmse=0 padding_identical=1
+M: type=f16 kv=513 CPU seconds=0.009 nmse64=2.60217705e-13 nmse32=2.46714777e-13 dropped_split_nmse=0.0013061824 native_reference_nmse=1.10412211e-05 padding_identical=1
+M: type=q8_0 kv=513 CPU seconds=0.008 nmse64=2.72830573e-13 nmse32=2.60633833e-13 dropped_split_nmse=0.00130669635 native_reference_nmse=0 padding_identical=1

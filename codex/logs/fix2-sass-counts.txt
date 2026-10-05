@@ -1,0 +1,4 @@
+M: D=64, static SASS opcodes: {'LDG': 417, 'LDGSTS': 6, 'LDS': 279, 'STS': 540, 'LDL': 6, 'STL': 26}
+M: D=96, static SASS opcodes: {'LDG': 624, 'LDGSTS': 6, 'LDS': 305, 'STS': 714, 'LDL': 6, 'STL': 26}
+M: D=128, static SASS opcodes: {'LDG': 825, 'LDGSTS': 6, 'LDS': 477, 'STS': 1068, 'LDL': 22, 'STL': 40}
+M: D=256, static SASS opcodes: {'LDG': 18, 'LDGSTS': 114, 'LDS': 813, 'STS': 318, 'LDL': 6, 'STL': 26}

@@ -527,13 +527,41 @@ index 26ce46e97..51c4a97ff 100644
  extern DECL_FATTN_MMA_F16_CASE(576, 512, 1, 16);
  extern DECL_FATTN_MMA_F16_CASE(576, 512, 2, 16);
 diff --git a/ggml/src/ggml-cuda/fattn.cu b/ggml/src/ggml-cuda/fattn.cu
-index bb34e01f3..2c4dc9553 100644
+index bb34e01f3..1cca5f5b3 100644
 --- a/ggml/src/ggml-cuda/fattn.cu
 +++ b/ggml/src/ggml-cuda/fattn.cu
-@@ -151,6 +151,69 @@ bool ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(const int cc, const ggml_
+@@ -151,6 +151,97 @@ bool ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(const int cc, const ggml_
  #endif // !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
  }
  
++static bool ggml_cuda_flash_attn_ext_mma_q8_0_decode_worthwhile(const int cc, const ggml_tensor * dst) {
++    const ggml_tensor * Q = dst->src[0];
++    const ggml_tensor * K = dst->src[1];
++    const ggml_tensor * V = dst->src[2];
++    const int64_t gqa_ratio = Q->ne[2] / K->ne[2];
++    const int ncols2 = K->ne[0] == 320 ? 32 :
++                      (K->ne[0] == 192 || K->ne[0] == 576) && gqa_ratio % 16 == 0 ? 16 : 8;
++    const fattn_mma_config cfg = ggml_cuda_fattn_mma_get_config(K->ne[0], V->ne[0], ncols2, cc);
++    if (cfg.nstages_target <= 1) {
++        return true;
++    }
++
++    const int64_t row_K = ggml_row_size(K->type, K->ne[0]);
++    const int64_t row_V = ggml_row_size(V->type, V->ne[0]);
++    const int64_t chunk_K = row_K % 16 == 0 ? 16 : sizeof(uint16_t);
++    const int64_t chunk_V = row_V % 16 == 0 ? 16 : sizeof(uint16_t);
++    const int64_t row_f16 = (K->ne[0] + V->ne[0])*sizeof(ggml_fp16_t);
++    const int64_t groups = (gqa_ratio + ncols2 - 1) / ncols2;
++
++    // Estimate staging work in 16-byte copy units, including the expanded shared tile.
++    // Scalar raw copies also consume registers and cannot overlap with MMA through cp.async.
++    const int64_t grouped_cost = groups*(16*(row_K/chunk_K + row_V/chunk_V) + row_f16);
++    const bool has_vec = K->ne[0] == V->ne[0] && K->ne[0] <= 256 && K->ne[0] % 64 == 0;
++    const int64_t fallback_cost = has_vec ? gqa_ratio*(row_K + row_V) :
++                                          row_K + row_V + (1 + groups)*row_f16;
++    return grouped_cost < fallback_cost;
++}
++
 +static bool ggml_cuda_flash_attn_ext_mma_q8_0_decode_supported(const int cc, const ggml_tensor * dst) {
 +#if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
 +    GGML_UNUSED_VARS(cc, dst);
@@ -593,14 +621,14 @@ index bb34e01f3..2c4dc9553 100644
 +            }
 +        }
 +    }
-+    return true;
++    return ggml_cuda_flash_attn_ext_mma_q8_0_decode_worthwhile(cc, dst);
 +#endif // defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
 +}
 +
  template <int DKQ, int DV, int ncols2>
  static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
      const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
-@@ -293,6 +356,49 @@ static void ggml_cuda_flash_attn_ext_mma_f16(ggml_backend_cuda_context & ctx, gg
+@@ -293,6 +384,49 @@ static void ggml_cuda_flash_attn_ext_mma_f16(ggml_backend_cuda_context & ctx, gg
      const ggml_tensor * V    = dst->src[2];
      const ggml_tensor * mask = dst->src[3];
  
@@ -650,7 +678,7 @@ index bb34e01f3..2c4dc9553 100644
      switch (Q->ne[0]) {
          case 64:
              GGML_ASSERT(V->ne[0] == 64);
-@@ -636,6 +742,10 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
+@@ -636,6 +770,10 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
  
      // If Turing tensor cores are available, use them:
      if (turing_mma_available(cc) && Q->ne[0] != 40 && Q->ne[0] != 72) {
@@ -661,7 +689,7 @@ index bb34e01f3..2c4dc9553 100644
          if (can_use_vector_kernel) {
              if (!ggml_is_quantized(K->type) && !ggml_is_quantized(V->type)) {
                  // the sparse gather exists only in the MMA kernel: (DKQ, DV, 1, 8) with GQA > 4
-@@ -737,8 +847,7 @@ size_t ggml_cuda_flash_attn_ext_get_alloc_size(int device, const ggml_tensor * d
+@@ -737,8 +875,7 @@ size_t ggml_cuda_flash_attn_ext_get_alloc_size(int device, const ggml_tensor * d
      switch (kernel) {
          case BEST_FATTN_KERNEL_TILE:
          case BEST_FATTN_KERNEL_MMA_F16:
