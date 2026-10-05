@@ -89,7 +89,6 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix2/build/bin/libmtmd.so.0",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix2/build/bin/libmtmd.so.0.5.0",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix2/build/bin/llama-server",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix2/build/bin/round-trace",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix2/build/bin/test-backend-ops",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe7/DRIVER-SHA256SUMS",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe7/bin/q8-probe-driver",
