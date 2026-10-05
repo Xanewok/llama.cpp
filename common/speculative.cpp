@@ -1527,6 +1527,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         deferred.resize(n_seq);
         const char * fuse = std::getenv("LLAMA_MTP_FUSE_CATCHUP");
         fuse_catchup = fuse && std::atoi(fuse) != 0 && !chain_heads && !is_mem_shared;
+        SPC_INF("- MTP catch-up fused into the first draft step: %s\n", fuse_catchup ? "yes" : "no");
     }
 
     ~common_speculative_impl_draft_mtp() override {
