@@ -91,6 +91,10 @@ public:
         int32_t   src0 = -1; // like src, but only used when setting the inputs (allowing to copy once)
         int32_t   tail = -1;
 
+        // deepest rollback the snapshot groups of this cell can restore: a ubatch writes only groups
+        // [0, min(n_seq_tokens, n_rs_seq + 1))
+        uint32_t  rs_depth = 0;
+
         std::set<llama_seq_id> seq_id;
 
         bool has_seq_id(const llama_seq_id & id) const {

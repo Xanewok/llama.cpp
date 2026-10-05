@@ -151,6 +151,7 @@ void llama_memory_recurrent::clear(bool data) {
         cells[i].seq_id.clear();
         cells[i].src = -1;
         cells[i].tail = -1;
+        cells[i].rs_depth = 0;
     }
 
     head = 0;
@@ -207,9 +208,10 @@ bool llama_memory_recurrent::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos
                 const llama_pos rollback = cell.pos - (p0 - 1);
                 // pending rollback is single-use
                 const bool pending = rs_idx[seq_id] != 0;
-                if (!pending && rollback >= 1 && rollback <= (llama_pos) n_rs_seq) {
+                if (!pending && rollback >= 1 && rollback <= (llama_pos) cell.rs_depth) {
                     set_rs_idx(seq_id, (uint32_t) rollback);
                     cell.pos = p0 - 1;
+                    cell.rs_depth = 0;
                     return true;
                 }
                 return false;
@@ -647,6 +649,7 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
 
             std::swap(dst_cell.pos, src_cell.pos);
             std::swap(dst_cell.src, src_cell.src);
+            std::swap(dst_cell.rs_depth, src_cell.rs_depth);
             std::swap(dst_cell.seq_id, src_cell.seq_id);
 
             // swap tails
@@ -711,6 +714,11 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
                 // and still make these values available when setting the inputs
                 cells[i].src0 = cells[i].src;
             }
+
+            if (i < min + (int32_t) n_seqs) {
+                cells[i].rs_depth = std::min(n_seq_tokens - 1, n_rs_seq);
+            }
+
             cells[i].src = i; // avoid moving or clearing twice
         }
     }

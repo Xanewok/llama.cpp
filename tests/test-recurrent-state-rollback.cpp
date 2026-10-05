@@ -10,6 +10,8 @@
 
 #include "../src/llama-io.h"
 #include "../src/llama-memory.h"
+#include "../src/llama-memory-hybrid.h"
+#include "../src/llama-memory-recurrent.h"
 
 #include <algorithm>
 #include <clocale>
@@ -101,6 +103,12 @@ static llama_context_ptr make_ctx(const common_params & params, llama_model * mo
     cparams.n_batch   = std::max(cparams.n_batch,  (uint32_t) (cparams.n_rs_seq + 1));
     cparams.n_ubatch  = std::max(cparams.n_ubatch, (uint32_t) (cparams.n_rs_seq + 1));
     return init_ctx(model, cparams, fill);
+}
+
+// DSV4 keeps its compressed-state snapshots in its own cache, with its own rollback bookkeeping
+static bool has_recurrent_snapshots(llama_context * ctx) {
+    llama_memory_t mem = llama_get_memory(ctx);
+    return dynamic_cast<llama_memory_recurrent *>(mem) != nullptr || dynamic_cast<llama_memory_hybrid *>(mem) != nullptr;
 }
 
 static float logit_diff(float a, float b) {
@@ -311,6 +319,109 @@ static test_status test_multi_seq_split_replay(const common_params & params, lla
     return test_status::PASS;
 }
 
+// A ubatch of n tokens of a seq writes only its snapshot groups [0, min(n, n_rs_seq + 1)), so a rollback
+// of r tokens is valid only for r < n; seq_rm must refuse deeper ones instead of restoring a stale group.
+static test_status test_rollback_depth(const common_params & params, llama_model * model, uint8_t fill) {
+    const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
+
+    auto cparams = common_context_params_to_llama(params);
+    cparams.n_seq_max = 1;
+    cparams.n_rs_seq  = 8;
+    cparams.n_ctx     = 256;
+    cparams.n_batch   = 256;
+    cparams.n_ubatch  = 16;
+
+    llama_context_ptr ctx = init_ctx(model, cparams, fill);
+    if (!ctx) {
+        LOG_ERR("%s: failed to init ctx\n", __func__);
+        return test_status::FAIL;
+    }
+
+    if (llama_n_rs_seq(ctx.get()) < cparams.n_rs_seq || !has_recurrent_snapshots(ctx.get())) {
+        LOG_INF("%s: skipping because the context has no recurrent snapshots\n", __func__);
+        return test_status::SKIP;
+    }
+
+    llama_memory_t mem = llama_get_memory(ctx.get());
+
+    const auto tok = [&](llama_pos pos) {
+        return (llama_token) ((7*(uint32_t) pos + 1) % (uint32_t) n_vocab);
+    };
+
+    // decode the chunks as separate batches, return the next position or -1
+    const auto decode_chunks = [&](const std::vector<uint32_t> & chunks) {
+        llama_memory_clear(mem, true);
+        llama_pos pos = 0;
+        for (const uint32_t n : chunks) {
+            common_batch batch(ctx.get());
+            for (uint32_t i = 0; i < n; ++i, ++pos) {
+                batch.add(tok(pos), pos, 0, false);
+            }
+            if (llama_process(ctx.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+                return (llama_pos) -1;
+            }
+        }
+        return pos;
+    };
+
+    struct test_case {
+        std::vector<uint32_t> chunks;
+        uint32_t              rollback;
+        bool                  valid;
+    };
+
+    const std::vector<test_case> cases = {
+        { { 16, 3 }, 2, true  },
+        { { 16, 3 }, 3, false },
+        { { 16, 3 }, 4, false },
+        { { 16, 1 }, 1, false },
+        { { 16, 6 }, 5, true  },
+        { { 16, 6 }, 6, false },
+        { { 19    }, 8, true  }, // split into ubatches of 10 and 9 tokens
+        { { 19    }, 9, false }, // deeper than n_rs_seq
+    };
+
+    for (const auto & tc : cases) {
+        const llama_pos pos = decode_chunks(tc.chunks);
+        if (pos < 0) {
+            LOG_ERR("%s: decode failed\n", __func__);
+            return test_status::FAIL;
+        }
+
+        const uint32_t n_last = tc.chunks.back();
+        if (llama_memory_seq_rm(mem, 0, pos - (llama_pos) tc.rollback, -1) != tc.valid) {
+            LOG_ERR("%s: rollback %u after a last batch of %u tokens was %s\n",
+                    __func__, tc.rollback, n_last, tc.valid ? "refused" : "accepted");
+            return test_status::FAIL;
+        }
+    }
+
+    // a loaded seq state carries no snapshot history
+    {
+        const llama_pos pos = decode_chunks({ 16 });
+        if (pos < 0) {
+            LOG_ERR("%s: decode failed\n", __func__);
+            return test_status::FAIL;
+        }
+
+        std::vector<uint8_t> state(llama_state_seq_get_size(ctx.get(), 0));
+        const bool loaded = llama_state_seq_get_data(ctx.get(), state.data(), state.size(), 0) == state.size() &&
+                            llama_state_seq_set_data(ctx.get(), state.data(), state.size(), 0) == state.size();
+        if (!loaded) {
+            LOG_ERR("%s: state save/load failed\n", __func__);
+            return test_status::FAIL;
+        }
+
+        if (llama_memory_seq_rm(mem, 0, pos - 1, -1)) {
+            LOG_ERR("%s: rollback after a state load was accepted\n", __func__);
+            return test_status::FAIL;
+        }
+    }
+
+    LOG_INF("%s: rollbacks deeper than the last ubatch were refused\n", __func__);
+    return test_status::PASS;
+}
+
 // Save a rolled-back single-seq state, restore it into fresh and dirty
 // contexts, and verify exact logit matches on replay.
 static test_status test_rollback(const common_params & params, llama_model * model, uint8_t fill) {
@@ -405,22 +516,12 @@ static test_status test_rollback(const common_params & params, llama_model * mod
         return test_status::FAIL;
     }
 
-    // TODO: this test is invalid because RS rollback is only correct once after a ubatch with more than n_rs_seq tokens
-    //       this is not the case here. add asserts and guardrails to prevent such attempts
-    //if (!llama_memory_seq_rm(llama_get_memory(ctx_src), 0, rollback_pos, -1) ||
-    //    !llama_memory_seq_rm(llama_get_memory(ctx_dst), 0, rollback_pos, -1)) {
-    //    fprintf(stderr, "%s : partial rollback failed\n", __func__);
-    //    return 1;
-    //}
-
-    //constexpr llama_state_seq_flags partial_flags = LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY;
-    //common_prompt_checkpoint ckpt_partial;
-    //ckpt_partial.update_tgt(ctx_src, 0, partial_flags);
-    //ckpt_partial.load_tgt(ctx_dst, 0, partial_flags);
-
-    //if (!replay_and_compare("partial")) {
-    //    return 1;
-    //}
+    // the replay decoded one token per ubatch, so no snapshot group holds the state at rollback_pos
+    if (has_recurrent_snapshots(ctx_src.get()) &&
+        llama_memory_seq_rm(llama_get_memory(ctx_src.get()), 0, rollback_pos, -1)) {
+        LOG_ERR("%s: rollback deeper than the last ubatch was not refused\n", __func__);
+        return test_status::FAIL;
+    }
 
     // Repeat the load into a context that already has its own rollback state:
     // groups 1..n_rs_seq hold a different prompt's history, and rs_idx[0] is
@@ -582,7 +683,8 @@ static test_results run_tests(const common_params & params, llama_model * model)
     test_results res;
     for (uint8_t fill : { 0, 0x3e }) {
         LOG_INF("%s: testing with cache fill 0x%02x\n", __func__, fill);
-        const test_status rb = test_rollback(params, model, fill);
+        const test_status rd = test_rollback_depth(params, model, fill);
+        const test_status rb = merge_status(test_rollback(params, model, fill), rd);
         const test_status rp = test_multi_seq_split_replay(params, model, fill);
         const test_status ss = test_shared_seq_reserve(params, model, fill);
         res.rollback = merge_status(res.rollback, rb);
