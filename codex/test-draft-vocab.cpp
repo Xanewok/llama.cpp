@@ -20,6 +20,7 @@ static void require(bool ok, const char * message) {
 }
 
 static bool check_deferred = false;
+static int cpu_threads = 8;
 
 static std::vector<std::vector<float>> run(llama_model * model, bool mtp, bool backend, int steps) {
     const int nv = llama_vocab_n_tokens(llama_model_get_vocab(model));
@@ -30,7 +31,7 @@ static std::vector<std::vector<float>> run(llama_model * model, bool mtp, bool b
     cp.n_batch = 8;
     cp.n_ubatch = 2;
     cp.n_outputs_max_per_seq = 4;
-    cp.n_threads = model->devices.size() > 1 ? 4 : 8;
+    cp.n_threads = model->devices.size() > 1 ? cpu_threads / 2 : cpu_threads;
     cp.n_threads_batch = cp.n_threads;
     llama_context * ctx = llama_init_from_model(model, cp);
     require(ctx, "context load failed");
@@ -121,7 +122,12 @@ int main(int argc, char ** argv) {
     const bool tp = argc > 2 && std::string(argv[2]) == "tp";
     const int steps = argc > 3 ? std::atoi(argv[3]) : 9;
     require(steps > 1, "need steady steps");
-    check_deferred = argc > 4 && std::string(argv[4]) == "deferred";
+    const bool from_gguf = argc > 5 && std::string(argv[4]) == "gguf";
+    check_deferred = argc > 4 && (std::string(argv[4]) == "deferred" || from_gguf);
+    if (const char * threads = std::getenv("DRAFT_VOCAB_TEST_THREADS")) {
+        cpu_threads = std::atoi(threads);
+    }
+    require(cpu_threads >= 2 && cpu_threads <= 8, "need between 2 and 8 CPU threads");
     llama_log_set([](ggml_log_level level, const char * message, void *) { if (level >= GGML_LOG_LEVEL_WARN) std::fputs(message, stderr); }, nullptr);
     llama_backend_init();
     auto mp = llama_model_default_params();
@@ -149,10 +155,14 @@ int main(int argc, char ** argv) {
             ids.push_back(i);
         }
     }
-    mp.draft_vocab_ids = ids.data();
-    mp.n_draft_vocab = ids.size();
-    llama_model * sub = llama_model_load_from_file(argv[1], mp);
+    mp.draft_vocab_ids = from_gguf ? nullptr : ids.data();
+    mp.n_draft_vocab = from_gguf ? 0 : ids.size();
+    llama_model * sub = llama_model_load_from_file(from_gguf ? argv[5] : argv[1], mp);
     require(sub, "subset model load failed");
+    if (from_gguf) {
+        require(sub->draft_output, "GGUF mapping did not activate the compact head");
+        ids = sub->draft_vocab_ids;
+    }
     std::ofstream list("codex/cpu-vocab-ids.json");
     list << '[';
     for (size_t i = 0; i < ids.size(); ++i) {
@@ -170,6 +180,14 @@ int main(int argc, char ** argv) {
     const auto ref = run(full, true, false, steps);
     const auto got = run(sub, true, false, steps);
     require(ref.size() == got.size(), "row count changed");
+    std::ofstream reference_dump;
+    if (argc > 5 && identity) {
+        reference_dump.open(argv[5], std::ios::binary);
+        require(bool(reference_dump), "cannot open reference dump");
+        for (const auto & row : ref) {
+            reference_dump.write(reinterpret_cast<const char *>(row.data()), row.size() * sizeof(float));
+        }
+    }
     if (identity) {
         for (size_t r = 0; r < ref.size(); ++r) {
             require(std::memcmp(ref[r].data(), got[r].data(), nv * sizeof(float)) == 0, "full-vocab mapping changed logits");
@@ -189,11 +207,16 @@ int main(int argc, char ** argv) {
                     llama_sampler_free(sampler);
                     return id;
                 };
-                require(sample(ref[r]) == sample(got[r]), "full-vocab mapping changed sampled token");
+                const auto id = sample(ref[r]);
+                require(id == sample(got[r]), "full-vocab mapping changed sampled token");
+                if (reference_dump.is_open()) {
+                    reference_dump.write(reinterpret_cast<const char *>(&id), sizeof(id));
+                }
             }
         }
         std::printf("M: identity mapping: %zu MTP rows bit-identical; 100 seeds per row bit-identical\n", ref.size());
     }
+    require(!reference_dump.is_open() || bool(reference_dump), "reference dump failed");
     double max_error = 0;
     bool negative_detected = false;
     std::vector<bool> inside(nv, false);
@@ -244,7 +267,7 @@ int main(int argc, char ** argv) {
     cp.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
     cp.n_ctx = 128;
     cp.n_batch = cp.n_ubatch = 8;
-    cp.n_threads = cp.n_threads_batch = tp ? 4 : 8;
+    cp.n_threads = cp.n_threads_batch = tp ? cpu_threads / 2 : cpu_threads;
     llama_context * tiny_ctx = llama_init_from_model(tiny, cp);
     require(tiny_ctx, "small context failed to load");
     llama_sampler * top = llama_sampler_chain_init(llama_sampler_chain_default_params());
