@@ -86,8 +86,8 @@ common_speculative_draft_params & common_speculative_get_draft_params(common_spe
 // optionally call once at the beginning of a new generation
 void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, const llama_tokens & prompt);
 
-// process the batch and update the internal state of the speculative context
-bool common_speculative_process(common_speculative * spec, const common_batch & batch);
+// accept() selects the prefix for verifying sequences; a replay replaces their deferred batch
+bool common_speculative_process(common_speculative * spec, const common_batch & batch, const std::vector<llama_seq_id> & verifying = {});
 
 // generate drafts for the sequences specified with `common_speculative_get_draft_params`
 void common_speculative_draft(common_speculative * spec);

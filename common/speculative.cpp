@@ -207,6 +207,8 @@ struct common_speculative_impl {
 
     virtual bool process(const common_batch & batch) = 0;
 
+    virtual bool process(const common_batch & batch, const std::vector<llama_seq_id> & /*verifying*/) { return process(batch); }
+
     virtual void draft(common_speculative_draft_params_vec & dparams) = 0;
 
     virtual void accept(llama_seq_id seq_id, uint16_t n_accepted, bool is_other) = 0;
@@ -1423,6 +1425,16 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     std::vector<std::vector<float>> verify_h;
     std::vector<int32_t> verify_h_rows;
 
+    struct deferred_batch {
+        llama_tokens tokens;
+        llama_pos pos0 = 0;
+        // A checkpoint replay must keep the hidden row from before verification.
+        std::vector<float> h0;
+        int32_t n_accepted = -1;
+    };
+    std::vector<deferred_batch> deferred;
+    bool fuse_catchup = false;
+
     std::vector<int>                i_last;
     std::vector<std::vector<float>> chain_h;
 
@@ -1500,6 +1512,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         verify_h.assign(n_seq, {});
         verify_h_rows.assign(n_seq, 0);
+        deferred.resize(n_seq);
+        const char * fuse = std::getenv("LLAMA_MTP_FUSE_CATCHUP");
+        fuse_catchup = fuse && std::atoi(fuse) != 0 && !chain_heads && !is_mem_shared;
     }
 
     ~common_speculative_impl_draft_mtp() override {
@@ -1519,6 +1534,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
         // reset here rather than per round, or two identical requests differ
         common_sampler_reset(smpls[seq_id].get());
+        deferred[seq_id].tokens.clear();
 
         const int32_t N = (int32_t) prompt.size();
         if (N <= 0) {
@@ -1538,6 +1554,23 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     }
 
     bool process(const common_batch & batch_in) override {
+        return process(batch_in, {});
+    }
+
+    void add_deferred(llama_seq_id seq_id) {
+        auto & db = deferred[seq_id];
+        if (db.tokens.empty() || db.n_accepted < 0) {
+            return;
+        }
+
+        for (int32_t i = 0; i <= db.n_accepted; ++i) {
+            const int32_t idx = batch.add(db.tokens[i], db.pos0 + i, seq_id, false);
+            const float * h = i == 0 ? db.h0.data() : verify_h[seq_id].data() + (size_t) (i - 1) * n_embd;
+            batch.set_embd(idx, { h, 1, (size_t) n_embd });
+        }
+    }
+
+    bool process(const common_batch & batch_in, const std::vector<llama_seq_id> & verifying) override {
         if (batch_in.size() <= 0) {
             return true;
         }
@@ -1569,9 +1602,28 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         const size_t row_bytes = (size_t) n_embd * sizeof(float);
 
+        std::vector<bool> defer(n_seq, false);
+        if (fuse_catchup) {
+            for (const llama_seq_id seq_id : verifying) {
+                GGML_ASSERT(seq_id >= 0 && seq_id < (llama_seq_id) n_seq);
+                defer[seq_id] = true;
+            }
+        }
+
         // if kv is shared with target (e.g Gemma4), then we can skip this catch-up decode
         if (!is_mem_shared) {
             batch.clear();
+
+            for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
+                if (i_batch_beg[seq_id] < 0) {
+                    continue;
+                }
+                auto & db = deferred[seq_id];
+                if (!db.tokens.empty() && batch_in.tokens[i_batch_beg[seq_id]].pos[0] > db.pos0) {
+                    add_deferred(seq_id);
+                }
+                db.tokens.clear();
+            }
 
             // pair each token with the tgt embedding shifted right by one position, and
             // the first token of each sequence with the pending embedding from a previous run
@@ -1583,6 +1635,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
             for (int k = 0; k < n_tokens; ++k) {
                 const llama_seq_id seq_id = batch_in.tokens[k].seq_id;
+                if (defer[seq_id]) {
+                    continue;
+                }
 
                 const int32_t idx = batch.add(batch_in.tokens[k].id, batch_in.tokens[k].pos[0], seq_id, false);
 
@@ -1596,7 +1651,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             auto * mem_dft = llama_get_memory(ctx_dft);
 
             bool ok = true;
-            for (int head = 0; head < n_mtp_layers; ++head) {
+            for (int head = 0; batch.size() > 0 && head < n_mtp_layers; ++head) {
                 if (chain_heads) {
                     // ref: https://github.com/ggml-org/llama.cpp/pull/24340/changes#r3413498544
                     for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
@@ -1633,11 +1688,21 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             }
 
             const int32_t n_rows = i_batch_end[seq_id] - i_batch_beg[seq_id] + 1;
+            if (defer[seq_id]) {
+                auto & db = deferred[seq_id];
+                db.pos0 = batch_in.tokens[i_batch_beg[seq_id]].pos[0];
+                db.h0 = pending_h[seq_id];
+                db.n_accepted = -1;
+                for (int32_t i = i_batch_beg[seq_id]; i <= i_batch_end[seq_id]; ++i) {
+                    GGML_ASSERT(batch_in.tokens[i].seq_id == seq_id && batch_in.tokens[i].pos[0] == db.pos0 + i - i_batch_beg[seq_id]);
+                    db.tokens.push_back(batch_in.tokens[i].id);
+                }
+            }
             bool has_verify_outputs = false;
             for (int32_t i = i_batch_beg[seq_id]; i < i_batch_end[seq_id]; ++i) {
                 has_verify_outputs |= batch_in.tokens[i].output;
             }
-            const int32_t n_copy = has_verify_outputs ? n_rows : 1;
+            const int32_t n_copy = has_verify_outputs || defer[seq_id] ? n_rows : 1;
             verify_h_rows[seq_id] = n_copy;
             verify_h[seq_id].resize((size_t) n_copy * n_embd);
 
@@ -1646,8 +1711,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 std::memcpy(verify_h[seq_id].data() + (size_t) i * n_embd, h, row_bytes);
             }
 
-            std::memcpy(pending_h[seq_id].data(),
-                    verify_h[seq_id].data() + (size_t) (n_copy - 1) * n_embd, row_bytes);
+            if (!defer[seq_id]) {
+                std::memcpy(pending_h[seq_id].data(),
+                        verify_h[seq_id].data() + (size_t) (n_copy - 1) * n_embd, row_bytes);
+            }
         }
 
         return true;
@@ -1664,6 +1731,15 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
             auto & dp = dparams[seq_id];
+
+            auto & db = deferred[seq_id];
+            if (!db.tokens.empty() && db.n_accepted >= 0) {
+                if (dp.drafting) {
+                    GGML_ASSERT(dp.pos0 == db.pos0 + db.n_accepted + 1);
+                }
+                add_deferred(seq_id);
+                db.tokens.clear();
+            }
 
             if (!dp.drafting) {
                 continue;
@@ -1833,6 +1909,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         }
 
         const int32_t i_h = std::min<int32_t>(n_accepted, n_rows - 1);
+        if (!deferred[seq_id].tokens.empty()) {
+            GGML_ASSERT(n_accepted < deferred[seq_id].tokens.size());
+            deferred[seq_id].n_accepted = i_h;
+        }
         const size_t row_bytes = (size_t) n_embd * sizeof(float);
         std::memcpy(pending_h[seq_id].data(), verify_h[seq_id].data() + (size_t) i_h * n_embd, row_bytes);
     }
@@ -2866,7 +2946,7 @@ void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, co
     }
 }
 
-bool common_speculative_process(common_speculative * spec, const common_batch & batch) {
+bool common_speculative_process(common_speculative * spec, const common_batch & batch, const std::vector<llama_seq_id> & verifying) {
     bool result = true;
 
     if (spec == nullptr) {
@@ -2874,7 +2954,7 @@ bool common_speculative_process(common_speculative * spec, const common_batch & 
     }
 
     for (auto & impl : spec->impls) {
-        result = result && impl->process(batch);
+        result = result && impl->process(batch, verifying);
     }
 
     return result;
