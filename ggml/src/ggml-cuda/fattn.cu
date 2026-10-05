@@ -151,6 +151,34 @@ bool ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(const int cc, const ggml_
 #endif // !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
 }
 
+static bool ggml_cuda_flash_attn_ext_mma_q8_0_decode_worthwhile(const int cc, const ggml_tensor * dst) {
+    const ggml_tensor * Q = dst->src[0];
+    const ggml_tensor * K = dst->src[1];
+    const ggml_tensor * V = dst->src[2];
+    const int64_t gqa_ratio = Q->ne[2] / K->ne[2];
+    const int ncols2 = K->ne[0] == 320 ? 32 :
+                      (K->ne[0] == 192 || K->ne[0] == 576) && gqa_ratio % 16 == 0 ? 16 : 8;
+    const fattn_mma_config cfg = ggml_cuda_fattn_mma_get_config(K->ne[0], V->ne[0], ncols2, cc);
+    if (cfg.nstages_target <= 1) {
+        return true;
+    }
+
+    const int64_t row_K = ggml_row_size(K->type, K->ne[0]);
+    const int64_t row_V = ggml_row_size(V->type, V->ne[0]);
+    const int64_t chunk_K = row_K % 16 == 0 ? 16 : sizeof(uint16_t);
+    const int64_t chunk_V = row_V % 16 == 0 ? 16 : sizeof(uint16_t);
+    const int64_t row_f16 = (K->ne[0] + V->ne[0])*sizeof(ggml_fp16_t);
+    const int64_t groups = (gqa_ratio + ncols2 - 1) / ncols2;
+
+    // Estimate staging work in 16-byte copy units, including the expanded shared tile.
+    // Scalar raw copies also consume registers and cannot overlap with MMA through cp.async.
+    const int64_t grouped_cost = groups*(16*(row_K/chunk_K + row_V/chunk_V) + row_f16);
+    const bool has_vec = K->ne[0] == V->ne[0] && K->ne[0] <= 256 && K->ne[0] % 64 == 0;
+    const int64_t fallback_cost = has_vec ? gqa_ratio*(row_K + row_V) :
+                                          row_K + row_V + (1 + groups)*row_f16;
+    return grouped_cost < fallback_cost;
+}
+
 static bool ggml_cuda_flash_attn_ext_mma_q8_0_decode_supported(const int cc, const ggml_tensor * dst) {
 #if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
     GGML_UNUSED_VARS(cc, dst);
@@ -210,7 +238,7 @@ static bool ggml_cuda_flash_attn_ext_mma_q8_0_decode_supported(const int cc, con
             }
         }
     }
-    return true;
+    return ggml_cuda_flash_attn_ext_mma_q8_0_decode_worthwhile(cc, dst);
 #endif // defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
 }
 
