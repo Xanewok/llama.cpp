@@ -1,0 +1,25 @@
+M compile-only resources, sm_120a; runtime occupancy is unmeasured.
+void flash_attn_ext_vec<256, 1, (ggml_type)8, (ggml_type)8, true>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)
+for 'sm_120a'
+ptxas info    : Function properties for _Z18flash_attn_ext_vecILi256ELi1EL9ggml_type8ELS0_8ELb1EEvPKcS2_S2_S2_S2_PKiPfP6float2ffffjfi5uint3iiiiiiiiiiiliiliiiiil
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 4352 bytes smem
+ptxas info    : Compile time = 233.038 ms
+void flash_attn_ext_vec<256, 1, (ggml_type)8, (ggml_type)8, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)
+for 'sm_120a'
+ptxas info    : Function properties for _Z18flash_attn_ext_vecILi256ELi1EL9ggml_type8ELS0_8ELb0EEvPKcS2_S2_S2_S2_PKiPfP6float2ffffjfi5uint3iiiiiiiiiiiliiliiiiil
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 4352 bytes smem
+ptxas info    : Compile time = 232.771 ms
+void flash_attn_ext_f16<256, 256, 1, 8, false, false, false, (ggml_type)8>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)
+for 'sm_120a'
+ptxas info    : Function properties for _Z18flash_attn_ext_f16ILi256ELi256ELi1ELi8ELb0ELb0ELb0EL9ggml_type8EEvPKcS2_S2_S2_S2_PKiPfP6float2ffffjfi5uint3iiiiiiiiiiiliiliiiiil
+    24 bytes stack frame, 4 bytes spill stores, 4 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 24 bytes cumulative stack size
+ptxas info    : Compile time = 918.196 ms
+void flash_attn_ext_f16<256, 256, 4, 8, false, false, false, (ggml_type)8>(char const*, char const*, char const*, char const*, char const*, int const*, float*, float2*, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)
+for 'sm_120a'
+ptxas info    : Function properties for _Z18flash_attn_ext_f16ILi256ELi256ELi4ELi8ELb0ELb0ELb0EL9ggml_type8EEvPKcS2_S2_S2_S2_PKiPfP6float2ffffjfi5uint3iiiiiiiiiiiliiliiiiil
+    40 bytes stack frame, 44 bytes spill stores, 32 bytes spill loads
+ptxas info    : Used 255 registers, used 1 barriers, 40 bytes cumulative stack size
+ptxas info    : Compile time = 702.438 ms

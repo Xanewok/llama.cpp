@@ -1,0 +1,2 @@
+M: recorded-artifact parsers and negative controls passed
+M: freeze identity, library resolution and case generation passed; no CUDA executable run

@@ -1,0 +1,208 @@
+{
+  "labels": {
+    "M": "recorded",
+    "D": "arithmetic",
+    "G": "unmeasured candidate"
+  },
+  "8k": {
+    "trace": "/home/xanewok/repos/attrib-pack/runs/attrib-host-s3m/full-a1/decode-8k.sqlite",
+    "rows": [
+      {
+        "M_gpu": 0,
+        "M_grid_x": 36,
+        "M_threads": 128,
+        "M_registers_per_thread": 226,
+        "M_shared_bytes": 65680,
+        "M_samples": 334,
+        "M_us": 47.59554491017964,
+        "M_range_us": [
+          44.896,
+          48.832
+        ],
+        "D_kv_bytes": 16777216,
+        "D_effective_gbs": 352.4955125876019,
+        "D_fraction_of_448_gbs": 0.7868203405973258,
+        "kernel": "void flash_attn_ext_f16<(int)256, (int)256, (int)1, (int)8, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)"
+      },
+      {
+        "M_gpu": 0,
+        "M_grid_x": 72,
+        "M_threads": 128,
+        "M_registers_per_thread": 226,
+        "M_shared_bytes": 33792,
+        "M_samples": 96,
+        "M_us": 54.96397916666666,
+        "M_range_us": [
+          53.6,
+          56.224
+        ],
+        "D_kv_bytes": 16777216,
+        "D_effective_gbs": 305.24020011590926,
+        "D_fraction_of_448_gbs": 0.6813397324015832,
+        "kernel": "void flash_attn_ext_f16<(int)256, (int)256, (int)1, (int)8, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)"
+      },
+      {
+        "M_gpu": 1,
+        "M_grid_x": 36,
+        "M_threads": 128,
+        "M_registers_per_thread": 226,
+        "M_shared_bytes": 65680,
+        "M_samples": 334,
+        "M_us": 47.417215568862275,
+        "M_range_us": [
+          44.704,
+          49.12
+        ],
+        "D_kv_bytes": 16777216,
+        "D_effective_gbs": 353.8211976119742,
+        "D_fraction_of_448_gbs": 0.7897794589552996,
+        "kernel": "void flash_attn_ext_f16<(int)256, (int)256, (int)1, (int)8, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)"
+      },
+      {
+        "M_gpu": 1,
+        "M_grid_x": 72,
+        "M_threads": 128,
+        "M_registers_per_thread": 226,
+        "M_shared_bytes": 33792,
+        "M_samples": 96,
+        "M_us": 54.888072916666665,
+        "M_range_us": [
+          52.961,
+          55.872
+        ],
+        "D_kv_bytes": 16777216,
+        "D_effective_gbs": 305.66232531923396,
+        "D_fraction_of_448_gbs": 0.6822819761590043,
+        "kernel": "void flash_attn_ext_f16<(int)256, (int)256, (int)1, (int)8, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)"
+      }
+    ]
+  },
+  "90k": {
+    "trace": "/home/xanewok/repos/attrib-pack/runs/attrib-host-s3m/full-a1/decode-90k.sqlite",
+    "rows": [
+      {
+        "M_gpu": 0,
+        "M_grid_x": 36,
+        "M_threads": 128,
+        "M_registers_per_thread": 226,
+        "M_shared_bytes": 65680,
+        "M_samples": 397,
+        "M_us": 441.39508816120906,
+        "M_range_us": [
+          440.003,
+          445.219
+        ],
+        "D_kv_bytes": 184549376,
+        "D_effective_gbs": 418.10473417093783,
+        "D_fraction_of_448_gbs": 0.9332694959172719,
+        "kernel": "void flash_attn_ext_f16<(int)256, (int)256, (int)1, (int)8, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)"
+      },
+      {
+        "M_gpu": 1,
+        "M_grid_x": 36,
+        "M_threads": 128,
+        "M_registers_per_thread": 226,
+        "M_shared_bytes": 65680,
+        "M_samples": 397,
+        "M_us": 440.8851460957179,
+        "M_range_us": [
+          439.555,
+          443.587
+        ],
+        "D_kv_bytes": 184549376,
+        "D_effective_gbs": 418.5883276728348,
+        "D_fraction_of_448_gbs": 0.934348945698292,
+        "kernel": "void flash_attn_ext_f16<(int)256, (int)256, (int)1, (int)8, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)"
+      }
+    ]
+  },
+  "q8_0": {
+    "M_device_trace": "/home/xanewok/repos/attrib-pack/runs/attrib-host-s3m/full-a1/decode-90k.sqlite",
+    "M_devices": [
+      {
+        "id": 1,
+        "smCount": 36,
+        "maxRegistersPerSm": 65536,
+        "maxShmemPerSm": 102400,
+        "maxShmemPerBlockOptin": 101376,
+        "threadsPerWarp": 32,
+        "maxWarpsPerSm": 48
+      },
+      {
+        "id": 0,
+        "smCount": 36,
+        "maxRegistersPerSm": 65536,
+        "maxShmemPerSm": 102400,
+        "maxShmemPerBlockOptin": 101376,
+        "threadsPerWarp": 32,
+        "maxWarpsPerSm": 48
+      }
+    ],
+    "M_round_source": "/home/xanewok/repos/stack3-rebase/codex/runs/draft-kv-q8-ab/full-a1/summary.json",
+    "D_base_kernel": "flash_attn_ext_vec<256,1,Q8_0,Q8_0,false>",
+    "D_base_grid": [
+      1,
+      6,
+      12
+    ],
+    "D_base_block": [
+      32,
+      4,
+      1
+    ],
+    "D_patch_kernel": "flash_attn_ext_f16<256,256,1,8,false,false,false,Q8_0>",
+    "D_patch_grid": [
+      36,
+      1,
+      1
+    ],
+    "D_patch_block": [
+      32,
+      4,
+      1
+    ],
+    "D_patch_dynamic_shared_bytes": 83088,
+    "note": "Launch geometry derives from compile resources and recorded device limits; no q8_0 one-row kernel trace found. Payload counts exclude repeated scale loads and are not DRAM counters.",
+    "depths": [
+      {
+        "kv": 8192,
+        "D_unique_q8_bytes": 8912896,
+        "D_base_payload_scanned_bytes": 53477376,
+        "D_f16_unique_bytes": 16777216,
+        "D_base_max_iterations": 11,
+        "D_patch_max_iterations": 8,
+        "D_peak_floor_us": 19.893436183129776,
+        "G_five_pass_ms": 0.1666135885167464,
+        "D_recorded_round_delta_ms": 0.7085505617977645,
+        "M_up_acceptance": 0.9028077753779697,
+        "M_q8_acceptance": 0.9028077753779697
+      },
+      {
+        "kv": 32768,
+        "D_unique_q8_bytes": 35651584,
+        "D_base_payload_scanned_bytes": 213909504,
+        "D_f16_unique_bytes": 67108864,
+        "D_base_max_iterations": 43,
+        "D_patch_max_iterations": 29,
+        "D_peak_floor_us": 79.5737447325191,
+        "G_five_pass_ms": 0.4864543540669857,
+        "D_recorded_round_delta_ms": 0.4714999999999918,
+        "M_up_acceptance": 0.9312638580931264,
+        "M_q8_acceptance": 0.5491923641703378
+      },
+      {
+        "kv": 90112,
+        "D_unique_q8_bytes": 98041856,
+        "D_base_payload_scanned_bytes": 588251136,
+        "D_f16_unique_bytes": 184549376,
+        "D_base_max_iterations": 118,
+        "D_patch_max_iterations": 79,
+        "D_peak_floor_us": 218.82779801442754,
+        "G_five_pass_ms": 1.2327494736842104,
+        "D_recorded_round_delta_ms": 1.3234503676470624,
+        "M_up_acceptance": 0.16859623733719248,
+        "M_q8_acceptance": 0.16859623733719248
+      }
+    ]
+  }
+}
