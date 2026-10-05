@@ -11197,7 +11197,7 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
 
     for (int hs : {64, 96, 128, 256}) {
         for (int gqa : {2, 4, 6, 8}) {
-            test_cases.emplace_back(new test_flash_attn_ext(hs, hs, 2, {gqa, 1}, 2048, 1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}));
+            test_cases.emplace_back(new test_flash_attn_ext(hs, hs, 2, {gqa, 1}, 2048, 1, true, gqa == 2 || gqa == 6, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}));
         }
     }
     for (const auto & shape : {std::array<int, 3>{192, 128, 8}, {192, 128, 16}, {320, 256, 32}, {512, 512, 2}, {512, 512, 6}}) {

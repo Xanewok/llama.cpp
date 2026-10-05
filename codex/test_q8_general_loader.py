@@ -27,6 +27,7 @@ PREFIX = r'''
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <cmath>
 #include <vector>
 #define __host__
 #define __device__
@@ -105,20 +106,40 @@ template<bool swz> void all() {
     check<64,swz>(); check<96,swz>(); check<128,swz>(); check<192,swz>();
     check<256,swz>(); check<320,swz>(); check<512,swz>(); check<576,swz>();
 }
-int main() { all<false>(); all<true>(); puts("M: 16 head/swizzle tile cases match CPU dequantization bit for bit"); }
+void check_sinks();
+int main() { all<false>(); all<true>(); check_sinks(); puts("M: 16 head/swizzle tile cases match CPU dequantization bit for bit; padded sinks are bounded"); }
 '''
 
 
 def main():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     source = (ROOT / "ggml/src/ggml-cuda/fattn-mma-f16.cuh").read_text()
+    sink = next(line.strip() for line in source.splitlines() if "const float sink =" in line)
+    sink_check = r'''
+void check_sinks() {
+    constexpr ggml_type type_KV = GGML_TYPE_Q8_0;
+    constexpr int ncols2 = 8;
+    const float values[8] = {1,2,3,4,5,6,7,8};
+    const float * sinks_f = values;
+    for (int gqa_ratio : {1,2,3,6,8,10}) {
+        for (int zt_gqa = 0; zt_gqa < (gqa_ratio+7)/8; ++zt_gqa) {
+            for (int c=0; c<8; ++c) {
+                SINK_EXPRESSION
+                assert(zt_gqa*8 + c < gqa_ratio ? sink == values[c] : sink == -INFINITY);
+            }
+        }
+    }
+}
+'''.replace("SINK_EXPRESSION", sink)
     good = PREFIX + "\n".join(function(source, name) for name in (
         "flash_attn_ext_f16_q8_0_row_bytes", "flash_attn_ext_f16_load_tile_q8_0(",
-        "flash_attn_ext_f16_dequantize_tile_q8_0", "flash_attn_ext_f16_load_tile_q8_0_partial")) + MAIN
+        "flash_attn_ext_f16_dequantize_tile_q8_0", "flash_attn_ext_f16_load_tile_q8_0_partial")) + MAIN + sink_check
     mutant = good.replace("const int col = 2*k0 + 8*k;", "const int col = 8*k;")
     assert mutant != good
+    sink_mutant = good.replace("type_KV == GGML_TYPE_Q8_0 &&", "false &&")
+    assert sink_mutant != good
     env = dict(os.environ, CUDA_VISIBLE_DEVICES="")
-    for name, code in (("q8-loader", good), ("q8-loader-mutant", mutant)):
+    for name, code in (("q8-loader", good), ("q8-loader-mutant", mutant), ("q8-sink-mutant", sink_mutant)):
         path = ROOT / f"build-tmp/{name}.cpp"
         path.write_text(code)
         binary = path.with_suffix("")
@@ -130,7 +151,7 @@ def main():
             print(result.stdout, end="")
         else:
             assert result.returncode != 0, "negative loader control passed"
-            print("M: dropped dimension offset fails the control")
+            print(f"M: {name} fails the control")
 
 
 if __name__ == "__main__":
