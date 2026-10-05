@@ -4061,8 +4061,17 @@ private:
         //       ref: https://github.com/ggml-org/llama.cpp/pull/22728#issuecomment-4400925384
         if (spec) {
             bool ok = true;
+            std::vector<llama_seq_id> verifying;
+            // FULL draft checkpoints must contain catch-up before they are saved.
+            if (ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_FULL) {
+                for (const auto & slot : slots) {
+                    if (!slot.spec_i_batch.empty()) {
+                        verifying.push_back(slot.id);
+                    }
+                }
+            }
             queue_tasks.yield_to_queue([&]() {
-                ok = common_speculative_process(spec.get(), batch.view);
+                ok = common_speculative_process(spec.get(), batch.view, verifying);
             });
 
             if (!ok) {
