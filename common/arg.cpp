@@ -1729,6 +1729,17 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_env("LLAMA_ARG_KV_UNIFIED").set_examples({LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_PERPLEXITY, LLAMA_EXAMPLE_BATCHED, LLAMA_EXAMPLE_BENCH, LLAMA_EXAMPLE_PARALLEL}));
     add_opt(common_arg(
+        {"--kv-pad"}, "N",
+        string_format("KV cache view size granularity in cells, rounded up to a multiple of 256; the context size is padded to it. "
+            "A larger value rebuilds the compute graph less often while the context grows, at the cost of attending over more masked cells (default: %d, 0 = 256)", params.n_kv_pad),
+        [](common_params & params, int value) {
+            if (value < 0) {
+                throw std::invalid_argument("--kv-pad must be >= 0");
+            }
+            params.n_kv_pad = value;
+        }
+    ).set_env("LLAMA_ARG_KV_PAD"));
+    add_opt(common_arg(
         {"--cache-idle-slots"},
         {"--no-cache-idle-slots"},
         "save idle slots to the prompt cache on new task, and clear them when using unified KV (default: enabled, requires cache-ram)",
