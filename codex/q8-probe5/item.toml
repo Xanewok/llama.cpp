@@ -1,0 +1,113 @@
+id = "q8-general-fa-ab5"
+title = "Grouped q8_0 decode: all block-valid small heads and GQA ratios, both GPUs, frozen ABBA"
+kind = "measure"
+budget_s = 1800
+est_s = 1000
+priority = 40
+ab = true
+retry = "fresh"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+    { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+    { class = "integrity", regex = "frozen bytes changed|ggml libs resolve outside frozen dir|FA source shape mismatch" },
+    { class = "timeout", regex = "budget expired" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/run.sh", "--run"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general"
+env = { CUDA_VISIBLE_DEVICES = "0,1", BUDGET_S = "1500", OUT = "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/runs/q8-probe5/full-a{attempt}" }
+ports = []
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/run.sh", "--preflight"]
+env = { CUDA_VISIBLE_DEVICES = "", OUT = "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/runs/q8-probe5/preflight" }
+timeout_s = 60
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/run.sh", "--canary"]
+env = { CUDA_VISIBLE_DEVICES = "0", BUDGET_S = "280", OUT = "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/runs/q8-probe5/canary-a{attempt}" }
+timeout_s = 300
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/runs/q8-probe5/full-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-base2/build/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/round-trace",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/frozen/q8-general-fix/build/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/DRIVER-SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/bin/q8-probe-driver",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/build_driver.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/cpu_driver_check.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/fixtures/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/fixtures/canary-test.sql",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/fixtures/real-fa-eval.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/fixtures/real-fa-perf.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/fixtures/real-kernel-errors.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/fixtures/real-memory.csv",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/fixtures/real-mmvq.sql",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/fixtures/real-probe3-perf.sql",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/fixtures/real-probe3-test.sql",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/prepare_driver.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/probe.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/codex/q8-probe5/test_probe.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/ggml/include/ggml.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/tests/test-backend-ops.cpp",
+]
