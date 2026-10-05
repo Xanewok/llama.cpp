@@ -6,7 +6,7 @@ import resource
 import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE = ROOT / "ggml/src/ggml-cuda/fattn.cu"
+SOURCE = Path(os.environ.get("Q8_GENERAL_FATTN_SOURCE", ROOT / "ggml/src/ggml-cuda/fattn.cu"))
 
 
 def function(source, name):
@@ -30,6 +30,8 @@ PREFIX = r'''
 #include <cstring>
 #include <cstdio>
 #include <initializer_list>
+#define __host__
+#define __device__
 #define FLASH_ATTN_AVAILABLE
 #define FATTN_KQ_STRIDE 256
 #define GGML_CUDA_CC_TURING 750
@@ -72,12 +74,15 @@ int main() {
                 k.data = v.data = (void *) uintptr_t(16);
                 out.src[0] = &q; out.src[1] = &k; out.src[2] = &v; out.src[3] = &m;
                 out.op = GGML_OP_FLASH_ATTN_EXT; out.type = GGML_TYPE_F32;
-                out.ne[0] = d; out.ne[1] = 2*gqa; out.ne[2] = out.ne[3] = 1;
-                out.nb[0] = 4; out.nb[1] = d*4; out.nb[2] = out.nb[3] = d*4*2*gqa;
+                out.ne[0] = v.ne[0]; out.ne[1] = 2*gqa; out.ne[2] = out.ne[3] = 1;
+                out.nb[0] = 4; out.nb[1] = v.ne[0]*4; out.nb[2] = out.nb[3] = v.ne[0]*4*2*gqa;
                 out.data = (void *) uintptr_t(128);
-                const bool enabled = gqa >= 2 || d == 96;
-                assert(ggml_cuda_get_best_fattn_kernel(0, &out) == (enabled ? BEST_FATTN_KERNEL_MMA_F16 : BEST_FATTN_KERNEL_VEC));
-                assert(ggml_cuda_flash_attn_ext_get_alloc_size(0, &out) == ggml_nbytes(&out));
+                const bool enabled = (d == 256 && gqa >= 3) || d >= 320;
+                const bool converted = !enabled && (d == 96 || d == 192);
+                assert(ggml_cuda_get_best_fattn_kernel(0, &out) == ((enabled || converted) ? BEST_FATTN_KERNEL_MMA_F16 : BEST_FATTN_KERNEL_VEC));
+                assert(converted ? ggml_cuda_flash_attn_ext_get_alloc_size(0, &out) > ggml_nbytes(&out) :
+                                   ggml_cuda_flash_attn_ext_get_alloc_size(0, &out) == ggml_nbytes(&out));
+                assert(ggml_cuda_flash_attn_ext_mma_q8_0_decode_supported(info.devices[0].cc, &out) == enabled);
                 if (enabled) {
                     out.src[3] = nullptr;
                     assert(!ggml_cuda_flash_attn_ext_mma_q8_0_decode_supported(info.devices[0].cc, &out));
@@ -122,21 +127,30 @@ int main() {
 def main():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     source = SOURCE.read_text()
-    parts = [function(source, name) for name in (
+    names = [
+        "ggml_cuda_flash_attn_ext_mma_q8_0_decode_worthwhile",
         "ggml_cuda_flash_attn_ext_mma_q8_0_decode_supported",
-        "ggml_cuda_fattn_kv_type_supported", "ggml_cuda_get_best_fattn_kernel")]
+        "ggml_cuda_fattn_kv_type_supported", "ggml_cuda_get_best_fattn_kernel"]
+    if "static bool ggml_cuda_flash_attn_ext_mma_q8_0_supported" in source:
+        names.insert(0, "ggml_cuda_flash_attn_ext_mma_q8_0_supported")
+    parts = [function(source, name) for name in names]
     common = (ROOT / "ggml/src/ggml-cuda/fattn-common.cuh").read_text()
     parts.append(function(common, "ggml_cuda_flash_attn_ext_get_f16_extra_data"))
     parts.append(function(source, "ggml_cuda_flash_attn_ext_get_alloc_size"))
-    good = PREFIX + "\n".join(parts) + MAIN
+    mma = (ROOT / "ggml/src/ggml-cuda/fattn-mma-f16.cuh").read_text()
+    config = mma[mma.index("struct fattn_mma_config"):mma.index("static constexpr __host__ __device__ fattn_mma_config ggml_cuda_fattn_mma_get_config_turing")]
+    config += "\nstatic fattn_mma_config ggml_cuda_fattn_mma_get_config(int k, int v, int n, int) { return ggml_cuda_fattn_mma_get_config_ampere(k, v, n); }\n"
+    good = PREFIX + config + "\n".join(parts) + MAIN
     mutant = good.replace("Q->ne[1] != 1", "Q->ne[1] >= 1")
     assert mutant != good
-    allocation_mutant = good.replace(
-        "need_f16_K = need_f16_V = !ggml_cuda_flash_attn_ext_mma_q8_0_decode_supported(ggml_cuda_info().devices[device].cc, dst);",
-        "need_f16_K = need_f16_V = true;")
+    start = good.index("need_f16_K = need_f16_V =")
+    end = good.index(";", start) + 1
+    allocation_mutant = good[:start] + "need_f16_K = need_f16_V = true;" + good[end:]
     assert allocation_mutant != good
-    env = dict(os.environ, CUDA_VISIBLE_DEVICES="", GGML_CUDA_FA_MMA_Q8_0="1")
-    for name, text in (("dispatch", good), ("dispatch-mutant", mutant), ("allocation-mutant", allocation_mutant)):
+    cost_mutant = good.replace("return grouped_cost < fallback_cost;", "return true;")
+    assert cost_mutant != good
+    env = dict(os.environ, CUDA_VISIBLE_DEVICES="", GGML_CUDA_FA_MMA_Q8_0="1", GIT_NO_LAZY_FETCH="1")
+    for name, text in (("dispatch", good), ("dispatch-mutant", mutant), ("allocation-mutant", allocation_mutant), ("cost-mutant", cost_mutant)):
         path = ROOT / f"build-tmp/{name}.cpp"
         path.write_text(text)
         binary = path.with_suffix("")
