@@ -1,0 +1,107 @@
+id = "mmvq-pertype-ab2"
+title = "Per-type Blackwell MMVQ: CPU correctness, tails, body/head perf vs general"
+kind = "measure"
+budget_s = 4200
+est_s = 2000
+priority = 62
+ab = true
+retry = "fresh"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+    { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+    { class = "integrity", regex = "frozen bytes changed|ggml libs resolve outside frozen dir" },
+    { class = "timeout", regex = "budget expired" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/mmvq-w2r4/codex/pertype-probe2/run.sh", "--run"]
+cwd = "/home/xanewok/repos/mmvq-w2r4"
+env = { CUDA_VISIBLE_DEVICES = "0,1", BUDGET_S = "3600", OUT = "/home/xanewok/repos/mmvq-w2r4/codex/runs/pertype2/full-a{attempt}" }
+ports = []
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/mmvq-w2r4/codex/pertype-probe2/run.sh", "--preflight"]
+env = { CUDA_VISIBLE_DEVICES = "", OUT = "/home/xanewok/repos/mmvq-w2r4/codex/runs/pertype2/preflight" }
+timeout_s = 60
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/mmvq-w2r4/codex/pertype-probe2/run.sh", "--canary"]
+env = { CUDA_VISIBLE_DEVICES = "0", BUDGET_S = "540", OUT = "/home/xanewok/repos/mmvq-w2r4/codex/runs/pertype2/canary-a{attempt}" }
+timeout_s = 600
+
+[outputs]
+paths = ["/home/xanewok/repos/mmvq-w2r4/codex/runs/pertype2/full-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/PRE-PATCHELF-SHA256SUMS",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/SOURCE",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/SHA256SUMS",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/SHA256SUMS",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/round-trace",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/test-backend-ops",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libggml-base.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libggml-base.so.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libggml-cpu.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libggml-cuda.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libggml.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libggml.so.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libllama-common.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libllama-common.so.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libllama.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libllama.so.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libmtmd.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libmtmd.so.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/PRE-PATCHELF-SHA256SUMS",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/SOURCE",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/SHA256SUMS",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/SHA256SUMS",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/round-trace",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/test-backend-ops",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libggml-base.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libggml-base.so.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libggml-cpu.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libggml-cuda.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libggml.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libggml.so.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libllama-common.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libllama-common.so.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libllama.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libllama.so.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libmtmd.so",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libmtmd.so.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-pertype/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/mmvq-w2r4/codex/gpu_ab.sh",
+  "/home/xanewok/repos/mmvq-w2r4/codex/pertype-probe2/probe.py",
+  "/home/xanewok/repos/mmvq-w2r4/codex/pertype-probe2/run.sh",
+  "/home/xanewok/repos/mmvq-w2r4/codex/w2r4-general-probe/probe.py",
+  "/home/xanewok/repos/mmvq-w2r4/ggml/include/ggml.h",
+  "/home/xanewok/repos/mmvq-w2r4/codex/w2r4-general-probe/fixtures/SOURCE",
+  "/home/xanewok/repos/mmvq-w2r4/codex/w2r4-general-probe/fixtures/real-kernel-errors.txt",
+  "/home/xanewok/repos/mmvq-w2r4/codex/w2r4-general-probe/fixtures/real-memory.csv",
+  "/home/xanewok/repos/mmvq-w2r4/codex/w2r4-general-probe/fixtures/real-mmvq.err",
+  "/home/xanewok/repos/mmvq-w2r4/codex/w2r4-general-probe/fixtures/real-mmvq.sql",
+]
