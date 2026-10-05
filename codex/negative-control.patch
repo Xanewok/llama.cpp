@@ -1,0 +1,12 @@
+diff --git a/ggml/src/ggml-cuda/fattn-common.cuh b/ggml/src/ggml-cuda/fattn-common.cuh
+--- a/ggml/src/ggml-cuda/fattn-common.cuh
++++ b/ggml/src/ggml-cuda/fattn-common.cuh
+@@ -47,7 +47,7 @@ static __device__ int flash_attn_decode_kv_end(const char * mask, int nk, int nq, int nbq) {
+         }
+     }
+     __syncthreads();
+-    return kv_end;
++    return max(0, kv_end - FATTN_KQ_STRIDE);
+ }
+ 
+ typedef void (* fattn_kernel_t)(
