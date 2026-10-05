@@ -1,0 +1,12 @@
+{
+  "model": "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf",
+  "reader": "/home/xanewok/repos/llama.cpp/gguf-py/gguf/gguf_reader.py",
+  "head": "output.weight",
+  "shape": [
+    5120,
+    248320
+  ],
+  "M_head_bytes": 1042944000,
+  "M_q6_K_bytes": 9261772800,
+  "D_head_fraction": 0.11260738332946367
+}

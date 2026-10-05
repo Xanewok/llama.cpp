@@ -5,6 +5,10 @@ import subprocess
 
 os.environ["CUDA_VISIBLE_DEVICES"] = ""
 root = Path(__file__).resolve().parents[1]
+if os.getpriority(os.PRIO_PROCESS, 0) < 19:
+    os.nice(19 - os.getpriority(os.PRIO_PROCESS, 0))
+(root / "build-tmp").mkdir(exist_ok=True)
+os.environ["TMPDIR"] = str(root / "build-tmp")
 out = root / "build-cpu/mmvq-pertype-tables"
 out.mkdir(parents=True, exist_ok=True)
 base = subprocess.check_output(["git", "show", "08c1737bc:ggml/src/ggml-cuda/mmvq-params.h"], cwd=root, text=True)
