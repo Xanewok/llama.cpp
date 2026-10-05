@@ -398,13 +398,26 @@ private:
     std::vector<ggml_backend_buffer_type_t> backend_buft;
     std::vector<size_t>                     backend_buf_exp_size; // expected buffer sizes
 
-    // Separate arenas give batches with and without outputs distinct CUDA graph cache keys.
-    std::array<llm_graph_result_ptr, 2> gf_res_prev;
+    // Retained graphs. Slot 0 holds batches without outputs on `sched`; the other slots hold batches with
+    // outputs, keyed by (n_tokens, n_outputs), so shapes that alternate within a round (e.g. a multi-row first
+    // draft step followed by single-row steps) keep their graphs. Each slot has its own arena, so its own CUDA
+    // graph cache key, and its own scheduler sharing compute storage with `sched`.
+    struct graph_slot {
+        llm_graph_result_ptr   res;
+        ggml_backend_sched_ptr sched; // null: `sched`
+        uint32_t n_tokens  = 0;
+        uint32_t n_outputs = 0;
+        uint64_t used      = 0;
+    };
+    std::vector<graph_slot> gf_slots;
+    graph_slot & get_graph_slot(uint32_t n_tokens);
+    uint64_t gf_slots_clock = 0;
+    uint32_t gf_slots_max   = 12;
     llm_graph_result_ptr gf_res_reserve;
 
-    ggml_backend_sched_ptr sched_output;
     ggml_backend_sched_t sched_active = nullptr;
     llm_graph_result * gf_res_prev_active = nullptr;
+    ggml_backend_sched_t sched_prev_active = nullptr;
 
     // host buffer for the model output (logits and embeddings)
     ggml_backend_buffer_ptr buf_output;
