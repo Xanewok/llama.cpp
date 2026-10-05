@@ -13,5 +13,5 @@ old = json.dumps(["bash", str(mkitem.H / "run.sh"), "depth", str(x["file"])])[:-
 new = json.dumps(["bash", str(HERE / "mtp_fuse_run.sh")])[:-1] + ", "
 assert text.count(old) == 3, text.count(old)
 text = text.replace(old, new)
-(HERE / "mtp-fuse-depth-j5q.toml").write_text(text)
-print(HERE / "mtp-fuse-depth-j5q.toml")
+(HERE / (x["id"] + ".toml")).write_text(text)
+print(HERE / (x["id"] + ".toml"))

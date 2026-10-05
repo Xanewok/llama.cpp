@@ -17,6 +17,8 @@ from harness.__main__ import main
 
 EXPERIMENT = Path(__file__).with_name("mtp-fuse-depth-j5q.experiment.toml")
 FIXTURE = Path("/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack4-depth-j5q/canary-a1/0-up")
+# Real fused boot (GPU canary T56): each request opens with a prompt-tail round V(4),C,D1(1 row)..D5, then fused rounds.
+FUSED_FIXTURE = Path("/home/xanewok/repos/qwen38-eval/results/2026-10-05-mtp-fuse-depth-j5q/canary-a1/1-patch")
 EVALUATE, FINISH = depth.evaluate_boot, depth.finish
 FUSED_ARMS = ("patch",)
 AR_PER_ROUND = {True: 138, False: 140}
@@ -37,16 +39,19 @@ def in_window(row, window):
 
 
 def forward_proof(rows, fused, minimum, window):
-    """Every complete k=5 round in the window has the arm's phase shape and AllReduce count; a fused arm never runs C."""
-    shape, complete = round_shape(fused), 0
+    """Every complete k=5 round in the window has the arm's phase shape and AllReduce count; once drafting has begun, a
+    fused arm never runs C before D1."""
+    shape, complete, drafting = round_shape(fused), 0, False
     for row in rows:
         if not in_window(row, window):
             continue
         phases = row["phases"]
         names = [p.get("phase") for p in phases]
-        # A trailing C after the last verify is the release flush, not a catch-up.
-        if fused and "C" in names and "D1" in names:
+        # Exempt: prompt ubatches (no draft yet; the last one's C precedes the request's first D1, which has nothing
+        # deferred) and the release flush (a C with no D1 after the last verify).
+        if fused and drafting and "C" in names and "D1" in names:
             raise lib.Fail(f"forward-count proof failed: catch-up phase C in a fused round {names}", "integrity")
+        drafting = drafting or "D1" in names
         if names != shape or phases[0].get("n_tokens") != 6 or any(p.get("result", -1) for p in phases):
             continue
         count = sum(c["count"] for p in phases for c in p.get("counters", []) if c["kind"] == "ar_call")
@@ -82,7 +87,8 @@ def round_costs(record, k):
     for a, b in zip(keys, keys[1:]):
         if a >= 3 and b == a + 1 and points[b][0] > points[a][0]:
             acc, emitted = points[b][1] - points[a][1], points[b][2] - points[a][2]
-            if not 0 <= acc <= k or emitted != acc + 1:
+            # The last boundary may stop short of its round's final token (the predicted_n cut above).
+            if not 0 <= acc <= k or (emitted != acc + 1 if b != keys[-1] else not 1 <= emitted <= acc + 1):
                 raise lib.Fail(f"per-round acceptance unreadable: {acc} accepted, {emitted} emitted", "deterministic")
             out.append((points[b][0] - points[a][0], acc))
     return out
@@ -274,7 +280,8 @@ def fixtures():
         flushed[inside[-1]]["phases"] = flushed[inside[-1]]["phases"][:1] + [dict(rows[inside[-1]]["phases"][1], counters=[])]
         forward_proof(flushed, True, 40, window)
         catchup = copy.deepcopy(fused)
-        catchup[inside[0]]["phases"].insert(1, copy.deepcopy(rows[inside[0]]["phases"][1]))
+        mid = inside[len(inside) // 2]
+        catchup[mid]["phases"].insert(1, copy.deepcopy(rows[mid]["phases"][1]))
         expect_fail("one catch-up in a fused trace", forward_proof, catchup, True, 40, window)
         expect_fail("window without rounds", forward_proof, rows, False, 40, (0, 1))
 
@@ -297,7 +304,16 @@ def fixtures():
         for dev in (0, 1):
             k = f"cuda_capture@{dev}"
             assert close(more["per_round_D"][k], stats["per_round_D"].get(k, 0) + 1)
-        out[n] = {"eager_proof": proof, "rounds_by_n_acc_M": hist(rounds), "cuda": stats}
+        frows = read_rows(FUSED_FIXTURE / "round-trace.jsonl")
+        fwindow = lib.read_json(FUSED_FIXTURE / f"depth-{n}.json")["mono_ns"]
+        fproof = forward_proof(frows, True, 40, fwindow)
+        expect_fail("real fused boot as eager", forward_proof, frows, False, 40, fwindow)
+        finside = [i for i, r in enumerate(frows) if in_window(r, fwindow) and [p.get("phase") for p in r["phases"]] == round_shape(True)]
+        fbad = copy.deepcopy(frows)
+        fbad[finside[len(finside) // 2]]["phases"].insert(1, {"phase": "C", "n_tokens": 6, "result": 0, "counters": []})
+        expect_fail("catch-up inside a real fused request", forward_proof, fbad, True, 40, fwindow)
+        frounds = round_costs(lib.read_json(FUSED_FIXTURE / f"depth-{n}.json"), 5)
+        out[n] = {"eager_proof": proof, "fused_proof": fproof, "fused_rounds_by_n_acc_M": hist(frounds), "rounds_by_n_acc_M": hist(rounds), "cuda": stats}
 
     # Same cost model in both arms with the patch accepting less: the plain mean shows a gain, the matched delta must be 0;
     # a real -0.9 ms shift must come back as -0.9.
