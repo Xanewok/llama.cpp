@@ -1,4 +1,4 @@
-id = "fa-kvmax-decode-kernels"
+id = "fa-kvmax-decode-v5-kernels"
 title = "Padded FA stack5 vs decode bound, Q 1/4/6/8, GQA 6, D 256, f16/q8_0, 8k/32k/90k, pad 256/4096, ABBA"
 kind = "measure"
 ab = true
@@ -14,25 +14,25 @@ signatures = [
 ]
 
 [run]
-cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/fa-probe.sh", "run", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/gpu-results/probe/full-a{attempt}", "--budget-s", "1100"]
-cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode"
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/fa-probe.sh", "run", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/gpu-results/probe/full-a{attempt}", "--budget-s", "1100"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5"
 env = { CUDA_VISIBLE_DEVICES = "0,1", GIT_NO_LAZY_FETCH = "1", PYTHONPATH = "/home/xanewok/repos/qwen38-eval", PYTHONDONTWRITEBYTECODE = "1", OMP_NUM_THREADS = "8", OMP_THREAD_LIMIT = "8", OPENBLAS_NUM_THREADS = "8", MKL_NUM_THREADS = "8", GPUQ_ACTIVE = "1" }
 ports = []
 
 [preflight]
-cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/fa-probe.sh", "preflight", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/gpu-results/probe/preflight", "--budget-s", "60"]
-cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode"
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/fa-probe.sh", "preflight", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/gpu-results/probe/preflight", "--budget-s", "60"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5"
 env = { CUDA_VISIBLE_DEVICES = "", GIT_NO_LAZY_FETCH = "1", PYTHONPATH = "/home/xanewok/repos/qwen38-eval", PYTHONDONTWRITEBYTECODE = "1", OMP_NUM_THREADS = "8", OMP_THREAD_LIMIT = "8", OPENBLAS_NUM_THREADS = "8", MKL_NUM_THREADS = "8" }
 timeout_s = 60
 
 [canary]
-cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/fa-probe.sh", "canary", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/gpu-results/probe/canary-a{attempt}", "--budget-s", "180"]
-cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode"
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/fa-probe.sh", "canary", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/gpu-results/probe/canary-a{attempt}", "--budget-s", "180"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5"
 env = { CUDA_VISIBLE_DEVICES = "0", GIT_NO_LAZY_FETCH = "1", PYTHONPATH = "/home/xanewok/repos/qwen38-eval", PYTHONDONTWRITEBYTECODE = "1", OMP_NUM_THREADS = "8", OMP_THREAD_LIMIT = "8", OPENBLAS_NUM_THREADS = "8", MKL_NUM_THREADS = "8", GPUQ_ACTIVE = "1" }
 timeout_s = 240
 
 [outputs]
-paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/gpu-results/probe/full-a{attempt}"]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/gpu-results/probe/full-a{attempt}"]
 
 [fix]
 editable = []
@@ -40,7 +40,7 @@ protected = ["frozen", "budget", "identity", "engaged"]
 
 [pins]
 files = [
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/fa-probe.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/fa-probe.sh",
   "/home/xanewok/repos/qwen38-eval/harness/__init__.py",
   "/home/xanewok/repos/qwen38-eval/harness/__main__.py",
   "/home/xanewok/repos/qwen38-eval/harness/agents.py",
@@ -98,35 +98,37 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/llama-server",
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/round-trace",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/cpu-results/identity-check.log",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/fa_probe.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/RECIPE.txt",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/SOURCE",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/SHA256SUMS",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libggml-base.so",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libggml-base.so.0",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libggml-base.so.0.25.3",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libggml-cpu.so",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libggml-cpu.so.0",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libggml-cpu.so.0.25.3",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libggml-cuda.so",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libggml-cuda.so.0",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libggml-cuda.so.0.25.3",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libggml.so",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libggml.so.0",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libggml.so.0.25.3",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libllama-common.so",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libllama-common.so.0",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libllama-common.so.0.5.0",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libllama-server-impl.so",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libllama.so",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libllama.so.0",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libllama.so.0.5.0",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libmtmd.so",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libmtmd.so.0",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/libmtmd.so.0.5.0",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/llama-server",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/round-trace",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/test-backend-ops",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/probe-fixtures/SOURCE",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/probe-fixtures/real-fa-perf.sql",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/fa_probe.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/round-trace",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/probe-fixtures/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/probe-fixtures/real-fa-perf.sql",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/probe-fixtures/v4-0-patch-test.sql",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/probe-fixtures/v4-0-patch-test.err",
 ]

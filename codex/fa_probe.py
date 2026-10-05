@@ -13,7 +13,7 @@ import time
 
 ROOT = Path(__file__).resolve().parent.parent
 BASE = Path('/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5')
-PATCH = ROOT / 'codex/frozen/fa-kvmax-decode-v4'
+PATCH = ROOT / 'codex/frozen/fa-kvmax-decode-v5'
 FIXTURES = Path('/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures')
 REAL_SQL = ROOT / 'codex/probe-fixtures/real-fa-perf.sql'
 FIELDS = ('stamp', 'commit', 'backend', 'op', 'params', 'mode', 'supported', 'passed', 'error', 'us', 'flops', 'bw', 'mem', 'runs', 'device', 'reg')
@@ -86,6 +86,9 @@ def frozen(root):
 
 
 def selftest():
+    canary = (ROOT / "codex/probe-fixtures/v4-0-patch-test.sql").read_text()
+    recorded = metrics(canary, "test", "d89b1b30c")
+    check_rows(recorded, {(4096, 1, "f16", 4095)})
     raw = REAL_SQL.read_text()
     rows = metrics(raw, 'perf', '590912a1d')
     assert len(rows) >= 9 and any(float(r['us']) > 0 for r in rows)
@@ -126,7 +129,7 @@ def selftest():
     print('M: recorded GPU SQL, SSE, memory, journal parsers and negative controls pass')
 
 
-def command(cmd, dest, deadline, env):
+def command(cmd, dest, deadline, env, check=True):
     left = deadline - time.monotonic()
     if left <= 0:
         raise Gate(7, 'budget expired')
@@ -145,9 +148,20 @@ def command(cmd, dest, deadline, env):
             if isinstance(exc, subprocess.TimeoutExpired):
                 raise Gate(7, 'budget expired') from exc
             raise
-    if rc:
+    dest.with_suffix(".returncode.json").write_text(json.dumps({"rc": rc}) + "\n")
+    if check and rc:
         raise Gate(8, f'FA process failed rc={rc}; raw artifacts saved')
     return dest.with_suffix('.sql').read_text()
+
+
+def check_journal(dest, began):
+    result = subprocess.run(['journalctl', '-k', '-b', '--since', f'@{int(began)}', '--no-pager'], capture_output=True, text=True)
+    dest.write_text(result.stdout)
+    if result.returncode:
+        dest.with_suffix('.err').write_text(result.stderr)
+        raise Gate(6, 'kernel journal unavailable')
+    if HAZARD.search(result.stdout):
+        raise Gate(3, 'kernel hazard since item start')
 
 
 def run(args):
@@ -179,7 +193,10 @@ def run(args):
         selector = r'kv=8448,nb=1,.*tail=255$' if args.mode == 'canary' else r'tail='
         for mode in ('test', 'perf'):
             chosen = r'kv=4096,nb=1,.*tail=4095$' if mode == 'test' and args.mode == 'canary' else (r'tail=' if mode == 'test' else selector)
-            raw = command([str(exe), mode, '-b', 'CUDA0', '-o', 'FLASH_ATTN_EXT', '-p', chosen, '--output', 'sql'], args.out / f'{boot}-{arm}-{mode}', deadline, env)
+            try:
+                raw = command([str(exe), mode, '-b', 'CUDA0', '-o', 'FLASH_ATTN_EXT', '-p', chosen, '--output', 'sql'], args.out / f'{boot}-{arm}-{mode}', deadline, env)
+            finally:
+                check_journal(args.out / f'{boot}-{arm}-{mode}-kernel-journal.log', began)
             rows = metrics(raw, mode, commits[arm])
             expected_test = {(4096, 1, t, 4095) for t in ('f16', 'q8_0')} if args.mode == 'canary' else {
                 (4096 if tail == 4095 else 8192, q, t, tail)
@@ -188,10 +205,7 @@ def run(args):
             if arm == 'patch' and 'decode KV bound:' not in (args.out / f'{boot}-{arm}-{mode}.err').read_text():
                 raise Gate(6, 'decode bound did not engage')
             results.extend(dict(row, arm=arm, boot=boot) for row in rows)
-        journal = subprocess.run(['journalctl', '-k', '-b', '--since', f'@{int(began)}', '--no-pager'], capture_output=True, text=True, check=True).stdout
-        (args.out / f'{boot}-kernel-journal.log').write_text(journal)
-        if HAZARD.search(journal):
-            raise Gate(3, 'kernel hazard since item start')
+
     summary = {'rows_M': results, 'commits': commits}
     if args.mode == 'run':
         summary['perf_M'] = [dict(kv=k[0], q=k[1], type=k[2], tail=k[3], up_us=statistics.mean(float(r['us']) for r in results if r['arm']=='up' and r['mode']=='perf' and key(r)==k), patch_us=statistics.mean(float(r['us']) for r in results if r['arm']=='patch' and r['mode']=='perf' and key(r)==k)) for k in sorted(expected)]

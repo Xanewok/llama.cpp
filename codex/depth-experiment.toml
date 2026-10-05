@@ -1,10 +1,10 @@
-id = "fa-kvmax-decode-depth-j5q"
+id = "fa-kvmax-decode-v5-depth-j5q"
 kind = "depth"
 title = "stack5 vs decode KV bound, both kv-pad 4096, Swift 1.5 J5q TP2 k=5, ABBA, within-arm identity"
 plan = ["up", "patch", "patch", "up"]
 protected = ["identity", "steady_minimum", "SHA256SUMS", "frozen", "DEPTHS", "ARM_ENV", "engaged", "min_p"]
 devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
-out = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/gpu-results/depth"
+out = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/gpu-results/depth"
 cpu_evidence = { path = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/cpu-results/identity-check.log", command = "cpugate python3 codex/cpu_identity.py: CPU and Meta(CPU,CPU), pad 256 vs 4096, greedy MTP k=3, ctx 4096" }
 
 [model]
@@ -22,7 +22,7 @@ label = "stack5 pad 4096"
 commit = "52fc3fd2c404b7fd12c0f4005d56c44449e7e9c5"
 root = "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5"
 bin = "build/bin"
-repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode"
+repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5"
 exe = "build/bin/round-trace"
 env = { GGML_SCHED_INPUT_STAGING = "1", LLAMA_ARG_LOG_VERBOSITY = "4", LD_LIBRARY_PATH = "{root}/build/bin" }
 flags = ["--kv-pad", "4096", "--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16"]
@@ -30,10 +30,10 @@ canary_log = ["n_kv_pad += 4096"]
 
 [arms.patch]
 label = "decode KV bound pad 4096"
-commit = "d89b1b30caef05f155193e91f34bb0b3b3524458"
-root = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4"
+commit = "3785578235d2dfdf7b7bd7cafcd9f789508c4560"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5"
 bin = "build/bin"
-repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode"
+repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5"
 exe = "build/bin/round-trace"
 env = { GGML_SCHED_INPUT_STAGING = "1", LLAMA_ARG_LOG_VERBOSITY = "4", LD_LIBRARY_PATH = "{root}/build/bin" }
 flags = ["--kv-pad", "4096", "--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16"]

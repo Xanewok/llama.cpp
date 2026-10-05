@@ -1,0 +1,140 @@
+id = "fa-kvmax-decode-v5-memcheck"
+title = "Memcheck fixed decode FA, single GPU, f16/q8_0, extreme tail and verify rows"
+kind = "measure"
+ab = false
+retry = "fresh"
+budget_s = 1000
+est_s = 400
+startup_grace_s = 60
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "integrity", regex = "frozen bytes changed|library stamp differs|libraries resolve outside|decode bound did not engage" },
+  { class = "timeout", regex = "budget expired" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/fa-memcheck.sh", "run", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/gpu-results/memcheck/full-a{attempt}", "--budget-s", "600"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5"
+env = { CUDA_VISIBLE_DEVICES = "0", GIT_NO_LAZY_FETCH = "1", PYTHONPATH = "/home/xanewok/repos/qwen38-eval", PYTHONDONTWRITEBYTECODE = "1", OMP_NUM_THREADS = "8", OMP_THREAD_LIMIT = "8", OPENBLAS_NUM_THREADS = "8", MKL_NUM_THREADS = "8", GPUQ_ACTIVE = "1" }
+ports = []
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/fa-memcheck.sh", "preflight", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/gpu-results/memcheck/preflight", "--budget-s", "60"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5"
+env = { CUDA_VISIBLE_DEVICES = "", GIT_NO_LAZY_FETCH = "1", PYTHONPATH = "/home/xanewok/repos/qwen38-eval", PYTHONDONTWRITEBYTECODE = "1", OMP_NUM_THREADS = "8", OMP_THREAD_LIMIT = "8", OPENBLAS_NUM_THREADS = "8", MKL_NUM_THREADS = "8" }
+timeout_s = 60
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/fa-memcheck.sh", "canary", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/gpu-results/memcheck/canary-a{attempt}", "--budget-s", "240"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5"
+env = { CUDA_VISIBLE_DEVICES = "0", GIT_NO_LAZY_FETCH = "1", PYTHONPATH = "/home/xanewok/repos/qwen38-eval", PYTHONDONTWRITEBYTECODE = "1", OMP_NUM_THREADS = "8", OMP_THREAD_LIMIT = "8", OPENBLAS_NUM_THREADS = "8", MKL_NUM_THREADS = "8", GPUQ_ACTIVE = "1" }
+timeout_s = 240
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/gpu-results/memcheck/full-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "identity", "engaged"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/fa-memcheck.sh",
+  "/home/xanewok/repos/qwen38-eval/harness/__init__.py",
+  "/home/xanewok/repos/qwen38-eval/harness/__main__.py",
+  "/home/xanewok/repos/qwen38-eval/harness/agents.py",
+  "/home/xanewok/repos/qwen38-eval/harness/campaign.py",
+  "/home/xanewok/repos/qwen38-eval/harness/depth.py",
+  "/home/xanewok/repos/qwen38-eval/harness/lib.py",
+  "/home/xanewok/repos/qwen38-eval/harness/mkitem.py",
+  "/home/xanewok/repos/qwen38-eval/harness/probe.py",
+  "/home/xanewok/repos/qwen38-eval/harness/stub_server.py",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-server/serve-bench-tail.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-32768.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-32768.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-94000.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-94000.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/errors.txt",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/fit.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/serve.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/single-94000.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/single-94000.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/steps.txt",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/summary.md",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/cold-tool-1.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1-input.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/server.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/warmup-0.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-apps.csv",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-query.csv",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/xid-lines.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5/build/bin/round-trace",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/cpu-results/identity-check.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/fa_probe.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/round-trace",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/frozen/fa-kvmax-decode-v5/build/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/probe-fixtures/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/probe-fixtures/real-fa-perf.sql",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/probe-fixtures/v4-0-patch-test.sql",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/probe-fixtures/v4-0-patch-test.err",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/fa_probe.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/fa_memcheck.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/sanitizer-fixtures/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/sanitizer-fixtures/memcheck-clean.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode-v5/codex/sanitizer-fixtures/memcheck-fault-stack-on.log",
+  "/usr/local/cuda-13.2/bin/compute-sanitizer",
+]

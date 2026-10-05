@@ -1,2 +1,4 @@
 /home/xanewok/repos/qwen38-eval/results/2026-10-05-fa-bw-probe/a1/raw/fa-g0-r1.sql
 Recorded GPU artifact; copied without modification.
+
+V4 canary SQL/err from /home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/gpu-results/probe/canary-a1; f16 passes, q8_0 faults.

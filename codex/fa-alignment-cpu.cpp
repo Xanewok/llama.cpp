@@ -19,7 +19,7 @@ int main(int argc, char ** argv) {
     size_t tuples = 0, loads = 0, tails = 0;
     for (int warp : {32, 64}) {
         const int nbytes = FATTN_KQ_STRIDE / (2*warp)*4;
-        for (int offset = 0; offset < 32; offset += 2) {
+        for (int offset = 0; offset < 32; ++offset) {
             for (int extra = 0; extra < 32; extra += 2) {
                 for (int nk : {1, 31, 32, 63, 64, 255, 256, 257, 4095, 4096, 4097, 8192, 90113, 94208}) {
                     const size_t nbq = 2*nk + extra;
@@ -58,11 +58,14 @@ int main(int argc, char ** argv) {
     check(flash_attn_decode_mask_offset(7, size_t(1) << 30, 0, 0, 32) == (size_t(7) << 30), "row offset overflow");
 
     // VEC reuses KQ for q8_1 data and float2 scales before the mask scan.
-    for (int dim : {64, 128, 256}) {
+    for (int dim : {256, 128, 64}) {
         for (int q = 0; q < 8; ++q) {
             for (int lane = 0; lane < 32; lane += 8) {
                 const uintptr_t address = shared_base + q*dim*4 + dim + (lane/8)*8;
-                check(address % 8 == 0, "misaligned VEC float2 scale store (v4 control)");
+                if (address % 8 != 0) {
+                    fprintf(stderr, "misaligned VEC float2 scale store: D=%d q=%d lane=%d address=0x%zx (v4 control)\n", dim, q, lane, size_t(address));
+                    return 1;
+                }
             }
         }
     }

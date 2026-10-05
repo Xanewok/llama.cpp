@@ -1,0 +1,8 @@
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 15827 MiB):
+  Device 0: NVIDIA GeForce RTX 5060 Ti, compute capability 12.0, VMM: yes, VRAM: 15827 MiB
+launch_fattn: decode KV bound: device=0 nq=1 nk=4096
+CUDA error: misaligned address
+  current device: 0, in function ggml_cuda_kernel_can_use_pdl at /home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/ggml/src/ggml-cuda/template-instances/../common.cuh:1694
+  cudaFuncGetAttributes(&attr, kernel)
+/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/ggml/src/ggml-cuda/ggml-cuda.cu:110: CUDA error
+warning: 30	../sysdeps/unix/sysv/linux/wait4.c: No such file or directory

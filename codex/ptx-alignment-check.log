@@ -1,0 +1,7 @@
+ptxas warning :  .debug_abbrev section not found
+ptxas warning :  .debug_info section not found
+ptxas warning :  .debug_abbrev section not found
+ptxas warning :  .debug_info section not found
+M: v4 compiler shared KQ offsets=['0x504', '0x504']
+M: v5 compiler shared KQ offsets=['0x410', '0x410']
+M: VEC/TILE/MMA shared alignment declarations pass; v4 float2 store control rejected
