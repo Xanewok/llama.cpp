@@ -4589,6 +4589,22 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
             ggml_round_trace_scope trace_capture(use_cuda_graph ? "cuda_capture" : "cuda_submit", cuda_ctx->device);
             [[maybe_unused]] int prev_i = 0;
             const bool debug_ssm_conv = ggml_cuda_debug_ssm_conv();
+            const char * debug_gdn = std::getenv("GGML_CUDA_DEBUG_GDN_STATE");
+            if (debug_gdn && std::atoi(debug_gdn)) {
+                int indexed_count = 0;
+                int64_t tokens = -1;
+                for (int i = 0; i < cgraph->n_nodes; ++i) {
+                    const ggml_tensor * node = cgraph->nodes[i];
+                    if (node->op == GGML_OP_GATED_DELTA_NET_INDEXED) {
+                        ++indexed_count;
+                        tokens = node->src[2]->ne[2];
+                    }
+                }
+                if (indexed_count > 0) {
+                    GGML_LOG_INFO("gdn_state_indexed: device=%d graph=%" PRIu64 " tokens=%" PRId64 " gathers_skipped=%d\n",
+                                  cuda_ctx->device, cgraph->uid, tokens, indexed_count);
+                }
+            }
             int conv_count = 0;
             int conv_fused = 0;
             int64_t conv_tokens = -1;
@@ -4816,6 +4832,14 @@ static bool ggml_cuda_graph_set_enabled(ggml_backend_cuda_context * cuda_ctx, co
 
 static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, ggml_cgraph * cgraph) {
     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
+
+    if (ggml_round_trace_enabled()) {
+        for (int i = 0; i < cgraph->n_nodes; ++i) {
+            if (cgraph->nodes[i]->op == GGML_OP_GATED_DELTA_NET_INDEXED) {
+                ggml_round_trace_count("gdn_gather_skipped", cuda_ctx->device);
+            }
+        }
+    }
 
     ggml_cuda_set_device(cuda_ctx->device);
 
