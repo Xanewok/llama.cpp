@@ -247,7 +247,8 @@ static __global__ void flash_attn_ext_vec(
 #endif // V_DOT2_F32_F16_AVAILABLE
     }
 
-    const int k_VKQ_max = KV_max ? KV_max[sequence*gridDim.x + blockIdx.x] : ne11;
+    const int k_VKQ_max = KV_max ? KV_max[sequence*gridDim.x + blockIdx.x] :
+        mask && ne01.z <= 8 && ne03 == 1 ? flash_attn_decode_kv_end(mask, ne11, ne01.z, nb31) : ne11;
     K     += blockIdx.y*nthreads * nb11;
     V     += blockIdx.y*nthreads * nb21;
     maskh += blockIdx.y*nthreads;

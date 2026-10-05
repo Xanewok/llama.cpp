@@ -2027,7 +2027,10 @@ static __global__ void flash_attn_ext_f16(
 
     const int stride_V = V_is_K_view ? stride_K : nb21 / sizeof(half2);
 
-    const int iter_k     = (ne11      + (nbatch_fa - 1)) / nbatch_fa;
+    const int kv_end = !use_sparse && !KV_max && mask && ne01.z <= 8 && ne03 == 1
+        ? flash_attn_decode_kv_end(mask, ne11, ne01.z, nb31) : ne11;
+    // Keep an empty work tile so fully masked rows and sinks use the normal output path.
+    const int iter_k     = max(1, (kv_end + (nbatch_fa - 1)) / nbatch_fa);
     const int iter_j     = (ne01.z    + (ncols1    - 1)) / ncols1;
     const int iter_z_gqa = (gqa_ratio + (ncols2    - 1)) / ncols2;
 

@@ -8126,6 +8126,30 @@ struct test_flash_attn_ext : public test_case {
     }
 };
 
+struct test_flash_attn_ext_padded : public test_flash_attn_ext {
+    const int64_t tail;
+
+    test_flash_attn_ext_padded(int64_t kv, int64_t nb, ggml_type type, int64_t tail)
+        : test_flash_attn_ext(256, 256, 4, {6, 1}, kv, nb, true, false, 0, 0, GGML_PREC_F32,
+                              type, type, {0, 2, 1, 3}, false), tail(tail) {}
+
+    std::string vars() override {
+        return test_flash_attn_ext::vars() + ",tail=" + std::to_string(tail);
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        test_flash_attn_ext::initialize_tensors(ctx);
+        ggml_tensor * m = ggml_get_tensor(ctx, "m");
+        std::vector<ggml_fp16_t> data(ggml_nelements(m), ggml_fp32_to_fp16(-INFINITY));
+        for (int64_t q = 0; q < nb; ++q) {
+            for (int64_t k = 0; k < kv - tail; ++k) {
+                data[q*kv + k] = ggml_fp32_to_fp16(0.0f);
+            }
+        }
+        ggml_backend_tensor_set(m, data.data(), 0, ggml_nbytes(m));
+    }
+};
+
 // large Q values, so the online softmax has to rescale the partial results
 struct test_flash_attn_ext_large_logits : public test_flash_attn_ext {
     static constexpr int q_range = 20;
@@ -11255,6 +11279,14 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
                                                         GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
     }
 
+    for (int nb : { 1, 4, 6, 8 }) {
+        for (ggml_type type : { GGML_TYPE_F16, GGML_TYPE_Q8_0 }) {
+            for (int tail : { 0, 1, 255, 256, 257, 4095 }) {
+                test_cases.emplace_back(new test_flash_attn_ext_padded(8192, nb, type, tail));
+            }
+        }
+    }
+
     // speculative decoding verify batches with q8_0 K/V, head size 256, 4 KV heads, GQA 6: CUDA dequantizes q8_0 K/V
     // tiles in the MMA kernel for 3-8 queries (1-2 and a f16 V take other paths), K/V as KV cache views
     for (int kv : { 512, 1024, 4096 }) {
@@ -11779,6 +11811,17 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 65536, 512, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 131072, 1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 131072, 512, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
+
+    for (int live : { 8193, 32769, 90113 }) {
+        for (int pad : { 256, 4096 }) {
+            const int kv = GGML_PAD(live, pad);
+            for (int nb : { 1, 4, 6, 8 }) {
+                for (ggml_type type : { GGML_TYPE_F16, GGML_TYPE_Q8_0 }) {
+                    test_cases.emplace_back(new test_flash_attn_ext_padded(kv, nb, type, kv - live));
+                }
+            }
+        }
+    }
 
     // speculative decoding verify batches on one GPU of a two-way tensor split (2 KV heads, GQA 6, head size 256),
     // K/V laid out like the KV cache

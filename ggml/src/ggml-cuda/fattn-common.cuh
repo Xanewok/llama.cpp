@@ -18,6 +18,36 @@
 // The macro on the following line shifts it by a factor of 2**3=8, as was needed to fix https://github.com/ggml-org/llama.cpp/issues/18606 .
 #define FATTN_KQ_MAX_OFFSET (3.0f*0.6931f)
 
+// Read every real query row; padding rows need not contain a valid mask.
+static __device__ int flash_attn_decode_kv_end(const char * mask, int nk, int nq, int nbq) {
+    __shared__ int kv_end;
+    constexpr int warp_size = ggml_cuda_get_physical_warp_size();
+    if (threadIdx.y == 0 && threadIdx.x < warp_size) {
+        const int lane = threadIdx.x;
+        int end = nk;
+        while (end > 0) {
+            const int start = max(0, end - FATTN_KQ_STRIDE);
+            int all_masked = 1;
+            for (int q = 0; q < nq; ++q) {
+                const half * row = (const half *) (mask + q*nbq);
+                for (int k = start + lane; k < end; k += warp_size) {
+                    all_masked &= __half2float(row[k]) == -INFINITY;
+                }
+            }
+            all_masked = warp_reduce_all(all_masked);
+            if (!all_masked) {
+                break;
+            }
+            end = start;
+        }
+        if (lane == 0) {
+            kv_end = end;
+        }
+    }
+    __syncthreads();
+    return kv_end;
+}
+
 typedef void (* fattn_kernel_t)(
         const char * __restrict__ Q,
         const char * __restrict__ K,
@@ -761,6 +791,7 @@ static __global__ void flash_attn_stream_k_fixup_uniform(
         const int ne12, const int nblocks_stream_k,
         const int gqa_ratio,
         const int blocks_per_tile,
+        const char * decode_mask, const int nk, const int nbq, const int nbatch_fa,
         const uint3 fd_iter_j_z_ne12,
         const uint3 fd_iter_j_z,
         const uint3 fd_iter_j) {
@@ -768,6 +799,13 @@ static __global__ void flash_attn_stream_k_fixup_uniform(
     ggml_cuda_pdl_lc();
     float        * GGML_CUDA_RESTRICT dst       = dst_ptr;
     const float2 * GGML_CUDA_RESTRICT dst_fixup = dst_fixup_ptr;
+
+    ggml_cuda_pdl_sync();
+    const int iter_k = decode_mask ? max(1, (flash_attn_decode_kv_end(decode_mask, nk, ne01, nbq) + nbatch_fa - 1) / nbatch_fa) : 0;
+
+    if (decode_mask && iter_k == 1) {
+        return;
+    }
 
     const int tile_idx = blockIdx.x; // One block per output tile.
     const int j        = blockIdx.y;
@@ -812,6 +850,9 @@ static __global__ void flash_attn_stream_k_fixup_uniform(
 
     // Combine with all previous blocks in this tile.
     for (int bidx = b_last - 1; bidx >= b_first; --bidx) {
+        if (decode_mask && (bidx - b_first)*iter_k / blocks_per_tile == (bidx - b_first + 1)*iter_k / blocks_per_tile) {
+            continue;
+        }
         const float dst_add = dst_fixup_data[bidx*ncols*D + jc*D + tid];
 
         const float2 tmp = dst_fixup[(nblocks_stream_k + bidx)*ncols + jc];
@@ -843,11 +884,25 @@ static __global__ void flash_attn_stream_k_fixup_general(
         const float2 * dst_fixup_ptr,
         const int ne01, const int ne02,
         const int gqa_ratio,
-        const int total_work,
-        const uint3 fd_iter_k_j_z_ne12,
-        const uint3 fd_iter_k_j_z,
-        const uint3 fd_iter_k_j,
-        const uint3 fd_iter_k) {
+        int total_work,
+        const char * decode_mask, const int nk, const int nbq, const int nbatch_fa,
+        uint3 fd_iter_k_j_z_ne12,
+        uint3 fd_iter_k_j_z,
+        uint3 fd_iter_k_j,
+        uint3 fd_iter_k) {
+    ggml_cuda_pdl_sync();
+    if (decode_mask) {
+        const int iter_k_old = fd_iter_k.z;
+        const int end = flash_attn_decode_kv_end(decode_mask, nk, ne01, nbq);
+        const int iter_k = max(1, (end + nbatch_fa - 1) / nbatch_fa);
+        total_work = total_work / iter_k_old * iter_k;
+        uint3 * divisors[] = { &fd_iter_k_j_z_ne12, &fd_iter_k_j_z, &fd_iter_k_j, &fd_iter_k };
+        for (uint3 * fd : divisors) {
+            const uint32_t d = fd->z / iter_k_old * iter_k;
+            const uint32_t l = d == 1 ? 0 : 32 - __clz(d - 1);
+            *fd = make_uint3(uint32_t((uint64_t{1} << 32) * ((uint64_t{1} << l) - d) / d + 1), l, d);
+        }
+    }
     float        * GGML_CUDA_RESTRICT dst       = dst_ptr;
     const float2 * GGML_CUDA_RESTRICT dst_fixup = dst_fixup_ptr;
     constexpr int ncols = ncols1*ncols2;
@@ -1321,7 +1376,9 @@ void launch_fattn(
             ggml_cuda_kernel_launch(flash_attn_stream_k_fixup_uniform<DV, ncols1, ncols2>, launch_params,
                 (float *) KQV->data, dst_tmp_meta.ptr,
                  Q->ne[1], Q->ne[2], K->ne[2], nblocks_sk,
-                 gqa_ratio, bpt, fd0, fd1, fd2);
+                 gqa_ratio, bpt,
+                 !use_sparse && mask && Q->ne[1] <= 8 && Q->ne[3] == 1 ? (const char *) mask->data : nullptr,
+                 K->ne[1], mask ? mask->nb[1] : 0, nbatch_fa, fd0, fd1, fd2);
         } else if (ntiles_dst % blocks_num.x != 0) {
             // General fixup for the cases where nblocks_stream_k < ntiles_dst.
             const int total_work = ntiles_KV * ntiles_dst;
@@ -1338,6 +1395,8 @@ void launch_fattn(
             ggml_cuda_kernel_launch(flash_attn_stream_k_fixup_general<DV, ncols1, ncols2>, launch_params,
                 (float *) KQV->data, dst_tmp_meta.ptr,
                  Q->ne[1], Q->ne[2], gqa_ratio, total_work,
+                 !use_sparse && mask && Q->ne[1] <= 8 && Q->ne[3] == 1 ? (const char *) mask->data : nullptr,
+                 K->ne[1], mask ? mask->nb[1] : 0, nbatch_fa,
                  fd_k_j_z_ne12, fd_k_j_z, fd_k_j, fd_k);
         }
     } else if (parallel_blocks > 1) {
