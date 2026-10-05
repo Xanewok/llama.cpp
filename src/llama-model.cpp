@@ -1519,6 +1519,22 @@ void llama_model_base::load_vocab(llama_model_loader & ml) {
 }
 
 bool llama_model_base::load_tensors(llama_model_loader & ml) {
+    // Explicit model parameters override the GGUF mapping; target-only loads ignore it.
+    if (params.load_mtp && draft_vocab_ids.empty()) {
+        const auto key = LLM_KV(arch)(LLM_KV_GENERAL_DRAFT_VOCAB_IDS);
+        const int64_t kid = gguf_find_key(ml.metadata, key.c_str());
+        if (kid >= 0) {
+            if (gguf_get_kv_type(ml.metadata, kid) != GGUF_TYPE_ARRAY ||
+                gguf_get_arr_type(ml.metadata, kid) != GGUF_TYPE_INT32) {
+                throw std::invalid_argument("general.draft_vocab_ids must be an INT32 array");
+            }
+            const size_t n = gguf_get_arr_n(ml.metadata, kid);
+            if (n == 0 || n > vocab.n_tokens()) {
+                throw std::invalid_argument("general.draft_vocab_ids must contain between 1 and n_vocab ids");
+            }
+            ml.get_arr(LLM_KV_GENERAL_DRAFT_VOCAB_IDS, draft_vocab_ids);
+        }
+    }
     if (!draft_vocab_ids.empty()) {
         if (arch != LLM_ARCH_QWEN35 || hparams.n_layer_nextn != 1 || !params.load_mtp) {
             throw std::invalid_argument("reduced draft vocabulary requires a Qwen3.5 model with one loaded MTP layer");

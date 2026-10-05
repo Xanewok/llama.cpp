@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <cstring>
 #include <numeric>
 #include <stdexcept>
 #include <vector>
@@ -139,8 +140,14 @@ int main(int argc, char ** argv) {
     const int nv = llama_vocab_n_tokens(llama_model_get_vocab(full));
     // Deliberately unsorted, with gaps and ids outside the BF16 exact-integer range.
     std::vector<llama_token> ids;
-    for (int i = nv - 1; i >= 0; i -= 10) {
-        ids.push_back(i);
+    const bool identity = argc > 4 && std::string(argv[4]) == "identity";
+    if (identity) {
+        ids.resize(nv);
+        std::iota(ids.begin(), ids.end(), 0);
+    } else {
+        for (int i = nv - 1; i >= 0; i -= 10) {
+            ids.push_back(i);
+        }
     }
     mp.draft_vocab_ids = ids.data();
     mp.n_draft_vocab = ids.size();
@@ -163,6 +170,30 @@ int main(int argc, char ** argv) {
     const auto ref = run(full, true, false, steps);
     const auto got = run(sub, true, false, steps);
     require(ref.size() == got.size(), "row count changed");
+    if (identity) {
+        for (size_t r = 0; r < ref.size(); ++r) {
+            require(std::memcmp(ref[r].data(), got[r].data(), nv * sizeof(float)) == 0, "full-vocab mapping changed logits");
+            for (uint32_t seed = 0; seed < 100; ++seed) {
+                auto sample = [&](const std::vector<float> & logits) {
+                    auto * sampler = llama_sampler_chain_init(llama_sampler_chain_default_params());
+                    llama_sampler_chain_add(sampler, llama_sampler_init_top_k(10));
+                    llama_sampler_chain_add(sampler, llama_sampler_init_temp(1.0f));
+                    llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
+                    std::vector<llama_token_data> data(nv);
+                    for (int id = 0; id < nv; ++id) {
+                        data[id] = {id, logits[id], 0};
+                    }
+                    llama_token_data_array candidates = {data.data(), data.size(), -1, false};
+                    llama_sampler_apply(sampler, &candidates);
+                    const auto id = candidates.data[candidates.selected].id;
+                    llama_sampler_free(sampler);
+                    return id;
+                };
+                require(sample(ref[r]) == sample(got[r]), "full-vocab mapping changed sampled token");
+            }
+        }
+        std::printf("M: identity mapping: %zu MTP rows bit-identical; 100 seeds per row bit-identical\n", ref.size());
+    }
     double max_error = 0;
     bool negative_detected = false;
     std::vector<bool> inside(nv, false);

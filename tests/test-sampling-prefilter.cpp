@@ -353,7 +353,7 @@ static std::string test_draft_vocab_rejection(env & E) {
     E.set_row(0, row);
     E.set_row(1, row);
     const std::map<llama_token, double> want = {{a, 0.2}, {b, 0.3}, {c, 0.5}};
-    std::map<llama_token, int> observed, broken;
+    std::map<llama_token, int> observed, broken, wrong_mapping;
     std::mt19937 proposal_rng(91);
     std::vector<double> weights;
     for (const auto & e : q) {
@@ -364,19 +364,22 @@ static std::string test_draft_vocab_rejection(env & E) {
     const int n = 20000;
     for (int i = 0; i < n; ++i) {
         const llama_tokens draft = {q[draw(proposal_rng)].id};
-        for (bool bad : {false, true}) {
+        for (int fault = 0; fault < 3; ++fault) {
             params.seed = 1000 + i;
             common_sampler_ptr target(common_sampler_init(E.model, params));
             auto recorded = q;
-            if (bad) {
+            if (fault == 1) {
                 // The proposal is normalized on the subset; recording full-vocab mass breaks verification.
                 for (auto & e : recorded) {
                     e.p *= 0.1f;
                 }
             }
+            if (fault == 2) {
+                std::swap(recorded[0].id, recorded[1].id);
+            }
             const auto result = common_sampler_sample_and_accept_n_rejection(target.get(), E.ctx, {0, 1}, draft, {recorded});
-            (bad ? broken : observed)[result[0]]++;
-            if (!bad && i < 300) {
+            (fault == 1 ? broken : fault == 2 ? wrong_mapping : observed)[result[0]]++;
+            if (fault == 0 && i < 300) {
                 for (llama_token id : result) {
                     seeds << id << ' ';
                 }
@@ -386,9 +389,11 @@ static std::string test_draft_vocab_rejection(env & E) {
     }
     const double good_p = chi2_p(observed, want, n);
     const double bad_p = chi2_p(broken, want, n);
-    printf("M: subset q sum=%.9f; verify chi2 p=%.6g; negative-control p=%.6g, %d draws\n", sum, good_p, bad_p, n);
+    const double mapping_p = chi2_p(wrong_mapping, want, n);
+    printf("M: subset q sum=%.9f; verify chi2 p=%.6g; wrong-q p=%.6g; wrong-mapping p=%.6g, %d draws\n", sum, good_p, bad_p, mapping_p, n);
     CHECK(good_p > 1e-4, "subset verify law differs from target");
     CHECK(bad_p < 1e-6, "wrong recorded q escaped the negative control");
+    CHECK(mapping_p < 1e-6, "wrong id mapping escaped the negative control");
     return seeds.str();
 }
 
