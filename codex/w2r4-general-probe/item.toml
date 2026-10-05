@@ -66,7 +66,6 @@ files = [
   "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/libmtmd.so.0.5.0",
   "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/round-trace",
   "/home/xanewok/repos/mmvq-w2r4/codex/frozen/mmvq-w2r4-general/bin/test-backend-ops",
-  "/home/xanewok/repos/mmvq-w2r4/codex/gpu_ab.sh",
   "/home/xanewok/repos/mmvq-w2r4/codex/w2r4-general-probe/fixtures/SOURCE",
   "/home/xanewok/repos/mmvq-w2r4/codex/w2r4-general-probe/fixtures/real-kernel-errors.txt",
   "/home/xanewok/repos/mmvq-w2r4/codex/w2r4-general-probe/fixtures/real-memory.csv",
