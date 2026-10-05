@@ -13,7 +13,7 @@ import time
 
 ROOT = Path(__file__).resolve().parent.parent
 BASE = Path('/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5')
-PATCH = ROOT / 'codex/frozen/fa-kvmax-decode-v2'
+PATCH = ROOT / 'codex/frozen/fa-kvmax-decode-v3'
 FIXTURES = Path('/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures')
 REAL_SQL = ROOT / 'codex/probe-fixtures/real-fa-perf.sql'
 FIELDS = ('stamp', 'commit', 'backend', 'op', 'params', 'mode', 'supported', 'passed', 'error', 'us', 'flops', 'bw', 'mem', 'runs', 'device', 'reg')
