@@ -1,0 +1,14 @@
+[
+  {
+    "mode": "cpu",
+    "np": 1,
+    "requests_M": 4,
+    "differences": []
+  },
+  {
+    "mode": "cpu",
+    "np": 2,
+    "requests_M": 4,
+    "differences": []
+  }
+]

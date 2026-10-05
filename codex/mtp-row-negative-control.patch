@@ -1,0 +1,11 @@
+--- a/common/speculative.cpp
++++ b/common/speculative.cpp
+@@ -1565,7 +1565,7 @@
+ 
+         for (int32_t i = 0; i <= db.n_accepted; ++i) {
+             const int32_t idx = batch.add(db.tokens[i], db.pos0 + i, seq_id, false);
+-            const float * h = i == 0 ? db.h0.data() : verify_h[seq_id].data() + (size_t) (i - 1) * n_embd;
++            const float * h = verify_h[seq_id].data() + (size_t) i * n_embd;
+             batch.set_embd(idx, { h, 1, (size_t) n_embd });
+         }
+     }

@@ -6,3 +6,8 @@ reuse-results/
 input-results/
 runs/
 __pycache__/
+base-source/
+patch-source/
+cpu-base/
+cpu-fused/
+mtp-results/
