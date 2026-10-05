@@ -89,6 +89,10 @@ void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, co
 // accept() selects the prefix for verifying sequences; a replay replaces their deferred batch
 bool common_speculative_process(common_speculative * spec, const common_batch & batch, const std::vector<llama_seq_id> & verifying = {});
 
+// write state that process() deferred for a verifying sequence into the draft context;
+// required before the draft memory of the sequence is read or edited outside process()/draft()
+void common_speculative_flush(common_speculative * spec, llama_seq_id seq_id);
+
 // generate drafts for the sequences specified with `common_speculative_get_draft_params`
 void common_speculative_draft(common_speculative * spec);
 

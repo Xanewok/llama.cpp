@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstring>
 #include <iomanip>
+#include <limits>
 #include <map>
 #include <cinttypes>
 
@@ -208,6 +209,9 @@ struct common_speculative_impl {
     virtual bool process(const common_batch & batch) = 0;
 
     virtual bool process(const common_batch & batch, const std::vector<llama_seq_id> & /*verifying*/) { return process(batch); }
+
+    // commits state that process() deferred to the next draft(); a no-op when nothing is pending
+    virtual void flush(llama_seq_id /*seq_id*/) {}
 
     virtual void draft(common_speculative_draft_params_vec & dparams) = 0;
 
@@ -1390,6 +1394,7 @@ struct common_speculative_impl_draft_dflash : public common_speculative_impl {
     }
 };
 
+
 struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     common_params_speculative_draft params; // reuses the draft-model params slot (ctx_tgt/ctx_dft)
 
@@ -1564,17 +1569,38 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         return process(batch_in, {});
     }
 
-    void add_deferred(llama_seq_id seq_id) {
+    // adds the committed prefix rows below pos_end: rows at or above it were removed from the sequence
+    void add_deferred(llama_seq_id seq_id, llama_pos pos_end) {
         auto & db = deferred[seq_id];
         if (db.tokens.empty() || db.n_accepted < 0) {
             return;
         }
 
-        for (int32_t i = 0; i <= db.n_accepted; ++i) {
+        for (int32_t i = 0; i <= db.n_accepted && db.pos0 + i < pos_end; ++i) {
             const int32_t idx = batch.add(db.tokens[i], db.pos0 + i, seq_id, false);
             const float * h = i == 0 ? db.h0.data() : verify_h[seq_id].data() + (size_t) (i - 1) * n_embd;
             batch.set_embd(idx, { h, 1, (size_t) n_embd });
         }
+    }
+
+    void flush(llama_seq_id seq_id) override {
+        if (seq_id < 0 || seq_id >= (llama_seq_id) n_seq || deferred[seq_id].tokens.empty()) {
+            return;
+        }
+
+        batch.clear();
+        add_deferred(seq_id, std::numeric_limits<llama_pos>::max());
+        deferred[seq_id].tokens.clear();
+
+        if (batch.size() > 0) {
+            ggml_round_trace_begin("C", batch.size());
+            const int32_t rc = llama_process(params.ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
+            ggml_round_trace_end(rc);
+            if (rc != 0) {
+                SPC_ERR("llama_process(ctx_dft) flush failed rc=%d\n", (int) rc);
+            }
+        }
+        batch.clear();
     }
 
     bool process(const common_batch & batch_in, const std::vector<llama_seq_id> & verifying) override {
@@ -1638,9 +1664,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     continue;
                 }
                 auto & db = deferred[seq_id];
-                if (!db.tokens.empty() && batch_in.tokens[i_batch_beg[seq_id]].pos[0] > db.pos0) {
-                    add_deferred(seq_id);
-                }
+                const llama_pos pos_beg = batch_in.tokens[i_batch_beg[seq_id]].pos[0];
+                // an uncommitted batch continued in a later view would lose its first part
+                GGML_ASSERT(db.tokens.empty() || db.n_accepted >= 0 || pos_beg <= db.pos0);
+                add_deferred(seq_id, pos_beg);
                 db.tokens.clear();
             }
 
@@ -1756,9 +1783,13 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 if (dp.drafting) {
                     GGML_ASSERT(dp.pos0 == db.pos0 + db.n_accepted + 1);
                 }
-                add_deferred(seq_id);
+                add_deferred(seq_id, dp.drafting ? dp.pos0 : std::numeric_limits<llama_pos>::max());
                 db.tokens.clear();
             }
+        }
+
+        for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
+            auto & dp = dparams[seq_id];
 
             if (!dp.drafting) {
                 continue;
@@ -2962,6 +2993,16 @@ void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, co
         common_time_meas tm(impl->t_begin_us, !impl->gen_perf);
         impl->begin(seq_id, prompt);
         impl->n_call_begin++;
+    }
+}
+
+void common_speculative_flush(common_speculative * spec, llama_seq_id seq_id) {
+    if (spec == nullptr) {
+        return;
+    }
+
+    for (auto & impl : spec->impls) {
+        impl->flush(seq_id);
     }
 }
 

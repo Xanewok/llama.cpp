@@ -574,6 +574,9 @@ struct server_slot {
 
             t_last_used = ggml_time_us();
 
+            // the prompt cache and the next task read the draft memory of this sequence
+            common_speculative_flush(spec, id);
+
             state = SLOT_STATE_IDLE;
 
             // do not keep context of the child slots - the parent's context is enough
@@ -3202,6 +3205,8 @@ private:
                 n_discard = std::clamp(n_discard, 0, std::max(0, n_left - 1));
 
                 SLT_WRN(slot, "slot context shift, n_keep = %d, n_left = %d, n_discard = %d\n", n_keep, n_left, n_discard);
+
+                common_speculative_flush(spec.get(), slot.id);
 
                 slot.mem.seq_rm (slot.id, n_keep            , n_keep + n_discard);
                 slot.mem.seq_add(slot.id, n_keep + n_discard, slot.prompt.tokens.pos_next(), -n_discard);
