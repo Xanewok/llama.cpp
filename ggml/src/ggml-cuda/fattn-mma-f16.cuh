@@ -2320,12 +2320,13 @@ extern DECL_FATTN_MMA_F16_CASE(512, 512,  2,  8);
 extern DECL_FATTN_MMA_F16_CASE(512, 512,  4,  8);
 extern DECL_FATTN_MMA_F16_CASE(512, 512,  8,  8);
 
-// q8_0 K/V without the f16 copy, for small batches of GQA models with head size 256 (Qwen 3.5+ MTP verify batches):
+// q8_0 K/V without the f16 copy, for small batches of GQA models with head size 256:
+extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 1, 8);
 extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 4, 8);
 extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 8, 8);
 
 static constexpr bool ggml_cuda_flash_attn_ext_mma_q8_0_instance(const int DKQ, const int DV, const int ncols1, const int ncols2) {
-    return DKQ == 256 && DV == 256 && ncols2 == 8 && (ncols1 == 4 || ncols1 == 8);
+    return DKQ == 256 && DV == 256 && ncols2 == 8 && (ncols1 == 1 || ncols1 == 4 || ncols1 == 8);
 }
 
 // The number of viable configurations for Deepseek is very limited:

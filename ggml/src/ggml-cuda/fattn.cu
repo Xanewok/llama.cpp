@@ -153,7 +153,7 @@ bool ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(const int cc, const ggml_
 
 // Small batches with q8_0 K/V: dequantizing tiles in the kernel reads half the bytes of the f16 copy that otherwise has to
 // be written first, and that copy of the whole K/V view costs more than the attention itself. Larger batches amortize it.
-// Only called for the ncols2 == 8 dispatch; the four-query instance also pads single-query decode.
+// Only called for the ncols2 == 8 dispatch, with instances for one query or 3-8 queries.
 static bool ggml_cuda_flash_attn_ext_mma_q8_0_supported(const int cc, const ggml_tensor * dst) {
 #if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
     GGML_UNUSED_VARS(cc, dst);
@@ -204,7 +204,9 @@ static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_con
     if constexpr (ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, 4, ncols2) &&
                   ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, 8, ncols2)) {
         if (ggml_cuda_flash_attn_ext_mma_q8_0_supported(cc, dst)) {
-            if (Q->ne[1] <= 4) {
+            if (Q->ne[1] == 1) {
+                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 1, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
+            } else if (Q->ne[1] <= 4) {
                 ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 4, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
             } else {
                 ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 8, ncols2, GGML_TYPE_Q8_0>(ctx, dst);

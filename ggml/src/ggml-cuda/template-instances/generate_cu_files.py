@@ -110,7 +110,7 @@ for ncols in [8, 16, 32, 64]:
                 f.write(SOURCE_FATTN_MMA_CASE.format(ncols1=ncols1, ncols2=ncols2, head_size_kq=head_size_kq, head_size_v=head_size_v))
 
 # q8_0 K/V dequantized per tile, see ggml_cuda_flash_attn_ext_mma_q8_0_instance:
-for ncols1 in [4, 8]:
+for ncols1 in [1, 4, 8]:
     with open(f"fattn-mma-f16-instance-q8_0-ncols1_{ncols1}-ncols2_8.cu", "w") as f:
         f.write(SOURCE_FATTN_MMA_START)
         f.write(SOURCE_FATTN_MMA_Q8_0_CASE.format(ncols1=ncols1, ncols2=8, head_size_kq=256, head_size_v=256))
