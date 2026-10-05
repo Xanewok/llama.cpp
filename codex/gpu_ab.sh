@@ -14,7 +14,7 @@ case "${1:---check}" in
         ;;
     --preflight)
         export CUDA_VISIBLE_DEVICES=""
-        exec nice -n 19 bash "$eval_repo/harness/run.sh" depth "$experiment" --preflight --out "$root/codex/gpu-results/depth/preflight-plan"
+        exec nice -n 19 bash "$eval_repo/harness/run.sh" depth "$experiment" --preflight --port 18095 --out "$root/codex/gpu-results/depth/preflight-plan"
         ;;
     --canary|--execute)
         [[ ${GPUQ_ACTIVE:-0} == 1 ]] || { echo 'Run GPU stages only through gpuq.' >&2; exit 6; }

@@ -8,6 +8,7 @@ runs/
 __pycache__/
 
 # GDN rollback task artifacts
+/INDEX.md
 base-cpu/bin/
 frozen/
 gpu-results/
