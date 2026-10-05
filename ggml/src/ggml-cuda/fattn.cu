@@ -162,8 +162,11 @@ static bool ggml_cuda_flash_attn_ext_mma_q8_0_supported(const int cc, const ggml
     const ggml_tensor * Q = dst->src[0];
     const ggml_tensor * K = dst->src[1];
     const ggml_tensor * V = dst->src[2];
+    const ggml_tensor * mask = dst->src[3];
 
+    float max_bias;
     float logit_softcap;
+    memcpy(&max_bias, (const float *) dst->op_params + 1, sizeof(float));
     memcpy(&logit_softcap, (const float *) dst->op_params + 2, sizeof(float));
 
     // DO NOT MERGE: A/B knob, GGML_CUDA_FA_MMA_Q8_0=0 restores the f16 copy
@@ -182,6 +185,16 @@ static bool ggml_cuda_flash_attn_ext_mma_q8_0_supported(const int cc, const ggml
     }
     if ((Q->ne[1] != 1 && Q->ne[1] < 3) || Q->ne[1] > 8 || logit_softcap != 0.0f) {
         return false;
+    }
+    if (!mask || max_bias != 0.0f || Q->ne[2] <= 4*K->ne[2] || K->ne[1] % FATTN_KQ_STRIDE != 0) {
+        return false;
+    }
+    for (const ggml_tensor * t : { Q, mask }) {
+        for (size_t i = 1; i < GGML_MAX_DIMS; ++i) {
+            if (t->nb[i] % 16 != 0) {
+                return false;
+            }
+        }
     }
     // the kernel stages raw rows with 16 byte copies
     for (const ggml_tensor * t : { K, V }) {
@@ -799,9 +812,11 @@ size_t ggml_cuda_flash_attn_ext_get_alloc_size(int device, const ggml_tensor * d
 
     switch (kernel) {
         case BEST_FATTN_KERNEL_TILE:
-        case BEST_FATTN_KERNEL_MMA_F16:
             need_f16_K = true;
             need_f16_V = true;
+            break;
+        case BEST_FATTN_KERNEL_MMA_F16:
+            need_f16_K = need_f16_V = !ggml_cuda_flash_attn_ext_mma_q8_0_supported(ggml_cuda_info().devices[device].cc, dst);
             break;
         case BEST_FATTN_KERNEL_VEC: {
             const bool f16_fallback = ggml_cuda_get_fattn_vec_case(Q->ne[0], K->type, V->type) == nullptr;
