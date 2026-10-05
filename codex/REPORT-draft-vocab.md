@@ -44,7 +44,7 @@ Model: `/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf`, the relo
 | --- | --- |
 | Full-vocabulary identity map versus default path | 6 MTP rows and 600 seeded token draws bit-identical (M); 100 seeds per row (configured). |
 | Separate `590912a1d` CPU library versus branch | Byte-identical logits/token dumps (M), SHA256 `0f532fa0418db830b788dad3b772b11151f20d8314b1b230defd4ea5d4c27c18`; `codex/draft-vocab-base-identity-sha256.txt`. |
-| Reduced proposal law, real common_sampler verifier | 20,000 draws (M); chi-square p=0.489897 (M). Wrong full-vocabulary mass: p=0 (M). Wrong target-ID mapping: p=0 (M). `tests/test-sampling-prefilter.cpp:331`, `codex/draft-vocab-law.log`. |
+| Reduced proposal law, real common_sampler verifier | 20,000 draws (M); chi-square p=0.489897 (M). A normalized full-vocabulary q from the same filter chain used with the reduced proposal: p=0 (M). Wrong target-ID mapping: p=0 (M). `tests/test-sampling-prefilter.cpp:331`, `codex/draft-vocab-law.log`. |
 | GGUF loader validation | Valid mapping; empty/oversized arrays, duplicate/negative/out-of-range IDs, UINT8 array, scalar rejected; target-only ignore and explicit override passed (M). `codex/draft-vocab-metadata.log`. |
 | Reduced CPU head and two-CPU meta backend | Target logits bit-identical, compact logits equal their source rows, max error 0 (M); outside logits -infinity; global backend top-k, multi-ubatch/deferred reads, small-subset fallback, empty-shard rejection passed (M). `codex/draft-vocab-subset.log`, `codex/draft-vocab-tp.log`. |
 | Actual GGUF with HQ IDs | Target logits bit-identical and all sampled compact-head rows correct, max error 0 (M); host and backend/deferred paths passed (M). `codex/draft-vocab-embedded.log`. |
@@ -99,7 +99,7 @@ Both commands returned `valid`, exit 0 (M):
 
 `bash codex/freeze-draft-vocab.sh` configured and built HEAD `5e24a96c5`, with CUDA 13.2, local CCCL v3.4.3, NCCL OFF and requested `CMAKE_CUDA_ARCHITECTURES=120`; existing CMake selects 120a. Compiler probes that could run CUDA are disabled; UI downloads and FetchContent networking are disabled. Each build used at most four jobs. Inference used at most eight CPU threads; heavy overlapping build/test jobs used four each. `codex/draft-vocab-cmake-cuda.log` reports ggml commit `5e24a96c5`.
 
-The sanctioned freezer was run with `QWEN38_WT_ROOT="$PWD/codex"`; SOURCE is `codex/frozen/draft-vocab/SOURCE`, and RUNPATH is `$ORIGIN`. The renamed `round-trace` and `llama-server` have SHA256 `0a227d70c4b695ed51114e5f76f2b7add9f8b2f59ce95f3f2564bf4f6109bf1f` (M). Frozen checksums and library resolution passed without executing the binary. Later report/harness commits do not change the compiled runtime source. The freeze binaries remain local, untracked artifacts.
+The sanctioned freezer was run with `QWEN38_WT_ROOT="$PWD/codex"`; SOURCE is `codex/frozen/draft-vocab/SOURCE`, and RUNPATH is `$ORIGIN`. The renamed `round-trace` and `llama-server` have SHA256 `0a227d70c4b695ed51114e5f76f2b7add9f8b2f59ce95f3f2564bf4f6109bf1f` (M). Frozen checksums and library resolution passed without executing the binary. Later report/harness/test commits do not change the compiled runtime source. The freeze binaries remain local, untracked artifacts.
 
 ## Risks and upstream form
 

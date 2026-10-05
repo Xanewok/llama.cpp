@@ -346,6 +346,13 @@ static std::string test_draft_vocab_rejection(env & E) {
         sum += e.p;
     }
     CHECK(std::fabs(sum - 1.0) < 1e-6, "draft q is not normalized: %.9f", sum);
+    const auto full_q = chain_dist(common_sampler_get(base.get()),
+            {{a, std::log(0.08f), 0}, {b, std::log(0.02f), 0}, {c, std::log(0.9f), 0}});
+    double full_sum = 0;
+    for (const auto & e : full_q) {
+        full_sum += e.p;
+    }
+    CHECK(std::fabs(full_sum - 1.0) < 1e-6, "full-vocab negative control is not normalized");
     std::vector<float> row(E.n_vocab, -INFINITY);
     row[a] = std::log(0.2f);
     row[b] = std::log(0.3f);
@@ -369,10 +376,8 @@ static std::string test_draft_vocab_rejection(env & E) {
             common_sampler_ptr target(common_sampler_init(E.model, params));
             auto recorded = q;
             if (fault == 1) {
-                // The proposal is normalized on the subset; recording full-vocab mass breaks verification.
-                for (auto & e : recorded) {
-                    e.p *= 0.1f;
-                }
+                // Filtering and normalization must use the proposal's support.
+                recorded = full_q;
             }
             if (fault == 2) {
                 std::swap(recorded[0].id, recorded[1].id);
