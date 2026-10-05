@@ -1,0 +1,27 @@
+{
+  "status": "ok",
+  "artifacts": [
+    "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/cold-tool-1.json",
+    "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1.json",
+    "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/warmup-0.json",
+    "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack4-depth-j5q/full-a1/2-patch/depth-8192.json",
+    "/home/xanewok/repos/k-sweep/runs/k-sweep-j5q-4/full-a1/p02.tokens.json",
+    "/home/xanewok/repos/k-sweep/runs/k-sweep-j5q-4/full-a1/b1-p02.response.json"
+  ],
+  "CPU_seconds_M": 21.984577666036785,
+  "full_rehearsals": 2,
+  "canary_rehearsals": 2,
+  "negative_controls": [
+    "biased repeat",
+    "wide CI covering 1.0",
+    "missing prefix",
+    "seeded content mismatch",
+    "short full and canary",
+    "sampling drift",
+    "frozen hash mutation",
+    "impossible counters",
+    "null or repeated timing snapshots",
+    "per-prefix bounds, bool/object/non-list tokens, recorded length drift",
+    "recorded response EOS drift"
+  ]
+}

@@ -1,0 +1,2 @@
+0f532fa0418db830b788dad3b772b11151f20d8314b1b230defd4ea5d4c27c18  codex/draft-base-identity.bin
+0f532fa0418db830b788dad3b772b11151f20d8314b1b230defd4ea5d4c27c18  codex/draft-branch-identity.bin

@@ -1,0 +1,5 @@
+{
+  "status": "ok",
+  "CPU_seconds_M": 44.00336995103862,
+  "source": "5e24a96c5a052d77f863191070adf3def2fb5455\nGGUF-carried reduced MTP vocabulary; CUDA 13.2, CCCL v3.4.3, NCCL off, requested arch 120 (CMake selects 120a); built only, never run\n"
+}

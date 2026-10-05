@@ -1,0 +1,113 @@
+id = "draft-vocab-j5q"
+title = "Full vs reduced draft vocabulary: j5q, MTP k=5/6/7, ABBA replay"
+priority = 42
+kind = "measure"
+budget_s = 3600
+est_s = 2160
+ab = true
+retry = "fresh"
+startup_grace_s = 240
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = []
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/gpu_ab.sh", "--model", "j5q", "--execute", "--budget-s", "3000"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab"
+env = { PORT = "{port}", OUT = "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/runs/draft-vocab-j5q/full-a{attempt}" }
+ports = [8092]
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/gpu_ab.sh", "--model", "j5q", "--preflight"]
+timeout_s = 100
+env = { CUDA_VISIBLE_DEVICES = "", PYTHONDONTWRITEBYTECODE = "1" }
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/gpu_ab.sh", "--model", "j5q", "--execute", "--canary", "--budget-s", "475"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab"
+timeout_s = 480
+env = { PORT = "{port}", OUT = "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/runs/draft-vocab-j5q/canary-a{attempt}" }
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/runs/draft-vocab-j5q"]
+
+[pins]
+files = [
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf",
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json",
+  "/home/xanewok/repos/k-sweep/runs/k-sweep-j5q-4/full-a1/b1-p02.response.json",
+  "/home/xanewok/repos/k-sweep/runs/k-sweep-j5q-4/full-a1/p02.tokens.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/frozen/draft-vocab/build/bin/round-trace",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/replay/gen_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/replay/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/replay/iq4.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/replay/j5q.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/replay/prefix_bounds.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/replay/prefixes.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/replay/stub.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/replay/sweep.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-vocab/codex/replay/test_sweep.py",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/cold-tool-1.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1-input.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/warmup-0.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-query.csv",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/xid-lines.txt",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack4-depth-j5q/full-a1/2-patch/depth-8192.json",
+  "/home/xanewok/repos/qwen38-eval/results/session2/pair-5060ti-2060s/campaign-swift-fullsuite-20260915/swift-iq4-xs/attempts/66ebeeaec6a7043b-01/chat-template.jinja",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/SOURCE",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/round-trace"
+]
+
+[fix]
+editable = []
+protected = ["REFUSE", "frozen", "budget"]

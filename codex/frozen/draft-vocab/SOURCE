@@ -1,0 +1,2 @@
+5e24a96c5a052d77f863191070adf3def2fb5455
+GGUF-carried reduced MTP vocabulary; CUDA 13.2, CCCL v3.4.3, NCCL off, requested arch 120 (CMake selects 120a); built only, never run
