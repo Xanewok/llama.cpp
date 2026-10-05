@@ -1,0 +1,57 @@
+diff --git a/ggml/src/ggml-backend-meta.cpp b/ggml/src/ggml-backend-meta.cpp
+index bae4e90f4..b8de42261 100644
+--- a/ggml/src/ggml-backend-meta.cpp
++++ b/ggml/src/ggml-backend-meta.cpp
+@@ -2207,6 +2207,44 @@ static void ggml_backend_meta_synchronize(ggml_backend_t backend) {
+     }
+ }
+ 
++
++#include "ggml-ssm-conv.h"
++#include <cstdio>
++#include <cstdlib>
++static void meta_ssm_conv_diag(size_t dev, size_t sub, ggml_cgraph * g) {
++    static const char * env = getenv("GGML_META_DEBUG_SSM_CONV");
++    if (!env) return;
++    static int ctx_prints = 0;
++    int conv = 0, concat = 0, cand = 0, eng = 0;
++    std::vector<ggml_tensor *> matched;
++    for (int i = 0; i < g->n_nodes; ++i) {
++        ggml_tensor * n = g->nodes[i];
++        if (!(n->flags & GGML_TENSOR_FLAG_COMPUTE)) continue;
++        conv += n->op == GGML_OP_SSM_CONV;
++        concat += n->op == GGML_OP_CONCAT;
++        if (n->op == GGML_OP_CPY && n->src[0]->op == GGML_OP_VIEW && n->src[0]->view_src && n->src[0]->view_src->op == GGML_OP_CONCAT) {
++            ++cand;
++            ggml_ssm_conv_state_fusion m; const char * why = nullptr;
++            if (ggml_match_ssm_conv_state_fusion(g, i, m, &why)) { ++eng; matched.push_back(m.conv); i += m.node_count - 1; }
++            else fprintf(stderr, "META_CONV_REJECT dev=%zu sub=%zu node=%d %s: %s\n", dev, sub, i, n->name, why);
++        }
++    }
++    for (int i = 0; i < g->n_nodes && ctx_prints < (int) atoi(env); ++i) {
++        ggml_tensor * n = g->nodes[i];
++        if (n->op != GGML_OP_SSM_CONV || std::find(matched.begin(), matched.end(), n) != matched.end()) continue;
++        ++ctx_prints;
++        fprintf(stderr, "META_CONV_CTX dev=%zu sub=%zu conv=%d %s src0=%s(%s) src1=%s(%s)\n", dev, sub, i, n->name,
++                n->src[0]->name, ggml_op_desc(n->src[0]), n->src[1]->name, ggml_op_desc(n->src[1]));
++        for (int k = std::max(0, i - 14); k <= std::min(g->n_nodes - 1, i + 2); ++k) {
++            ggml_tensor * t = g->nodes[k];
++            fprintf(stderr, "  [%d] %-10s %-40s ne=[%lld,%lld,%lld,%lld] flags=%d src0=%s(%s)%s%s\n", k, ggml_op_desc(t), t->name,
++                    (long long) t->ne[0], (long long) t->ne[1], (long long) t->ne[2], (long long) t->ne[3], t->flags,
++                    t->src[0] ? t->src[0]->name : "-", t->src[0] ? ggml_op_desc(t->src[0]) : "-",
++                    t->src[0] && t->src[0]->view_src ? " view_src=" : "", t->src[0] && t->src[0]->view_src ? ggml_op_desc(t->src[0]->view_src) : "");
++        }
++    }
++    if (conv || cand) fprintf(stderr, "META_CONV dev=%zu sub=%zu nodes=%d conv=%d concat=%d cand=%d engaged=%d\n", dev, sub, g->n_nodes, conv, concat, cand, eng);
++}
+ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t backend, struct ggml_cgraph * cgraph, ggml_backend_meta_graph_plan * backend_ctx, bool prepare_only) {
+     ggml_round_trace_scope trace_meta_compute("meta_compute");
+     GGML_ASSERT(cgraph->grads == nullptr);
+@@ -2721,6 +2759,7 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
+     for (size_t i = 0; i < backend_ctx->n_subgraphs; i++) {
+         for (size_t j = 0; j < n_backends; j++) {
+             auto & bcj = backend_ctx->backend_configs[j];
++            meta_ssm_conv_diag(j, i, bcj.cgraphs[i].cgraph_main);
+             const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, bcj.cgraphs[i].cgraph_main);
+             if (status != GGML_STATUS_SUCCESS) {
+                 return status;
