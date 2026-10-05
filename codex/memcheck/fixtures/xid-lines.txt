@@ -1,0 +1,4 @@
+wrz 29 04:51:13 faerun-dev kernel: NVRM: Xid (PCI:0000:08:00): 79, pid=3656617, name=VLLM::Worker, GPU has fallen off the bus.
+wrz 29 04:51:13 faerun-dev kernel: NVRM: GPU 0000:08:00.0: GPU has fallen off the bus.
+wrz 29 04:51:13 faerun-dev kernel: NVRM: Xid (PCI:0000:08:00): 154, GPU recovery action changed from 0x0 (None) to 0x2 (Node Reboot Required)
+wrz 29 04:51:13 faerun-dev kernel: NVRM: Xid (PCI:0000:09:00): 154, GPU recovery action changed from 0x0 (None) to 0x2 (Node Reboot Required)

@@ -1,0 +1,63 @@
+id = "gdn-indexed-memcheck"
+title = "GPU0 sanitizer gates: GATED_DELTA_NET and GATED_DELTA_NET_INDEXED memcheck, indexed racecheck/synccheck"
+# Canary: the smallest indexed case (head_size=16, n_seqs=1) under memcheck, <= 90 s.
+# Full caps: 240 + 90 + 90 + 90 = 510 s (D), <= 0.85 x 600 s run budget (D); budget_s covers preflight 120 + canary 360 + run 600 + margin.
+priority = 90
+kind = "measure"
+budget_s = 1150
+est_s = 330
+ab = false
+retry = "fresh"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "integrity", regex = "probe: integrity" },
+  { class = "timeout", regex = "probe: budget" },
+]
+
+[run]
+cmd = ["python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/memcheck/memcheck.py", "--run"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/memcheck"
+env = { CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", BUDGET_S = "600", OUT = "/home/xanewok/repos/qwen38-eval/results/2026-10-06-gdn-indexed-memcheck/a{attempt}", RAW = "/mnt/scratch/work/gdn-indexed-memcheck/a{attempt}" }
+ports = []
+
+[preflight]
+cmd = ["python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/memcheck/memcheck.py", "--preflight"]
+timeout_s = 120
+
+[canary]
+cmd = ["python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/memcheck/memcheck.py", "--canary"]
+env = { CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", BUDGET_S = "300", OUT = "/home/xanewok/repos/qwen38-eval/results/2026-10-06-gdn-indexed-memcheck/canary-a{attempt}", RAW = "/mnt/scratch/work/gdn-indexed-memcheck/canary-a{attempt}" }
+timeout_s = 360
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval/results/2026-10-06-gdn-indexed-memcheck/a{attempt}"]
+
+[fix]
+editable = []
+protected = ["probe", "frozen", "budget"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/memcheck/memcheck.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/memcheck/fixtures/gdn-cpu-cases.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/memcheck/fixtures/memcheck-0err-testfail.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/memcheck/fixtures/memcheck-clean.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/memcheck/fixtures/memcheck-fault-stack-on.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/memcheck/fixtures/xid-lines.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/build/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/frozen/gdn-gather-inplace/build/bin/libggml.so.0.25.3",
+]
