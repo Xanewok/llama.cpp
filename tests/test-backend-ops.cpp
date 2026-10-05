@@ -46,7 +46,9 @@
 #include <vector>
 #include <unordered_map>
 
-#ifdef __EMSCRIPTEN__
+#if defined(GGML_TEST_MAX_THREADS)
+#   define N_THREADS GGML_TEST_MAX_THREADS
+#elif defined(__EMSCRIPTEN__)
 #   define N_THREADS 1
 #else
 #   define N_THREADS std::thread::hardware_concurrency()
@@ -5272,19 +5274,27 @@ struct test_mul_mat_shared : public test_case {
     double max_nmse_err() override { return 5e-4; }
 
     ggml_tensor * build_graph(ggml_context * ctx) override {
-        ggml_tensor * storage = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, strided ? 768 : 512, rows);
-        ggml_tensor * input = strided ? ggml_view_2d(ctx, storage, 512, rows, storage->nb[1], 0) : storage;
+        ggml_tensor * storage = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, strided ? 1024 : 768, rows);
+        ggml_tensor * input = strided ? ggml_view_2d(ctx, storage, 768, rows, storage->nb[1], 0) : storage;
         ggml_tensor * outputs[3];
         for (int i = 0; i < 3; ++i) {
             if (overwrite && i == 2) {
-                ggml_tensor * replacement = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 512, rows);
+                ggml_tensor * replacement = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 768, rows);
                 ggml_build_forward_expand(gf, ggml_cpy(ctx, replacement, input));
             }
             // The middle weight can take a different quantizer path at six or eight rows.
-            ggml_tensor * weight = ggml_new_tensor_2d(ctx, i == 1 ? GGML_TYPE_Q6_K : type, 512, 256);
+            ggml_tensor * weight = ggml_new_tensor_2d(ctx, i == 1 ? GGML_TYPE_Q6_K : type, 768, 257);
             outputs[i] = ggml_mul_mat(ctx, weight, input);
             ggml_build_forward_expand(gf, outputs[i]);
         }
+        int consumers = 0;
+        for (int i = 0; i < ggml_graph_n_nodes(gf); ++i) {
+            ggml_tensor * node = ggml_graph_node(gf, i);
+            if (node->op == GGML_OP_MUL_MAT && node->src[1] == input) {
+                ++consumers;
+            }
+        }
+        GGML_ASSERT(consumers == 3);
         return ggml_concat(ctx, ggml_concat(ctx, outputs[0], outputs[1], 0), outputs[2], 0);
     }
 };
@@ -10435,8 +10445,6 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_mul_mat_id_w4a8(GGML_TYPE_MXFP4, GGML_TYPE_F32, 8, 2, false, 32, 32, 256));
     test_cases.emplace_back(new test_mul_mat_id_w4a4(GGML_TYPE_MXFP4, GGML_TYPE_F32, 8, 2, false, 32, 32, 256));
 
-#if 0
-    // > 4GB A matrix. Too slow to be enabled by default.
     for (ggml_type type : {GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_IQ4_XS, GGML_TYPE_Q8_0}) {
         for (int64_t rows : {1, 6, 8}) {
             for (bool strided : {false, true}) {
@@ -10447,6 +10455,8 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         }
     }
 
+#if 0
+    // > 4GB A matrix. Too slow to be enabled by default.
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F16,  900000,  3, 2592, {1, 1}, {1, 1}));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F16, 1700000, 96, 2592, {1, 1}, {1, 1}));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F16, 1700000,  3, 2592, {1, 1}, {1, 1}));

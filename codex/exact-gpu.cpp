@@ -7,18 +7,18 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
-#include <fstream>
+#include "q8-cache.h"
 
 static void require(bool ok, const char * why) {
     if (!ok) { std::fprintf(stderr, "FAIL: %s\n", why); std::exit(1); }
 }
 
-static std::vector<char> run(ggml_backend_dev_t dev, ggml_type type, int rows, bool strided, bool overwrite, bool norm) {
-    ggml_backend_t backend = ggml_backend_dev_init(dev, nullptr);
-    require(backend, "backend init");
+static std::vector<char> run(ggml_backend_dev_t dev, ggml_type type, int rows, bool strided, bool overwrite, bool norm, bool contract = false) {
+    ggml_backend_t backend = contract ? nullptr : ggml_backend_dev_init(dev, nullptr);
+    require(contract || backend, "backend init");
     ggml_context * ctx = ggml_init({4 * 1024 * 1024, nullptr, true});
     ggml_cgraph * graph = ggml_new_graph_custom(ctx, 128, false);
-    const int columns = norm ? 2560 : 512;
+    const int columns = norm ? 2560 : 768;
     ggml_tensor * storage = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, columns + (strided ? 256 : 0), rows);
     ggml_set_input(storage);
     ggml_tensor * input = strided ? ggml_view_2d(ctx, storage, columns, rows, storage->nb[1], 0) : storage;
@@ -36,7 +36,7 @@ static std::vector<char> run(ggml_backend_dev_t dev, ggml_type type, int rows, b
             if (i == 2 && overwrite) {
                 ggml_build_forward_expand(graph, ggml_cpy(ctx, replacement, input));
             }
-            weight[i] = ggml_new_tensor_2d(ctx, i == 1 ? GGML_TYPE_Q6_K : type, columns, 256);
+            weight[i] = ggml_new_tensor_2d(ctx, i == 1 ? GGML_TYPE_Q6_K : type, columns, 257);
             part[i] = ggml_mul_mat(ctx, weight[i], input);
             ggml_build_forward_expand(graph, part[i]);
         }
@@ -44,6 +44,28 @@ static std::vector<char> run(ggml_backend_dev_t dev, ggml_type type, int rows, b
     }
     ggml_set_output(output);
     ggml_build_forward_expand(graph, output);
+    if (contract) {
+        ggml_cuda_q8_cache cache;
+        int consumers = 0;
+        for (int i = 0; i < ggml_graph_n_nodes(graph); ++i) {
+            auto * node = ggml_graph_node(graph, i);
+            if (node->op == GGML_OP_MUL_MAT && node->src[1] == input) {
+                ++consumers;
+                cache.add(input, 0, 1024);
+            }
+        }
+        require(consumers == 3, "three shared-src1 consumers in graph");
+        std::vector<char> scratch(cache.reserve());
+        require(scratch.size() == 1024, "one shared reservation");
+        cache.data = scratch.data();
+        bool hit;
+        cache.get(input, 0, 1024, hit);
+        require(!hit, "first consumer quantizes");
+        cache.get(input, 0, 1024, hit);
+        require(hit, "second consumer reuses");
+        ggml_free(ctx);
+        return {};
+    }
     auto * buffer = ggml_backend_alloc_ctx_tensors(ctx, backend);
     require(buffer, "tensor allocation");
     for (auto * w : weight) {
@@ -78,44 +100,57 @@ static std::vector<char> run(ggml_backend_dev_t dev, ggml_type type, int rows, b
     return result;
 }
 
+static void controls(bool reference) {
+    setenv("GGML_CUDA_DISABLE_Q8_REUSE", reference ? "1" : "0", 1);
+    setenv("GGML_CUDA_DISABLE_FUSION", reference ? "1" : "0", 1);
+}
+
 int main(int argc, char ** argv) {
-    require(argc == 3, "usage: exact-gpu reference|patch OUTPUT");
-    const bool disable = std::strcmp(argv[1], "reference") == 0;
-    if (disable) {
-        setenv("GGML_CUDA_DISABLE_Q8_REUSE", "1", 1);
-        setenv("GGML_CUDA_DISABLE_FUSION", "1", 1);
-    } else {
-        unsetenv("GGML_CUDA_DISABLE_Q8_REUSE");
-        unsetenv("GGML_CUDA_DISABLE_FUSION");
+    require(argc == 2, "usage: q8-exact --self-check|--canary|--cpu-contract");
+    const bool contract = std::strcmp(argv[1], "--cpu-contract") == 0;
+    const bool canary = std::strcmp(argv[1], "--canary") == 0;
+    require(contract || canary || std::strcmp(argv[1], "--self-check") == 0, "unknown mode");
+    if (!contract) {
+        require(std::getenv("GPUQ_ACTIVE") && std::strcmp(std::getenv("GPUQ_ACTIVE"), "1") == 0, "GPU queue required");
+        ggml_backend_load_all();
     }
-    std::ofstream file(argv[2], std::ios::binary);
-    require(bool(file), "output file");
-    require(std::getenv("GPUQ_ACTIVE") && std::strcmp(std::getenv("GPUQ_ACTIVE"), "1") == 0, "GPU queue required");
-    ggml_backend_load_all();
     int cases = 0;
-    for (size_t d = 0; d < ggml_backend_dev_count(); ++d) {
-        auto * dev = ggml_backend_dev_get(d);
-        if (std::strncmp(ggml_backend_dev_name(dev), "CUDA", 4) != 0) { continue; }
+    const size_t devices = contract ? 1 : ggml_backend_dev_count();
+    for (size_t d = 0; d < devices; ++d) {
+        auto * dev = contract ? nullptr : ggml_backend_dev_get(d);
+        if (!contract && std::strncmp(ggml_backend_dev_name(dev), "CUDA", 4) != 0) { continue; }
+        const int before = cases;
+        auto check = [&](ggml_type type, int rows, bool strided, bool overwrite, bool norm) {
+            controls(true);
+            const auto reference = run(dev, type, rows, strided, overwrite, norm, contract);
+            if (!contract) {
+                controls(false);
+                const auto patch = run(dev, type, rows, strided, overwrite, norm);
+                if (reference != patch) {
+                    std::fprintf(stderr, "FAIL: device=%s type=%s rows=%d strided=%d overwrite=%d norm=%d byte mismatch\n",
+                        ggml_backend_dev_name(dev), ggml_type_name(type), rows, strided, overwrite, norm);
+                    std::exit(1);
+                }
+            }
+            ++cases;
+        };
         for (auto type : {GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_IQ4_XS, GGML_TYPE_Q8_0}) {
             for (int rows : {1, 6, 8}) {
                 for (bool strided : {false, true}) {
                     for (bool overwrite : {false, true}) {
-                        const auto data = run(dev, type, rows, strided, overwrite, false);
-                        file.write(data.data(), data.size());
-                        ++cases;
+                        if (canary && (type != GGML_TYPE_Q4_K || rows != 6 || strided)) { continue; }
+                        check(type, rows, strided, overwrite, false);
                     }
                 }
             }
         }
-        for (int rows : {1, 6, 8}) {
-            const auto data = run(dev, GGML_TYPE_F32, rows, false, false, true);
-            file.write(data.data(), data.size());
-            ++cases;
+        if (!contract) {
+            for (int rows : {1, 6, 8}) {
+                if (!canary || rows == 6) { check(GGML_TYPE_F32, rows, false, false, true); }
+            }
+            std::printf("PASS: device=%s cases=%d self-check\n", ggml_backend_dev_name(dev), cases - before);
         }
-        std::printf("PASS: device=%s cases=%d\n", ggml_backend_dev_name(dev), cases);
     }
     require(cases > 0, "no CUDA devices");
-    file.close();
-    require(bool(file), "output write");
-    std::printf("PASS: exact cases=%d\n", cases);
+    std::printf("PASS: %s cases=%d\n", contract ? "graph-contract" : "exact self-check", cases);
 }

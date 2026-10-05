@@ -3736,11 +3736,6 @@ static bool ggml_cuda_debug_ssm_conv() {
 // try and fuse nodes and return the number of nodes to skip
 static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, int i) {
 
-    static bool disable_fusion = getenv("GGML_CUDA_DISABLE_FUSION") != nullptr && std::atoi(getenv("GGML_CUDA_DISABLE_FUSION"));
-    if (disable_fusion) {
-        return 0;
-    }
-
     ggml_tensor * node = cgraph->nodes[i];
 
     if (node->op == GGML_OP_MUL_MAT_ID && cuda_ctx->stream_context().concurrent_events.empty() &&
@@ -4735,6 +4730,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                 stream_ctx.concurrent_events.clear();
             }
 
+            const bool disable_fusion = getenv("GGML_CUDA_DISABLE_FUSION") && atoi(getenv("GGML_CUDA_DISABLE_FUSION"));
             const bool disable_q8_reuse = getenv("GGML_CUDA_DISABLE_Q8_REUSE") && atoi(getenv("GGML_CUDA_DISABLE_Q8_REUSE"));
             if (!disable_q8_reuse && stream_ctx.concurrent_events.empty()) {
                 const size_t size = ggml_cuda_q8_cache_prepare(q8_cache, cgraph, ggml_cuda_info().devices[cuda_ctx->device].cc);
@@ -4786,7 +4782,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                     continue;
                 }
 
-                int nodes_to_skip = ggml_cuda_try_fuse(cuda_ctx, cgraph, i);
+                int nodes_to_skip = disable_fusion ? 0 : ggml_cuda_try_fuse(cuda_ctx, cgraph, i);
 
                 if (nodes_to_skip != 0) {
                     if (debug_ssm_conv && node->op == GGML_OP_CPY) {
@@ -5006,7 +5002,7 @@ static void ggml_backend_cuda_event_wait(ggml_backend_t backend, ggml_backend_ev
 static void ggml_backend_cuda_graph_optimize(ggml_backend_t backend, ggml_cgraph * cgraph, ggml_backend_graph_optimize_params * params) {
     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
 
-    static const bool disable_fusion = getenv("GGML_CUDA_DISABLE_FUSION") != nullptr && std::atoi(getenv("GGML_CUDA_DISABLE_FUSION"));
+    const bool disable_fusion = getenv("GGML_CUDA_DISABLE_FUSION") != nullptr && std::atoi(getenv("GGML_CUDA_DISABLE_FUSION"));
 
     auto add_alloc_deps = [&](size_t start, size_t last_node) {
 
