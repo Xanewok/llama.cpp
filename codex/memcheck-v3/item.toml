@@ -1,0 +1,63 @@
+id = "q8-dedupe-memcheck-v3"
+title = "q8-dedupe-v3 new CUDA code under compute-sanitizer on GPU0: fused ADD+RMS_NORM+MUL kernel (memcheck, racecheck, synccheck) and q8 reuse through direct/capture/replay (memcheck); runs before any normal probe"
+# Canary: one fused case, one shared case and three exactness cases; all sanitizer parsers/gates, <= 550 s.
+# Full caps: 150 + 150 + 300 + 120 + 120 = 840 s (D), <= 0.7 x 1200 s run budget (D).
+priority = 90
+kind = "measure"
+budget_s = 1900
+est_s = 500
+ab = false
+retry = "fresh"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "integrity", regex = "probe: integrity" },
+  { class = "timeout", regex = "probe: budget" },
+]
+
+[run]
+cmd = ["python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/memcheck-v3/memcheck.py", "--run"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/memcheck-v3"
+env = { CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", BUDGET_S = "1200", OUT = "/home/xanewok/repos/qwen38-eval/results/2026-10-06-q8-dedupe-memcheck-v3/a{attempt}", RAW = "/mnt/scratch/work/q8-dedupe-memcheck-v3/a{attempt}" }
+ports = []
+
+[preflight]
+cmd = ["python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/memcheck-v3/memcheck.py", "--preflight"]
+timeout_s = 120
+
+[canary]
+cmd = ["python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/memcheck-v3/memcheck.py", "--canary"]
+env = { CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", BUDGET_S = "500", OUT = "/home/xanewok/repos/qwen38-eval/results/2026-10-06-q8-dedupe-memcheck-v3/canary-a{attempt}", RAW = "/mnt/scratch/work/q8-dedupe-memcheck-v3/canary-a{attempt}" }
+timeout_s = 550
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval/results/2026-10-06-q8-dedupe-memcheck-v3/a{attempt}"]
+
+[fix]
+editable = []
+protected = ["probe", "frozen", "budget"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/memcheck-v3/memcheck.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/memcheck-v3/fixtures/memcheck-0err-testfail.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/memcheck-v3/fixtures/memcheck-clean.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/memcheck-v3/fixtures/memcheck-fault-stack-on.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/memcheck-v3/fixtures/xid-lines.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/q8-exact",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/q8-dedupe/codex/frozen/q8-dedupe-v3/build/bin/libggml.so.0.25.3",
+]
