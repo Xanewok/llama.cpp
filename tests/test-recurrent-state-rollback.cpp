@@ -18,6 +18,8 @@
 #include <cstring>
 #include <filesystem>
 #include <limits>
+#include <map>
+#include <random>
 #include <set>
 #include <string>
 #include <vector>
@@ -558,6 +560,144 @@ static test_status test_shared_seq_reserve(const common_params & params, llama_m
     return test_status::PASS;
 }
 
+struct selected_recurrent_state : llama_io_write_i {
+    struct span {
+        ggml_tensor * tensor;
+        size_t offset;
+        std::vector<float> data;
+    };
+    std::map<std::string, span> states;
+    size_t size = 0;
+
+    void write(const void *, size_t n) override { size += n; }
+    size_t n_bytes() override { return size; }
+    void write_tensor(ggml_tensor * tensor, size_t offset, size_t n) override {
+        const std::string name = ggml_get_name(tensor);
+        if (name.find("cache_r_l") == 0 || name.find("cache_s_l") == 0) {
+            GGML_ASSERT(tensor->type == GGML_TYPE_F32 && n % sizeof(float) == 0);
+            span value = { tensor, offset, std::vector<float>(n / sizeof(float)) };
+            ggml_backend_tensor_get(tensor, value.data.data(), offset, n);
+            states.emplace(name, std::move(value));
+        }
+        size += n;
+    }
+};
+
+static selected_recurrent_state selected_state(llama_context * ctx) {
+    llama_synchronize(ctx);
+    selected_recurrent_state state;
+    llama_get_memory(ctx)->state_write(state, 0);
+    return state;
+}
+
+static bool states_match(const selected_recurrent_state & a, const selected_recurrent_state & b) {
+    if (a.states.empty() || a.states.size() != b.states.size()) {
+        return false;
+    }
+    for (const auto & [name, value] : a.states) {
+        const auto it = b.states.find(name);
+        if (it == b.states.end() || value.data.size() != it->second.data.size() ||
+            nmse(value.data.data(), it->second.data.data(), value.data.size()) > 1e-4) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static uint64_t hash_bytes(uint64_t hash, const void * ptr, size_t n) {
+    const auto * bytes = static_cast<const uint8_t *>(ptr);
+    for (size_t i = 0; i < n; ++i) {
+        hash = (hash ^ bytes[i]) * UINT64_C(1099511628211);
+    }
+    return hash;
+}
+
+// Compare these fingerprints between frozen builds with the same workload and backend.
+static test_status test_state_movers(const common_params & params, llama_model * model) {
+    auto ctx = make_ctx(params, model, 0);
+    if (!ctx || llama_n_rs_seq(ctx.get()) < 6) {
+        return test_status::FAIL;
+    }
+    const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
+    const auto prompt = common_tokenize(ctx.get(), "The quick brown fox", true);
+    if (!decode_tokens(ctx.get(), prompt)) {
+        return test_status::FAIL;
+    }
+    std::mt19937 rng(1729);
+    std::vector<int> accepts = {1, 2, 3, 4, 5, 6};
+    std::shuffle(accepts.begin(), accepts.end(), rng);
+    accepts.push_back(1 + rng() % 6);
+    accepts.push_back(6);
+    llama_pos pos = prompt.size();
+    bool wrong_index_detected = false;
+    bool dropped_snapshot_detected = false;
+    for (size_t trial = 0; trial < accepts.size(); ++trial) {
+        const int accepted = accepts[trial];
+        common_batch batch(ctx.get());
+        for (int i = 0; i < 6; ++i) {
+            batch.add((31 * (pos + i) + 7) % n_vocab, pos + i, 0, false);
+        }
+        if (llama_process(ctx.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0 ||
+            (accepted < 6 && !llama_memory_seq_rm(llama_get_memory(ctx.get()), 0, pos + accepted, -1))) {
+            return test_status::FAIL;
+        }
+        const auto actual = selected_state(ctx.get());
+        if (actual.states.empty()) {
+            return test_status::FAIL;
+        }
+        if (accepted < 6 && !wrong_index_detected) {
+            auto wrong = actual;
+            for (auto & [name, value] : wrong.states) {
+                const size_t plane_stride = value.data.size() * sizeof(float) * value.tensor->ne[1] / (llama_n_rs_seq(ctx.get()) + 1);
+                GGML_ASSERT(value.offset >= plane_stride);
+                ggml_backend_tensor_get(value.tensor, value.data.data(), value.offset - plane_stride, value.data.size() * sizeof(float));
+            }
+            wrong_index_detected = !states_match(wrong, actual);
+        }
+        if (!dropped_snapshot_detected) {
+            const auto & value = actual.states.begin()->second;
+            const std::vector<float> zero(value.data.size(), 0.0f);
+            ggml_backend_tensor_set(value.tensor, zero.data(), value.offset, zero.size() * sizeof(float));
+            dropped_snapshot_detected = !states_match(selected_state(ctx.get()), actual);
+            ggml_backend_tensor_set(value.tensor, value.data.data(), value.offset, value.data.size() * sizeof(float));
+        }
+        if (trial == 2) {
+            const size_t size = llama_state_seq_get_size(ctx.get(), 0);
+            std::vector<uint8_t> checkpoint(size);
+            GGML_ASSERT(llama_state_seq_get_data(ctx.get(), checkpoint.data(), size, 0) == size);
+            GGML_ASSERT(llama_state_seq_set_data(ctx.get(), checkpoint.data(), size, 0) == size);
+            if (!states_match(selected_state(ctx.get()), actual)) {
+                return test_status::FAIL;
+            }
+        }
+        uint64_t hash = UINT64_C(14695981039346656037);
+        for (const auto & [name, value] : actual.states) {
+            hash = hash_bytes(hash, value.data.data(), value.data.size() * sizeof(float));
+        }
+        pos += accepted;
+        if (!decode_one(ctx.get(), (31 * pos + 7) % n_vocab, pos)) {
+            return test_status::FAIL;
+        }
+        const float * logits = llama_get_logits_ith(ctx.get(), 0);
+        const int token = std::max_element(logits, logits + n_vocab) - logits;
+        hash = hash_bytes(hash, logits, n_vocab * sizeof(float));
+        printf("STATE_MOVERS trial=%zu accepted=%d state_logits_hash=%016llx token=%d\n", trial, accepted, (unsigned long long) hash, token);
+        ++pos;
+        if (trial == 5) {
+            if (!llama_memory_seq_rm(llama_get_memory(ctx.get()), 0, 0, -1) || !decode_tokens(ctx.get(), prompt)) {
+                return test_status::FAIL;
+            }
+            pos = prompt.size();
+        }
+    }
+    if (!wrong_index_detected || !dropped_snapshot_detected) {
+        LOG_ERR("%s: negative control failed\n", __func__);
+        return test_status::FAIL;
+    }
+    printf("STATE_MOVERS negative_controls=PASS\n");
+    return test_status::PASS;
+}
+
 static test_status merge_status(test_status a, test_status b) {
     if (a == test_status::FAIL || b == test_status::FAIL) {
         return test_status::FAIL;
@@ -619,6 +759,7 @@ static void print_usage(int /* argc */, char ** argv) {
     LOG("\nexample usage:\n");
     LOG("\n  %s -m your_model.gguf\n", argv[0]);
     LOG("\n  %s --models tests/test-models\n", argv[0]);
+    LOG("\n  %s --state-movers -m your_model.gguf\n", argv[0]);
     LOG("\n");
 }
 
@@ -633,10 +774,13 @@ int main(int argc, char ** argv) {
 
     // extract our own --models DIR option before handing the rest to the common arg parser
     std::string models_dir;
+    bool state_movers = false;
     std::vector<char *> filtered_argv;
     filtered_argv.push_back(argv[0]);
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--models") == 0) {
+        if (strcmp(argv[i], "--state-movers") == 0) {
+            state_movers = true;
+        } else if (strcmp(argv[i], "--models") == 0) {
             if (i + 1 >= argc) {
                 LOG_ERR("%s: --models requires a directory argument\n", __func__);
                 return 1;
@@ -661,6 +805,10 @@ int main(int argc, char ** argv) {
     }
 
     llama_backend_init();
+    if (state_movers) {
+        auto init = common_init_from_params(params, true);
+        return init->model() && test_state_movers(params, init->model()) == test_status::PASS ? 0 : 1;
+    }
 
     if (!models_dir.empty()) {
         // run every test over each dummy model in the directory
