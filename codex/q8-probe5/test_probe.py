@@ -64,7 +64,7 @@ class ProbeTest(unittest.TestCase):
         source = (probe.ROOT / "tests/test-backend-ops.cpp").read_text()
         self.assertIn("total_time_us < 250*1000", prepare_driver.instrument(source))
         cases = len(probe.matrix())
-        self.assertGreater(probe.STAGE_S["perf"], cases * 0.25)
+        self.assertGreater(probe.STAGE_S["perf"], cases * 0.47 * 1.5)
 
     def test_test_exit_one_requires_row_validation(self):
         with tempfile.TemporaryDirectory(dir=probe.ROOT / "build-tmp") as tmp:

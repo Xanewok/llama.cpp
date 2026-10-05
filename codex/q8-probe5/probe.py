@@ -24,7 +24,8 @@ BUILD_COMMIT = {}
 BUILD_REPO = ROOT
 DRIVER = HERE / "bin/q8-probe-driver"
 ERR = re.compile(r"ERR = ([0-9.eE+-]+) > ([0-9.eE+-]+)")
-STAGE_S = {"test": 65, "controls": 15, "perf": 60}
+# perf: 150 cases took ~70 s on GPU (ab5: 129 cases in the 60 s cap), not 150 x 0.25 s.
+STAGE_S = {"test": 65, "controls": 15, "perf": 120}
 DEPTHS = (8192, 32768, 90112)
 CONTROLS = ((8, 1, 256), (4, 2, 256), (2, 4, 256), (1, 8, 256), (2, 6, 256), (3, 6, 256), (4, 6, 256), (8, 6, 256))
 GQAS = (1, 2, 4, 6, 8)
