@@ -2232,7 +2232,7 @@ void ggml_cuda_flash_attn_ext_mma_f16_case(ggml_backend_cuda_context & ctx, ggml
     const size_t nbytes_shared_mask      = ncols1               * (nbatch_fa/2 + 4)                       * sizeof(half2);
     const size_t nbytes_shared_combine   = nwarps*cols_per_warp * (nbatch_combine + 4)                    * sizeof(half2);
 
-    const size_t nbytes_shared_KV_q8 = type_KV == GGML_TYPE_Q8_0 ? nbatch_fa * std::max(flash_attn_ext_f16_q8_0_row_bytes<DKQ>(), flash_attn_ext_f16_q8_0_row_bytes<DV>()) : 0;
+    const size_t nbytes_shared_KV_q8 = type_KV == GGML_TYPE_Q8_0 && nstages > 1 ? nbatch_fa * std::max(flash_attn_ext_f16_q8_0_row_bytes<DKQ>(), flash_attn_ext_f16_q8_0_row_bytes<DV>()) : 0;
 
     const size_t nbytes_shared_KV = (nstages <= 1 ? nbytes_shared_KV_1stage : nbytes_shared_KV_2stage) + nbytes_shared_KV_q8;
 
