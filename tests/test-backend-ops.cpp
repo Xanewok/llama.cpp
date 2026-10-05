@@ -11312,7 +11312,7 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     for (int nb : { 1, 4, 6, 8 }) {
         for (ggml_type type : { GGML_TYPE_F16, GGML_TYPE_Q8_0 }) {
             for (int tail : { 0, 1, 255, 256, 257, 4095 }) {
-                test_cases.emplace_back(new test_flash_attn_ext_padded(8192, nb, type, tail));
+                test_cases.emplace_back(new test_flash_attn_ext_padded(tail == 4095 ? 4096 : 8192, nb, type, tail));
             }
         }
     }
