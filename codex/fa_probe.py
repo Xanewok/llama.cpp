@@ -13,7 +13,7 @@ import time
 
 ROOT = Path(__file__).resolve().parent.parent
 BASE = Path('/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5')
-PATCH = ROOT / 'codex/frozen/fa-kvmax-decode-v3'
+PATCH = ROOT / 'codex/frozen/fa-kvmax-decode-v4'
 FIXTURES = Path('/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures')
 REAL_SQL = ROOT / 'codex/probe-fixtures/real-fa-perf.sql'
 FIELDS = ('stamp', 'commit', 'backend', 'op', 'params', 'mode', 'supported', 'passed', 'error', 'us', 'flops', 'bw', 'mem', 'runs', 'device', 'reg')
@@ -89,6 +89,22 @@ def selftest():
     raw = REAL_SQL.read_text()
     rows = metrics(raw, 'perf', '590912a1d')
     assert len(rows) >= 9 and any(float(r['us']) > 0 for r in rows)
+    # The recorded SQL predates the new shape fields; reject that format explicitly.
+    try:
+        key(rows[0])
+    except Gate as exc:
+        assert exc.code == 6
+    else:
+        raise AssertionError('old shape metadata escaped')
+    shaped = dict(rows[0], params='hsk=256,hsv=256,nh=4,nr23=[6,1],kv=8448,nb=1,type_K=f16,type_V=f16,tail=255')
+    check_rows([shaped], {(8448, 1, 'f16', 255)})
+    for changed in ([], [shaped, shaped]):
+        try:
+            check_rows(changed, {(8448, 1, 'f16', 255)})
+        except Gate as exc:
+            assert exc.code == 5
+        else:
+            raise AssertionError('missing or duplicate shape escaped')
     for changed in (raw.replace("'CUDA0'", "'CPU'"), raw.replace("'perf', '1', '1'", "'perf', '1', '0'"), raw.replace("'590912a1d'", "'000000000'")):
         try:
             metrics(changed, 'perf', '590912a1d')
@@ -165,8 +181,10 @@ def run(args):
             chosen = r'kv=4096,nb=1,.*tail=4095$' if mode == 'test' and args.mode == 'canary' else (r'tail=' if mode == 'test' else selector)
             raw = command([str(exe), mode, '-b', 'CUDA0', '-o', 'FLASH_ATTN_EXT', '-p', chosen, '--output', 'sql'], args.out / f'{boot}-{arm}-{mode}', deadline, env)
             rows = metrics(raw, mode, commits[arm])
-            if mode == 'perf' or args.mode == 'canary':
-                check_rows(rows, {(4096, 1, t, 4095) for t in ('f16', 'q8_0')} if mode == 'test' else expected)
+            expected_test = {(4096, 1, t, 4095) for t in ('f16', 'q8_0')} if args.mode == 'canary' else {
+                (4096 if tail == 4095 else 8192, q, t, tail)
+                for q in (1, 4, 6, 8) for t in ('f16', 'q8_0') for tail in (0, 1, 255, 256, 257, 4095)}
+            check_rows(rows, expected_test if mode == 'test' else expected)
             if arm == 'patch' and 'decode KV bound:' not in (args.out / f'{boot}-{arm}-{mode}.err').read_text():
                 raise Gate(6, 'decode bound did not engage')
             results.extend(dict(row, arm=arm, boot=boot) for row in rows)

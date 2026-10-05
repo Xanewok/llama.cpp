@@ -1,0 +1,23 @@
+{
+  "recorded_fixture": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures",
+  "parser_result": {
+    "intervals_M": 24,
+    "steady_ms_per_round_D": 37.19825,
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 684,
+      "prompt_ms": 1202.469,
+      "prompt_per_token_ms": 1.7579956140350879,
+      "prompt_per_second": 568.8296330300407,
+      "predicted_n": 122,
+      "predicted_ms": 1200.672,
+      "predicted_per_token_ms": 9.92290909090909,
+      "predicted_per_second": 100.77689827030196,
+      "draft_n": 150,
+      "draft_n_accepted": 93
+    }
+  },
+  "negative_controls": "PASS"
+}
+M: recorded GPU SQL, SSE, memory, journal parsers and negative controls pass
+{"commits": {"up": "52fc3fd2c404b7fd12c0f4005d56c44449e7e9c5", "patch": "d89b1b30caef05f155193e91f34bb0b3b3524458"}, "test_binary": "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4/build/bin/test-backend-ops", "plan": ["up", "patch", "patch", "up"]}

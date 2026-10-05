@@ -30,8 +30,8 @@ canary_log = ["n_kv_pad += 4096"]
 
 [arms.patch]
 label = "decode KV bound pad 4096"
-commit = "30dbea326257ff69a210fc8caf24650b688c7fe9"
-root = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v3"
+commit = "d89b1b30caef05f155193e91f34bb0b3b3524458"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v4"
 bin = "build/bin"
 repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode"
 exe = "build/bin/round-trace"
@@ -55,7 +55,7 @@ request_cap_s = 600
 [depth]
 depths = [8192, 32768, 90112]
 k = 5
-# A different n_kv changes the FA kernels' KV partition (stream-K), so cross-arm tokens may differ; each arm must reproduce itself.
+# The live bound changes the stream-k partition, so cross-arm tokens may differ; each arm must reproduce itself.
 identity = "within-arm"
 distinct_builds = true
 min_steady_intervals = 40
