@@ -86,9 +86,13 @@ def parse_xids(text):
 
 
 def journal_xids(since):
-    r = subprocess.run(['journalctl', '-k', '--no-pager', '-o', 'short-unix', '--since', f'@{int(since)}'],
-                       capture_output=True, text=True, timeout=60)
+    try:
+        r = subprocess.run(['journalctl', '-k', '--no-pager', '-o', 'short-unix', '--since', f'@{int(since)}'],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
     return parse_xids(r.stdout) if r.returncode == 0 else None
+
 
 
 # ---- stage definitions ----
@@ -104,7 +108,7 @@ def sanitized(tool, target):
 def stage_env():
     env = {k: v for k, v in os.environ.items() if not k.startswith('GGML_CUDA_DISABLE')}
     env.pop('GGML_CUDA_GRAPH_OPT', None)
-    env.update(LD_LIBRARY_PATH=BIN, GGML_CUDA_DEBUG_Q8_REUSE='1', GPUQ_ACTIVE='1')
+    env.update(LD_LIBRARY_PATH=BIN, GGML_CUDA_DEBUG_Q8_REUSE='1', OMP_NUM_THREADS='8', OPENBLAS_NUM_THREADS='8', MKL_NUM_THREADS='8')
     return env
 
 
@@ -396,6 +400,9 @@ def main():
             return RC_INTEGRITY
         log('preflight ok')
         return 0
+    if os.environ.get('GPUQ_ACTIVE') != '1':
+        log('integrity: GPU queue required')
+        return RC_INTEGRITY
     if not (a.out and a.raw and a.budget > 0):
         log('integrity: OUT, RAW and BUDGET_S are required')
         return RC_INTEGRITY

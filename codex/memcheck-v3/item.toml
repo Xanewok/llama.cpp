@@ -1,5 +1,5 @@
 id = "q8-dedupe-memcheck-v3"
-title = "q8-dedupe-v3 new CUDA code under compute-sanitizer on GPU0: fused ADD+RMS_NORM+MUL kernel (memcheck, racecheck, synccheck) and q8 reuse through direct/capture/replay (memcheck); runs before any normal probe"
+title = "v3 GPU0 sanitizer gates: shared matmuls against CPU, same-process q8 exactness, residual RMS memcheck/racecheck/synccheck"
 # Canary: one fused case, one shared case and three exactness cases; all sanitizer parsers/gates, <= 550 s.
 # Full caps: 150 + 150 + 300 + 120 + 120 = 840 s (D), <= 0.7 x 1200 s run budget (D).
 priority = 90
