@@ -1,0 +1,81 @@
+id = "gdn-state-movers-depth-j5q"
+kind = "depth"
+title = "Conv concat/snapshot fusion vs stack4; J5q TP2 np1 k=5; depth ABBA and cross-arm token identity"
+plan = ["up", "patch", "patch", "up"]
+protected = ["identity", "steady_minimum", "SHA256SUMS", "frozen", "DEPTHS", "ARM_ENV", "min_p"]
+devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
+out = "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/gpu-ab-runs"
+cpu_evidence = { path = "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/cpu-identity.json", command = "CPU state-movers fingerprints and negative controls; cpu-ops SSM_CONV_STATE_FUSION" }
+extra_pins = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/gpu_ab.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/test_gpu_parsers.py", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/gpu-parser-tests.json", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1.json", "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack4-depth-j5q/full-a1/0-up/depth-8192.json"]
+
+[model]
+id = "swift15-j5q"
+path = "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf"
+bytes = 19996051744
+sha = "f2c850ea3cd818b9d669fbd1e18767ef669ce012e614d819cce5ab6809e3a774"
+
+[draft_vocab]
+path = "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json"
+sha = "e30af79520ade5b7ddb851d75cf271f07d407dc768bf646e4517607d562a65a6"
+
+[arms.up]
+label = "up 590912a1d"
+commit = "590912a1de2097523db6c8efe185387bb5c7d4fc"
+root = "/home/xanewok/repos/qwen38-weekend/frozen/stack4"
+bin = "build/bin"
+exe = "build/bin/round-trace"
+env = { GGML_SCHED_INPUT_STAGING = "1", LD_LIBRARY_PATH = "{root}/build/bin" }
+flags = ["--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16"]
+canary_log = ["creating MTP draft context against the target model"]
+
+[arms.patch]
+label = "patch d2c8e6d0d"
+commit = "d2c8e6d0d738d2533b6bc627bbf8a7de7cae6d0a"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers"
+bin = "build/bin"
+exe = "build/bin/round-trace"
+env = { GGML_SCHED_INPUT_STAGING = "1", LD_LIBRARY_PATH = "{root}/build/bin" }
+flags = ["--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16"]
+canary_log = ["creating MTP draft context against the target model"]
+
+[server]
+# serve.sh swift15-j5q: -c 102400 -np 1, q8_0 KV, -ngl 99, tensor split 50/50, -b 2048 -ub 512, MTP k=5 subset head, f16 draft KV.
+args = ["-m", "{model}", "-c", "102400", "-np", "1", "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "{arm_flags}",
+        "-sm", "tensor", "--tensor-split", "50,50", "-ngl", "99", "-b", "2048", "-ub", "512",
+        "--spec-type", "draft-mtp", "--spec-draft-n-max", "5", "--spec-draft-n-min", "0", "--spec-draft-p-min", "0",
+        "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--backend-sampling",
+        "--spec-draft-vocab", "{draft_vocab}", "--cache-ram", "0", "--metrics", "-t", "8", "-tb", "8",
+        "--host", "127.0.0.1", "--port", "{port}"]
+knobs = ["GGML_SCHED_INPUT_STAGING", "LLAMA_ROUND_TRACE", "GGML_SCHED_DEBUG"]
+boot_cap_s = 300
+request_cap_s = 600
+
+[depth]
+depths = [8192, 32768, 90112]
+k = 5
+identity = "cross-arm"
+distinct_builds = true
+min_steady_intervals = 40
+min_predicted = 256
+fixtures = "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures"
+request = { seed = 1729, n_predict = 512, temperature = 1, top_k = 20, top_p = 0.95, min_p = 0.05 }
+# G: 420 s per full boot; 180 s for the one-depth canary. Estimated stages use less than 70% of the item budget.
+wall_s = 420
+
+[canary]
+plan = ["patch"]
+depths = [8192]
+proofs = []
+
+[budget]
+canary_s = 600
+margin = 1.5
+cleanup_s = 150
+est_s = 2000
+startup_grace_s = 300
+preflight_s = 300
+
+[outputs]
+run = "full-a{attempt}"
+canary = "canary-a{attempt}"
+preflight = "preflight-plan"

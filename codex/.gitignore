@@ -6,3 +6,6 @@ reuse-results/
 input-results/
 runs/
 __pycache__/
+
+frozen/*/build/bin/*
+!frozen/*/build/bin/SHA256SUMS

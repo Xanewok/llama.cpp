@@ -1,0 +1,34 @@
+{
+  "artifact": "/home/xanewok/repos/attrib-pack/runs/attrib-host-s3m/full-a1/decode-8k.sqlite",
+  "label": "M",
+  "scope": "whole recorded window; counts are not normalized per round",
+  "rows": [
+    [
+      "void concat_non_cont<unsigned int, (int)0>(const char *, const char *, char *, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long)",
+      5120,
+      1,
+      1,
+      256,
+      7418,
+      11.652782960366675
+    ],
+    [
+      "void k_get_rows_float_vec<float>(const T1 *, const int *, T1 *, long, long, uint3, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+      1,
+      384,
+      1,
+      256,
+      7418,
+      6.182248180102453
+    ],
+    [
+      "void ssm_conv_f32<(bool)1, (unsigned long)128, (unsigned long)4>(const float *, const float *, const float *, int, int, int, int, float *, int, int, int, long)",
+      1,
+      40,
+      1,
+      128,
+      7418,
+      3.652952682663791
+    ]
+  ]
+}

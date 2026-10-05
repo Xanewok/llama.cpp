@@ -1,0 +1,118 @@
+id = "gdn-state-movers-depth-j5q"
+title = "Conv concat/snapshot fusion vs stack4; J5q TP2 np1 k=5; depth ABBA and cross-arm token identity"
+# up patch patch up: 4 x 420 s x 1.5 + 150 = run 2700; + canary 600 + cleanup 150 = 3450.
+# cpu_evidence: CPU state-movers fingerprints and negative controls; cpu-ops SSM_CONV_STATE_FUSION
+kind = "measure"
+ab = true
+retry = "fresh"
+budget_s = 3450
+est_s = 2000
+startup_grace_s = 300
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "integrity", regex = "frozen bytes changed|inputs changed|model SHA changed|effective params mismatch|frozen file set changed|cross-arm identity failed|path-engaged proof failed|staging-engaged proof failed|canary prompt differs" },
+  { class = "insufficient_data", regex = "too few verify steps|proof inconclusive|missing final token identity|canary prompt has \\d+ tokens|reached only \\d+ cached|R2 reused only" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/gdn-state-movers.experiment.toml", "--execute", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/gpu-ab-runs/full-a{attempt}", "--port", "{port}"]
+cwd = "/home/xanewok/repos/qwen38-eval/harness"
+env = { GPUQ_ACTIVE = "1" }
+ports = "dynamic"
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/gdn-state-movers.experiment.toml", "--preflight", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/gpu-ab-runs/preflight-plan"]
+timeout_s = 300
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/gdn-state-movers.experiment.toml", "--canary", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/gpu-ab-runs/canary-a{attempt}", "--port", "{port}"]
+env = { GPUQ_ACTIVE = "1" }
+timeout_s = 600
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/gpu-ab-runs/full-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["identity", "steady_minimum", "SHA256SUMS", "frozen", "DEPTHS", "ARM_ENV", "min_p"]
+
+[pins]
+files = [
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf",
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/test_gpu_parsers.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/gpu-parser-tests.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack4-depth-j5q/full-a1/0-up/depth-8192.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/cpu-identity.json",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/SOURCE",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-weekend/frozen/stack4/build/bin/round-trace",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/round-trace",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/frozen/gdn-state-movers/build/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-apps.csv",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-query.csv",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/xid-lines.txt",
+  "/home/xanewok/repos/qwen38-eval/harness/__init__.py",
+  "/home/xanewok/repos/qwen38-eval/harness/__main__.py",
+  "/home/xanewok/repos/qwen38-eval/harness/agents.py",
+  "/home/xanewok/repos/qwen38-eval/harness/campaign.py",
+  "/home/xanewok/repos/qwen38-eval/harness/depth.py",
+  "/home/xanewok/repos/qwen38-eval/harness/lib.py",
+  "/home/xanewok/repos/qwen38-eval/harness/mkitem.py",
+  "/home/xanewok/repos/qwen38-eval/harness/probe.py",
+  "/home/xanewok/repos/qwen38-eval/harness/stub_server.py",
+  "/home/xanewok/repos/qwen38-eval/harness/run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-state-movers/codex/gdn-state-movers.experiment.toml",
+]

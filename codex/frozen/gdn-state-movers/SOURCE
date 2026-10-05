@@ -1,0 +1,2 @@
+d2c8e6d0d738d2533b6bc627bbf8a7de7cae6d0a
+d2c8e6d0d: recurrent conv concat/snapshot/SSM_CONV fusion; CUDA 13.2, NCCL OFF, arch 120 (normalized by CMake to 120a), local CCCL 3.4.3; GPU execution pending

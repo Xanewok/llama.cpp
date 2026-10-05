@@ -1,0 +1,8 @@
+{
+  "label": "M",
+  "trials": 8,
+  "base_patch_identity": "PASS",
+  "wrong_plane": "PASS",
+  "dropped_snapshot": "PASS",
+  "identity_negative_control": "PASS"
+}
