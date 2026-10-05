@@ -1,7 +1,7 @@
 id = "mmvq-w2r4-general-ab2"
 title = "General MMVQ w2r4: partial-row correctness and ncols 1-8 vs 98c695111"
 kind = "measure"
-budget_s = 2400
+budget_s = 3600
 est_s = 900
 priority = 62
 ab = true
@@ -16,7 +16,7 @@ signatures = [
 [run]
 cmd = ["bash", "/home/xanewok/repos/mmvq-w2r4/codex/w2r4-general-probe2/run.sh", "--run"]
 cwd = "/home/xanewok/repos/mmvq-w2r4"
-env = { CUDA_VISIBLE_DEVICES = "0,1", BUDGET_S = "1800", OUT = "/home/xanewok/repos/mmvq-w2r4/codex/runs/w2r4-general2/full-a{attempt}" }
+env = { CUDA_VISIBLE_DEVICES = "0,1", BUDGET_S = "3000", OUT = "/home/xanewok/repos/mmvq-w2r4/codex/runs/w2r4-general2/full-a{attempt}" }
 ports = []
 
 [preflight]

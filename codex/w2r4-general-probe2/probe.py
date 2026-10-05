@@ -22,7 +22,8 @@ FROZEN = {"up": Path("/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base"), "
 BUILD_COMMIT = {"up": "0bb874d20"}
 BUILD_REPO = Path("/home/xanewok/repos/q8-1row")
 UP_PREFIX = "98c695111"
-STAGE_S = 120
+# The base arm is slower at 5-8 columns: its perf stage exceeded 120 s (run full-a1).
+STAGE_S = 300
 TYPES = {"q4_K": (12, 144, 256), "q5_K": (13, 176, 256), "q6_K": (14, 210, 256), "iq4_xs": (23, 136, 256), "q8_0": (8, 34, 32)}
 FIELDS = ("stamp", "commit", "backend", "op", "params", "mode", "supported", "passed", "error", "us", "flops", "bw", "mem", "runs", "device", "reg")
 HAZARD = re.compile(r"\bXid\b|fallen off the bus")
