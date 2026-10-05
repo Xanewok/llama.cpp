@@ -1,0 +1,114 @@
+id = "q8-1row-fa-ab3"
+title = "One-row q8_0 FLASH_ATTN_EXT: VEC base vs grouped MMA, D128/256 GQA1/4/6/8 at 8k/32k/90k, q8 correctness, f16 ERR integrity and bandwidth"
+kind = "measure"
+budget_s = 1500
+est_s = 720
+priority = 40
+ab = true
+retry = "fresh"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+    { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+    { class = "integrity", regex = "frozen bytes changed|ggml libs resolve outside frozen dir|FA source shape mismatch" },
+    { class = "timeout", regex = "budget expired" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/run.sh", "--run"]
+cwd = "/home/xanewok/repos/q8-1row-probe2"
+env = { CUDA_VISIBLE_DEVICES = "0,1", BUDGET_S = "1200", OUT = "/home/xanewok/repos/q8-1row-probe2/codex/runs/q8-probe3/full-a{attempt}" }
+ports = []
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/run.sh", "--preflight"]
+env = { CUDA_VISIBLE_DEVICES = "", OUT = "/home/xanewok/repos/q8-1row-probe2/codex/runs/q8-probe3/preflight" }
+timeout_s = 60
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/run.sh", "--canary"]
+env = { CUDA_VISIBLE_DEVICES = "0", BUDGET_S = "280", OUT = "/home/xanewok/repos/q8-1row-probe2/codex/runs/q8-probe3/canary-a{attempt}" }
+timeout_s = 300
+
+[outputs]
+paths = ["/home/xanewok/repos/q8-1row-probe2/codex/runs/q8-probe3/full-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/cpu_driver_check.cpp",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/PRE-PATCHELF-SHA256SUMS",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/SHA256SUMS",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/SOURCE",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/SHA256SUMS",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libggml-base.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libggml-base.so.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libggml-cpu.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libggml-cuda.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libggml.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libggml.so.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libllama-common.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libllama-common.so.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libllama.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libllama.so.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libmtmd.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libmtmd.so.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/round-trace",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row/bin/test-backend-ops",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/PRE-PATCHELF-SHA256SUMS",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/SHA256SUMS",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/SOURCE",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/SHA256SUMS",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libggml-base.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libggml-base.so.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libggml-cpu.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libggml-cuda.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libggml.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libggml.so.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libllama-common.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libllama-common.so.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libllama.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libllama.so.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libmtmd.so",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libmtmd.so.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/round-trace",
+  "/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base/bin/test-backend-ops",
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/DRIVER-SHA256SUMS",
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/bin/q8-probe-driver",
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/build_driver.sh",
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/fixtures/SOURCE",
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/fixtures/canary-test.sql",
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/fixtures/real-fa-eval.log",
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/fixtures/real-fa-perf.log",
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/fixtures/real-kernel-errors.txt",
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/fixtures/real-memory.csv",
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/fixtures/real-mmvq.sql",
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/prepare_driver.py",
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/probe.py",
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/run.sh",
+  "/home/xanewok/repos/q8-1row-probe2/codex/q8-probe3/test_probe.py",
+  "/home/xanewok/repos/q8-1row-probe2/ggml/include/ggml.h",
+  "/home/xanewok/repos/q8-1row-probe2/tests/test-backend-ops.cpp",
+]
