@@ -19,6 +19,7 @@
 #include "ggml-alloc.h"
 #include "ggml-backend.h"
 #include "ggml-cpp.h"
+#include "../ggml/src/ggml-ssm-conv.h"
 
 #include <algorithm>
 #include <atomic>
@@ -4431,6 +4432,146 @@ struct test_ssm_conv : public test_case {
         ggml_tensor * b   = ggml_new_tensor(ctx, type, 4, ne_b.data());
         ggml_tensor * out = ggml_ssm_conv(ctx, a, b);
         return out;
+    }
+};
+
+struct test_ssm_conv_state_fusion : public test_case {
+    const int64_t channels, tokens, seqs, K, width;
+    const bool silu;
+    ggml_tensor * concat = nullptr;
+    ggml_tensor * conv = nullptr;
+    std::vector<ggml_tensor *> copies;
+
+    test_ssm_conv_state_fusion(int64_t channels, int64_t tokens, int64_t seqs, int64_t K, int64_t width, bool silu)
+        : channels(channels), tokens(tokens), seqs(seqs), K(K), width(width), silu(silu) {}
+
+    std::string vars() override { return VARS_TO_STR6(channels, tokens, seqs, K, width, silu); }
+    std::string op_desc(ggml_tensor *) override { return "SSM_CONV_STATE_FUSION"; }
+    bool run_whole_graph() override { return true; }
+    std::vector<ggml_tensor *> fusion_test_nodes() override {
+        auto nodes = copies;
+        nodes.push_back(conv);
+        return nodes;
+    }
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        const int64_t history = width - 1;
+        auto * state = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, history, channels, seqs);
+        auto * input = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, channels, tokens, seqs);
+        auto * weights = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, width, channels);
+        concat = ggml_concat(ctx, state, ggml_transpose(ctx, input), 0);
+        const int64_t rows = seqs + 2;
+        auto * cache = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, history * channels, rows, K);
+        for (int64_t slot = K - 1; slot >= 0; --slot) {
+            auto * src = ggml_view_3d(ctx, concat, history, channels, seqs, concat->nb[1], concat->nb[2],
+                std::max<int64_t>(0, tokens - slot) * sizeof(float));
+            auto * dst = ggml_view_2d(ctx, cache, history * channels, seqs, cache->nb[1],
+                cache->nb[1] + slot * cache->nb[2]);
+            auto * cpy = ggml_cpy(ctx, src, dst);
+            copies.push_back(cpy);
+            ggml_build_forward_expand(gf, cpy);
+        }
+        conv = ggml_ssm_conv(ctx, concat, weights);
+        if (silu) {
+            conv = ggml_silu(ctx, conv);
+        }
+        return conv;
+    }
+
+    void check_gallocr(ggml_backend_buffer_type_t buft) {
+        const int64_t c = 5120;
+        for (int64_t depth : {8192, 90112}) {
+            for (int64_t n_seq : {1, 2}) {
+                for (int64_t n_tok : {1, 4, 6}) {
+                    for (int64_t k = 1; k <= 6; ++k) {
+                        ggml_context_ptr inputs(ggml_init({ggml_tensor_overhead() * 128, nullptr, true}));
+                        auto * state = ggml_new_tensor_2d(inputs.get(), GGML_TYPE_F32, 3 * c, n_seq);
+                        auto * tokens = ggml_new_tensor_2d(inputs.get(), GGML_TYPE_F32, c, n_tok * n_seq);
+                        auto * weights = ggml_new_tensor_2d(inputs.get(), GGML_TYPE_F32, 4, c);
+                        auto * cache = ggml_new_tensor_3d(inputs.get(), GGML_TYPE_F32, 3 * c, n_seq + 2, k);
+                        auto * attention = ggml_new_tensor_2d(inputs.get(), GGML_TYPE_F32, 64, depth);
+                        ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors_from_buft(inputs.get(), buft));
+                        GGML_ASSERT(buffer);
+                        ggml_context_ptr ctx(ggml_init({ggml_tensor_overhead() * 128 + ggml_graph_overhead(), nullptr, true}));
+                        auto * graph = ggml_new_graph(ctx.get());
+                        // Free an attention-sized temporary before the recurrent layer to vary gallocr placement.
+                        auto * sum = ggml_sum(ctx.get(), ggml_scale(ctx.get(), attention, 0.5f));
+                        ggml_set_output(sum);
+                        ggml_build_forward_expand(graph, sum);
+                        auto * ids = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I32, n_tok * n_seq);
+                        ggml_set_input(ids);
+                        auto * tok = ggml_get_rows(ctx.get(), tokens, ids);
+                        ggml_build_forward_expand(graph, tok);
+                        auto * rows = ggml_get_rows(ctx.get(), state, ggml_view_1d(ctx.get(), ids, n_seq, 0));
+                        auto * cat = ggml_concat(ctx.get(), ggml_reshape_3d(ctx.get(), rows, 3, c, n_seq),
+                                                ggml_permute(ctx.get(), ggml_reshape_3d(ctx.get(), tok, c, n_tok, n_seq), 1, 0, 2, 3), 0);
+                        ggml_tensor * first = nullptr;
+                        for (int64_t slot = k - 1; slot >= 0; --slot) {
+                            auto * src = ggml_view_3d(ctx.get(), cat, 3, c, n_seq, cat->nb[1], cat->nb[2],
+                                                     std::max<int64_t>(0, n_tok - slot) * sizeof(float));
+                            auto * dst = ggml_view_2d(ctx.get(), cache, 3 * c, n_seq, cache->nb[1],
+                                                     cache->nb[1] + slot * cache->nb[2]);
+                            auto * copy = ggml_cpy(ctx.get(), src, dst);
+                            if (!first) {
+                                first = copy;
+                            }
+                            ggml_build_forward_expand(graph, copy);
+                        }
+                        auto * raw = ggml_ssm_conv(ctx.get(), cat, weights);
+                        auto * out = ggml_silu(ctx.get(), raw);
+                        ggml_set_output(out);
+                        ggml_build_forward_expand(graph, out);
+                        ggml_gallocr_t alloc = ggml_gallocr_new(buft);
+                        GGML_ASSERT(ggml_gallocr_alloc_graph(alloc, graph));
+                        int start = 0;
+                        while (start < graph->n_nodes && graph->nodes[start] != first) {
+                            ++start;
+                        }
+                        GGML_ASSERT(start < graph->n_nodes);
+                        ggml_ssm_conv_state_fusion match;
+                        GGML_ASSERT(ggml_match_ssm_conv_state_fusion(graph, start, match));
+                        GGML_ASSERT(match.slots == k && match.out == out);
+                        if (n_tok == 6 && n_seq == 1) {
+                            GGML_ASSERT(ggml_ssm_conv_overlaps(out, tok));
+                        }
+                        const size_t offset = first->src[0]->view_offs;
+                        first->src[0]->view_offs += sizeof(float);
+                        GGML_ASSERT(!ggml_match_ssm_conv_state_fusion(graph, start, match));
+                        first->src[0]->view_offs = offset;
+                        ggml_set_output(raw);
+                        GGML_ASSERT(!ggml_match_ssm_conv_state_fusion(graph, start, match));
+                        ggml_gallocr_free(alloc);
+                    }
+                }
+            }
+        }
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        test_case::initialize_tensors(ctx);
+        if (channels == 128 && tokens == 6 && seqs == 1 && K == 6 && width == 4 && silu) {
+            check_gallocr(ggml_backend_buffer_get_type(concat->buffer));
+        }
+        int start = 0;
+        while (start < gf->n_nodes && gf->nodes[start] != copies.front()) {
+            ++start;
+        }
+        GGML_ASSERT(start < gf->n_nodes);
+        ggml_ssm_conv_state_fusion match;
+        GGML_ASSERT(ggml_match_ssm_conv_state_fusion(gf, start, match));
+        GGML_ASSERT(match.slots == K && match.out == conv);
+        auto * src = copies.back()->src[0];
+        const size_t offset = src->view_offs;
+        src->view_offs -= sizeof(float);
+        GGML_ASSERT(!ggml_match_ssm_conv_state_fusion(gf, start, match));
+        src->view_offs = offset;
+        void * data = concat->data;
+        concat->data = copies.back()->data;
+        GGML_ASSERT(!ggml_match_ssm_conv_state_fusion(gf, start, match));
+        concat->data = data;
+        concat->flags |= GGML_TENSOR_FLAG_OUTPUT;
+        GGML_ASSERT(ggml_match_ssm_conv_state_fusion(gf, start, match));
+        concat->flags &= ~GGML_TENSOR_FLAG_OUTPUT;
     }
 };
 
@@ -10146,6 +10287,19 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_ssm_scan(GGML_TYPE_F32, 16, 1, 1024, 1, 32, 4)); // Mamba-1
     test_cases.emplace_back(new test_ssm_scan(GGML_TYPE_F32, 96, 64, 128, 8, 1, 1)); // Nemotron-3-Puzzle decode (scan path, unused warp in last block)
     test_cases.emplace_back(new test_ssm_scan(GGML_TYPE_F32, 96, 64, 16, 8, 300, 2, false, /*K=*/1, /*weak_decay=*/true)); // d_state=96 SSD multi-chunk (partial 2nd chunk, 2 seqs)
+    for (int64_t K = 1; K <= 6; ++K) {
+        for (int64_t tokens : {1, 2, 6, 9}) {
+            for (int64_t channels : {7, 128}) {
+                for (int64_t seqs : {1, 2}) {
+                    test_cases.emplace_back(new test_ssm_conv_state_fusion(channels, tokens, seqs, K, 4, true));
+                }
+            }
+        }
+    }
+    for (int64_t width : {3, 5, 9, 15}) {
+        test_cases.emplace_back(new test_ssm_conv_state_fusion(128, 6, 2, 6, width, false));
+    }
+
     test_cases.emplace_back(new test_ssm_scan_rollback(GGML_TYPE_F32, 96, 64, 16, 8, 8, 2, /*K=*/3)); // d_state=96 rollback snapshots match prefix states
     test_cases.emplace_back(new test_ssm_scan(GGML_TYPE_F32, 128, 64, 16, 2, 32, 4)); // Mamba-2
     test_cases.emplace_back(new test_ssm_scan(GGML_TYPE_F32, 256, 64,  8, 2, 32, 4)); // Falcon-H1
