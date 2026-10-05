@@ -1,0 +1,3 @@
+M: seed=0 gqa=4 kv=90112 CPU_ERR=0.0024071250224929276 fixed_reference_err=0 tolerance=0.0022528000000000001 repeat_hash=d40269daab4bde76 half_oracle_mutant=0 seconds=6.383
+M: seed=0 gqa=6 kv=90112 CPU_ERR=0.0020840416477378083 fixed_reference_err=0 tolerance=0.0022528000000000001 repeat_hash=94555b75c48472e9 half_oracle_mutant=0 seconds=6.879
+M: native half accumulation crossed tolerance; fixed reference matched the f32-V oracle without CUDA

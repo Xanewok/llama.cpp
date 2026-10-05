@@ -1,0 +1,17 @@
+M: seed=0 gqa=4 kv=90112 CPU_ERR=0.0024071250224929276 tolerance=0.0022528000000000001 repeat_hash=d40269daab4bde76 half_oracle_mutant=0 seconds=6.649
+M: seed=0 gqa=6 kv=90112 CPU_ERR=0.0020840416477378083 tolerance=0.0022528000000000001 repeat_hash=94555b75c48472e9 half_oracle_mutant=0 seconds=6.830
+M: seed=1 gqa=4 kv=90112 CPU_ERR=0.0018392960275160058 tolerance=0.0022528000000000001 repeat_hash=2f86df78695deab4 half_oracle_mutant=0 seconds=6.606
+M: seed=1 gqa=6 kv=90112 CPU_ERR=0.0020509950528759722 tolerance=0.0022528000000000001 repeat_hash=36314e6915d3777c half_oracle_mutant=0 seconds=6.833
+M: seed=2 gqa=4 kv=90112 CPU_ERR=0.0015379664160493987 tolerance=0.0022528000000000001 repeat_hash=49f8f167173e8dcc half_oracle_mutant=0 seconds=6.754
+M: seed=2 gqa=6 kv=90112 CPU_ERR=0.0017674783543099686 tolerance=0.0022528000000000001 repeat_hash=cc2b7d5d1c46c4f6 half_oracle_mutant=0 seconds=6.885
+M: seed=3 gqa=4 kv=90112 CPU_ERR=0.0018159910613722676 tolerance=0.0022528000000000001 repeat_hash=01719c22349d8e15 half_oracle_mutant=0 seconds=6.775
+M: seed=3 gqa=6 kv=90112 CPU_ERR=0.0018026364207452559 tolerance=0.0022528000000000001 repeat_hash=5c691cdad815dee5 half_oracle_mutant=0 seconds=6.713
+M: seed=4 gqa=4 kv=90112 CPU_ERR=0.0017916628541681757 tolerance=0.0022528000000000001 repeat_hash=c1eddef1b85a7611 half_oracle_mutant=0 seconds=6.753
+M: seed=4 gqa=6 kv=90112 CPU_ERR=0.00210347418670216 tolerance=0.0022528000000000001 repeat_hash=c2e2dbf1c616d9dd half_oracle_mutant=0 seconds=6.829
+M: seed=5 gqa=4 kv=90112 CPU_ERR=0.002062039740723155 tolerance=0.0022528000000000001 repeat_hash=ca17f44fa66e4f64 half_oracle_mutant=0 seconds=7.322
+M: seed=5 gqa=6 kv=90112 CPU_ERR=0.0019440516039768573 tolerance=0.0022528000000000001 repeat_hash=9bf58e48f3e0a2de half_oracle_mutant=0 seconds=6.730
+M: seed=6 gqa=4 kv=90112 CPU_ERR=0.0018803300412739568 tolerance=0.0022528000000000001 repeat_hash=747fd25f84f26b35 half_oracle_mutant=0 seconds=6.837
+M: seed=6 gqa=6 kv=90112 CPU_ERR=0.0020007651907024714 tolerance=0.0022528000000000001 repeat_hash=7bc7b7d61591b638 half_oracle_mutant=0 seconds=6.744
+M: seed=7 gqa=4 kv=90112 CPU_ERR=0.0020577185253901854 tolerance=0.0022528000000000001 repeat_hash=fdddefeb4c93a91b half_oracle_mutant=0 seconds=6.861
+M: seed=7 gqa=6 kv=90112 CPU_ERR=0.0021178446863087544 tolerance=0.0022528000000000001 repeat_hash=82005c0061634933 half_oracle_mutant=0 seconds=6.901
+M: identical decoded inputs; removing half V accumulation removes the error; reference crossed tolerance without CUDA

@@ -1,0 +1,121 @@
+id = "draft-attn-cause-seeds"
+title = "Seeded FLASH_ATTN_EXT error attribution: frozen base/patch, CPU f32-V oracle, both GPUs"
+kind = "measure"
+budget_s = 900
+est_s = 510
+# G: full 48 processes x 7 s + 84 s guards = 420 s; canary 90 s. Total estimate 510 s; total budget 900 s.
+priority = 40
+ab = true
+retry = "fresh"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+    { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+    { class = "integrity", regex = "frozen bytes changed|ggml libs resolve outside frozen dir|FA source shape mismatch" },
+    { class = "timeout", regex = "budget expired" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/run.sh", "--run"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause"
+env = { CUDA_VISIBLE_DEVICES = "0,1", BUDGET_S = "600", OUT = "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/runs/draft-attn-cause/full-a{attempt}" }
+ports = []
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/run.sh", "--preflight"]
+env = { CUDA_VISIBLE_DEVICES = "", OUT = "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/runs/draft-attn-cause/preflight" }
+timeout_s = 60
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/run.sh", "--canary"]
+env = { CUDA_VISIBLE_DEVICES = "0", BUDGET_S = "180", OUT = "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/runs/draft-attn-cause/canary-a{attempt}" }
+timeout_s = 240
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/runs/draft-attn-cause/full-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/PRE-PATCHELF-SHA256SUMS",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/SHA256SUMS",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/SOURCE",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/SHA256SUMS",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libggml-base.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libggml-base.so.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libggml-cpu.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libggml-cuda.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libggml.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libggml.so.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libllama-common.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libllama-common.so.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libllama.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libllama.so.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libmtmd.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libmtmd.so.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/round-trace",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn-base/bin/test-backend-ops",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/PRE-PATCHELF-SHA256SUMS",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/SHA256SUMS",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/SOURCE",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/SHA256SUMS",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libggml-base.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libggml-base.so.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libggml-cpu.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libggml-cuda.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libggml.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libggml.so.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libllama-common.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libllama-common.so.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libllama.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libllama.so.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libmtmd.so",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libmtmd.so.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/round-trace",
+  "/home/xanewok/repos/draft-attn/codex/frozen/draft-attn/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/.gitignore",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/DRIVER-SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/bin/cause-driver",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/build_driver.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/cpu_cause.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/fixtures/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/fixtures/real-fa-eval.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/fixtures/real-fa-perf.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/fixtures/real-kernel-errors.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/fixtures/real-memory.csv",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/fixtures/real-mmvq.sql",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/fixtures/recorded-draft.sql",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/fixtures/recorded-q8.sql",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/oracle.inc",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/prepare_driver.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/probe.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/draft-attn-cause-probe/test_probe.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/fa-case-schema-results.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/fa-controls-schema-results.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/codex/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/ggml/include/ggml.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/draft-attn-cause/tests/test-backend-ops.cpp",
+]
