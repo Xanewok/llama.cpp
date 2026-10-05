@@ -48,10 +48,19 @@ fails(lambda: engagement(real_log, 48, 6, [0]))
 fails(lambda: bench_engagement(real_log, 48, 6, 0))
 positive = ''.join(f'ssm_conv_state_fusion: engaged conv_output_raw-{layer} device={dev} graph={100+dev} tokens=6 channels=5120 seqs=1 slots=6 nodes=20\n'
                    for dev in (0, 1) for layer in range(48))
+positive += ''.join(f'ssm_conv_state_fusion: graph device={dev} graph={100+dev} tokens=6 conv=48 fused=48\n' for dev in (0, 1))
 assert len(engagement(positive, 48, 6, [0, 1])) == 2
 fails(lambda: engagement(positive.replace('conv_output_raw-47', 'conv_output_raw-46'), 48, 6, [0, 1]))
 fails(lambda: engagement(positive + 'ssm_conv_state_fusion: rejected snap device=0 graph=100 tokens=6: external consumer\n', 48, 6, [0, 1]))
+fails(lambda: engagement(positive.replace('conv=48 fused=48', 'conv=48 fused=47'), 48, 6, [0, 1]))
+fails(lambda: engagement(positive + 'ssm_conv_state_fusion: graph device=0 graph=999 tokens=6 conv=1 fused=0\n', 48, 6, [0, 1]))
 one_device = '\n'.join(l for l in positive.splitlines() if 'device=0 ' in l) + '\n'
+# Meta separates CUDA graphs at AllReduce boundaries; the device must still cover every layer.
+fragmented = ''.join(f'ssm_conv_state_fusion: engaged conv_output_raw-{layer} device={dev} graph={1000+dev*100+layer} tokens=6 channels=5120 seqs=1 slots=6 nodes=20\n'
+                     for dev in (0, 1) for layer in range(48))
+fragmented += ''.join(f'ssm_conv_state_fusion: graph device={dev} graph={1000+dev*100+layer} tokens=6 conv=1 fused=1\n' for dev in (0, 1) for layer in range(48))
+assert len(engagement(fragmented, 48, 6, [0, 1], fragmented=True)) == 96
+fails(lambda: engagement(fragmented.replace('conv_output_raw-47', 'conv_output_raw-46'), 48, 6, [0, 1], fragmented=True))
 bench_positive = ''.join('BENCH_MODE ' + mode + '\n' + (one_device if mode != 'sep-unfused' else '')
                          for mode in ('sep-unfused', 'sep-fused', 'galloc-model', 'galloc-pinned'))
 assert len(bench_engagement(bench_positive, 48, 6, 0)) == 3

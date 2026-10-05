@@ -16,9 +16,9 @@ gate=/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate
     -Lbuild-cuda/bin -Wl,-rpath,'$ORIGIN' -lggml -lggml-base \
     -o build-cuda/bin/conv-state-bench > codex/build-bench-cuda.log 2>&1
 cp build-cuda/bin/llama-server build-cuda/bin/round-trace
-QWEN38_WT_ROOT="$PWD/codex" /home/xanewok/repos/qwen38-eval-worktrees/bin/wt freeze "$PWD" gdn-conv-v2 \
+QWEN38_WT_ROOT="$PWD/codex" /home/xanewok/repos/qwen38-eval-worktrees/bin/wt freeze "$PWD" gdn-conv-v2-proof \
     --build "$PWD/build-cuda" --desc 'V2 snapshot fusion after concat; small-row concat; CUDA 13.2; NCCL OFF; arch 120a; local CCCL 3.4.3' > codex/freeze-v2.log
 # Extend the new freeze before anything pins it; the benchmark resolves only its frozen libraries.
-cp build-cuda/bin/conv-state-bench codex/frozen/gdn-conv-v2/build/bin/
-(cd codex/frozen/gdn-conv-v2/build/bin && sha256sum $(find . -maxdepth 1 -type f -o -type l | sed 's#^./##' | rg -v '^SHA256SUMS$' | LC_ALL=C sort) > SHA256SUMS)
-cp codex/configure-cuda-head.log codex/frozen/gdn-conv-v2/RECIPE.txt
+cp build-cuda/bin/conv-state-bench codex/frozen/gdn-conv-v2-proof/build/bin/
+(cd codex/frozen/gdn-conv-v2-proof/build/bin && sha256sum $(find . -maxdepth 1 -type f -o -type l | sed 's#^./##' | rg -v '^SHA256SUMS$' | LC_ALL=C sort) > SHA256SUMS)
+cp codex/configure-cuda-head.log codex/frozen/gdn-conv-v2-proof/RECIPE.txt

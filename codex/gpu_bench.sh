@@ -8,7 +8,7 @@ mode=${1:---preflight}
 case "$mode" in --preflight|--canary|--execute) ;; *) exit 2 ;; esac
 shift || true
 if [[ "$mode" = --preflight ]]; then
-    exec nice -n 19 python3 "$here/gdn_conv_gpu.py" bench "$here/frozen/gdn-conv-v2" "$mode" "$@"
+    exec nice -n 19 python3 "$here/gdn_conv_gpu.py" bench "$here/frozen/gdn-conv-v2-proof" "$mode" "$@"
 fi
 [[ ${GPUQ_ACTIVE:-0} = 1 ]] || { echo 'GPU execution requires gpuq' >&2; exit 8; }
-exec python3 "$here/gdn_conv_gpu.py" bench "$here/frozen/gdn-conv-v2" "$mode" "$@"
+exec python3 "$here/gdn_conv_gpu.py" bench "$here/frozen/gdn-conv-v2-proof" "$mode" "$@"

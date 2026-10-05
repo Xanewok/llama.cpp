@@ -49,7 +49,7 @@ int main(int argc, char ** argv) {
             cp.n_batch = 1024;
             cp.n_ubatch = 1024;
             cp.n_seq_max = n_seq;
-            cp.n_rs_seq = 6;
+            cp.n_rs_seq = 5;
             cp.n_threads = 4;
             cp.n_threads_batch = 4;
             cp.cb_eval = record_node;

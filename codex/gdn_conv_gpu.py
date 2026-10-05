@@ -5,6 +5,7 @@ import math
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -13,10 +14,11 @@ from harness import depth, lib
 from harness.__main__ import main as harness_main
 
 ENGAGED = re.compile(r'ssm_conv_state_fusion: engaged (.*?) device=(\d+) graph=(\d+) tokens=(\d+) channels=(\d+) seqs=(\d+) slots=(\d+) nodes=(\d+)')
+CENSUS = re.compile(r'ssm_conv_state_fusion: graph device=(\d+) graph=(\d+) tokens=(-?\d+) conv=(\d+) fused=(\d+)')
 REJECTED = re.compile(r'ssm_conv_state_fusion: rejected .*? device=(\d+) graph=(\d+) tokens=(\d+): (.*)')
 
 
-def engagement(text, layers, tokens, devices):
+def engagement(text, layers, tokens, devices, fragmented=False):
     groups = {}
     for name, dev, graph, count, channels, seqs, slots, nodes in ENGAGED.findall(text):
         if int(count) != tokens:
@@ -24,9 +26,17 @@ def engagement(text, layers, tokens, devices):
         key = (int(dev), int(graph))
         groups.setdefault(key, set()).add(name)
     rejected = [row for row in REJECTED.findall(text) if int(row[2]) == tokens]
-    if rejected or not groups or {dev for dev, _ in groups} != set(devices) or any(len(names) != layers for names in groups.values()):
+    census = [row for row in CENSUS.findall(text) if int(row[2]) == tokens]
+    census_keys = {(int(dev), int(uid)) for dev, uid, _, _, _ in census}
+    if not census or census_keys != set(groups) or any(int(conv) < 1 or conv != fused for _, _, _, conv, fused in census):
+        raise lib.Fail('path-engaged proof failed: missing or partial graph census', 'integrity')
+    by_device = {dev: set() for dev in devices}
+    for (dev, uid), names in groups.items():
+        by_device.setdefault(dev, set()).update(names)
+    counts = by_device.values() if fragmented else groups.values()
+    if rejected or not groups or {dev for dev, _ in groups} != set(devices) or any(len(names) != layers for names in counts):
         raise lib.Fail(f'path-engaged proof failed: tokens={tokens}, graph layer counts={[len(v) for v in groups.values()]}, rejected={len(rejected)}', 'integrity')
-    return [{'device': dev, 'graph': uid, 'layers_M': len(names)} for (dev, uid), names in sorted(groups.items())]
+    return [{'device': dev, 'graph': uid, 'layers_M': len(names), 'census_M': [{'conv': int(c), 'fused': int(f)} for d, g, t, c, f in census if int(d) == dev and int(g) == uid]} for (dev, uid), names in sorted(groups.items())]
 
 
 def bench_results(text, legacy=False):
@@ -73,7 +83,7 @@ def run_depth(experiment, args):
         failures = original(x, dest, arm, results, canary)
         if arm == 'patch':
             try:
-                proof = engagement((dest / 'server.log').read_text(errors='replace'), 48, 6, [0, 1])
+                proof = engagement((dest / 'server.log').read_text(errors='replace'), 48, 6, [0, 1], fragmented=True)
                 (dest / 'conv-engagement.json').write_text(json.dumps(proof, indent=2))
             except lib.Fail as error:
                 failures.append(error)
@@ -93,12 +103,19 @@ def run_bench(root, mode, out):
         raise lib.Fail('GPU execution requires gpuq')
     lib.verify_nice(os.getpriority(os.PRIO_PROCESS, 0))
     out.mkdir(parents=True, exist_ok=True)
-    if list(out.iterdir()):
+    if any(p.name != 'console.log' for p in out.iterdir()):
         raise lib.Fail('benchmark output directory must be fresh')
     run_bench(root, '--preflight', out)
+    lib.event('measure_start')
     # G: full <= 300 s, one-process canary <= 60 s. gpuq supplies the outer budget and GPU/RAM gates.
     canary = mode == '--canary'
     deadline = time.monotonic() + (120 if canary else 450)
+
+    def interrupted(signum, frame):
+        raise lib.Fail('benchmark budget interrupted', 'timeout')
+
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
     start = time.time()
     summaries = []
     try:
@@ -116,11 +133,15 @@ def run_bench(root, mode, out):
                         raise lib.Fail('benchmark budget exhausted', 'timeout')
                     with (out / f'{tag}.txt').open('w') as stdout, (out / f'{tag}.err').open('w') as stderr:
                         try:
-                            result = subprocess.run(command, env=env, stdout=stdout, stderr=stderr, timeout=remaining)
+                            child = subprocess.Popen(command, env=env, stdout=stdout, stderr=stderr)
+                            try:
+                                code = child.wait(timeout=remaining)
+                            finally:
+                                lib.stop_child(child, 5)
                         except subprocess.TimeoutExpired as error:
                             raise lib.Fail('benchmark budget exhausted', 'timeout') from error
-                    if result.returncode:
-                        raise lib.Fail(f'benchmark exited {result.returncode}')
+                    if code:
+                        raise lib.Fail(f'benchmark exited {code}')
                     rows = bench_results((out / f'{tag}.txt').read_text())
                     proof = bench_engagement((out / f'{tag}.err').read_text(), 2 if canary else 48, tokens, device)
                     summaries.append({'device': device, 'tokens': tokens, 'K': slots, 'results': rows, 'engagement': proof})
