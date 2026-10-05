@@ -287,6 +287,9 @@ llama_context::llama_context(
         graph_reuse_disable = LLAMA_GRAPH_REUSE_DISABLE ? (atoi(LLAMA_GRAPH_REUSE_DISABLE) != 0) : graph_reuse_disable;
         const char * mtp_reuse = getenv("LLAMA_MTP_GRAPH_REUSE");
         graph_mtp_reuse = !mtp_reuse || atoi(mtp_reuse) != 0;
+        // 2 restores the former one-slot-per-output-class behaviour
+        const char * slots_max = getenv("LLAMA_GRAPH_SLOTS");
+        gf_slots_max = slots_max ? std::max(2, atoi(slots_max)) : gf_slots_max;
 
         if (graph_reuse_disable) {
             LLAMA_LOG_WARN("%s: graph reuse disabled\n", __func__);
@@ -510,7 +513,7 @@ llama_context::~llama_context() {
     }
     ggml_opt_free(opt_ctx);
     reset_graphs();
-    sched_output.reset();
+    gf_slots.clear();
     sched.reset();
 }
 
@@ -645,10 +648,10 @@ void llama_context::sched_reserve() {
     LLAMA_LOG_DEBUG("%s: max_nodes = %zu\n", __func__, max_nodes);
 
     reset_graphs();
-    sched_output.reset();
-    for (auto & res : gf_res_prev) { res.reset(); }
+    gf_slots.clear();
     gf_res_reserve.reset(new llm_graph_result(max_nodes));
     gf_res_prev_active = nullptr;
+    sched_prev_active  = nullptr;
 
     sched.reset(ggml_backend_sched_new(backend_ptrs.data(), backend_buft.data(), backend_ptrs.size(), max_nodes, cparams.pipeline_parallel, cparams.op_offload));
 
@@ -1523,11 +1526,9 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         return nullptr;
     }
 
-    if (graph_mtp_reuse && n_outputs > 0 && !sched_output && !cparams.pipeline_parallel && !cparams.cb_eval) {
-        sched_output.reset(ggml_backend_sched_new_shared(sched.get()));
-    }
-    sched_active = n_outputs > 0 && sched_output ? sched_output.get() : sched.get();
-    auto * res = get_gf_res_prev();
+    auto & slot = get_graph_slot(ubatch.n_tokens);
+    sched_active = slot.sched ? slot.sched.get() : sched.get();
+    auto * res = slot.res.get();
     auto * gf  = res->get_gf();
 
     // the new graph parameters
@@ -1541,7 +1542,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
 
         // Alternating results share storage; uploads must follow the previous compute.
         if (cparams.pipeline_parallel || gf_res_prev_active != res) {
-            auto * prev_sched = gf_res_prev_active == gf_res_prev[1].get() && sched_output ? sched_output.get() : sched.get();
+            auto * prev_sched = sched_prev_active ? sched_prev_active : sched.get();
             const bool staged = gf_res_prev_active && ggml_backend_sched_can_stage_inputs(get_sched_graph(), gf) &&
                                 ggml_backend_sched_can_stage_inputs(prev_sched, gf_res_prev_active->get_gf());
             ggml_round_trace_count(staged ? "input_fence_staged" : "input_fence_sync");
@@ -1581,6 +1582,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
     }
 
     gf_res_prev_active = res;
+    sched_prev_active  = sched_active;
 
     // set the input data for the input tensors
     {
@@ -2623,21 +2625,66 @@ ggml_backend_sched_t llama_context::get_sched_graph() const {
 void llama_context::reset_graphs() {
     ggml_round_trace_scope trace_reset("reset_graphs");
     logits_deferred_fetch();
-    if (sched_output) { ggml_backend_sched_reset(sched_output.get()); }
-    if (sched) { ggml_backend_sched_reset(sched.get()); }
-    for (auto & res : gf_res_prev) {
-        if (res) { res->reset(); }
+    for (auto & slot : gf_slots) {
+        if (slot.sched) { ggml_backend_sched_reset(slot.sched.get()); }
+        if (slot.res)   { slot.res->reset(); }
     }
+    if (sched) { ggml_backend_sched_reset(sched.get()); }
     sched_active = nullptr;
     gf_res_prev_active = nullptr;
+    sched_prev_active  = nullptr;
+}
+
+llama_context::graph_slot & llama_context::get_graph_slot(uint32_t n_tokens) {
+    if (gf_slots.empty()) {
+        gf_slots.resize(2);
+    }
+
+    const bool keyed = graph_mtp_reuse && !cparams.pipeline_parallel && !cparams.cb_eval;
+
+    graph_slot * slot = &gf_slots[n_outputs > 0];
+    if (keyed && n_outputs > 0) {
+        graph_slot * lru = nullptr;
+        slot = nullptr;
+        for (size_t i = 1; i < gf_slots.size(); ++i) {
+            auto & cur = gf_slots[i];
+            if (cur.res && cur.n_tokens == n_tokens && cur.n_outputs == (uint32_t) n_outputs) {
+                slot = &cur;
+                break;
+            }
+            if (!cur.res) {
+                slot = &cur;
+                break;
+            }
+            if (!lru || cur.used < lru->used) {
+                lru = &cur;
+            }
+        }
+        if (!slot) {
+            if (gf_slots.size() < gf_slots_max) {
+                gf_slots.emplace_back();
+                slot = &gf_slots.back();
+            } else {
+                slot = lru;
+            }
+        }
+        if (!slot->sched) {
+            // null when the scheduler cannot share storage (n_copies > 1): fall back to `sched`
+            slot->sched.reset(ggml_backend_sched_new_shared(sched.get()));
+        }
+        slot->n_tokens  = n_tokens;
+        slot->n_outputs = n_outputs;
+    }
+    slot->used = ++gf_slots_clock;
+
+    if (!slot->res) {
+        slot->res.reset(new llm_graph_result(gf_res_reserve->get_max_nodes()));
+    }
+    return *slot;
 }
 
 llm_graph_result * llama_context::get_gf_res_prev() {
-    auto & res = gf_res_prev[n_outputs > 0];
-    if (!res) {
-        res.reset(new llm_graph_result(gf_res_reserve->get_max_nodes()));
-    }
-    return res.get();
+    return get_graph_slot(n_outputs).res.get();
 }
 
 // pack sampler outputs into as few sequences as possible before using sequences without samplers
