@@ -5,7 +5,7 @@ plan = ["up", "patch", "patch", "up"]
 protected = ["identity", "steady_minimum", "SHA256SUMS", "frozen", "DEPTHS", "ARM_ENV", "engaged", "min_p"]
 devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
 out = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/gpu-results/depth"
-cpu_evidence = { path = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/cpu-results/identity-check.log", command = "cpugate python3 codex/cpu_identity.py: CPU and Meta(CPU,CPU), pad 256 vs 4096, probabilistic MTP k=3, ctx 4096" }
+cpu_evidence = { path = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/cpu-results/identity-check.log", command = "cpugate python3 codex/cpu_identity.py: CPU and Meta(CPU,CPU), pad 256 vs 4096, greedy MTP k=3, ctx 4096" }
 
 [model]
 id = "swift15-j5q"
@@ -30,8 +30,8 @@ canary_log = ["n_kv_pad += 4096"]
 
 [arms.patch]
 label = "decode KV bound pad 4096"
-commit = "898dfdeeae9d9eecf4ad81607da3e6b5ed04dc99"
-root = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode"
+commit = "0dd89e479746bbbb53ef9cbe44009099f2567349"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode-v2"
 bin = "build/bin"
 repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode"
 exe = "build/bin/round-trace"
