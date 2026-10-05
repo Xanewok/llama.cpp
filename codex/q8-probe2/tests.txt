@@ -1,0 +1,17 @@
+test_case_serialization (test_probe.ProbeTest.test_case_serialization) ... ok
+test_devices_fail_closed (test_probe.ProbeTest.test_devices_fail_closed) ... ok
+test_driver_instrumentation (test_probe.ProbeTest.test_driver_instrumentation) ... ok
+test_f16_failure_is_reported_and_q8_failure_gates (test_probe.ProbeTest.test_f16_failure_is_reported_and_q8_failure_gates) ... ok
+test_f16_integrity_requires_same_gpu_and_both_arms (test_probe.ProbeTest.test_f16_integrity_requires_same_gpu_and_both_arms) ... ok
+test_metrics_fail_closed (test_probe.ProbeTest.test_metrics_fail_closed) ... ok
+test_no_gpu_mode_refuses_before_gpu_command (test_probe.ProbeTest.test_no_gpu_mode_refuses_before_gpu_command) ... ok
+test_perf_cap_exceeds_driver_minimum (test_probe.ProbeTest.test_perf_cap_exceeds_driver_minimum) ... ok
+test_real_artifacts (test_probe.ProbeTest.test_real_artifacts) ... ok
+test_test_exit_one_requires_row_validation (test_probe.ProbeTest.test_test_exit_one_requires_row_validation) ... ok
+test_timeout_stops_exact_pid_and_saves_raw (test_probe.ProbeTest.test_timeout_stops_exact_pid_and_saves_raw) ... ok
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.227s
+
+OK
+M: recorded-artifact parsers and negative controls passed

@@ -1,0 +1,7 @@
+real-mmvq.sql: /home/xanewok/repos/qwen38-eval/results/2026-10-04-mmvq-baseline/a1/raw/gen-gateup-r1.sql; SHA256 c118436a165d8cbee118b2b1c5bcd96f12f8781962c7750bd2a1338b83490956
+real-fa-perf.log: /home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/queue/out/fattn-mma-quant/kernel/perf-direct1.log; SHA256 c1dc4d7e9c8f249e6a6963ff8e27c3590b67cb7dd5d2fa180b228bf697df2e24
+real-fa-eval.log: /home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/queue/out/fattn-mma-quant/kernel/eval-direct1.log; SHA256 62c45069ed01c339b5f1723d08cce5f917f8f02f179b7af2deeac67848869842
+real-memory.csv: /home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-query.csv; SHA256 4638e03caf32a282947dcd08010ff5f7b4bdf4677e000710d8a701ac8ef85f55
+real-kernel-errors.txt: /home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/xid-lines.txt; SHA256 4ff53d79472344acf0567b46d782c83f244754c5a429112ffd252b8b0ab2b52f
+real-fa-eval.log: selected initial headers, first 129 supported FA rows, first 2 unsupported FA rows, and final summary from the original artifact above.
+canary-test.sql: /home/xanewok/repos/q8-1row/codex/runs/draft-attn-ab/canary-a1/00-gpu0-patch-test.sql; original GPU artifact, including prefixed failing ERR and all SQL rows.
