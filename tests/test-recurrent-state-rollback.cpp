@@ -418,6 +418,47 @@ static test_status test_rollback_depth(const common_params & params, llama_model
         }
     }
 
+    // seq 2 decodes 4 tokens in its own ubatch; when its cell lies between those of seqs 0 and 1, their
+    // following ubatch moves it, which copies only its current state and not its snapshot groups
+    cparams.n_seq_max = 3;
+    for (const bool moved : { false, true }) {
+        llama_context_ptr ctx3 = init_ctx(model, cparams, fill);
+        if (!ctx3) {
+            LOG_ERR("%s: failed to init ctx\n", __func__);
+            return test_status::FAIL;
+        }
+
+        bool ok = true;
+        for (const llama_seq_id s : moved ? std::vector<llama_seq_id>{ 0, 2, 1 } : std::vector<llama_seq_id>{ 0, 1, 2 }) {
+            common_batch batch(ctx3.get());
+            for (llama_pos pos = 0; pos < 4; ++pos) {
+                batch.add(tok(pos), pos, s, false);
+            }
+            ok = ok && llama_process(ctx3.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0;
+        }
+        {
+            common_batch batch(ctx3.get());
+            for (llama_pos pos = 4; pos < 8; ++pos) {
+                batch.add(tok(pos), pos, 2, false);
+            }
+            for (const llama_seq_id s : { 0, 1 }) {
+                for (llama_pos pos = 4; pos < 6; ++pos) {
+                    batch.add(tok(pos), pos, s, false);
+                }
+            }
+            ok = ok && llama_process(ctx3.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0;
+        }
+        if (!ok) {
+            LOG_ERR("%s: decode failed\n", __func__);
+            return test_status::FAIL;
+        }
+
+        if (llama_memory_seq_rm(llama_get_memory(ctx3.get()), 2, 6, -1) == moved) {
+            LOG_ERR("%s: rollback of a %s seq was %s\n", __func__, moved ? "moved" : "resident", moved ? "accepted" : "refused");
+            return test_status::FAIL;
+        }
+    }
+
     LOG_INF("%s: rollbacks deeper than the last ubatch were refused\n", __func__);
     return test_status::PASS;
 }
