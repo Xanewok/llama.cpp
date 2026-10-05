@@ -495,8 +495,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_load_tile(
     }
 }
 
-// q8_0 K/V: the raw rows of a tile are staged in shared memory with cp.async, then dequantized to f16 into the regular
-// K/V tile. This replaces the conversion of the whole K/V view to f16 in global memory before the kernel.
+// Dequantize K/V tiles in shared memory to avoid a full f16 copy in global memory.
 // q8_0 rows contain complete blocks, but their byte strides need not be 16 byte aligned.
 template<int D>
 static constexpr __host__ __device__ int flash_attn_ext_f16_q8_0_row_bytes() {
@@ -548,7 +547,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_dequantize_tile_q8_0(
         constexpr int npairs        = nbatch_fa*pairs_per_row;
         static_assert(pair_bytes % 4 == 0, "pairs of q8_0 blocks must be int aligned");
 
-        // 8 lanes share one wavefront of 16 byte stores. The swizzle only separates rows, so these lanes take 8 different rows.
+        // With four pairs per row, spread each store wavefront over eight rows.
         constexpr bool lanes_over_rows = pairs_per_row*8 == warp_size;
         const int lane = lanes_over_rows ? (threadIdx.x % 8)*pairs_per_row + threadIdx.x/8 : threadIdx.x;
         const int tid  = threadIdx.y*warp_size + lane;
@@ -562,9 +561,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_dequantize_tile_q8_0(
             const int i  = p / pairs_per_row;
             const int ip = p % pairs_per_row;
 
-            // 17 ints: d0 | qs0[0:32] | d1 | qs1[0:32], so qs0 is shifted by 2 bytes.
-            // Rows are 68 ints and pairs 17 ints apart, so the int reads of a warp hit every bank once.
-            // Ints are read per 16 byte output chunk to keep few registers live, the kernel is at its register limit.
+            // Each pair is 17 ints, with qs0 shifted by 2 bytes. Load one output chunk at a time to limit live registers.
             const int * src = (const int *) (tile_q8 + i*row_bytes + ip*pair_bytes);
             // Two q per half2: 0x6400 | (q + 128) is 1024 + q + 128 in f16, subtracting 1152 is exact.
             const half2 bias = make_half2(1152.0f, 1152.0f);
