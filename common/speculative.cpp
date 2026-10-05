@@ -1415,6 +1415,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     // call to pair with, so it's stashed here until that next call fires.
     std::vector<std::vector<float>> pending_h;   // [n_seq][n_embd]
 
+    // A target checkpoint restore replays a batch from its first position without accept(); pending_h
+    // must then return to the row before that position.
+    std::vector<llama_pos>          pos_beg_prev;
+    std::vector<std::vector<float>> pending_h_prev;
+
     std::vector<int32_t> i_batch_beg;
     std::vector<int32_t> i_batch_end;
 
@@ -1493,6 +1498,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         this->n_max = this->params.n_max;
 
         pending_h.assign(n_seq, std::vector<float>(n_embd, 0.0f));
+        pending_h_prev.assign(n_seq, std::vector<float>(n_embd, 0.0f));
+        pos_beg_prev.assign(n_seq, -1);
 
         i_last.assign(n_seq, -1);
         i_batch_beg.assign(n_seq, -1);
@@ -1562,6 +1569,18 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     }
                 }
             }
+        }
+
+        for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
+            if (i_batch_beg[seq_id] < 0) {
+                continue;
+            }
+            const llama_pos pos_beg = batch_in.tokens[i_batch_beg[seq_id]].pos[0];
+            if (pos_beg == pos_beg_prev[seq_id]) {
+                pending_h[seq_id] = pending_h_prev[seq_id];
+            }
+            pos_beg_prev[seq_id]   = pos_beg;
+            pending_h_prev[seq_id] = pending_h[seq_id];
         }
 
         auto * ctx_tgt = this->params.ctx_tgt;
