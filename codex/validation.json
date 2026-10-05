@@ -1,0 +1,36 @@
+{
+  "master_fix": "352725cc5",
+  "stack_fix": "f80185077",
+  "cpu": {
+    "label": "M",
+    "master_passed": 18,
+    "stack_passed": 18,
+    "regression_cases": 10,
+    "negative_failed": 5,
+    "negative_passed": 5,
+    "model": "stories260K-f32.gguf"
+  },
+  "configure_flags": [
+    "-DGGML_CUDA=OFF",
+    "-DLLAMA_USE_PREBUILT_UI=OFF",
+    "-DLLAMA_BUILD_UI=OFF",
+    "-DLLAMA_BUILD_APP=OFF"
+  ],
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "",
+    "OMP_NUM_THREADS": "8",
+    "CCACHE_DISABLE": "1"
+  },
+  "build_parallelism": 8,
+  "nice": 19,
+  "logs": [
+    "positive-master.log",
+    "positive-stack.log",
+    "negative-base.log"
+  ],
+  "gpu_harness": {
+    "parser_fixture_groups_passed": 5,
+    "label": "M",
+    "gpu_execution": false
+  }
+}
