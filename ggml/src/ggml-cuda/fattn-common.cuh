@@ -34,7 +34,7 @@ static __device__ int flash_attn_decode_kv_end(const char * mask, int nk, int nq
                     all_masked &= __half2float(row[k]) == -INFINITY;
                 }
             }
-            all_masked = warp_reduce_all(all_masked);
+            all_masked = warp_reduce_all<warp_size>(all_masked);
             if (!all_masked) {
                 break;
             }
