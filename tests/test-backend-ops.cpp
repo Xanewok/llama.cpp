@@ -10237,6 +10237,15 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     }
 
     // in-place tests
+    for (int64_t columns : {512, 2560, 4096}) {
+        for (int64_t rows : {1, 6, 8}) {
+            for (bool alias : {false, true}) {
+                test_cases.emplace_back(new test_rms_norm_mul_add(GGML_TYPE_F32, {columns, rows, 1, 1}, 1e-6f,
+                                                                 false, false, false, alias, true));
+            }
+        }
+    }
+
     test_cases.emplace_back(new test_rms_norm(GGML_TYPE_F32, {64, 5, 4, 3}, false, 1e-6f, true));
 
     for (ggml_type set_rows_type : { GGML_TYPE_F32, GGML_TYPE_F16 }) {

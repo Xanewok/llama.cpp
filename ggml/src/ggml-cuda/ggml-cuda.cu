@@ -4493,6 +4493,40 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
         return fused_node_count - 1;
     }
 
+    if (ggml_can_fuse_subgraph(cgraph, i, {GGML_OP_ADD, GGML_OP_RMS_NORM, GGML_OP_MUL}, {i, i + 2})) {
+        ggml_tensor * add = node;
+        ggml_tensor * norm = cgraph->nodes[i + 1];
+        ggml_tensor * mul = cgraph->nodes[i + 2];
+        const ggml_tensor * x = add->src[0];
+        const ggml_tensor * y = add->src[1];
+        const ggml_tensor * weight = mul->src[1];
+        bool valid = norm->src[0] == add && mul->src[0] == norm &&
+            ggml_are_same_shape(x, y) && ggml_are_same_shape(add, norm) && ggml_are_same_shape(add, mul) &&
+            ggml_is_matrix(add) && add->ne[0] <= INT_MAX - 1024 && add->ne[1] <= 8 &&
+            ggml_is_vector(weight) && weight->ne[0] == add->ne[0];
+        const ggml_tensor * tensors[] = {x, y, weight, add, norm, mul};
+        for (const ggml_tensor * t : tensors) {
+            valid = valid && t->type == GGML_TYPE_F32 && ggml_is_contiguous(t);
+        }
+        const auto overlaps = [](const ggml_tensor * a, const ggml_tensor * b) {
+            const uintptr_t ap = (uintptr_t) a->data;
+            const uintptr_t bp = (uintptr_t) b->data;
+            return ap <= bp ? bp - ap < ggml_nbytes(a) : ap - bp < ggml_nbytes(b);
+        };
+        // Each row owns its input elements; an exact in-place residual is safe.
+        for (const ggml_tensor * t : {x, y}) {
+            valid = valid && (!overlaps(add, t) || add->data == t->data) && (!overlaps(mul, t) || mul->data == t->data);
+        }
+        valid = valid && !overlaps(add, weight) && !overlaps(mul, weight) && !overlaps(mul, add);
+        if (valid) {
+            ggml_cuda_op_add_rms_norm(*cuda_ctx, add, norm, mul);
+            if (getenv("GGML_CUDA_DEBUG_Q8_REUSE")) {
+                GGML_LOG_INFO("add_rms_norm: device=%d rows=%" PRId64 " columns=%" PRId64 "\n", cuda_ctx->device, add->ne[1], add->ne[0]);
+            }
+            return 2;
+        }
+    }
+
     if (ggml_cuda_can_fuse(cgraph, i, { GGML_OP_RMS_NORM, GGML_OP_MUL, GGML_OP_ROPE, GGML_OP_VIEW, GGML_OP_SET_ROWS }, {})) {
         ggml_cuda_op_rms_norm_mul_rope_fused(*cuda_ctx, node, cgraph->nodes[i + 1], cgraph->nodes[i + 2], cgraph->nodes[i + 4]);
         return 4;
