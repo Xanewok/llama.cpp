@@ -5,17 +5,17 @@ CMAKE_BUILD_TYPE=Release
 -- GGML_SYSTEM_ARCH: x86
 -- Including CPU backend
 -- x86 detected
--- Adding CPU backend variant ggml-cpu: -march=native 
+-- Adding CPU backend variant ggml-cpu: -march=native
 -- CUDA Toolkit found
 -- Finding CCCL components: Thrust;CUB;libcudacxx
--- Found CUB: /home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3/lib/cmake/cub/cub-config.cmake (found suitable version "3.4.3.0", minimum required is "3.4.3.0") 
+-- Found CUB: /home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3/lib/cmake/cub/cub-config.cmake (found suitable version "3.4.3.0", minimum required is "3.4.3.0")
 -- libcudacxx: - Assuming CUDA host compiler is the same as CXX compiler.
 -- libcudacxx:   Set libcudacxx_MISMATCHED_HOST_COMPILER=TRUE to disable this.
--- Found libcudacxx: /home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3/lib/cmake/libcudacxx/libcudacxx-config.cmake (found suitable exact version "3.4.3.0") 
--- Found Thrust: /home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3/lib/cmake/thrust/thrust-config.cmake (found suitable exact version "3.4.3.0") 
--- Found libcudacxx: /home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3/lib/cmake/libcudacxx/libcudacxx-config.cmake (found version "3.4.3.0") 
--- Found CUB: /home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3/lib/cmake/cub/cub-config.cmake (found version "3.4.3.0") 
--- Found Thrust: /home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3/lib/cmake/thrust/thrust-config.cmake (found version "3.4.3.0") 
+-- Found libcudacxx: /home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3/lib/cmake/libcudacxx/libcudacxx-config.cmake (found suitable exact version "3.4.3.0")
+-- Found Thrust: /home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3/lib/cmake/thrust/thrust-config.cmake (found suitable exact version "3.4.3.0")
+-- Found libcudacxx: /home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3/lib/cmake/libcudacxx/libcudacxx-config.cmake (found version "3.4.3.0")
+-- Found CUB: /home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3/lib/cmake/cub/cub-config.cmake (found version "3.4.3.0")
+-- Found Thrust: /home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3/lib/cmake/thrust/thrust-config.cmake (found version "3.4.3.0")
 -- Using CMAKE_CUDA_ARCHITECTURES=120a CMAKE_CUDA_ARCHITECTURES_NATIVE=
 -- FlashAttention K-V type combinations: f16-f16;q4_0-q4_0;q8_0-q8_0;bf16-bf16
 -- CUDA host compiler is GNU 13.3.0
