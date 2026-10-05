@@ -596,7 +596,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_dequantize_tile_q8_0(
             const int i = ib / blocks_per_row;
             const int b = ib % blocks_per_row;
             const block_q8_0 * src = (const block_q8_0 *) (tile_q8 + i*row_bytes) + b;
-            const half2 d2 = __half2half2(__ushort_as_half(src->d));
+            const half2 d2 = __half2half2(src->d);
 #pragma unroll
             for (int c = 0; c < QK8_0/8; ++c) {
                 half2 v[4];
@@ -621,7 +621,7 @@ static __device__ __forceinline__ void flash_attn_ext_f16_load_tile_q8_0_partial
         const int k = c % chunks_per_row;
         const int col = 2*k0 + 8*k;
         const block_q8_0 * src = (const block_q8_0 *) (KV + (k_VKQ_0 + i)*int64_t(stride_KV_bytes)) + col/QK8_0;
-        const half2 d2 = __half2half2(__ushort_as_half(src->d));
+        const half2 d2 = __half2half2(src->d);
         half2 v[4];
 #pragma unroll
         for (int l = 0; l < 4; ++l) {
