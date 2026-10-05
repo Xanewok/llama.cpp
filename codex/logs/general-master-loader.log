@@ -1,0 +1,4 @@
+M: 16 head/swizzle tile cases match CPU dequantization bit for bit; padded sinks are bounded
+M: q8-loader-mutant fails the control
+M: q8-sink-mutant fails the control
+M: q8-scale-mutant fails the control

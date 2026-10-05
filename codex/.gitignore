@@ -6,3 +6,9 @@ reuse-results/
 input-results/
 runs/
 __pycache__/
+
+/INDEX.md
+/frozen/q8-general-*/build/bin/*
+!/frozen/q8-general-*/build/bin/SHA256SUMS
+/frozen/q8-general-fix-pre-*/
+/q8-probe4/bin/

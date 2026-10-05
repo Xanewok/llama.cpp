@@ -1,0 +1,2 @@
+6ef137376794dee68d5f6a7e9553e5a57612f190
+stack 6ef137376; CUDA 13.2 sm_120 NCCL OFF; fresh ggml libraries; source-identical round-trace/server libraries from 797465a5c; no GPU execution

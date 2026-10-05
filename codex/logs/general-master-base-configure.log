@@ -1,0 +1,24 @@
+-- llama.cpp version: 0.5.0-dev
+CMAKE_BUILD_TYPE=Release
+-- CMAKE_SYSTEM_PROCESSOR: x86_64
+-- GGML_SYSTEM_ARCH: x86
+-- Including CPU backend
+-- x86 detected
+-- Adding CPU backend variant ggml-cpu: -march=native 
+-- CUDA Toolkit found
+-- Replacing 120 in CMAKE_CUDA_ARCHITECTURES with 120a
+-- Using CMAKE_CUDA_ARCHITECTURES=120a CMAKE_CUDA_ARCHITECTURES_NATIVE=
+-- FlashAttention K-V type combinations: f16-f16;q4_0-q4_0;q8_0-q8_0;bf16-bf16
+-- CUDA host compiler is GNU 13.3.0
+-- Including CUDA backend
+-- ggml version: 0.25.3
+-- ggml commit:  b16f6522a
+-- OpenSSL found: 3.0.13
+CMake Warning at common/CMakeLists.txt:33 (message):
+  Git repository not found; to enable automatic generation of build info,
+  make sure Git is installed and the project is a Git repository.
+
+
+-- Configuring done (0.3s)
+-- Generating done (0.1s)
+-- Build files have been written to: /home/xanewok/repos/qwen38-eval-worktrees/wt/q8-1row-general/build-cuda-master

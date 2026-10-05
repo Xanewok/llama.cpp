@@ -1,0 +1,1 @@
+M: final root and local patches reproduce exact topic source bytes from their stated bases.

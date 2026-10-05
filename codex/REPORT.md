@@ -1,3 +1,1 @@
-# q8_0 one-row flash attention
-
-See [REPORT-q8-1row.md](REPORT-q8-1row.md) for the diagnosis, candidate, validation, risks and parent submit command. [gpu_ab.sh](gpu_ab.sh) wraps the frozen kernel probe.
+Grouped q8_0 one-row attention is implemented in master and stack forms. GPU validation is pending. See [REPORT-q8-general.md](REPORT-q8-general.md) for cause, design, CPU evidence, binary sizes, risks and the parent submit command.

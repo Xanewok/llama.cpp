@@ -1,0 +1,2 @@
+3eab968dd4a7618427766e38747750398739dba2
+stack 3eab968dd; CUDA 13.2 sm_120 NCCL OFF; same flags as base; actual half scales, bounded sinks, staged tiles only when used; no GPU execution

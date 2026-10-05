@@ -1,0 +1,3 @@
+index, uuid, memory.used [MiB], memory.total [MiB]
+0, GPU-ee9a3956-297c-604b-b4c1-f07930d27e46, 108 MiB, 16311 MiB
+1, GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f, 15 MiB, 16311 MiB
