@@ -178,7 +178,7 @@ struct mmvq_launch_config {
     static constexpr int rows_per_block = rows_per_block_;
 
     static constexpr uint32_t nblocks(uint32_t nrows) {
-        return nrows / rows_per_block + (nrows % rows_per_block != 0);
+        return nrows / rows_per_block;
     }
 };
 
@@ -193,10 +193,12 @@ static void mmvq_select_config(mmvq_parameter_table_id table, F launch) {
     switch (table) {
         case MMVQ_PARAMETERS_GENERIC: select(std::integral_constant<mmvq_parameter_table_id, MMVQ_PARAMETERS_GENERIC>{}); return;
         case MMVQ_PARAMETERS_TURING: select(std::integral_constant<mmvq_parameter_table_id, MMVQ_PARAMETERS_TURING>{}); return;
+#if !defined(__CUDACC__) || defined(GGML_USE_HIP)
         case MMVQ_PARAMETERS_GCN: select(std::integral_constant<mmvq_parameter_table_id, MMVQ_PARAMETERS_GCN>{}); return;
         case MMVQ_PARAMETERS_RDNA2: select(std::integral_constant<mmvq_parameter_table_id, MMVQ_PARAMETERS_RDNA2>{}); return;
         case MMVQ_PARAMETERS_RDNA3_0: select(std::integral_constant<mmvq_parameter_table_id, MMVQ_PARAMETERS_RDNA3_0>{}); return;
         case MMVQ_PARAMETERS_RDNA4: select(std::integral_constant<mmvq_parameter_table_id, MMVQ_PARAMETERS_RDNA4>{}); return;
+#endif
         case MMVQ_PARAMETERS_GB10: select(std::integral_constant<mmvq_parameter_table_id, MMVQ_PARAMETERS_GB10>{}); return;
         case MMVQ_PARAMETERS_BLACKWELL: select(std::integral_constant<mmvq_parameter_table_id, MMVQ_PARAMETERS_BLACKWELL>{}); return;
     }
