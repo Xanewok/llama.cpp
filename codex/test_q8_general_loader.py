@@ -33,20 +33,23 @@ PREFIX = r'''
 #define __device__
 #define __forceinline__ inline
 #define CP_ASYNC_AVAILABLE
-using half = uint16_t;
+using half = _Float16;
 struct half2 { half x, y; };
+struct cuda_block_q8_0 { half d; int8_t qs[32]; };
+static_assert(sizeof(cuda_block_q8_0) == sizeof(block_q8_0), "q8 layout mismatch");
 struct { int x, y; } threadIdx;
 static char * shared_base;
 static constexpr int ggml_cuda_get_physical_warp_size() { return 32; }
 static unsigned int ggml_cuda_cvta_generic_to_shared(void * p) { return (char *)p - shared_base; }
 template<int> static void cp_async_cg_16(unsigned int dst, const void * src) { memcpy(shared_base + dst, src, 16); }
-static half __ushort_as_half(uint16_t v) { return v; }
-static half __int2half_rn(int v) { return ggml_fp32_to_fp16(float(v)); }
+static half __ushort_as_half(uint16_t v) { half h; memcpy(&h, &v, 2); return h; }
+static float __half2float(half h) { uint16_t v; memcpy(&v, &h, 2); return ggml_fp16_to_fp32(v); }
+static half __int2half_rn(int v) { return __ushort_as_half(ggml_fp32_to_fp16(float(v))); }
 static half2 __half2half2(half v) { return {v, v}; }
 static half2 __halves2half2(half a, half b) { return {a, b}; }
-static half2 make_half2(float a, float b) { return {ggml_fp32_to_fp16(a), ggml_fp32_to_fp16(b)}; }
-static half2 __hmul2(half2 a, half2 b) { return make_half2(ggml_fp16_to_fp32(a.x)*ggml_fp16_to_fp32(b.x), ggml_fp16_to_fp32(a.y)*ggml_fp16_to_fp32(b.y)); }
-static half2 __hsub2(half2 a, half2 b) { return make_half2(ggml_fp16_to_fp32(a.x)-ggml_fp16_to_fp32(b.x), ggml_fp16_to_fp32(a.y)-ggml_fp16_to_fp32(b.y)); }
+static half2 make_half2(float a, float b) { return {__ushort_as_half(ggml_fp32_to_fp16(a)), __ushort_as_half(ggml_fp32_to_fp16(b))}; }
+static half2 __hmul2(half2 a, half2 b) { return make_half2(__half2float(a.x)*__half2float(b.x), __half2float(a.y)*__half2float(b.y)); }
+static half2 __hsub2(half2 a, half2 b) { return make_half2(__half2float(a.x)-__half2float(b.x), __half2float(a.y)-__half2float(b.y)); }
 static uint32_t __byte_perm(uint32_t a, uint32_t b, uint32_t sel) {
     uint64_t both = uint64_t(b)<<32 | a;
     uint32_t out = 0;
@@ -66,11 +69,11 @@ template<int D, bool swz> void check() {
     constexpr int rows = 128, warps = 4;
     constexpr int raw_row = D/32*sizeof(block_q8_0), stride = D/2+8;
     std::vector<char> raw(rows*2*raw_row, char(0x55)), staged(rows*raw_row + 16, char(0x77));
-    std::vector<half2> tile(rows*stride + 8, {0x7777, 0x7777});
+    std::vector<half2> tile(rows*stride + 8, {__ushort_as_half(0x7777), __ushort_as_half(0x7777)});
     for (int i = 0; i < rows; ++i) {
         auto * blocks = (block_q8_0 *)(raw.data() + i*2*raw_row);
         for (int b = 0; b < D/32; ++b) {
-            blocks[b].d = ggml_fp32_to_fp16(((i + b)%17 + 1)*0.00001f);
+            blocks[b].d = __ushort_as_half(ggml_fp32_to_fp16(((i + b)%17 + 1)*0.00001f));
             for (int j = 0; j < 32; ++j) { blocks[b].qs[j] = (i*31 + b*17 + j)%256 - 128; }
         }
     }
@@ -88,7 +91,7 @@ template<int D, bool swz> void check() {
     auto verify = [&](int col, int n) {
         for (int i = 0; i < rows; ++i) for (int j = 0; j < n; j += 2) {
             auto * b = (const block_q8_0 *)(raw.data()+i*2*raw_row) + (col+j)/32;
-            half2 expected = make_half2(b->qs[(col+j)%32]*ggml_fp16_to_fp32(b->d), b->qs[(col+j+1)%32]*ggml_fp16_to_fp32(b->d));
+            half2 expected = make_half2(b->qs[(col+j)%32]*__half2float(b->d), b->qs[(col+j+1)%32]*__half2float(b->d));
             auto * actual = (const half2 *)((const char *)tile.data() + swizzle_bytes<swz,half2>(i,j/2,stride));
             assert(memcmp(actual,&expected,sizeof(expected))==0);
         }
@@ -113,7 +116,7 @@ int main() { all<false>(); all<true>(); check_sinks(); puts("M: 16 head/swizzle 
 
 def main():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-    source = (ROOT / "ggml/src/ggml-cuda/fattn-mma-f16.cuh").read_text()
+    source = Path(os.environ.get("Q8_GENERAL_MMA_SOURCE", ROOT / "ggml/src/ggml-cuda/fattn-mma-f16.cuh")).read_text()
     sink = next(line.strip() for line in source.splitlines() if "const float sink =" in line)
     sink_check = r'''
 void check_sinks() {
@@ -131,15 +134,18 @@ void check_sinks() {
     }
 }
 '''.replace("SINK_EXPRESSION", sink)
-    good = PREFIX + "\n".join(function(source, name) for name in (
+    body = "\n".join(function(source, name) for name in (
         "flash_attn_ext_f16_q8_0_row_bytes", "flash_attn_ext_f16_load_tile_q8_0(",
-        "flash_attn_ext_f16_dequantize_tile_q8_0", "flash_attn_ext_f16_load_tile_q8_0_partial")) + MAIN + sink_check
+        "flash_attn_ext_f16_dequantize_tile_q8_0", "flash_attn_ext_f16_load_tile_q8_0_partial")) + MAIN
+    good = PREFIX + body.replace("block_q8_0", "cuda_block_q8_0") + sink_check
     mutant = good.replace("const int col = 2*k0 + 8*k;", "const int col = 8*k;")
     assert mutant != good
     sink_mutant = good.replace("type_KV == GGML_TYPE_Q8_0 &&", "false &&")
     assert sink_mutant != good
+    scale_mutant = good.replace("__half2half2(src->d)", "__half2half2(__ushort_as_half(src->d))")
+    assert scale_mutant != good
     env = dict(os.environ, CUDA_VISIBLE_DEVICES="")
-    for name, code in (("q8-loader", good), ("q8-loader-mutant", mutant), ("q8-sink-mutant", sink_mutant)):
+    for name, code in (("q8-loader", good), ("q8-loader-mutant", mutant), ("q8-sink-mutant", sink_mutant), ("q8-scale-mutant", scale_mutant)):
         path = ROOT / f"build-tmp/{name}.cpp"
         path.write_text(code)
         binary = path.with_suffix("")
