@@ -20,19 +20,27 @@
 
 // Read every real query row; padding rows need not contain a valid mask.
 static __device__ int flash_attn_decode_kv_end(const char * mask, int nk, int nq, int nbq) {
-    __shared__ int kv_end;
     constexpr int warp_size = ggml_cuda_get_physical_warp_size();
+    constexpr int nwords = FATTN_KQ_STRIDE / (2*warp_size);
+    if (nk % FATTN_KQ_STRIDE != 0 || nbq % (nwords*sizeof(uint32_t)) != 0 || (uintptr_t) mask % (nwords*sizeof(uint32_t)) != 0) {
+        return nk;
+    }
+    __shared__ int kv_end;
     const int tid = threadIdx.x + blockDim.x*threadIdx.y;
     if (tid < warp_size) {
         const int lane = tid;
         int end = nk;
         while (end > 0) {
-            const int start = max(0, end - FATTN_KQ_STRIDE);
+            const int start = end - FATTN_KQ_STRIDE;
             int all_masked = 1;
             for (int q = 0; q < nq; ++q) {
-                const half * row = (const half *) (mask + q*nbq);
-                for (int k = start + lane; k < end; k += warp_size) {
-                    all_masked &= __half2float(row[k]) == -INFINITY;
+                const char * row = mask + q*nbq + (start + lane*2*nwords)*sizeof(half);
+                __align__(16) uint32_t values[nwords];
+                ggml_cuda_memcpy_1<sizeof(values)>(values, row);
+#pragma unroll
+                for (int w = 0; w < nwords; ++w) {
+                    // Packed negative-infinity halves avoid conversion in the scan.
+                    all_masked &= values[w] == 0xfc00fc00u;
                 }
             }
             all_masked = warp_reduce_all<warp_size>(all_masked);
@@ -1233,7 +1241,7 @@ void launch_fattn(
         CUDA_CHECK(cudaGetLastError());
     }
 
-    if (!use_sparse && mask && Q->ne[1] <= 8 && Q->ne[3] == 1 && !ctx.fa_decode_bound_logged) {
+    if (!use_sparse && mask && Q->ne[1] <= 8 && Q->ne[3] == 1 && K->ne[1] % FATTN_KQ_STRIDE == 0 && mask->nb[1] % 16 == 0 && (uintptr_t) mask->data % 16 == 0 && !ctx.fa_decode_bound_logged) {
         GGML_LOG_INFO("%s: decode KV bound: device=%d nq=%lld nk=%lld\n", __func__, ctx.device, (long long) Q->ne[1], (long long) K->ne[1]);
         ctx.fa_decode_bound_logged = true;
     }
