@@ -22,8 +22,9 @@
 static __device__ int flash_attn_decode_kv_end(const char * mask, int nk, int nq, int nbq) {
     __shared__ int kv_end;
     constexpr int warp_size = ggml_cuda_get_physical_warp_size();
-    if (threadIdx.y == 0 && threadIdx.x < warp_size) {
-        const int lane = threadIdx.x;
+    const int tid = threadIdx.x + blockDim.x*threadIdx.y;
+    if (tid < warp_size) {
+        const int lane = tid;
         int end = nk;
         while (end > 0) {
             const int start = max(0, end - FATTN_KQ_STRIDE);
