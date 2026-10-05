@@ -16,6 +16,7 @@
 #include <cstring>
 #include <random>
 #include <stdexcept>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -35,7 +36,11 @@ static const bench_shape shapes[] = {
     { "head",        5120, 124160 },
 };
 
-static const char * variants[] = { "base", "default", "w2r1", "w4r1", "w4r2", "w2r4", "w8r1" };
+static const char * variants[] = { "base", "default", "w2r1", "w4r1", "w4r2", "w2r4", "w8r1", "w1r4", "w1r8", "w2r8", "w4r4", "w2r6" };
+
+static bool selected_value(const std::string & selected, const std::string & value) {
+    return selected == "all" || ("," + selected + ",").find("," + value + ",") != std::string::npos;
+}
 
 struct bench_data {
     void * weights;
@@ -76,6 +81,11 @@ static void launch_variant(const bench_data & d, int variant) {
         case 4: launch<type, ncols, 4, 2>(d); break;
         case 5: launch<type, ncols, 2, 4>(d); break;
         case 6: launch<type, ncols, 8, 1>(d); break;
+        case 7: launch<type, ncols, 1, 4>(d); break;
+        case 8: launch<type, ncols, 1, 8>(d); break;
+        case 9: launch<type, ncols, 2, 8>(d); break;
+        case 10: launch<type, ncols, 4, 4>(d); break;
+        case 11: launch<type, ncols, 2, 6>(d); break;
         default: throw std::runtime_error("invalid variant");
     }
 }
@@ -86,6 +96,8 @@ static void launch_cols(const bench_data & d, int ncols, int variant) {
         case 1: launch_variant<type, 1>(d, variant); break;
         case 2: launch_variant<type, 2>(d, variant); break;
         case 4: launch_variant<type, 4>(d, variant); break;
+        case 5: launch_variant<type, 5>(d, variant); break;
+        case 7: launch_variant<type, 7>(d, variant); break;
         case 6: launch_variant<type, 6>(d, variant); break;
         case 8: launch_variant<type, 8>(d, variant); break;
         default: throw std::runtime_error("invalid column count");
@@ -118,9 +130,11 @@ static double nmse(const std::vector<float> & actual, const std::vector<float> &
 }
 
 static void bench(ggml_type type, const bench_shape & s, int repeats, int trials, int warmup_ms,
-                  const std::string & selected, int column_filter, bool negative) {
+                  const std::string & selected, const std::string & column_filter, bool negative) {
     const size_t row_bytes = ggml_row_size(type, s.k);
-    std::vector<char> weights(row_bytes*s.m);
+    const size_t logical_bytes = row_bytes*s.m;
+    // The kernel loads every block row before it bounds the output store.
+    std::vector<char> weights(row_bytes*((s.m + 23)/24*24), 0);
     std::vector<float> row(s.k);
     std::mt19937 rng(1234);
     std::uniform_real_distribution<float> uniform(-1.0f, 1.0f);
@@ -145,7 +159,7 @@ static void bench(ggml_type type, const bench_shape & s, int repeats, int trials
     d.weight_bytes = weights.size();
     // Model layers evict each other's weights. Keep repeated small shapes out of L2.
     const size_t cache_target = 4*size_t(std::max(prop.l2CacheSize, 1));
-    d.copies = int((cache_target + weights.size() - 1)/weights.size());
+    d.copies = int((cache_target + logical_bytes - 1)/logical_bytes);
     CUDA_CHECK(cudaStreamCreate(&d.stream));
     CUDA_CHECK(cudaMalloc(&d.weights, weights.size()*d.copies));
     CUDA_CHECK(cudaMalloc(&d.y, sizeof(block_q8_1)*s.k/QK8_1*max_cols));
@@ -163,8 +177,8 @@ static void bench(ggml_type type, const bench_shape & s, int repeats, int trials
     cudaEvent_t begin, end;
     CUDA_CHECK(cudaEventCreate(&begin));
     CUDA_CHECK(cudaEventCreate(&end));
-    for (int ncols : {1, 2, 4, 6, 8}) {
-        if (column_filter && ncols != column_filter) {
+    for (int ncols : {6, 5, 7, 8, 1, 2, 4}) {
+        if (!selected_value(column_filter, std::to_string(ncols))) {
             continue;
         }
         std::vector<float> reference(s.m*ncols), actual(s.m*ncols);
@@ -197,7 +211,7 @@ static void bench(ggml_type type, const bench_shape & s, int repeats, int trials
             CUDA_CHECK(cudaStreamSynchronize(d.stream));
         } while (std::chrono::steady_clock::now() < until);
         for (int variant = 0; variant < int(sizeof(variants)/sizeof(variants[0])); ++variant) {
-            if (selected != "all" && selected != variants[variant]) {
+            if (!selected_value(selected, variants[variant])) {
                 continue;
             }
             launch_type(type, d, ncols, variant);
@@ -226,8 +240,8 @@ static void bench(ggml_type type, const bench_shape & s, int repeats, int trials
             const float us = times[times.size()/2];
             std::printf("{\"type\":\"%s\",\"shape\":\"%s\",\"k\":%d,\"m\":%d,\"ncols\":%d,\"variant\":\"%s\",\"us_M\":%.6f,\"weight_GB_s_D\":%.6f,\"weight_bytes\":%zu,\"nmse_D\":%.12g,\"cpu_nmse_D\":%.12g,\"repeats\":%d,\"trials\":%d,\"cc\":%d,\"l2_bytes_M\":%d,\"working_set_bytes_D\":%zu,\"copies_D\":%d}\n",
                 ggml_type_name(type), s.name, s.k, s.m, ncols, variants[variant], us,
-                weights.size()/double(us)/1000, weights.size(), error, cpu_error, repeats, trials, d.cc,
-                prop.l2CacheSize, weights.size()*d.copies, d.copies);
+                logical_bytes/double(us)/1000, logical_bytes, error, cpu_error, repeats, trials, d.cc,
+                prop.l2CacheSize, logical_bytes*d.copies, d.copies);
             std::fflush(stdout);
         }
     }
@@ -242,8 +256,8 @@ static void bench(ggml_type type, const bench_shape & s, int repeats, int trials
 
 int main(int argc, char ** argv) {
     try {
-        std::string variant = "all", type_filter = "all", shape_filter = "all";
-        int repeats = 100, trials = 7, warmup_ms = 1000, ncols = 0;
+        std::string variant = "all", type_filter = "all", shape_filter = "all", ncols = "all";
+        int repeats = 100, trials = 7, warmup_ms = 1000;
         bool negative = false;
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
@@ -261,19 +275,37 @@ int main(int argc, char ** argv) {
             else if (arg == "--repeats")   { repeats = std::stoi(value); }
             else if (arg == "--trials")    { trials = std::stoi(value); }
             else if (arg == "--warmup-ms") { warmup_ms = std::stoi(value); }
-            else if (arg == "--ncols")     { ncols = std::stoi(value); }
+            else if (arg == "--ncols")     { ncols = value; }
             else { throw std::runtime_error("unknown option"); }
         }
-        if (repeats < 1 || repeats > 10000 || trials < 1 || trials > 99 || warmup_ms < 0 || warmup_ms > 10000 ||
-            (ncols != 0 && ncols != 1 && ncols != 2 && ncols != 4 && ncols != 6 && ncols != 8)) {
-            throw std::runtime_error("invalid repeat, trial, warmup or column count");
+        if (repeats < 1 || repeats > 10000 || trials < 1 || trials > 99 || warmup_ms < 0 || warmup_ms > 10000) {
+            throw std::runtime_error("invalid repeat, trial or warmup count");
         }
-        bool variant_found = variant == "all";
-        for (const char * name : variants) {
-            variant_found |= variant == name;
-        }
-        if (!variant_found) {
-            throw std::runtime_error("unknown variant");
+        for (int selection_index = 0; selection_index < 2; ++selection_index) {
+            const std::string & selection = selection_index == 0 ? variant : ncols;
+            if (selection == "all") {
+                continue;
+            }
+            std::stringstream tokens(selection);
+            std::string token;
+            if (selection.empty() || selection.back() == ',') {
+                throw std::runtime_error("empty selection");
+            }
+            while (std::getline(tokens, token, ',')) {
+                bool found = false;
+                if (selection_index == 0) {
+                    for (const char * name : variants) {
+                        found |= token == name;
+                    }
+                } else {
+                    for (int n : {1, 2, 4, 5, 6, 7, 8}) {
+                        found |= token == std::to_string(n);
+                    }
+                }
+                if (!found) {
+                    throw std::runtime_error("unknown variant or column count");
+                }
+            }
         }
         CUDA_CHECK(cudaSetDevice(0));
         bool found = false;
