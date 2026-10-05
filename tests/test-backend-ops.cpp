@@ -8153,7 +8153,7 @@ struct test_flash_attn_ext_padded : public test_flash_attn_ext {
         ggml_tensor * m = out->src[3];
         k = ggml_view_4d(ctx, k, hsk, live, nh, 1, k->nb[1], k->nb[2], k->nb[3], 0);
         v = ggml_view_4d(ctx, v, hsv, live, nh, 1, v->nb[1], v->nb[2], v->nb[3], 0);
-        m = ggml_view_4d(ctx, m, live, nb, 1, 1, m->nb[1], m->nb[2], m->nb[3], 0);
+        m = ggml_cont(ctx, ggml_view_4d(ctx, m, live, nb, 1, 1, m->nb[1], m->nb[2], m->nb[3], 0));
         ggml_tensor * ref = ggml_flash_attn_ext(ctx, out->src[0], k, v, m, 1.0f/sqrtf(hsk), 0, 0);
         return ggml_concat(ctx, out, ref, 3);
     }

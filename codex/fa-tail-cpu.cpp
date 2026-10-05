@@ -36,10 +36,12 @@ int main(int argc, char **) {
                 ggml_tensor * kp = ggml_view_4d(ctx, k, dim, cut, nh, 1, k->nb[1], k->nb[2], k->nb[3], 0);
                 ggml_tensor * vp = ggml_view_4d(ctx, v, dim, cut, nh, 1, v->nb[1], v->nb[2], v->nb[3], 0);
                 ggml_tensor * mp = ggml_view_4d(ctx, m, cut, nq, 1, 1, m->nb[1], m->nb[2], m->nb[3], 0);
+                mp = ggml_cont(ctx, mp);
                 ggml_tensor * out = ggml_flash_attn_ext(ctx, q, kp, vp, mp, 1.0f/16, 0, 0);
                 ggml_tensor * kr = ggml_view_4d(ctx, k, dim, live, nh, 1, k->nb[1], k->nb[2], k->nb[3], 0);
                 ggml_tensor * vr = ggml_view_4d(ctx, v, dim, live, nh, 1, v->nb[1], v->nb[2], v->nb[3], 0);
                 ggml_tensor * mr = ggml_view_4d(ctx, m, live, nq, 1, 1, m->nb[1], m->nb[2], m->nb[3], 0);
+                mr = ggml_cont(ctx, mr);
                 ggml_tensor * ref = ggml_flash_attn_ext(ctx, q, kr, vr, mr, 1.0f/16, 0, 0);
                 ggml_cgraph * graph = ggml_new_graph_custom(ctx, 256, false);
                 ggml_build_forward_expand(graph, out);
