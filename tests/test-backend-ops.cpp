@@ -5257,6 +5257,38 @@ struct test_mul_mat : public test_case {
     }
 };
 
+struct test_mul_mat_shared : public test_case {
+    const ggml_type type;
+    const int64_t rows;
+    const bool strided;
+    const bool overwrite;
+
+    test_mul_mat_shared(ggml_type type, int64_t rows, bool strided, bool overwrite) :
+        type(type), rows(rows), strided(strided), overwrite(overwrite) {}
+
+    std::string vars() override { return VARS_TO_STR4(type, rows, strided, overwrite); }
+    std::string op_desc(ggml_tensor *) override { return "MUL_MAT_SHARED"; }
+    bool run_whole_graph() override { return true; }
+    double max_nmse_err() override { return 5e-4; }
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        ggml_tensor * storage = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, strided ? 768 : 512, rows);
+        ggml_tensor * input = strided ? ggml_view_2d(ctx, storage, 512, rows, storage->nb[1], 0) : storage;
+        ggml_tensor * outputs[3];
+        for (int i = 0; i < 3; ++i) {
+            if (overwrite && i == 2) {
+                ggml_tensor * replacement = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 512, rows);
+                ggml_build_forward_expand(gf, ggml_cpy(ctx, replacement, input));
+            }
+            // The middle weight can take a different quantizer path at six or eight rows.
+            ggml_tensor * weight = ggml_new_tensor_2d(ctx, i == 1 ? GGML_TYPE_Q6_K : type, 512, 256);
+            outputs[i] = ggml_mul_mat(ctx, weight, input);
+            ggml_build_forward_expand(gf, outputs[i]);
+        }
+        return ggml_concat(ctx, ggml_concat(ctx, outputs[0], outputs[1], 0), outputs[2], 0);
+    }
+};
+
 // GGML_HINT_SRC0_IS_HADAMARD
 struct test_mul_mat_hadamard : public test_mul_mat {
     test_mul_mat_hadamard(ggml_type type_a = GGML_TYPE_F32, ggml_type type_b = GGML_TYPE_F32,
@@ -10396,6 +10428,16 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
 
 #if 0
     // > 4GB A matrix. Too slow to be enabled by default.
+    for (ggml_type type : {GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_IQ4_XS, GGML_TYPE_Q8_0}) {
+        for (int64_t rows : {1, 6, 8}) {
+            for (bool strided : {false, true}) {
+                for (bool overwrite : {false, true}) {
+                    test_cases.emplace_back(new test_mul_mat_shared(type, rows, strided, overwrite));
+                }
+            }
+        }
+    }
+
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F16,  900000,  3, 2592, {1, 1}, {1, 1}));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F16, 1700000, 96, 2592, {1, 1}, {1, 1}));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F16, 1700000,  3, 2592, {1, 1}, {1, 1}));

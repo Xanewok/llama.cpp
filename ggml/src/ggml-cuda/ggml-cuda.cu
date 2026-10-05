@@ -44,6 +44,7 @@
 #include "ggml-cuda/pool2d.cuh"
 #include "ggml-cuda/pool1d.cuh"
 #include "ggml-cuda/quantize.cuh"
+#include "ggml-cuda/q8-cache.h"
 #include "ggml-cuda/rope.cuh"
 #include "ggml-cuda/roll.cuh"
 #include "ggml-cuda/scale.cuh"
@@ -4547,8 +4548,49 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
     return 0;
 }
 
+static size_t ggml_cuda_q8_cache_prepare(ggml_cuda_q8_cache & cache, const ggml_cgraph * graph, int cc) {
+    for (int i = 0; i < graph->n_nodes; ++i) {
+        const ggml_tensor * node = graph->nodes[i];
+        if (node->op == GGML_OP_OPT_STEP_ADAMW || node->op == GGML_OP_OPT_STEP_SGD) {
+            cache.entries.clear();
+            return 0;
+        }
+        if ((node->flags & GGML_TENSOR_FLAG_COMPUTE) == 0 ||
+                (node->op != GGML_OP_MUL_MAT && node->op != GGML_OP_MUL_MAT_ID)) {
+            continue;
+        }
+        const ggml_tensor * weight = node->src[0];
+        const ggml_tensor * input = node->src[1];
+        if (!ggml_is_quantized(weight->type) || input->type != GGML_TYPE_F32 || input->nb[0] != sizeof(float) ||
+                node->type != GGML_TYPE_F32 || input->ne[0] <= 0 || input->ne[0] > (1 << 20) ||
+                input->ne[1] <= 0 || input->ne[1] > 8 || input->ne[2] <= 0 || input->ne[2] > 8 ||
+                input->ne[3] <= 0 || input->ne[3] > 8 || ggml_nrows(input) > MMVQ_MAX_BATCH_SIZE) {
+            continue;
+        }
+        const bool use_id = node->op == GGML_OP_MUL_MAT_ID;
+        const bool use_mmvq = use_id ? node->ne[2] <= get_mmvq_mmid_max_batch(weight->type, cc) :
+            ggml_cuda_should_use_mmvq(weight->type, cc, input->ne[1]);
+        const size_t padded = GGML_PAD(input->ne[0], MATRIX_ROW_PADDING);
+        size_t size = padded * ggml_nrows(input) * sizeof(block_q8_1) / QK8_1;
+        int variant = 0;
+        if (!use_mmvq) {
+            // Expert MMQ permutes rows; native FP4 has separate scales and a different quantizer.
+            if (use_id || weight->type == GGML_TYPE_MXFP4 || weight->type == GGML_TYPE_NVFP4 ||
+                    !ggml_cuda_should_use_mmq(weight->type, cc, input->ne[1], 0)) {
+                continue;
+            }
+            variant = 1 + mmq_get_q8_1_ds_layout(weight->type);
+            size += ggml_cuda_mmq_get_J_max(weight->type, weight->ne[1] % 128 != 0, cc, input->ne[1]) * sizeof(block_q8_1_mmq);
+        }
+        cache.add(input, variant, size);
+    }
+    return cache.reserve();
+}
+
 static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, const bool use_cuda_graph, const bool cuda_graph_update_required, const void * graph_key) {
     bool graph_evaluated_or_captured = false;
+    ggml_cuda_q8_cache q8_cache;
+    ggml_cuda_pool_alloc<char> q8_scratch(cuda_ctx->pool());
 
     // flag used to determine whether it is an integrated_gpu
     const bool integrated            = ggml_cuda_info().devices[cuda_ctx->device].integrated;
@@ -4659,6 +4701,15 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                 stream_ctx.concurrent_events.clear();
             }
 
+            const bool disable_q8_reuse = getenv("GGML_CUDA_DISABLE_Q8_REUSE") && atoi(getenv("GGML_CUDA_DISABLE_Q8_REUSE"));
+            if (!disable_q8_reuse && stream_ctx.concurrent_events.empty()) {
+                const size_t size = ggml_cuda_q8_cache_prepare(q8_cache, cgraph, ggml_cuda_info().devices[cuda_ctx->device].cc);
+                if (size > 0) {
+                    q8_cache.data = q8_scratch.alloc(size);
+                    cuda_ctx->q8_cache = &q8_cache;
+                }
+            }
+
             for (int i = 0; i < cgraph->n_nodes; i++) {
                 ggml_tensor * node = cgraph->nodes[i];
                 if (is_concurrent_event_active) {
@@ -4715,6 +4766,13 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                             nodes_to_skip + 1, ggml_op_name(node->op), node->name,
                             ggml_op_name(cgraph->nodes[last_fused]->op), cgraph->nodes[last_fused]->name);
 #endif
+                    if (cuda_ctx->q8_cache) {
+                        for (int j = i; j <= i + nodes_to_skip; ++j) {
+                            if (!ggml_cuda_is_view_or_noop(cgraph->nodes[j])) {
+                                q8_cache.invalidate(cgraph->nodes[j]);
+                            }
+                        }
+                    }
                     i += nodes_to_skip;
                     continue;
                 }
@@ -4740,10 +4798,18 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                     GGML_LOG_ERROR("%s: op not supported %s (%s)\n", __func__, node->name, ggml_op_name(node->op));
                 }
                 GGML_ASSERT(ok);
+                if (cuda_ctx->q8_cache) {
+                    q8_cache.invalidate(node);
+                }
 
                 if (!is_concurrent_event_active) {
                     try_launch_concurrent_event(node);
                }
+            }
+            cuda_ctx->q8_cache = nullptr;
+            if (getenv("GGML_CUDA_DEBUG_Q8_REUSE")) {
+                GGML_LOG_INFO("q8_reuse: device=%d graph=%" PRIu64 " rows=%d skipped=%d quantized=%d bytes=%zu\n",
+                              cuda_ctx->device, cgraph->uid, q8_cache.rows, q8_cache.hits, q8_cache.misses, q8_scratch.actual_size);
             }
             if (debug_ssm_conv && conv_count > 0) {
                 GGML_LOG_INFO("ssm_conv_state_fusion: graph device=%d graph=%" PRIu64 " tokens=%" PRId64 " conv=%d fused=%d\n",
