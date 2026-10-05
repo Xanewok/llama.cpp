@@ -24,7 +24,7 @@ commit = "590912a1de2097523db6c8efe185387bb5c7d4fc"
 root = "/home/xanewok/repos/qwen38-weekend/frozen/stack4"
 bin = "build/bin"
 exe = "build/bin/round-trace"
-env = { GGML_SCHED_INPUT_STAGING = "1", LD_LIBRARY_PATH = "{root}/build/bin" }
+env = { GGML_SCHED_INPUT_STAGING = "1", LLAMA_ARG_LOG_VERBOSITY = "4", LD_LIBRARY_PATH = "{root}/build/bin" }
 flags = ["--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16"]
 canary_log = ["creating MTP draft context against the target model"]
 
@@ -34,7 +34,8 @@ commit = "73b27e30b63181d43b564a01749beda90c7b3348"
 root = "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof"
 bin = "build/bin"
 exe = "build/bin/round-trace"
-env = { GGML_CUDA_DEBUG_SSM_CONV = "1", GGML_SCHED_INPUT_STAGING = "1", LD_LIBRARY_PATH = "{root}/build/bin" }
+# The fusion diagnostics are GGML_LOG_INFO, which the server logger drops below verbosity 4; both arms log at 4.
+env = { GGML_CUDA_DEBUG_SSM_CONV = "1", GGML_SCHED_INPUT_STAGING = "1", LLAMA_ARG_LOG_VERBOSITY = "4", LD_LIBRARY_PATH = "{root}/build/bin" }
 flags = ["--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16"]
 canary_log = ["creating MTP draft context against the target model", "ssm_conv_state_fusion: engaged"]
 
@@ -46,7 +47,7 @@ args = ["-m", "{model}", "-c", "102400", "-np", "1", "-fa", "on", "-ctk", "q8_0"
         "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--backend-sampling",
         "--spec-draft-vocab", "{draft_vocab}", "--cache-ram", "0", "--metrics", "-t", "8", "-tb", "8",
         "--host", "127.0.0.1", "--port", "{port}"]
-knobs = ["GGML_CUDA_DEBUG_SSM_CONV", "GGML_SCHED_INPUT_STAGING", "LLAMA_ROUND_TRACE", "GGML_SCHED_DEBUG"]
+knobs = ["GGML_CUDA_DEBUG_SSM_CONV", "GGML_SCHED_INPUT_STAGING", "LLAMA_ARG_LOG_VERBOSITY", "LLAMA_ROUND_TRACE", "GGML_SCHED_DEBUG"]
 boot_cap_s = 300
 request_cap_s = 600
 
