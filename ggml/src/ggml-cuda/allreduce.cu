@@ -256,7 +256,7 @@ static constexpr size_t GGML_CUDA_AR_COPY_CHUNK_BYTES_HEURISTIC_MAX = 2 * 1024 *
 // per-slot copy-event array.  256 KB -> up to 128 chunks per 32 MB tensor.
 static constexpr size_t GGML_CUDA_AR_COPY_CHUNK_BYTES_MIN = 256 * 1024;
 // Copy-engine stage-2 stream count; override via GGML_CUDA_AR_COPY_STREAMS (1 or 2).
-static constexpr int GGML_CUDA_AR_COPY_STREAMS_DEFAULT = 1;
+static constexpr int GGML_CUDA_AR_COPY_STREAMS_DEFAULT = 2;
 static constexpr int GGML_CUDA_AR_COPY_MAX_CHUNKS =
     static_cast<int>((GGML_CUDA_AR_COPY_MAX_BYTES + GGML_CUDA_AR_COPY_CHUNK_BYTES_MIN - 1) /
                     GGML_CUDA_AR_COPY_CHUNK_BYTES_MIN);
