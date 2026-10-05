@@ -17,6 +17,8 @@ import time
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 FROZEN = {"up": Path("/home/xanewok/repos/q8-1row/codex/frozen/q8-1row-base"), "patch": ROOT / "codex/frozen/mmvq-w2r4-general"}
+UP_PREFIX = "98c695111"
+STAGE_S = 120
 TYPES = {"q4_K": (12, 144, 256), "q5_K": (13, 176, 256), "q6_K": (14, 210, 256), "iq4_xs": (23, 136, 256), "q8_0": (8, 34, 32)}
 FIELDS = ("stamp", "commit", "backend", "op", "params", "mode", "supported", "passed", "error", "us", "flops", "bw", "mem", "runs", "device", "reg")
 HAZARD = re.compile(r"\bXid\b|fallen off the bus")
@@ -208,7 +210,7 @@ def run(mode, out, budget, only):
     selftest()
     generate(out)
     commits = {a: checksums(r) for a, r in FROZEN.items()}
-    if not commits["up"].startswith("98c695111") or commits["patch"] == commits["up"]:
+    if not commits["up"].startswith(UP_PREFIX) or commits["patch"] == commits["up"]:
         raise Gate(6, "A/B source identity mismatch")
     if mode == "preflight":
         print("M: freeze identity and library resolution passed; no CUDA executable run")
@@ -246,7 +248,7 @@ def run(mode, out, budget, only):
                 args = ["nice", "-n", "19", "taskset", "-c", CPUSET, str(FROZEN[arm] / "bin/test-backend-ops"), mode_arg,
                         "-o", "MUL_MAT", "-b", "CUDA0", "--output", "sql", "--test-file", str(out / f"{kind}.txt")]
                 try:
-                    stdout, stderr = command(args, out, tag, min(deadline, time.monotonic() + 120), env)
+                    stdout, stderr = command(args, out, tag, min(deadline, time.monotonic() + STAGE_S), env)
                     check_device(stderr + stdout)
                     parsed = validate(stdout, mode_arg, commits[arm], cases(kind))
                     rows.extend(dict(r, arm=arm, gpu=gpu, boot=index, kind=kind) for r in parsed)
