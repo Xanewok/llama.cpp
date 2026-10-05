@@ -31,7 +31,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (1,3,0) in block (27,0,0)
@@ -49,7 +49,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (2,3,0) in block (27,0,0)
@@ -67,7 +67,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (3,3,0) in block (27,0,0)
@@ -85,7 +85,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (4,3,0) in block (27,0,0)
@@ -103,7 +103,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (5,3,0) in block (27,0,0)
@@ -121,7 +121,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (6,3,0) in block (27,0,0)
@@ -139,7 +139,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (7,3,0) in block (27,0,0)
@@ -157,7 +157,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (8,3,0) in block (27,0,0)
@@ -175,7 +175,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (9,3,0) in block (27,0,0)
@@ -193,7 +193,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (10,3,0) in block (27,0,0)
@@ -211,7 +211,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (11,3,0) in block (27,0,0)
@@ -229,7 +229,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (12,3,0) in block (27,0,0)
@@ -247,7 +247,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (13,3,0) in block (27,0,0)
@@ -265,7 +265,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (14,3,0) in block (27,0,0)
@@ -283,7 +283,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (15,3,0) in block (27,0,0)
@@ -301,7 +301,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (16,3,0) in block (27,0,0)
@@ -319,7 +319,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (0,0,0) in block (19,0,0)
@@ -337,7 +337,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (1,0,0) in block (19,0,0)
@@ -355,7 +355,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (2,0,0) in block (19,0,0)
@@ -373,7 +373,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (3,0,0) in block (19,0,0)
@@ -391,7 +391,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (4,0,0) in block (19,0,0)
@@ -409,7 +409,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (5,0,0) in block (19,0,0)
@@ -427,7 +427,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (6,0,0) in block (19,0,0)
@@ -445,7 +445,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (7,0,0) in block (19,0,0)
@@ -463,7 +463,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (8,0,0) in block (19,0,0)
@@ -481,7 +481,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (9,0,0) in block (19,0,0)
@@ -499,7 +499,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (10,0,0) in block (19,0,0)
@@ -517,7 +517,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (11,0,0) in block (19,0,0)
@@ -535,7 +535,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (12,0,0) in block (19,0,0)
@@ -553,7 +553,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (13,0,0) in block (19,0,0)
@@ -571,7 +571,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (14,0,0) in block (19,0,0)
@@ -589,7 +589,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (15,0,0) in block (19,0,0)
@@ -607,7 +607,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (16,0,0) in block (19,0,0)
@@ -625,7 +625,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (0,1,0) in block (11,0,0)
@@ -643,7 +643,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (1,1,0) in block (11,0,0)
@@ -661,7 +661,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (2,1,0) in block (11,0,0)
@@ -679,7 +679,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (3,1,0) in block (11,0,0)
@@ -697,7 +697,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (4,1,0) in block (11,0,0)
@@ -715,7 +715,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (5,1,0) in block (11,0,0)
@@ -733,7 +733,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (6,1,0) in block (11,0,0)
@@ -751,7 +751,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (7,1,0) in block (11,0,0)
@@ -769,7 +769,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (8,1,0) in block (11,0,0)
@@ -787,7 +787,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (9,1,0) in block (11,0,0)
@@ -805,7 +805,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (10,1,0) in block (11,0,0)
@@ -823,7 +823,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (11,1,0) in block (11,0,0)
@@ -841,7 +841,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (12,1,0) in block (11,0,0)
@@ -859,7 +859,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (13,1,0) in block (11,0,0)
@@ -877,7 +877,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (14,1,0) in block (11,0,0)
@@ -895,7 +895,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (15,1,0) in block (11,0,0)
@@ -913,7 +913,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Invalid __global__ read of size 2 bytes
 =========     at void flash_attn_ext_f16<(int)256, (int)256, (int)64, (int)1, (bool)0, (bool)0, (bool)0, (ggml_type)1>(const char *, const char *, const char *, const char *, const char *, const int *, float *, float2 *, float, float, float, float, unsigned int, float, int, uint3, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)+0x17380
 =========     by thread (16,1,0) in block (11,0,0)
@@ -931,7 +931,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 ========= Program hit cudaErrorIllegalAddress (error 700) due to "an illegal memory access was encountered" on CUDA API call to cudaStreamSynchronize.
 =========     Saved host backtrace up to driver entry point at error
 =========         Host Frame: ggml_backend_cuda_synchronize(ggml_backend*) [0x29a168] in libggml-cuda.so.0
@@ -940,7 +940,7 @@ ggml_backend_cuda_graph_compute: CUDA graph warmup complete
 =========         Host Frame: test_case::eval(ggml_backend*, ggml_backend*, char const*, printer*) [0xf56f5] in test-backend-ops
 =========         Host Frame: test_backend(ggml_backend*, ggml_backend_device*, test_mode, char const*, char const*, printer*, char const*, int)::{lambda(ggml_backend*, ggml_backend*)#1}::operator()(ggml_backend*, ggml_backend*) const [0x74356] in test-backend-ops
 =========         Host Frame: main [0x249e9] in test-backend-ops
-========= 
+=========
 CUDA error: an illegal memory access was encountered
   current device: 0, in function ggml_backend_cuda_synchronize at /home/xanewok/repos/ra-fa-f32-optin-stack/ggml/src/ggml-cuda/ggml-cuda.cu:2544
   cudaStreamSynchronize(cuda_ctx->stream())
