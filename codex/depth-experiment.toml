@@ -30,7 +30,7 @@ canary_log = ["n_kv_pad += 4096"]
 
 [arms.patch]
 label = "decode KV bound pad 4096"
-commit = "FROZEN_COMMIT"
+commit = "898dfdeeae9d9eecf4ad81607da3e6b5ed04dc99"
 root = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode/codex/frozen/fa-kvmax-decode"
 bin = "build/bin"
 repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-kvmax-decode"

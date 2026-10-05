@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 BASE = Path('/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack5')
 PATCH = ROOT / 'codex/frozen/fa-kvmax-decode'
 FIXTURES = Path('/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures')
-REAL_SQL = Path('/home/xanewok/repos/qwen38-eval/results/2026-10-05-fa-bw-probe/a1/raw/fa-g0-r1.sql')
+REAL_SQL = ROOT / 'codex/probe-fixtures/real-fa-perf.sql'
 FIELDS = ('stamp', 'commit', 'backend', 'op', 'params', 'mode', 'supported', 'passed', 'error', 'us', 'flops', 'bw', 'mem', 'runs', 'device', 'reg')
 HAZARD = re.compile(r'\bXid\b|fallen off the bus')
 
@@ -100,6 +100,13 @@ def selftest():
     assert not HAZARD.search('stop_xid_hash_s_G')
     from harness.depth import fixture_test
     fixture_test(FIXTURES)
+    bad = re.sub(r"('', )'[0-9.]+', '[0-9.]+',", r"\1'nan', '0',", raw)
+    try:
+        metrics(bad, 'perf', '590912a1d')
+    except Gate:
+        pass
+    else:
+        raise AssertionError('non-finite time escaped')
     print('M: recorded GPU SQL, SSE, memory, journal parsers and negative controls pass')
 
 
@@ -179,6 +186,10 @@ if __name__ == '__main__':
     p.add_argument('--out', type=Path, default=ROOT / 'codex/probe-selftest')
     p.add_argument('--budget-s', type=int, default=900)
     args = p.parse_args()
+    def interrupted(signum, frame):
+        raise Gate(7, 'item interrupted')
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
     try:
         selftest() if args.mode == 'selftest' else run(args)
     except Gate as exc:
