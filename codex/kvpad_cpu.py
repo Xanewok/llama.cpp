@@ -1,7 +1,7 @@
 """CPU n_kv_pad A/B on the in-process server fixture (MTP draft, Meta(CPU,CPU) optional).
 
 Usage: kvpad_cpu.py OUTDIR SCENARIO META [BIN_DIR] ; PADS="0,4096" selects arms; first arm is the reference.
-Scenarios: prefill (8.3k-token prompt, ub512), decode (2k prompt, 512 new tokens).
+Scenarios: prefill (8.3k-token prompt, ub512), decode (2k prompt, 512 new tokens), long (33k prompt: Meta decode takes the n_kv >= 32768 mask-prefix path).
 Identity = generated token IDs + final target logit bytes. Counts = graph_hit/graph_miss per phase from LLAMA_ROUND_TRACE.
 Each process is nice 19, <= 8 threads, CUDA hidden.
 """
@@ -19,7 +19,9 @@ bindir = Path(sys.argv[4]) if len(sys.argv) > 4 else ROOT / "build-cpu/bin"
 pads = os.environ.get("PADS", "0,4096").split(",")
 model = os.environ.get("CPU_TARGET_MODEL", "/mnt/scratch/work/kv-pad/untied-target.gguf")
 SC = {"prefill": dict(words="8300", ub="512", batch="512", n="16"),
-      "decode": dict(words="1990", ub="512", batch="512", n=os.environ.get("N_DECODE", "512"))}[scenario]
+      "decode": dict(words="1990", ub="512", batch="512", n=os.environ.get("N_DECODE", "512")),
+      "assert": dict(words="1000", ub="512", batch="512", n="4"),
+      "long": dict(words="33000", ub="512", batch="512", n="16")}[scenario]
 out.mkdir(parents=True, exist_ok=True)
 rows = []
 ref = None
@@ -28,7 +30,7 @@ for pad in pads:
     trace = out / (label + ".jsonl")
     trace.unlink(missing_ok=True)
     path = out / (label + ".bin")
-    env = dict(os.environ, CUDA_VISIBLE_DEVICES="", OMP_NUM_THREADS="8", OPENBLAS_NUM_THREADS="8", MKL_NUM_THREADS="8",
+    env = dict(os.environ, CUDA_VISIBLE_DEVICES="", OMP_NUM_THREADS=os.environ.get("CPU_THREADS", "8"), OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1",
                TMPDIR=str(ROOT / "build-tmp"), CPU_PREFILL_WORDS=SC["words"], CPU_UBATCH=SC["ub"], CPU_BATCH=SC["batch"],
                CPU_KV_PAD=pad, LLAMA_ROUND_TRACE=str(trace), LD_LIBRARY_PATH=str(bindir), CPU_TEMP=os.environ.get("CPU_TEMP", "1"), CPU_THREADS=os.environ.get("CPU_THREADS", "8"))
     for k, v in json.loads(os.environ.get("ENV_EXTRA", "{}")).items():
