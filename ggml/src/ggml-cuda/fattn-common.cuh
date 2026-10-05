@@ -2,11 +2,11 @@
 
 #include "common.cuh"
 #include "convert.cuh"
+#include "fattn-bound.h"
 #include "vecdotq.cuh"
 
 #include <cstdint>
 
-#define FATTN_KQ_STRIDE       256
 #define HALF_MAX_HALF         __float2half(65504.0f/2) // Use neg. of this instead of -INFINITY to initialize KQ max vals to avoid NaN upon subtraction.
 #define SOFTMAX_FTZ_THRESHOLD -20.0f                   // Softmax exp. of values smaller than this are flushed to zero to avoid NaNs.
 
@@ -22,7 +22,7 @@
 static __device__ int flash_attn_decode_kv_end(const char * mask, int nk, int nq, int nbq) {
     constexpr int warp_size = ggml_cuda_get_physical_warp_size();
     constexpr int nwords = FATTN_KQ_STRIDE / (2*warp_size);
-    if (nk % FATTN_KQ_STRIDE != 0 || nbq % (nwords*sizeof(uint32_t)) != 0 || (uintptr_t) mask % (nwords*sizeof(uint32_t)) != 0) {
+    if (!flash_attn_decode_mask_packed((uintptr_t) mask, nk, nbq, warp_size)) {
         return nk;
     }
     __shared__ int kv_end;
@@ -34,7 +34,7 @@ static __device__ int flash_attn_decode_kv_end(const char * mask, int nk, int nq
             const int start = end - FATTN_KQ_STRIDE;
             int all_masked = 1;
             for (int q = 0; q < nq; ++q) {
-                const char * row = mask + q*nbq + (start + lane*2*nwords)*sizeof(half);
+                const char * row = mask + flash_attn_decode_mask_offset(q, nbq, start, lane, warp_size);
                 __align__(16) uint32_t values[nwords];
                 ggml_cuda_memcpy_1<sizeof(values)>(values, row);
 #pragma unroll
