@@ -1099,9 +1099,10 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "OPT_STEP_SGD",
 
     "GLU",
+    "GATED_DELTA_NET_INDEXED",
 };
 
-static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 101");
+static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "none",
@@ -1214,9 +1215,10 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "sgd(x)",
 
     "glu(x)",
+    "gated_delta_net(q, k, v, g, beta, s[indices])",
 };
 
-static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 101");
+static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -6372,7 +6374,7 @@ struct ggml_tensor * ggml_solve_tri(
 
 // ggml_gated_delta_net
 
-struct ggml_tensor * ggml_gated_delta_net(
+static struct ggml_tensor * ggml_gated_delta_net_impl(
         struct ggml_context * ctx,
         struct ggml_tensor  * q,
         struct ggml_tensor  * k,
@@ -6380,6 +6382,7 @@ struct ggml_tensor * ggml_gated_delta_net(
         struct ggml_tensor  * g,
         struct ggml_tensor  * beta,
         struct ggml_tensor  * state,
+        struct ggml_tensor  * indices,
         int64_t               K) {
     GGML_ASSERT(ggml_is_contiguous_rows(q));
     GGML_ASSERT(ggml_is_contiguous_rows(k));
@@ -6408,7 +6411,14 @@ struct ggml_tensor * ggml_gated_delta_net(
     GGML_ASSERT(state->ne[0] == S_v);
     GGML_ASSERT(state->ne[1] == S_v);
     GGML_ASSERT(state->ne[2] == H);
-    GGML_ASSERT(state->ne[3] == n_seqs);
+    if (indices) {
+        GGML_ASSERT(indices->type == GGML_TYPE_I32);
+        GGML_ASSERT(ggml_is_vector(indices) && ggml_is_contiguous(indices));
+        GGML_ASSERT(indices->ne[0] == n_seqs);
+        GGML_ASSERT(state->ne[3] > 0);
+    } else {
+        GGML_ASSERT(state->ne[3] == n_seqs);
+    }
     GGML_ASSERT(K >= 1);
     const int64_t state_rows = K * S_v * n_seqs;
     const int64_t ne[4] = { S_v * H, n_tokens * n_seqs + state_rows, 1, 1 };
@@ -6416,15 +6426,42 @@ struct ggml_tensor * ggml_gated_delta_net(
 
     ggml_set_op_params_i32(result, 0, (int32_t) K);
 
-    result->op     = GGML_OP_GATED_DELTA_NET;
+    result->op     = indices ? GGML_OP_GATED_DELTA_NET_INDEXED : GGML_OP_GATED_DELTA_NET;
     result->src[0] = q;
     result->src[1] = k;
     result->src[2] = v;
     result->src[3] = g;
     result->src[4] = beta;
     result->src[5] = state;
+    result->src[6] = indices;
 
     return result;
+}
+
+struct ggml_tensor * ggml_gated_delta_net(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * q,
+        struct ggml_tensor  * k,
+        struct ggml_tensor  * v,
+        struct ggml_tensor  * g,
+        struct ggml_tensor  * beta,
+        struct ggml_tensor  * state,
+        int64_t               K) {
+    return ggml_gated_delta_net_impl(ctx, q, k, v, g, beta, state, NULL, K);
+}
+
+struct ggml_tensor * ggml_gated_delta_net_indexed(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * q,
+        struct ggml_tensor  * k,
+        struct ggml_tensor  * v,
+        struct ggml_tensor  * g,
+        struct ggml_tensor  * beta,
+        struct ggml_tensor  * state,
+        struct ggml_tensor  * indices,
+        int64_t               K) {
+    GGML_ASSERT(indices);
+    return ggml_gated_delta_net_impl(ctx, q, k, v, g, beta, state, indices, K);
 }
 
 // ggml_lightning_indexer

@@ -11208,9 +11208,10 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
             ? state_work
             : state_out_base + (iv3 * H + iv1) * S_v * S_v;
 
-        // copy input state into the working buffer and operate in-place
-        // state layout [S_v, S_v, H, n_seqs]: seq iv3 starts at iv3 * state_seq_stride.
-        const float * s_in = state_in_base + iv3 * state_seq_stride + iv1 * S_v * S_v;
+        // Input rows can be reordered; output sequences keep batch order.
+        const int64_t state_row = dst->src[6] ? ((const int32_t *) dst->src[6]->data)[iv3] : iv3;
+        GGML_ASSERT(state_row >= 0 && state_row < src_state->ne[3]);
+        const float * s_in = state_in_base + state_row * state_seq_stride + iv1 * S_v * S_v;
         memcpy(s_out, s_in, S_v * S_v * sizeof(float));
 
         // attn output pointer for first token of this (head, seq)
