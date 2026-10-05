@@ -951,7 +951,8 @@ static __global__ void flash_attn_tile(
     __syncthreads();
 
     // Main loop over KV cache:
-    const int k_VKQ_max = KV_max ? KV_max[sequence*gridDim.x + blockIdx.x] : ne11;
+    const int k_VKQ_max = KV_max ? KV_max[sequence*gridDim.x + blockIdx.x] :
+        mask && ne01.z <= 8 && ne03 == 1 ? flash_attn_decode_kv_end(mask, ne11, ne01.z, nb31) : ne11;
     if (ncols2 == 1) {
         // Branch with out-of-bounds checks.
         int k_VKQ_0 = blockIdx.y*nbatch_fa;

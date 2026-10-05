@@ -1232,6 +1232,11 @@ void launch_fattn(
         CUDA_CHECK(cudaGetLastError());
     }
 
+    if (!use_sparse && mask && Q->ne[1] <= 8 && Q->ne[3] == 1 && !ctx.fa_decode_bound_logged) {
+        GGML_LOG_INFO("%s: decode KV bound: device=%d nq=%lld nk=%lld\n", __func__, ctx.device, (long long) Q->ne[1], (long long) K->ne[1]);
+        ctx.fa_decode_bound_logged = true;
+    }
+
     const dim3 block_dim(warp_size, nwarps, 1);
     int max_blocks_per_sm = 1; // Max. number of active blocks limited by occupancy.
     CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&max_blocks_per_sm, fattn_kernel, block_dim.x * block_dim.y * block_dim.z, nbytes_shared));

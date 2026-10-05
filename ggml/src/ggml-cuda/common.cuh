@@ -1469,6 +1469,7 @@ struct ggml_backend_cuda_context {
     void * cublas_workspaces[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = {nullptr};
     size_t cublas_workspace_sizes[GGML_CUDA_MAX_DEVICES] = {0};
 
+    bool fa_decode_bound_logged = false;
     int curr_stream_no = 0;
 
 #ifdef USE_CUDA_GRAPH
