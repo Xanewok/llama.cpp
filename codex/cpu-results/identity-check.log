@@ -1,0 +1,6 @@
+M: sampled tokens, logits/hidden fingerprints and per-layer R/S fingerprints: meta=0 np=1
+M: sampled tokens, logits/hidden fingerprints and per-layer R/S fingerprints: meta=0 np=2
+M: sampled tokens, logits/hidden fingerprints and per-layer R/S fingerprints: meta=1 np=1
+M: sampled tokens, logits/hidden fingerprints and per-layer R/S fingerprints: meta=1 np=2
+M: wrong-slot changed the compared output
+M: stale-after-clear changed the compared output

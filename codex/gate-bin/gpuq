@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+import fcntl
+import json
+from pathlib import Path
+import sys
+
+if sys.argv[1:] != ['status', '--json']:
+    raise SystemExit('this read-only adapter supports only gpuq status --json')
+try:
+    home = Path('/home/xanewok/.local/state/gpuq')
+    with (home / 'state.lock').open() as lock:
+        fcntl.flock(lock, fcntl.LOCK_SH)
+        paths = list((home / 'items').glob('*/state.json'))
+        assert paths, 'queue state unavailable'
+        items = [json.loads(p.read_text()) for p in paths]
+        print(json.dumps({'items': [dict(id=i['id'], state=i['state'], kind=i.get('manifest', {}).get('kind', 'measure')) for i in items]}))
+except Exception as exc:
+    print(json.dumps({'items': [dict(id='unreadable-queue', state='running', kind='measure')]}))
+    print(f'CPU gate waits: {exc}', file=sys.stderr)

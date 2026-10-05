@@ -6,3 +6,12 @@ reuse-results/
 input-results/
 runs/
 __pycache__/
+
+# GDN rollback task artifacts
+base-cpu/bin/
+frozen/
+gpu-results/
+cpu-results/*.txt
+cpu-results/*.log
+cuda-build.log
+cuda-freeze-build.log

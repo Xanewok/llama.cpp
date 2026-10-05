@@ -1,0 +1,22 @@
+fingerprint after-clear seq=1 layer=29 row=1 cache_s_l29
+fingerprint after-clear seq=1 layer=30 row=1 cache_r_l30
+fingerprint after-clear seq=1 layer=30 row=1 cache_s_l30
+decode shared-tail
+build-cpu/bin/gdn-cpu(+0x40af)[0x5aa206c200af]
+/lib/x86_64-linux-gnu/libc.so.6(+0x45330)[0x7ef551e45330]
+/lib/x86_64-linux-gnu/libc.so.6(+0x188d01)[0x7ef551f88d01]
+/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/base-cpu/bin/libggml-base.so.0(ggml_backend_tensor_set_2d+0xf1)[0x7ef552558b01]
+/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/base-cpu/bin/libggml-base.so.0(+0x4e367)[0x7ef55256e367]
+/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/base-cpu/bin/libllama.so.0(_ZN14llama_kv_cache6updateEP13llama_contextbRKNS_16stream_copy_infoE+0x119)[0x7ef552862f69]
+/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/base-cpu/bin/libllama.so.0(_ZN22llama_kv_cache_context5applyEv+0x81)[0x7ef552865f71]
+/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/base-cpu/bin/libllama.so.0(_ZN27llama_memory_hybrid_context5applyEv+0x375)[0x7ef5528a9dd5]
+/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/base-cpu/bin/libllama.so.0(_ZN13llama_context13memory_updateEb+0xc2)[0x7ef5528148d2]
+/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/base-cpu/bin/libllama.so.0(_ZN13llama_context6decodeERK15llama_batch_ext+0x32b)[0x7ef55281a38b]
+/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/base-cpu/bin/libllama.so.0(_ZN13llama_context6decodeERK11llama_batch+0x3c)[0x7ef55281bd7c]
+/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-gather-inplace/codex/base-cpu/bin/libllama.so.0(llama_decode+0xf)[0x7ef55281bdbf]
+build-cpu/bin/gdn-cpu(+0x49f5)[0x5aa206c209f5]
+build-cpu/bin/gdn-cpu(+0x68d5)[0x5aa206c228d5]
+build-cpu/bin/gdn-cpu(main+0x3b)[0x5aa206c1ff3b]
+/lib/x86_64-linux-gnu/libc.so.6(+0x2a1ca)[0x7ef551e2a1ca]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x8b)[0x7ef551e2a28b]
+build-cpu/bin/gdn-cpu(_start+0x25)[0x5aa206c1ff85]

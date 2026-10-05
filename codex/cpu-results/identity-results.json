@@ -1,0 +1,62 @@
+{
+  "runs": [
+    {
+      "arm": "base",
+      "meta": 0,
+      "np": 1,
+      "indexed_calls_M": 0,
+      "wall_ms_M": 3961.073
+    },
+    {
+      "arm": "indexed",
+      "meta": 0,
+      "np": 1,
+      "indexed_calls_M": 264,
+      "wall_ms_M": 4372.735
+    },
+    {
+      "arm": "base",
+      "meta": 0,
+      "np": 2,
+      "indexed_calls_M": 0,
+      "wall_ms_M": 7310.255
+    },
+    {
+      "arm": "indexed",
+      "meta": 0,
+      "np": 2,
+      "indexed_calls_M": 432,
+      "wall_ms_M": 6847.466
+    },
+    {
+      "arm": "base",
+      "meta": 1,
+      "np": 1,
+      "indexed_calls_M": 0,
+      "wall_ms_M": 4782.018
+    },
+    {
+      "arm": "indexed",
+      "meta": 1,
+      "np": 1,
+      "indexed_calls_M": 264,
+      "wall_ms_M": 4757.782
+    },
+    {
+      "arm": "base",
+      "meta": 1,
+      "np": 2,
+      "indexed_calls_M": 0,
+      "wall_ms_M": 8899.753
+    },
+    {
+      "arm": "indexed",
+      "meta": 1,
+      "np": 2,
+      "indexed_calls_M": 360,
+      "wall_ms_M": 8912.064
+    }
+  ],
+  "identity": "PASS",
+  "negative_controls": "PASS"
+}

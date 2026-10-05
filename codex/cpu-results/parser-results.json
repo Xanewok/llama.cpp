@@ -1,0 +1,38 @@
+{
+  "record": "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack6-depth-j5q/full-a1/1-s6/depth-8192.json",
+  "metrics_M": {
+    "intervals_M": 88,
+    "steady_ms_per_round_D": 40.657647727272725,
+    "timings": {
+      "cache_n": 0,
+      "prompt_n": 8192,
+      "prompt_ms": 8749.417,
+      "prompt_per_token_ms": 1.0680440673828124,
+      "prompt_per_second": 936.2909551573551,
+      "predicted_n": 512,
+      "predicted_ms": 3856.769,
+      "predicted_per_token_ms": 7.547493150684931,
+      "predicted_per_second": 132.49432361647794,
+      "draft_n": 458,
+      "draft_n_accepted": 419
+    }
+  },
+  "token_count_M": 512,
+  "counters_M": {
+    "rounds": 1,
+    "graph_hit": {
+      "count": 5,
+      "host_us": 0.0
+    },
+    "graph_miss": {
+      "count": 2,
+      "host_us": 0.0
+    },
+    "gdn_gather_skipped": {
+      "count": 0,
+      "host_us": 0.0
+    }
+  },
+  "negative_controls": "PASS",
+  "indexed_log_positive": "synthetic only; real engagement required by canary"
+}
