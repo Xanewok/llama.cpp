@@ -153,7 +153,7 @@ bool ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(const int cc, const ggml_
 
 // Small batches with q8_0 K/V: dequantizing tiles in the kernel reads half the bytes of the f16 copy that otherwise has to
 // be written first, and that copy of the whole K/V view costs more than the attention itself. Larger batches amortize it.
-// Only called for the ncols2 == 8 dispatch, the ncols1 of the instances covers 3-8 queries.
+// Only called for the ncols2 == 8 dispatch; the four-query instance also pads single-query decode.
 static bool ggml_cuda_flash_attn_ext_mma_q8_0_supported(const int cc, const ggml_tensor * dst) {
 #if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
     GGML_UNUSED_VARS(cc, dst);
@@ -180,7 +180,7 @@ static bool ggml_cuda_flash_attn_ext_mma_q8_0_supported(const int cc, const ggml
     if (K->type != GGML_TYPE_Q8_0 || V->type != GGML_TYPE_Q8_0 || K->ne[0] != 256 || V->ne[0] != 256) {
         return false;
     }
-    if (Q->ne[1] < 3 || Q->ne[1] > 8 || logit_softcap != 0.0f) {
+    if ((Q->ne[1] != 1 && Q->ne[1] < 3) || Q->ne[1] > 8 || logit_softcap != 0.0f) {
         return false;
     }
     // the kernel stages raw rows with 16 byte copies
@@ -703,6 +703,11 @@ static best_fattn_kernel ggml_cuda_get_best_fattn_kernel(const int device, const
                     return BEST_FATTN_KERNEL_VEC;
                 }
             } else {
+                // Reuse the grouped tile loader instead of scanning the same KV head for each Q head.
+                if (Q->ne[1] == 1 && gqa_opt_applies && gqa_ratio > 4 &&
+                        ggml_cuda_flash_attn_ext_mma_q8_0_supported(cc, dst)) {
+                    return BEST_FATTN_KERNEL_MMA_F16;
+                }
                 if (cc >= GGML_CUDA_CC_ADA_LOVELACE) {
                     if (Q->ne[1] <= 2) {
                         return BEST_FATTN_KERNEL_VEC;
