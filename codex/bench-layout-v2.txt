@@ -1,0 +1,5 @@
+backend CPU layers 48 channels 5120 tokens 6 K 6 iters 300
+LAYOUT mode=sep-unfused eligible=0/48 silu_overlaps_tokens=0/48
+LAYOUT mode=sep-fused eligible=48/48 silu_overlaps_tokens=0/48
+LAYOUT mode=galloc-model eligible=48/48 silu_overlaps_tokens=48/48
+LAYOUT mode=galloc-pinned eligible=48/48 silu_overlaps_tokens=0/48

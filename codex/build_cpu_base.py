@@ -9,6 +9,7 @@ source = base / 'qwen35.cpp'
 source.write_bytes(subprocess.check_output(['git', 'show', '590912a1d:src/models/qwen35.cpp']))
 unit = Path('build-cpu/src/CMakeFiles/llama.dir/Unity/unity_8_cxx.cxx')
 replacement = base / 'unity.cpp'
+assert unit.read_text().count(str(root / 'src/models/qwen35.cpp')) == 1
 replacement.write_text(unit.read_text().replace(str(root / 'src/models/qwen35.cpp'), str(source)))
 flags = {}
 for line in Path('build-cpu/src/CMakeFiles/llama.dir/flags.make').read_text().splitlines():
@@ -16,7 +17,7 @@ for line in Path('build-cpu/src/CMakeFiles/llama.dir/flags.make').read_text().sp
         key, value = line.split(' = ', 1)
         flags[key] = shlex.split(value)
 obj = base / 'unity.o'
-subprocess.run(['c++', *flags['CXX_DEFINES'], *flags['CXX_INCLUDES'], *flags['CXX_FLAGS'], '-c', str(replacement), '-o', str(obj)], check=True)
+subprocess.run(['c++', '-I' + str(root / 'src/models'), *flags['CXX_DEFINES'], *flags['CXX_INCLUDES'], *flags['CXX_FLAGS'], '-c', str(replacement), '-o', str(obj)], check=True)
 link = shlex.split(Path('build-cpu/src/CMakeFiles/llama.dir/link.txt').read_text())
 link[link.index('-o') + 1] = str(base / 'libllama.so.0.5.0')
 link[link.index('CMakeFiles/llama.dir/Unity/unity_8_cxx.cxx.o')] = str(obj)

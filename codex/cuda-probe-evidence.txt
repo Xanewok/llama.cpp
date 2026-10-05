@@ -1,0 +1,1 @@
+59:set(CMAKE_CUDA_ARCHITECTURES_NATIVE "No CUDA devices found.-real")

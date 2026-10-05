@@ -11,4 +11,10 @@ shift || true
 if [[ "$mode" = --canary || "$mode" = --execute ]]; then
     [[ ${GPUQ_ACTIVE:-0} = 1 ]] || { echo 'GPU execution requires gpuq' >&2; exit 8; }
 fi
-exec bash /home/xanewok/repos/qwen38-eval/harness/run.sh depth "$here/gdn-state-movers.experiment.toml" "$mode" "$@"
+export PYTHONPATH=/home/xanewok/repos/qwen38-eval
+unset PYTHONOPTIMIZE LD_PRELOAD LD_LIBRARY_PATH
+export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8
+if [[ "$mode" = --preflight || "$mode" = --capture ]]; then
+    exec nice -n 19 python3 "$here/gdn_conv_gpu.py" depth "$here/gdn-conv-v2.experiment.toml" "$mode" "$@"
+fi
+exec python3 "$here/gdn_conv_gpu.py" depth "$here/gdn-conv-v2.experiment.toml" "$mode" "$@"

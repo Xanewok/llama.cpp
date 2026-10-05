@@ -9,3 +9,9 @@ __pycache__/
 
 frozen/*/build/bin/*
 !frozen/*/build/bin/SHA256SUMS
+cpu-bin/
+edit_v2.py
+concat-staging.patch
+INDEX.md
+bench-runs/
+gpu-ab-runs/

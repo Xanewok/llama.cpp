@@ -1,0 +1,35 @@
+{
+  "label": "M",
+  "shared_fixture_tests": {
+    "recorded_fixture": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures",
+    "parser_result": {
+      "intervals_M": 24,
+      "steady_ms_per_round_D": 37.19825,
+      "timings": {
+        "cache_n": 0,
+        "prompt_n": 684,
+        "prompt_ms": 1202.469,
+        "prompt_per_token_ms": 1.7579956140350879,
+        "prompt_per_second": 568.8296330300407,
+        "predicted_n": 122,
+        "predicted_ms": 1200.672,
+        "predicted_per_token_ms": 9.92290909090909,
+        "predicted_per_second": 100.77689827030196,
+        "draft_n": 150,
+        "draft_n_accepted": 93
+      }
+    },
+    "negative_controls": "PASS"
+  },
+  "recorded_native_artifact": "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack4-depth-j5q/full-a1/0-up/depth-8192.json",
+  "steady_intervals_M": 92,
+  "native_tokens_M": 512,
+  "recorded_bench_artifact": "/home/xanewok/repos/qwen38-eval-worktrees/work/gdn-movers-diag/runs/bench-a2/gpu0-p1.txt",
+  "real_bench_modes_M": 4,
+  "identity_negative_control": "DETECTED",
+  "empty_stream_negative_control": "DETECTED",
+  "bench_corruption_controls": "DETECTED",
+  "real_V1_engagement_missing": "DETECTED",
+  "partial_engagement_controls": "DETECTED",
+  "positive_engagement_fixture": "synthetic; no V2 GPU execution yet"
+}
