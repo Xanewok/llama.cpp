@@ -192,6 +192,6 @@ static void mmvq_select_config(mmvq_parameter_table_id table, F launch) {
         case MMVQ_PARAMETERS_RDNA4: select(std::integral_constant<mmvq_parameter_table_id, MMVQ_PARAMETERS_RDNA4>{}); return;
 #endif
         case MMVQ_PARAMETERS_GB10: select(std::integral_constant<mmvq_parameter_table_id, MMVQ_PARAMETERS_GB10>{}); return;
+        default: GGML_ABORT("invalid MMVQ parameter table");
     }
-    GGML_ABORT("invalid MMVQ parameter table");
 }
