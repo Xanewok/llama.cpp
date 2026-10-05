@@ -1,0 +1,4 @@
+BENCH_MODE sep-unfused
+BENCH_MODE sep-fused
+BENCH_MODE galloc-model
+BENCH_MODE galloc-pinned

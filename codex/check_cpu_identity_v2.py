@@ -15,6 +15,6 @@ for np in (1, 2):
     assert changed != records['base'], 'identity negative control escaped'
     results.append({'np': np, 'trials_M': 8, 'fingerprints_M': len(records['patch']),
                     'base_patch_identity': 'PASS', 'wrong_snapshot_index': 'DETECTED',
-                    'dropped_snapshot': 'DETECTED', 'identity_negative_control': 'DETECTED'})
+                    'dropped_snapshot': 'DETECTED', 'identity_negative_control': 'DETECTED', 'fingerprints': records['patch']})
 print(json.dumps({'label': 'M', 'baseline': '590912a1d Qwen3.5 graph order; shared CPU kernels',
                   'sampling': 'greedy probe tokens plus bitwise selected state/logits', 'results': results}, indent=2))

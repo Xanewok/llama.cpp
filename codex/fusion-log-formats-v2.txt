@@ -1,0 +1,3 @@
+ssm_conv_state_fusion: engaged %s device=%d graph=%lu tokens=%ld channels=%ld seqs=%ld slots=%ld nodes=%d
+ssm_conv_state_fusion: rejected %s device=%d graph=%lu tokens=%ld: %s
+ssm_conv_state_fusion: graph device=%d graph=%lu tokens=%ld conv=%d fused=%d

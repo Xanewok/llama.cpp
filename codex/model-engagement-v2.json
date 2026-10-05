@@ -1,0 +1,102 @@
+{
+  "label": "M",
+  "variants_M": 12,
+  "rows": [
+    {
+      "np": 1,
+      "prefill": 32,
+      "tokens": 1,
+      "matched_M": 24,
+      "layers_M": 24,
+      "dead_input_aliases_M": 0
+    },
+    {
+      "np": 1,
+      "prefill": 32,
+      "tokens": 4,
+      "matched_M": 24,
+      "layers_M": 24,
+      "dead_input_aliases_M": 24
+    },
+    {
+      "np": 1,
+      "prefill": 32,
+      "tokens": 6,
+      "matched_M": 24,
+      "layers_M": 24,
+      "dead_input_aliases_M": 24
+    },
+    {
+      "np": 1,
+      "prefill": 512,
+      "tokens": 1,
+      "matched_M": 24,
+      "layers_M": 24,
+      "dead_input_aliases_M": 0
+    },
+    {
+      "np": 1,
+      "prefill": 512,
+      "tokens": 4,
+      "matched_M": 24,
+      "layers_M": 24,
+      "dead_input_aliases_M": 24
+    },
+    {
+      "np": 1,
+      "prefill": 512,
+      "tokens": 6,
+      "matched_M": 24,
+      "layers_M": 24,
+      "dead_input_aliases_M": 24
+    },
+    {
+      "np": 2,
+      "prefill": 32,
+      "tokens": 1,
+      "matched_M": 24,
+      "layers_M": 24,
+      "dead_input_aliases_M": 0
+    },
+    {
+      "np": 2,
+      "prefill": 32,
+      "tokens": 4,
+      "matched_M": 24,
+      "layers_M": 24,
+      "dead_input_aliases_M": 24
+    },
+    {
+      "np": 2,
+      "prefill": 32,
+      "tokens": 6,
+      "matched_M": 24,
+      "layers_M": 24,
+      "dead_input_aliases_M": 24
+    },
+    {
+      "np": 2,
+      "prefill": 512,
+      "tokens": 1,
+      "matched_M": 24,
+      "layers_M": 24,
+      "dead_input_aliases_M": 0
+    },
+    {
+      "np": 2,
+      "prefill": 512,
+      "tokens": 4,
+      "matched_M": 24,
+      "layers_M": 24,
+      "dead_input_aliases_M": 24
+    },
+    {
+      "np": 2,
+      "prefill": 512,
+      "tokens": 6,
+      "matched_M": 24,
+      "layers_M": 24,
+      "dead_input_aliases_M": 24
+    }
+  ]
+}

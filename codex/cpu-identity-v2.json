@@ -1,0 +1,53 @@
+{
+  "label": "M",
+  "baseline": "590912a1d Qwen3.5 graph order; shared CPU kernels",
+  "sampling": "greedy probe tokens plus bitwise selected state/logits",
+  "results": [
+    {
+      "np": 1,
+      "trials_M": 8,
+      "fingerprints_M": 8,
+      "base_patch_identity": "PASS",
+      "wrong_snapshot_index": "DETECTED",
+      "dropped_snapshot": "DETECTED",
+      "identity_negative_control": "DETECTED",
+      "fingerprints": [
+        "STATE_MOVERS trial=0 seq=0 accepted=2 state_logits_hash=a2fdb28db97c71d0 token=131",
+        "STATE_MOVERS trial=1 seq=0 accepted=6 state_logits_hash=c6f4b5d3691d7bb3 token=317",
+        "STATE_MOVERS trial=2 seq=0 accepted=1 state_logits_hash=5eb1f9a6e97fd69f token=410",
+        "STATE_MOVERS trial=3 seq=0 accepted=4 state_logits_hash=040d98c5dab16772 token=317",
+        "STATE_MOVERS trial=4 seq=0 accepted=3 state_logits_hash=770661cfbd2bccb0 token=1256",
+        "STATE_MOVERS trial=5 seq=0 accepted=5 state_logits_hash=5ce9b305dbf5431f token=317",
+        "STATE_MOVERS trial=6 seq=0 accepted=4 state_logits_hash=3630801cdb522568 token=131",
+        "STATE_MOVERS trial=7 seq=0 accepted=6 state_logits_hash=bc9a9fec6d2034ed token=317"
+      ]
+    },
+    {
+      "np": 2,
+      "trials_M": 8,
+      "fingerprints_M": 16,
+      "base_patch_identity": "PASS",
+      "wrong_snapshot_index": "DETECTED",
+      "dropped_snapshot": "DETECTED",
+      "identity_negative_control": "DETECTED",
+      "fingerprints": [
+        "STATE_MOVERS trial=0 seq=0 accepted=2 state_logits_hash=d84a5379541b32ba token=131",
+        "STATE_MOVERS trial=0 seq=1 accepted=2 state_logits_hash=e91c9ec367289d5f token=196",
+        "STATE_MOVERS trial=1 seq=0 accepted=6 state_logits_hash=c5fcb61369c4706e token=131",
+        "STATE_MOVERS trial=1 seq=1 accepted=6 state_logits_hash=6c66f3b738823b35 token=3841",
+        "STATE_MOVERS trial=2 seq=0 accepted=1 state_logits_hash=b5dbacac04b15c94 token=410",
+        "STATE_MOVERS trial=2 seq=1 accepted=1 state_logits_hash=08074251fad9a4d8 token=8",
+        "STATE_MOVERS trial=3 seq=0 accepted=4 state_logits_hash=d1d4655a2dc39a02 token=317",
+        "STATE_MOVERS trial=3 seq=1 accepted=4 state_logits_hash=9209fd973e5f63c8 token=381",
+        "STATE_MOVERS trial=4 seq=0 accepted=3 state_logits_hash=bffe85eee1b138cd token=1256",
+        "STATE_MOVERS trial=4 seq=1 accepted=3 state_logits_hash=b06dd3f3ed81e3a8 token=60",
+        "STATE_MOVERS trial=5 seq=0 accepted=5 state_logits_hash=3ef7e7826edd52bb token=317",
+        "STATE_MOVERS trial=5 seq=1 accepted=5 state_logits_hash=a64d14549755860e token=13",
+        "STATE_MOVERS trial=6 seq=0 accepted=4 state_logits_hash=06e34b4ed3c4fe6c token=131",
+        "STATE_MOVERS trial=6 seq=1 accepted=4 state_logits_hash=ec4bbc538e93c129 token=220",
+        "STATE_MOVERS trial=7 seq=0 accepted=6 state_logits_hash=529dbec813049e12 token=317",
+        "STATE_MOVERS trial=7 seq=1 accepted=6 state_logits_hash=307ff2dd4682154d token=8"
+      ]
+    }
+  ]
+}

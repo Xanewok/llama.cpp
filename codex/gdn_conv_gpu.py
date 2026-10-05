@@ -50,6 +50,8 @@ def bench_results(text, legacy=False):
         mode = fields['mode']
         if legacy and mode == 'galloc':
             mode = 'galloc-model'
+        if mode not in {'sep-unfused', 'sep-fused', 'galloc-model', 'galloc-pinned'}:
+            continue
         values = {}
         for key in ('us_per_graph_sync_med', 'us_per_graph_async_med', 'us_per_layer_async', 'max_abs_out', 'max_abs_cache'):
             try:

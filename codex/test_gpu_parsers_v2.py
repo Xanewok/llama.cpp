@@ -39,6 +39,7 @@ fails(lambda: depth.gate(x['depth'], short, depth.first_prefill(8192)))
 bench_dir = Path('/home/xanewok/repos/qwen38-eval-worktrees/work/gdn-movers-diag/runs/bench-a2')
 real_bench = (bench_dir / 'gpu0-p1.txt').read_text()
 bench = bench_results(real_bench, legacy=True)
+assert bench_results(real_bench + '\nRESULT mode=warmup bogus=null\nRESULT junk\n', legacy=True) == bench
 fails(lambda: bench_results(real_bench.replace('max_abs_cache=0', 'max_abs_cache=1'), legacy=True))
 fails(lambda: bench_results(real_bench.replace('us_per_layer_async=19.078', 'us_per_layer_async=nan'), legacy=True))
 fails(lambda: bench_results(real_bench.splitlines()[1], legacy=True))

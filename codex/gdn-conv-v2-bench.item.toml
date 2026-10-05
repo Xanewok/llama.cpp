@@ -1,0 +1,35 @@
+id = "gdn-conv-v2-kernel-bench"
+title = "V2 concat and snapshot fusion: real model graph order, gallocr, exact caches"
+kind = "measure"
+ab = false
+retry = "fresh"
+# G: full <= 450 s + canary <= 120 s + cleanup <= 60 s; 630 / 900 = 0.70.
+budget_s = 900
+est_s = 450
+startup_grace_s = 30
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "hazard", regex = "\\bXid\\b|fallen off the bus" }, { class = "integrity", regex = "frozen bytes changed|inputs changed|model SHA changed|effective params mismatch|frozen file set changed|cross-arm identity failed|path-engaged proof failed|staging-engaged proof failed|canary prompt differs" }, { class = "insufficient_data", regex = "too few verify steps|proof inconclusive|missing final token identity|canary prompt has \\d+ tokens|reached only \\d+ cached|R2 reused only" }]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/gpu_bench.sh", "--execute", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/bench-runs/run-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2"
+env = { GPUQ_ACTIVE = "1" }
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/gpu_bench.sh", "--canary", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/bench-runs/canary-a{attempt}"]
+env = { GPUQ_ACTIVE = "1" }
+timeout_s = 180
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/gpu_bench.sh", "--preflight", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/bench-runs/preflight-a{attempt}"]
+timeout_s = 120
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/bench-runs/run-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["frozen", "identity", "engagement", "budget"]
+
+[pins]
+files = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/RECIPE.txt", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/SOURCE", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/SHA256SUMS", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/conv-state-bench", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libggml-base.so", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libggml-base.so.0", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libggml-base.so.0.25.3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libggml-cpu.so", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libggml-cpu.so.0", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libggml-cpu.so.0.25.3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libggml-cuda.so", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libggml-cuda.so.0", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libggml-cuda.so.0.25.3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libggml.so", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libggml.so.0", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libggml.so.0.25.3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libllama-common.so", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libllama-common.so.0", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libllama-common.so.0.5.0", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libllama-server-impl.so", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libllama.so", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libllama.so.0", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libllama.so.0.5.0", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libmtmd.so", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libmtmd.so.0", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/libmtmd.so.0.5.0", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/llama-server", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/round-trace", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/frozen/gdn-conv-v2-proof/build/bin/test-backend-ops", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/gpu_bench.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/gdn_conv_gpu.py", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/test_gpu_parsers_v2.py", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/gpu-parser-tests-v2.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/conv_state_bench.cpp", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/bench-layout-v2.txt", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-conv-v2/codex/bench-layout-negative.status", "/home/xanewok/repos/qwen38-eval/harness/mkitem.py", "/home/xanewok/repos/qwen38-eval/harness/campaign.py", "/home/xanewok/repos/qwen38-eval/harness/__init__.py", "/home/xanewok/repos/qwen38-eval/harness/stub_server.py", "/home/xanewok/repos/qwen38-eval/harness/depth.py", "/home/xanewok/repos/qwen38-eval/harness/lib.py", "/home/xanewok/repos/qwen38-eval/harness/__main__.py", "/home/xanewok/repos/qwen38-eval/harness/agents.py", "/home/xanewok/repos/qwen38-eval/harness/probe.py", "/home/xanewok/repos/qwen38-eval-worktrees/work/gdn-movers-diag/runs/bench-a2/gpu0-p1.txt", "/home/xanewok/repos/qwen38-eval-worktrees/work/gdn-movers-diag/runs/bench-a2/gpu0-p1.err"]

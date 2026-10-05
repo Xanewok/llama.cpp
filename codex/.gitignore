@@ -15,3 +15,5 @@ concat-staging.patch
 INDEX.md
 bench-runs/
 gpu-ab-runs/
+
+frozen/gdn-conv-v2/
