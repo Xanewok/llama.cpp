@@ -1,0 +1,100 @@
+id = "mtp-fuse-depth-j5q"
+kind = "depth"
+title = "MTP catch-up fused into D1 + output-graph slots keyed by batch shape (frozen mtp-fuse b5cd0e5ad, LLAMA_MTP_FUSE_CATCHUP=1) vs stack4 590912a1d (eager); Swift 1.5 J5q TP2 np1 k=5 -ub 512, steady full-K ms/round at 8k/32k/90k; within-arm identity + 5-vs-6 draft forwards per round gates; acceptance-matched ms/round delta (primary), CUDA graph churn and VRAM report-only"
+plan = ["up", "patch", "patch", "up"]
+protected = ["identity", "steady_minimum", "SHA256SUMS", "frozen", "DEPTHS", "ARM_ENV", "engaged", "min_p", "ar_call", "acceptance"]
+devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
+out = "/home/xanewok/repos/qwen38-eval/results/2026-10-05-mtp-fuse-depth-j5q"
+extra_pins = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/mtp-fuse-diag/codex/mtp_fuse_gpu.py",
+              "/home/xanewok/repos/qwen38-eval-worktrees/wt/mtp-fuse-diag/codex/mtp_fuse_run.sh",
+              "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack4-depth-j5q/canary-a1/0-up/round-trace.jsonl",
+              "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack4-depth-j5q/canary-a1/0-up/depth-8192.json",
+              "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack4-depth-j5q/canary-a1/0-up/depth-32768.json"]
+
+cpu_evidence = { path = "/home/xanewok/repos/qwen38-eval-worktrees/wt/mtp-fuse-diag/codex/matrix-results/t1-fused/records.json", command = "CPU -nr: fused vs eager 0/40 token differences (matrix T1); graph slots: graph-results f{0,1}-s{2,12}" }
+
+[model]
+id = "swift15-j5q"
+path = "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf"
+bytes = 19996051744
+sha = "f2c850ea3cd818b9d669fbd1e18767ef669ce012e614d819cce5ab6809e3a774"
+
+[draft_vocab]
+path = "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json"
+sha = "e30af79520ade5b7ddb851d75cf271f07d407dc768bf646e4517607d562a65a6"
+
+[arms.up]
+label = "stack4 590912a1d+CCCL343+staging (eager catch-up)"
+commit = "590912a1de2097523db6c8efe185387bb5c7d4fc"
+root = "/home/xanewok/repos/qwen38-weekend/frozen/stack4"
+bin = "build/bin"
+repo = "/home/xanewok/repos/stack4"
+exe = "build/bin/round-trace"
+env = { GGML_SCHED_INPUT_STAGING = "1", LD_LIBRARY_PATH = "{root}/build/bin" }
+flags = ["--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16"]
+canary_log = ["creating MTP draft context against the target model"]
+
+[arms.patch]
+label = "mtp-fuse b5cd0e5ad (stack4 + fused catch-up + graph slots)+CCCL343+staging"
+commit = "b5cd0e5addf7fff0fe6bb1d2a6c5c399dc28e4f6"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/frozen/mtp-fuse"
+bin = "build/bin"
+repo = "/home/xanewok/repos/stack4"
+exe = "build/bin/round-trace"
+env = { GGML_SCHED_INPUT_STAGING = "1", LLAMA_MTP_FUSE_CATCHUP = "1", LD_LIBRARY_PATH = "{root}/build/bin" }
+flags = ["--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16"]
+canary_log = ["creating MTP draft context against the target model", "MTP catch-up fused into the first draft step: yes"]
+
+[server]
+args = ["-m", "{model}", "-c", "102400", "-np", "1", "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "{arm_flags}",
+        "-sm", "tensor", "--tensor-split", "50,50", "-ngl", "99", "-b", "2048", "-ub", "512",
+        "--spec-type", "draft-mtp", "--spec-draft-n-max", "5", "--spec-draft-n-min", "0", "--spec-draft-p-min", "0",
+        "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--backend-sampling",
+        "--spec-draft-vocab", "{draft_vocab}", "--cache-ram", "0", "--metrics", "-t", "8", "-tb", "8",
+        "--host", "127.0.0.1", "--port", "{port}"]
+# The fusion and DIAG knobs are scrubbed from the inherited env; only the arm env sets them.
+knobs = ["GGML_SCHED_INPUT_STAGING", "LLAMA_ROUND_TRACE", "GGML_SCHED_DEBUG", "LLAMA_MTP_FUSE_CATCHUP", "LLAMA_GRAPH_SLOTS",
+         "LLAMA_MTP_FUSE_SPLIT", "LLAMA_MTP_FUSE_NEGCTL", "LLAMA_MTP_DUMP", "LLAMA_MTP_DUMP_KV", "LLAMA_DIAG_FORCE_REPLAY"]
+boot_cap_s = 300
+request_cap_s = 600
+
+[depth]
+depths = [8192, 32768, 90112]
+k = 5
+# identity "off" is the contract: the fused D1 changes draft batch shapes, so GPU tokens diverge across arms and the
+# random-token prompts fall into different loops (kv-pad-depth-iq4, one binary, env arms: acceptance 0.90/0.71/0.94 at 8k,
+# 0.17/0.002/0.38 at 90k, M). The adapter runs the np1 evaluator as "within-arm" (each arm's two boots must agree; they did
+# in kv-pad-depth-iq4). Cross-arm acceptance is report-only. Round cost rises with n_acc, so the primary result is the
+# n_acc-bucket-matched patch - up delta (summary.json "matched"), not the plain steady mean.
+identity = "off"
+# ar_call in every boot: complete rounds V,C,D1..D5 = 140 AllReduce calls eager, V,D1..D5 = 138 fused (one MTP forward = 2).
+counters = ["ar_call"]
+distinct_builds = true
+min_steady_intervals = 40
+min_predicted = 256
+fixtures = "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures"
+request = { seed = 1729, n_predict = 512, temperature = 1, top_k = 20, top_p = 0.95, min_p = 0.05 }
+# expected = matched delta. D (stack4 canary trace, eager, begin-to-begin): one 1-row draft step 0.71 ms at 8k, 0.84 at 32k; C+D1 1.85 / 1.63 ms.
+# Fused D1 ~ one draft step with n_acc+2 rows, so saving ~ one MTP forward per round at every acceptance (32k accepts ~0
+# and still drops C). G at 90k by linear KV extrapolation.
+expected = { "8192" = -0.9, "32768" = -0.8, "90112" = -1.1 }
+# M: stack4-depth-j5q took 226 s per boot (4 boots in 903 s).
+wall_s = 420
+
+[canary]
+plan = ["up", "patch"]
+depths = [8192, 32768]
+proofs = []
+
+[budget]
+canary_s = 900
+margin = 1.5
+cleanup_s = 150
+est_s = 2000
+startup_grace_s = 300
+preflight_s = 300
+
+[outputs]
+run = "full-a{attempt}"
+canary = "canary-a{attempt}"
+preflight = "preflight-plan"
