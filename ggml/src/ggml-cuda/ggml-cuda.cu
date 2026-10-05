@@ -3869,13 +3869,43 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
         }
     }
 
-    if (node->op == GGML_OP_CONCAT) {
+    if (node->op == GGML_OP_CPY && node->src[0]->op == GGML_OP_VIEW &&
+            node->src[0]->view_src && node->src[0]->view_src->op == GGML_OP_CONCAT) {
+#ifdef GGML_CUDA_DEBUG
+        const bool debug = true;
+#else
+        static const bool debug = getenv("GGML_CUDA_DEBUG_SSM_CONV") != nullptr;
+#endif
         ggml_ssm_conv_state_fusion match;
-        if (ggml_match_ssm_conv_state_fusion(cgraph, i, match) && match.out->ne[1] <= 32 &&
-            match.out->ne[0] % 128 == 0 && (match.conv->src[1]->ne[0] == 3 || match.conv->src[1]->ne[0] == 4 ||
-            match.conv->src[1]->ne[0] == 5 || match.conv->src[1]->ne[0] == 9 || match.conv->src[1]->ne[0] == 15)) {
+        const char * reason = nullptr;
+        bool can_fuse = ggml_match_ssm_conv_state_fusion(cgraph, i, match, &reason);
+        if (can_fuse && match.out->ne[1] > 32) {
+            can_fuse = false;
+            reason = "token limit";
+        }
+        if (can_fuse && match.out->ne[0] % 128 != 0) {
+            can_fuse = false;
+            reason = "channel alignment";
+        }
+        if (can_fuse) {
+            const int64_t width = match.conv->src[1]->ne[0];
+            if (width != 3 && width != 4 && width != 5 && width != 9 && width != 15) {
+                can_fuse = false;
+                reason = "kernel width";
+            }
+        }
+        if (can_fuse) {
+            if (debug) {
+                GGML_LOG_INFO("ssm_conv_state_fusion: engaged %s device=%d graph=%" PRIu64 " tokens=%" PRId64 " channels=%" PRId64 " seqs=%" PRId64 " slots=%" PRId64 " nodes=%d\n",
+                              match.conv->name, cuda_ctx->device, cgraph->uid, match.out->ne[1], match.out->ne[0], match.out->ne[2], match.slots, match.node_count);
+            }
             ggml_cuda_op_ssm_conv_state(*cuda_ctx, match);
             return match.node_count - 1;
+        }
+        if (debug) {
+            const ggml_tensor * concat = node->src[0]->view_src;
+            GGML_LOG_INFO("ssm_conv_state_fusion: rejected %s device=%d graph=%" PRIu64 " tokens=%" PRId64 ": %s\n",
+                          node->name, cuda_ctx->device, cgraph->uid, concat->src[1]->ne[0], reason);
         }
     }
 

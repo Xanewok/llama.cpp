@@ -4572,10 +4572,82 @@ struct test_ssm_conv_state_fusion : public test_case {
         return conv;
     }
 
+    void check_gallocr(ggml_backend_buffer_type_t buft) {
+        const int64_t c = 5120;
+        for (int64_t depth : {8192, 90112}) {
+            for (int64_t n_seq : {1, 2}) {
+                for (int64_t n_tok : {1, 4, 6}) {
+                    for (int64_t k = 1; k <= 6; ++k) {
+                        ggml_context_ptr inputs(ggml_init({ggml_tensor_overhead() * 128, nullptr, true}));
+                        auto * state = ggml_new_tensor_2d(inputs.get(), GGML_TYPE_F32, 3 * c, n_seq);
+                        auto * tokens = ggml_new_tensor_2d(inputs.get(), GGML_TYPE_F32, c, n_tok * n_seq);
+                        auto * weights = ggml_new_tensor_2d(inputs.get(), GGML_TYPE_F32, 4, c);
+                        auto * cache = ggml_new_tensor_3d(inputs.get(), GGML_TYPE_F32, 3 * c, n_seq + 2, k);
+                        auto * attention = ggml_new_tensor_2d(inputs.get(), GGML_TYPE_F32, 64, depth);
+                        ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors_from_buft(inputs.get(), buft));
+                        GGML_ASSERT(buffer);
+                        ggml_context_ptr ctx(ggml_init({ggml_tensor_overhead() * 128 + ggml_graph_overhead(), nullptr, true}));
+                        auto * graph = ggml_new_graph(ctx.get());
+                        // Free an attention-sized temporary before the recurrent layer to vary gallocr placement.
+                        auto * sum = ggml_sum(ctx.get(), ggml_scale(ctx.get(), attention, 0.5f));
+                        ggml_set_output(sum);
+                        ggml_build_forward_expand(graph, sum);
+                        auto * ids = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I32, n_tok * n_seq);
+                        ggml_set_input(ids);
+                        auto * tok = ggml_get_rows(ctx.get(), tokens, ids);
+                        ggml_build_forward_expand(graph, tok);
+                        auto * rows = ggml_get_rows(ctx.get(), state, ggml_view_1d(ctx.get(), ids, n_seq, 0));
+                        auto * cat = ggml_concat(ctx.get(), ggml_reshape_3d(ctx.get(), rows, 3, c, n_seq),
+                                                ggml_permute(ctx.get(), ggml_reshape_3d(ctx.get(), tok, c, n_tok, n_seq), 1, 0, 2, 3), 0);
+                        ggml_tensor * first = nullptr;
+                        for (int64_t slot = k - 1; slot >= 0; --slot) {
+                            auto * src = ggml_view_3d(ctx.get(), cat, 3, c, n_seq, cat->nb[1], cat->nb[2],
+                                                     std::max<int64_t>(0, n_tok - slot) * sizeof(float));
+                            auto * dst = ggml_view_2d(ctx.get(), cache, 3 * c, n_seq, cache->nb[1],
+                                                     cache->nb[1] + slot * cache->nb[2]);
+                            auto * copy = ggml_cpy(ctx.get(), src, dst);
+                            if (!first) {
+                                first = copy;
+                            }
+                            ggml_build_forward_expand(graph, copy);
+                        }
+                        auto * raw = ggml_ssm_conv(ctx.get(), cat, weights);
+                        auto * out = ggml_silu(ctx.get(), raw);
+                        ggml_set_output(out);
+                        ggml_build_forward_expand(graph, out);
+                        ggml_gallocr_t alloc = ggml_gallocr_new(buft);
+                        GGML_ASSERT(ggml_gallocr_alloc_graph(alloc, graph));
+                        int start = 0;
+                        while (start < graph->n_nodes && graph->nodes[start] != first) {
+                            ++start;
+                        }
+                        GGML_ASSERT(start < graph->n_nodes);
+                        ggml_ssm_conv_state_fusion match;
+                        GGML_ASSERT(ggml_match_ssm_conv_state_fusion(graph, start, match));
+                        GGML_ASSERT(match.slots == k && match.out == out);
+                        if (n_tok == 6 && n_seq == 1) {
+                            GGML_ASSERT(ggml_ssm_conv_overlaps(out, tok));
+                        }
+                        const size_t offset = first->src[0]->view_offs;
+                        first->src[0]->view_offs += sizeof(float);
+                        GGML_ASSERT(!ggml_match_ssm_conv_state_fusion(graph, start, match));
+                        first->src[0]->view_offs = offset;
+                        ggml_set_output(raw);
+                        GGML_ASSERT(!ggml_match_ssm_conv_state_fusion(graph, start, match));
+                        ggml_gallocr_free(alloc);
+                    }
+                }
+            }
+        }
+    }
+
     void initialize_tensors(ggml_context * ctx) override {
         test_case::initialize_tensors(ctx);
+        if (channels == 128 && tokens == 6 && seqs == 1 && K == 6 && width == 4 && silu) {
+            check_gallocr(ggml_backend_buffer_get_type(concat->buffer));
+        }
         int start = 0;
-        while (start < gf->n_nodes && gf->nodes[start] != concat) {
+        while (start < gf->n_nodes && gf->nodes[start] != copies.front()) {
             ++start;
         }
         GGML_ASSERT(start < gf->n_nodes);
@@ -4587,12 +4659,12 @@ struct test_ssm_conv_state_fusion : public test_case {
         src->view_offs -= sizeof(float);
         GGML_ASSERT(!ggml_match_ssm_conv_state_fusion(gf, start, match));
         src->view_offs = offset;
-        void * data = concat->src[0]->data;
-        concat->src[0]->data = copies.back()->data;
+        void * data = concat->data;
+        concat->data = copies.back()->data;
         GGML_ASSERT(!ggml_match_ssm_conv_state_fusion(gf, start, match));
-        concat->src[0]->data = data;
+        concat->data = data;
         concat->flags |= GGML_TENSOR_FLAG_OUTPUT;
-        GGML_ASSERT(!ggml_match_ssm_conv_state_fusion(gf, start, match));
+        GGML_ASSERT(ggml_match_ssm_conv_state_fusion(gf, start, match));
         concat->flags &= ~GGML_TENSOR_FLAG_OUTPUT;
     }
 };
