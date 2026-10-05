@@ -22,7 +22,7 @@ M historical kernel-suite f16/q8 times are 14.59/51.94 us at 8k and 164.77/218.0
 
 `fattn.cu:186`, `:220`, `:722` route eligible single queries to `flash_attn_ext_f16<256,256,1,8,false,false,false,Q8_0>`. One instance reuses cp.async loading/dequantization (`fattn-mma-f16.cuh:507`, `:537`). GQA 6/8 read each KV head once. Larger groups require ceil(GQA/8) scans.
 
-D=128, GQA<=4, ALiBi, softcap, sparse and incompatible layouts retain their paths. No model, GPU-name or context-length gates. `fattn.cu:819` shares eligibility with allocation, avoiding D 369,098,752 B/device of unused f16 storage at 90k. Fallback conversion storage remains available.
+D=128, GQA<=4, ALiBi, softcap, sparse and incompatible layouts retain their paths. No model, GPU-name or context-length gates. `fattn.cu:819` shares eligibility with allocation, avoiding D 184,549,376 B/device of unused f16 storage at 90k. Fallback conversion storage remains available.
 
 M candidate: 255 registers, 4 B spill stores/loads; padded 4x8 had 44/32 B spills. D candidate shared memory is 83,088 B, grid 36x1x1, block 32x4x1; uniform fixup grid 2x1x8, block 256. D peak cold-read floors are 19.89/79.57/218.83 us. G five-pass attention cost is 0.17/0.49/1.23 ms/round, assuming 418 GB/s plus 12 us/pass overhead; six passes multiply by 1.2. G savings against f16 are approximately 0.08/0.35/0.98 ms/round. Cache, spills and dequantization can invalidate these guesses.
 
