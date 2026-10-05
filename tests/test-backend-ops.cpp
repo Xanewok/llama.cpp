@@ -8172,7 +8172,8 @@ struct test_flash_attn_ext_padded : public test_flash_attn_ext {
         ggml_tensor * m = ggml_get_tensor(ctx, "m");
         std::vector<ggml_fp16_t> data(ggml_nelements(m), ggml_fp32_to_fp16(-INFINITY));
         for (int64_t q = 0; q < nb; ++q) {
-            for (int64_t k = 0; k < kv - tail; ++k) {
+            const int64_t live = kv - tail - (q % 2 ? std::min<int64_t>(256, kv - tail - 1) : 0);
+            for (int64_t k = 0; k < live; ++k) {
                 data[q*kv + k] = ggml_fp32_to_fp16(0.0f);
             }
         }
