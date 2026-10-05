@@ -1,6 +1,7 @@
 #include "ggml-round-trace.h"
 #include "ggml-cuda.h"
 #include "ggml-impl.h"
+#include "ggml-ssm-conv.h"
 #include "ggml-backend-impl.h"
 
 #include "ggml-cuda/allreduce.cuh"
@@ -3865,6 +3866,16 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
                     *cuda_ctx, match.experts, match.expert_scale, match.weights, match.dst);
                 return match.node_count - 1;
             }
+        }
+    }
+
+    if (node->op == GGML_OP_CONCAT) {
+        ggml_ssm_conv_state_fusion match;
+        if (ggml_match_ssm_conv_state_fusion(cgraph, i, match) && match.out->ne[1] <= 32 &&
+            match.out->ne[0] % 128 == 0 && (match.conv->src[1]->ne[0] == 3 || match.conv->src[1]->ne[0] == 4 ||
+            match.conv->src[1]->ne[0] == 5 || match.conv->src[1]->ne[0] == 9 || match.conv->src[1]->ne[0] == 15)) {
+            ggml_cuda_op_ssm_conv_state(*cuda_ctx, match);
+            return match.node_count - 1;
         }
     }
 

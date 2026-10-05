@@ -1,6 +1,7 @@
 #include "common.cuh"
 #include "ssm-conv.cuh"
 #include "unary.cuh"
+#include "ggml-ssm-conv.h"
 
 template <bool apply_silu, size_t split_d_inner, size_t d_conv>
 static __global__ void ssm_conv_f32(const float * src0_ptr, const float * src1_ptr,
@@ -202,5 +203,86 @@ void ggml_cuda_op_ssm_conv(ggml_backend_cuda_context & ctx, ggml_tensor * dst, g
     } else {
         ssm_conv_f32_cuda<false>(src0_d, src1_d, bias_d, src0->nb[0], src0->nb[1], src0->nb[2], src1->nb[1], dst_d, out->nb[0], out->nb[1],
                           out->nb[2], nc, nr, n_t, n_s, stream);
+    }
+}
+
+
+static __device__ float ssm_conv_input(const char * state, const char * tokens, int64_t time, int64_t channel,
+        int64_t seq, int64_t history, size_t s0, size_t s1, size_t s2, size_t t0, size_t t1, size_t t2) {
+    return time < history ?
+        *(const float *) (state + time * s0 + channel * s1 + seq * s2) :
+        *(const float *) (tokens + (time - history) * t0 + channel * t1 + seq * t2);
+}
+
+template <bool apply_silu, int d_conv>
+static __global__ void ssm_conv_state_f32(const char * state, const char * tokens, const char * weights,
+        float * out, char * cache, int64_t channels, int64_t n_tokens, int64_t slots,
+        size_t s0, size_t s1, size_t s2, size_t t0, size_t t1, size_t t2, size_t w1,
+        size_t cache_seq_stride, size_t cache_slot_stride) {
+    ggml_cuda_pdl_lc();
+    const int64_t channel = blockIdx.y * blockDim.x + threadIdx.x;
+    const int64_t seq = blockIdx.x;
+    float x[d_conv];
+    float w[d_conv];
+    ggml_cuda_pdl_sync();
+#pragma unroll
+    for (int j = 0; j < d_conv; ++j) {
+        w[j] = *(const float *) (weights + channel * w1 + j * sizeof(float));
+        x[j] = ssm_conv_input(state, tokens, j, channel, seq, d_conv - 1, s0, s1, s2, t0, t1, t2);
+    }
+    for (int64_t i = 0; i < n_tokens; ++i) {
+        if (i > 0) {
+            x[(i - 1) % d_conv] = ssm_conv_input(state, tokens, i + d_conv - 1, channel, seq,
+                d_conv - 1, s0, s1, s2, t0, t1, t2);
+        }
+        float sum = 0.0f;
+#pragma unroll
+        for (int j = 0; j < d_conv; ++j) {
+            sum += x[(i + j) % d_conv] * w[j];
+        }
+        sum += 0.0f;
+        out[(seq * n_tokens + i) * channels + channel] = apply_silu ? ggml_cuda_op_silu_single(sum) : sum;
+    }
+    // Older slots clamp to the input state when this ubatch has fewer tokens than slots.
+    for (int64_t slot = 0; slot < slots; ++slot) {
+        const int64_t start = n_tokens > slot ? n_tokens - slot : 0;
+#pragma unroll
+        for (int j = 0; j < d_conv - 1; ++j) {
+            const float value = ssm_conv_input(state, tokens, start + j, channel, seq,
+                d_conv - 1, s0, s1, s2, t0, t1, t2);
+            *(float *) (cache + slot * cache_slot_stride + seq * cache_seq_stride +
+                (channel * (d_conv - 1) + j) * sizeof(float)) = value;
+        }
+    }
+}
+
+void ggml_cuda_op_ssm_conv_state(ggml_backend_cuda_context & ctx, const ggml_ssm_conv_state_fusion & match) {
+    const ggml_tensor * concat = match.conv->src[0];
+    const ggml_tensor * state = concat->src[0];
+    const ggml_tensor * tokens = concat->src[1];
+    const ggml_tensor * weights = match.conv->src[1];
+    const dim3 blocks(tokens->ne[2], tokens->ne[1] / 128);
+    const auto params = ggml_cuda_kernel_launch_params(blocks, 128, 0, ctx.stream());
+    auto launch = [&](auto nc, auto silu) {
+        ggml_cuda_kernel_launch(ssm_conv_state_f32<decltype(silu)::value, decltype(nc)::value>, params,
+            (const char *) state->data, (const char *) tokens->data, (const char *) weights->data,
+            (float *) match.out->data, (char *) match.cache->data, tokens->ne[1], tokens->ne[0], match.slots,
+            state->nb[0], state->nb[1], state->nb[2], tokens->nb[0], tokens->nb[1], tokens->nb[2], weights->nb[1],
+            match.cache->nb[1], match.slot_stride);
+    };
+    auto launch_nc = [&](auto nc) {
+        if (match.out != match.conv) {
+            launch(nc, std::true_type{});
+        } else {
+            launch(nc, std::false_type{});
+        }
+    };
+    switch (weights->ne[0]) {
+        case 3:  launch_nc(std::integral_constant<int, 3>{}); break;
+        case 4:  launch_nc(std::integral_constant<int, 4>{}); break;
+        case 5:  launch_nc(std::integral_constant<int, 5>{}); break;
+        case 9:  launch_nc(std::integral_constant<int, 9>{}); break;
+        case 15: launch_nc(std::integral_constant<int, 15>{}); break;
+        default: GGML_ABORT("unsupported fused conv size");
     }
 }
