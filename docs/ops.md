@@ -130,3 +130,5 @@ Legend:
 |                            TRUNC | ❌ | ❌ | ✅ | 🟡 | 🟡 | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ |
 |                          UPSCALE | ❌ | 🟡 | ✅ | ✅ | ❌ | ❌ | ✅ | 🟡 | ✅ | ✅ | ✅ | ❌ | ❌ |
 |                            XIELU | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ |
+
+The CUDA backend can fuse `CONCAT`, recurrent conv-state snapshot copies, `SSM_CONV`, and an optional `SILU` for short batches. Other shapes and backends keep the unfused operations.
