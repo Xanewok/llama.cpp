@@ -6035,6 +6035,8 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
         case GGML_OP_RWKV_WKV7:
             return true;
         case GGML_OP_GATED_DELTA_NET_INDEXED:
+            // Multiple sequences need a gather to keep snapshot stores fused.
+            return op->src[2]->ne[3] == 1;
         case GGML_OP_GATED_DELTA_NET:
             return true;
         case GGML_OP_DSV4_HC_COMB:
