@@ -1,0 +1,3 @@
+real-mmvq.sql: /home/xanewok/repos/qwen38-eval/results/2026-10-04-mmvq-baseline/a1/raw/gen-gateup-r1.sql; SHA256 c118436a165d8cbee118b2b1c5bcd96f12f8781962c7750bd2a1338b83490956
+real-memory.csv, real-kernel-errors.txt: gpuq recorded inventory/kernel fixtures.
+real-mmvq.err: 2026-10-04-mmvq-baseline/a1/raw/gen-gateup-r1.err (recorded GPU run).
