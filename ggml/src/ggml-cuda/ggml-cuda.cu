@@ -3827,6 +3827,15 @@ static bool ggml_cuda_can_fuse(const struct ggml_cgraph *                cgraph,
     return false;
 }
 
+static bool ggml_cuda_debug_ssm_conv() {
+#ifdef GGML_CUDA_DEBUG
+    return true;
+#else
+    static const bool debug = getenv("GGML_CUDA_DEBUG_SSM_CONV") != nullptr;
+    return debug;
+#endif
+}
+
 // try and fuse nodes and return the number of nodes to skip
 static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, int i) {
 
@@ -3871,11 +3880,7 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
 
     if (node->op == GGML_OP_CPY && node->src[0]->op == GGML_OP_VIEW &&
             node->src[0]->view_src && node->src[0]->view_src->op == GGML_OP_CONCAT) {
-#ifdef GGML_CUDA_DEBUG
-        const bool debug = true;
-#else
-        static const bool debug = getenv("GGML_CUDA_DEBUG_SSM_CONV") != nullptr;
-#endif
+        const bool debug = ggml_cuda_debug_ssm_conv();
         ggml_ssm_conv_state_fusion match;
         const char * reason = nullptr;
         bool can_fuse = ggml_match_ssm_conv_state_fusion(cgraph, i, match, &reason);
@@ -4697,6 +4702,19 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
         if (!use_cuda_graph || cuda_graph_update_required) {
             ggml_round_trace_scope trace_capture(use_cuda_graph ? "cuda_capture" : "cuda_submit", cuda_ctx->device);
             [[maybe_unused]] int prev_i = 0;
+            const bool debug_ssm_conv = ggml_cuda_debug_ssm_conv();
+            int conv_count = 0;
+            int conv_fused = 0;
+            int64_t conv_tokens = -1;
+            if (debug_ssm_conv) {
+                for (int i = 0; i < cgraph->n_nodes; ++i) {
+                    const ggml_tensor * node = cgraph->nodes[i];
+                    if (node->op == GGML_OP_SSM_CONV && (node->flags & GGML_TENSOR_FLAG_COMPUTE)) {
+                        conv_tokens = conv_count == 0 || conv_tokens == node->ne[1] ? node->ne[1] : -2;
+                        ++conv_count;
+                    }
+                }
+            }
 
             if (stream_ctx.concurrent_events.size() > 0) {
                 should_launch_concurrent_events = true;
@@ -4805,6 +4823,11 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                 int nodes_to_skip = ggml_cuda_try_fuse(cuda_ctx, cgraph, i);
 
                 if (nodes_to_skip != 0) {
+                    if (debug_ssm_conv && node->op == GGML_OP_CPY) {
+                        for (int j = i; j <= i + nodes_to_skip; ++j) {
+                            conv_fused += cgraph->nodes[j]->op == GGML_OP_SSM_CONV;
+                        }
+                    }
 #ifdef GGML_CUDA_DEBUG
                     const int last_fused = i + nodes_to_skip;
                     GGML_LOG_INFO("nodes_fused: %d, first: %s (%s), last: %s (%s)\n",
@@ -4840,6 +4863,10 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                 if (!is_concurrent_event_active) {
                     try_launch_concurrent_event(node);
                }
+            }
+            if (debug_ssm_conv && conv_count > 0) {
+                GGML_LOG_INFO("ssm_conv_state_fusion: graph device=%d graph=%" PRIu64 " tokens=%" PRId64 " conv=%d fused=%d\n",
+                              cuda_ctx->device, cgraph->uid, conv_tokens, conv_count, conv_fused);
             }
         }
 
