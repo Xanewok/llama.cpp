@@ -105,6 +105,11 @@ llama_context::llama_context(
         throw std::runtime_error("n_seq_max must be <= " + std::to_string(LLAMA_MAX_SEQ));
     }
 
+    cparams.n_kv_pad = params.n_kv_pad == 0 ? 256 : GGML_PAD(params.n_kv_pad, 256);
+    if (cparams.n_kv_pad != params.n_kv_pad && params.n_kv_pad != 0) {
+        LLAMA_LOG_WARN("%s: n_kv_pad = %u is not a multiple of 256, rounded up to %u\n", __func__, params.n_kv_pad, cparams.n_kv_pad);
+    }
+
     cparams.n_rs_seq = params.n_rs_seq;
     if (cparams.n_rs_seq > 0 && !llm_arch_supports_rs_rollback(model.arch)) {
         LLAMA_LOG_DEBUG("%s: n_rs_seq=%u requested but model does not support recurrent partial rollback; clamping to 0\n",
@@ -291,13 +296,13 @@ llama_context::llama_context(
     }
 
     // ref: https://github.com/ggml-org/llama.cpp/pull/17046#discussion_r2503085732
-    cparams.n_ctx = GGML_PAD(cparams.n_ctx, 256);
+    cparams.n_ctx = GGML_PAD(cparams.n_ctx, cparams.n_kv_pad);
 
     if (cparams.kv_unified) {
         cparams.n_ctx_seq = cparams.n_ctx;
     } else {
         cparams.n_ctx_seq = cparams.n_ctx / cparams.n_seq_max;
-        cparams.n_ctx_seq = GGML_PAD(cparams.n_ctx_seq, 256);
+        cparams.n_ctx_seq = GGML_PAD(cparams.n_ctx_seq, cparams.n_kv_pad);
 
         if (cparams.n_ctx_seq == 0) {
             throw std::runtime_error("n_ctx_seq == 0");
@@ -312,6 +317,7 @@ llama_context::llama_context(
     LLAMA_LOG_INFO("%s: n_seq_max             = %u\n",   __func__, cparams.n_seq_max);
     LLAMA_LOG_INFO("%s: n_ctx                 = %u\n",   __func__, cparams.n_ctx);
     LLAMA_LOG_INFO("%s: n_ctx_seq             = %u\n",   __func__, cparams.n_ctx_seq);
+    LLAMA_LOG_INFO("%s: n_kv_pad              = %u\n",   __func__, cparams.n_kv_pad);
     LLAMA_LOG_INFO("%s: n_batch               = %u\n",   __func__, cparams.n_batch);
     LLAMA_LOG_INFO("%s: n_ubatch              = %u\n",   __func__, cparams.n_ubatch);
     LLAMA_LOG_INFO("%s: causal_attn           = %d\n",   __func__, cparams.causal_attn);
@@ -3856,6 +3862,7 @@ llama_context_params llama_context_default_params() {
         /*.n_rs_seq                    =*/ 0,
         /*.n_outputs_max               =*/ 0,
         /*.n_outputs_max_per_seq       =*/ 1,
+        /*.n_kv_pad                    =*/ 0,
         /*.n_threads                   =*/ GGML_DEFAULT_N_THREADS, // TODO: better default
         /*.n_threads_batch             =*/ GGML_DEFAULT_N_THREADS,
         /*.ctx_type                    =*/ LLAMA_CONTEXT_TYPE_DEFAULT,
