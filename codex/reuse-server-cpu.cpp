@@ -2,6 +2,7 @@
 #include "llama.h"
 #include "ggml-round-trace.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -27,16 +28,19 @@ int main(int argc, char ** argv) {
     params.n_gpu_layers = 0;
     const int prefill_words = std::getenv("CPU_PREFILL_WORDS") ? std::atoi(std::getenv("CPU_PREFILL_WORDS")) : 0;
     params.n_ctx = prefill_words > 0 ? prefill_words * 2 + 4096 : (requests > 1 ? 4096 : 512);
-    params.n_batch = 128;
+    params.n_batch = std::getenv("CPU_BATCH") ? std::atoi(std::getenv("CPU_BATCH")) : 128;
     params.n_ubatch = std::getenv("CPU_UBATCH") ? std::atoi(std::getenv("CPU_UBATCH")) : 32;
     params.n_parallel = 1;
-    params.cpuparams.n_threads = params.cpuparams_batch.n_threads = 8;
+    params.n_kv_pad = std::getenv("CPU_KV_PAD") ? std::atoi(std::getenv("CPU_KV_PAD")) : 0;
+    if (std::getenv("CPU_NP")) { params.n_parallel = std::atoi(std::getenv("CPU_NP")); }
+    const int n_thr = std::getenv("CPU_THREADS") ? std::atoi(std::getenv("CPU_THREADS")) : 8;
+    params.cpuparams.n_threads = params.cpuparams_batch.n_threads = n_thr;
     params.speculative.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
     params.speculative.draft.n_max = std::atoi(argv[4]);
     for (int id = 248319; id >= 0; id -= 17) { params.speculative.draft.vocab_ids.push_back(id); }
     params.speculative.draft.probabilistic = true;
     params.speculative.draft.backend_sampling = true;
-    params.speculative.draft.cpuparams.n_threads = params.speculative.draft.cpuparams_batch.n_threads = 8;
+    params.speculative.draft.cpuparams.n_threads = params.speculative.draft.cpuparams_batch.n_threads = n_thr;
     const bool meta = std::atoi(argv[3]) != 0;
     if (meta) {
         auto * cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
@@ -44,8 +48,8 @@ int main(int argc, char ** argv) {
         params.split_mode = LLAMA_SPLIT_MODE_TENSOR;
         params.n_gpu_layers = -1;
         params.speculative.draft.devices = {cpu, cpu};
-        params.cpuparams.n_threads = params.cpuparams_batch.n_threads = 4;
-        params.speculative.draft.cpuparams.n_threads = params.speculative.draft.cpuparams_batch.n_threads = 4;
+        params.cpuparams.n_threads = params.cpuparams_batch.n_threads = std::min(n_thr, 4);
+        params.speculative.draft.cpuparams.n_threads = params.speculative.draft.cpuparams_batch.n_threads = std::min(n_thr, 4);
     }
     std::ofstream out(argv[2], std::ios::binary);
     require(bool(out), "output open failed");
