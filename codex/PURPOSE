@@ -1,0 +1,6 @@
+purpose: per-request draft vocab extension from prompt ids
+base: ac7465885dc9f13de396ccd91b4be5eaffde3730
+repo: /home/xanewok/repos/llama.cpp
+branch: topic/draft-vocab-ext
+created: 2026-10-07T01:08:55+02:00
+creator: xanewok
