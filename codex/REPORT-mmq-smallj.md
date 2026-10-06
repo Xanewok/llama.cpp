@@ -20,6 +20,8 @@ M from `q1_shape.txt`: the trace also contains a Q6_K output head with 124160 ro
 
 The depth items retain the recorded harness's k=5. With two busy slots this produces 12 verify columns. k=3 produces at most 8 columns for two slots and does not exercise the target MMQ transition.
 
+Depth items run on `wt/harness-real-prompt` with the KLDT real-session corpus (`tokens64k.bin`): the stock random-token prompts degenerate on J5q at 32k/90k (acceptance ~0). Kernel probes check engagement per covered (type, J, fallback) launch derived from the case list; J=8 is reachable only for Q4_K/Q5_K/Q6_K plain MUL_MAT (n=6/8 above their Blackwell MMVQ cut), not for IQ4_XS/Q8_0 or MUL_MAT_ID (ncols_opt = ne12 off RDNA).
+
 ## Evidence and predictions
 
 Source reports read before implementation: `SP/gpu-sampling/REPORT.md`, `items/96b-attrib.md`, `SP/patchA/REPORT.md`, the final findings of `SP/codex-reviews/patchA.txt`, and `SP/analysis/gap-next/q1_tensors.txt`. SP is the scratchpad path in the task brief. The graph-cache review's ownership defects are unrelated to this config change; no scheduler or sampler code is changed.

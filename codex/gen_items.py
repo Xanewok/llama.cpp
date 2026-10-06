@@ -1,4 +1,7 @@
-"""Clone the recorded depth experiment and render items without changing the shared harness."""
+"""Clone the recorded depth experiment onto the real-prompt harness and render items without changing it.
+
+The stock random-token depth harness loops on J5q at 32k/90k (acceptance ~0), so depth items use wt/harness-real-prompt (KLDT
+corpus prompt, closed by the generation prompt); mkitem runs from that tree so the item commands and pins point at its files."""
 import copy
 import json
 import os
@@ -9,6 +12,9 @@ import tomllib
 
 HERE = Path(__file__).resolve().parent
 EVAL = Path('/home/xanewok/repos/qwen38-eval')
+HARNESS_TREE = Path('/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt')
+CORPUS = dict(path=str(EVAL / 'recipes/_common/kld/tokens64k.bin'),
+              sha='753920ad0a0dbfc135aece41284c74e96d70d856df0351100a5305511aabf412')
 sys.path.insert(0, str(HERE))
 from kernel_item import ROOTS
 
@@ -64,7 +70,7 @@ def arm(name):
 
 
 def depth_items():
-    template = tomllib.loads((EVAL / 'harness/experiments/duo-np2-depth.toml').read_text())
+    template = tomllib.loads((HARNESS_TREE / 'harness/experiments/duo-np2-depth.toml').read_text())
     for quant, streams in [('iq4', 2), ('j5q', 2), ('j5q', 1)]:
         name = f'{quant}-np{streams}'
         x = copy.deepcopy(template)
@@ -72,7 +78,7 @@ def depth_items():
         x['title'] = f'stack6 vs small-J MMQ {quant}, TP2 np{streams} k5 ub512, ABBA; memcheck/perf required before queueing'
         x['out'] = str(HERE / 'gpu-results' / name)
         x['arms'] = {'up': arm('base'), 'patch': arm('patch')}
-        x['extra_pins'] = local_pins() + [str(HERE / 'REPORT-mmq-smallj.md')]
+        x['extra_pins'] = local_pins() + [str(HERE / 'REPORT-mmq-smallj.md'), CORPUS['path']]
         if quant == 'j5q':
             x['model'] = dict(id='swift15-j5q', path='/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf',
                               bytes=19996051744, sha='f2c850ea3cd818b9d669fbd1e18767ef669ce012e614d819cce5ab6809e3a774')
@@ -84,6 +90,8 @@ def depth_items():
             args[args.index('-c') + 1] = '102400'
             args[args.index('-np') + 1] = '1'
         x['depth']['streams'] = streams
+        x['depth']['prompt'] = CORPUS
+        x['depth']['min_acceptance'] = 0.2
         x['depth']['identity'] = 'off' if streams == 2 else 'cross-arm'
         x['depth']['identity_off_reason'] = 'np2 batch composition is timing-dependent; CPU-reference MMQ test and np1 identity gate separately'
         x['depth']['distinct_builds'] = True
@@ -114,7 +122,7 @@ def depth_items():
 
 def render(path):
     subprocess.run([sys.executable, '-m', 'harness.mkitem', str(path), '--out', str(path.with_suffix('.gpuq.toml'))],
-                   cwd=EVAL, check=True, env=dict(os.environ, CUDA_VISIBLE_DEVICES='', PYTHONDONTWRITEBYTECODE='1'))
+                   cwd=HARNESS_TREE, check=True, env=dict(os.environ, CUDA_VISIBLE_DEVICES='', PYTHONDONTWRITEBYTECODE='1'))
 
 
 if __name__ == '__main__':
