@@ -16,6 +16,8 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <map>
@@ -1436,6 +1438,24 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     };
     std::vector<mtp_chain_seq> mtp_chain_seqs;
 
+    // LLAMA_MTP_CHAIN_DUMP=path: one line per drafted token, "round step id cand_ids[10] probs[10]", chain or not
+    FILE * mtp_chain_dump = nullptr;
+    int    mtp_chain_round = 0;
+
+    void mtp_chain_dump_step(int step, llama_token id, const llama_token_data_array * cur_p) {
+        if (!mtp_chain_dump) {
+            return;
+        }
+        std::fprintf(mtp_chain_dump, "%d %d %d", mtp_chain_round, step, id);
+        for (size_t i = 0; i < 10; ++i) {
+            std::fprintf(mtp_chain_dump, " %d", i < cur_p->size ? cur_p->data[i].id : -1);
+        }
+        for (size_t i = 0; i < 10; ++i) {
+            std::fprintf(mtp_chain_dump, " %.9g", i < cur_p->size ? cur_p->data[i].p : 0.0f);
+        }
+        std::fprintf(mtp_chain_dump, "\n");
+        std::fflush(mtp_chain_dump);
+    }
     std::vector<float>         mtp_chain_zeros; // h of the rows past step 0, which the chain replaces
     bool mtp_chain_announced = false;
 
@@ -1509,6 +1529,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         mtp_chain_seqs.resize(n_seq);
         mtp_chain_zeros.assign(n_embd, 0.0f);
+        if (const char * path = std::getenv("LLAMA_MTP_CHAIN_DUMP")) {
+            mtp_chain_dump = std::fopen(path, "w");
+        }
 
         i_last.assign(n_seq, -1);
         i_batch_beg.assign(n_seq, -1);
@@ -1533,6 +1556,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         for (auto & c : mtp_chain_seqs) {
             llama_sampler_free(c.smpl);
+        }
+        if (mtp_chain_dump) {
+            std::fclose(mtp_chain_dump);
         }
     }
 
@@ -1787,6 +1813,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
             const auto * cur_p = common_sampler_get_candidates(smpl, true);
 
+            mtp_chain_dump_step(s, id, cur_p);
             common_sampler_accept(smpl, id, true);
             // commits the uniform behind this token, or the next round draws it again
             llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
@@ -1799,6 +1826,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     }
 
     void draft(common_speculative_draft_params_vec & dparams) override {
+        ++mtp_chain_round;
         if (draft_chain(dparams)) {
             return;
         }
@@ -1898,6 +1926,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
                 // add drafted token for each sequence
                 const llama_token id = dparams.at(seq_id).result_q ? id_sampled : cur_p->data[0].id;
+
+                mtp_chain_dump_step(i, id, cur_p);
 
                 // only collect very high-confidence draft tokens
                 if (cur_p->data[0].p < params.p_min) {

@@ -1356,15 +1356,25 @@ static void llama_sampler_dist_backend_set_input(struct llama_sampler * smpl) {
 
     auto & rng = sctx->backend_transactional ? sctx->rng_backend : sctx->rng;
 
+    std::vector<float> rnds;
     for (auto * inp_uniform : sctx->inp_uniforms) {
         GGML_ASSERT(inp_uniform != nullptr);
 
-        const float rnd = dist(rng);
-        ggml_backend_tensor_set(inp_uniform, &rnd, 0, sizeof(float));
+        rnds.push_back(dist(rng));
 
         if (sctx->backend_transactional) {
             ++sctx->n_backend_draws_generated;
         }
+    }
+
+    // negative control of the MTP chain identity test: hand the uniforms out in reverse order
+    static const bool reverse = std::getenv("LLAMA_MTP_CHAIN_DEBUG_REVERSE_U") != nullptr;
+    if (reverse) {
+        std::reverse(rnds.begin(), rnds.end());
+    }
+
+    for (size_t i = 0; i < rnds.size(); ++i) {
+        ggml_backend_tensor_set(sctx->inp_uniforms[i], &rnds[i], 0, sizeof(float));
     }
 }
 
