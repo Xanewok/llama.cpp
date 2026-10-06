@@ -13,7 +13,7 @@ quiet() {
     local status
     while true; do
         status=$(gpuq status --brief)
-        printf '%s\n' "$status"
+        printf '%s\n' "$status" >&2
         if [[ $status != *'gpuq: RUN '* && $status == *'ready 0 '* ]]; then break; fi
         sleep 15
     done
