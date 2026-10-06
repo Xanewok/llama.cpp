@@ -21,7 +21,7 @@ ROOTS = {name: HERE / 'frozen' / ('mmq-smallj' + suffix)
 ROOTS['base'] = Path('/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6')
 GPU = 'GPU-ee9a3956-297c-604b-b4c1-f07930d27e46'
 TYPES = ('iq4_xs', 'q6_K', 'q5_K', 'q8_0', 'q4_K')
-SHAPES = ((8704, 5120), (5120, 8704), (5120, 6144), (3072, 5120), (6144, 5120))
+SHAPES = ((8704, 5120), (5120, 8704), (5120, 6144), (3072, 5120), (6144, 5120), (5120, 3072), (5120, 5120))
 WIDTHS = (6, 8, 9, 12, 16, 17, 24)
 
 
@@ -186,6 +186,9 @@ def expected_cases(kind, canary, negative=False):
     widths = (12,) if negative else (9, 12, 17) if canary else WIDTHS
     names = [f'{q}:{m}:{k}:{n}' for q in TYPES for m, k in shapes for n in widths
              if kind != 'memcheck' or m > 128 or n > 8]
+    if not canary and not negative:
+        names += [f'q6_K:124160:5120:{n}' for n in (6, 12)]
+        names += [f'q8_0:512:5120:{n}' for n in WIDTHS]
     if kind == 'memcheck' and not negative:
         names += [f'id:{q}:{m}:5120:{n}:{b}' for q in TYPES for m in (65, 128)
                   for n in ((12,) if canary else (12, 24, 48)) for b in (0, 1)]

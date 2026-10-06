@@ -31,7 +31,7 @@ def local_pins():
 
 
 def kernel_items():
-    for kind, run_s, estimate in [('memcheck', 2400, 1100), ('perf', 3600, 2400)]:
+    for kind, run_s, estimate in [('memcheck', 3000, 1600), ('perf', 4800, 3200)]:
         entry = [sys.executable, str(HERE / 'kernel_item.py'), kind]
         out = HERE / 'gpu-results' / kind
         files = local_pins() + [str(p) for p in (EVAL / 'harness').glob('*.py')]

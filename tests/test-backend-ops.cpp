@@ -9415,7 +9415,7 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_mmq_smallj(bool p
     const bool canary = getenv("GGML_TEST_MMQ_SMALLJ_CANARY") != nullptr;
     const std::vector<std::array<int64_t, 2>> shapes = canary ?
         std::vector<std::array<int64_t, 2>>{{3072, 5120}} :
-        std::vector<std::array<int64_t, 2>>{{8704, 5120}, {5120, 8704}, {5120, 6144}, {3072, 5120}, {6144, 5120}};
+        std::vector<std::array<int64_t, 2>>{{8704, 5120}, {5120, 8704}, {5120, 6144}, {3072, 5120}, {6144, 5120}, {5120, 3072}, {5120, 5120}};
 
     for (ggml_type type : {GGML_TYPE_IQ4_XS, GGML_TYPE_Q6_K, GGML_TYPE_Q5_K, GGML_TYPE_Q8_0, GGML_TYPE_Q4_K}) {
         for (const auto & shape : shapes) {
@@ -9423,6 +9423,16 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_mmq_smallj(bool p
             const int64_t k = shape[1];
             for (int64_t n : {6, 8, 9, 12, 16, 17, 24}) {
                 test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, m, n, k, {1, 1}, {1, 1}));
+            }
+        }
+        if (!canary && type == GGML_TYPE_Q6_K) {
+            for (int64_t n : {6, 12}) {
+                test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, 124160, n, 5120, {1, 1}, {1, 1}));
+            }
+        }
+        if (!canary && type == GGML_TYPE_Q8_0) {
+            for (int64_t n : {6, 8, 9, 12, 16, 17, 24}) {
+                test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, 512, n, 5120, {1, 1}, {1, 1}));
             }
         }
         if (!perf) {
