@@ -1654,7 +1654,28 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     return true;
                 }();
                 (void) proof;
-                std::memcpy(verify_h[seq_id].data(), h_all + (size_t) i_batch_beg[seq_id] * n_embd, (size_t) n_rows * row_bytes);
+                // test hooks (never set in production): MUTANT=bulk_off reads sequence 1 one row late (negative
+                // control); VERIFY compares the bulk rows with the per-row accessor
+                static const char * mutant = std::getenv("LLAMA_HOST_TRIMS_MUTANT");
+                int32_t beg = i_batch_beg[seq_id];
+                if (mutant != nullptr && std::strcmp(mutant, "bulk_off") == 0 && seq_id == 1 && beg + n_rows < n_tokens) {
+                    beg += 1;
+                }
+                std::memcpy(verify_h[seq_id].data(), h_all + (size_t) beg * n_embd, (size_t) n_rows * row_bytes);
+
+                static const bool verify = std::getenv("LLAMA_HOST_TRIMS_VERIFY") != nullptr;
+                if (verify) {
+                    for (int32_t i = 0; i < n_rows; ++i) {
+                        const float * h = llama_get_embeddings_nextn_ith(ctx_tgt, i_batch_beg[seq_id] + i);
+                        if (h == nullptr || std::memcmp(verify_h[seq_id].data() + (size_t) i * n_embd, h, row_bytes) != 0) {
+                            LOG_ERR("host_trims_verify: BULK MISMATCH seq=%d row=%d beg=%d rows=%d\n",
+                                    (int) seq_id, (int) i, (int) i_batch_beg[seq_id], (int) n_rows);
+                            break;
+                        }
+                    }
+                    static const bool once = [] { LOG_INF("host_trims_verify: bulk checked\n"); return true; }();
+                    (void) once;
+                }
             } else {
                 for (int32_t i = 0; i < n_rows; ++i) {
                     const float * h = llama_get_embeddings_nextn_ith(ctx_tgt, i_batch_beg[seq_id] + i);

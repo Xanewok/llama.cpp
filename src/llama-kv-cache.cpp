@@ -410,6 +410,12 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
         }();
 
         if (indexed) {
+            // test hooks (never set in production): VERIFY re-scans every cell after the indexed removal and repairs
+            // what it finds; MUTANT=seqrm_skip leaves the first cell of sequence 1 in place (negative control)
+            static const bool verify = std::getenv("LLAMA_HOST_TRIMS_VERIFY") != nullptr;
+            static const char * mutant = std::getenv("LLAMA_HOST_TRIMS_MUTANT");
+            bool skip_one = mutant != nullptr && std::strcmp(mutant, "seqrm_skip") == 0 && seq_id == 1;
+
             const auto & positions = cells.seq_pos_get(seq_id);
             auto it = positions.lower_bound({p0, 0});
             while (it != positions.end() && it->first < p1) {
@@ -421,10 +427,28 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
                 }();
                 (void) proof;
                 const uint32_t i = (it++)->second;
+                if (skip_one) {
+                    skip_one = false;
+                    continue;
+                }
                 // seq_rm erases this entry; position order need not match cell order.
                 if (cells.seq_rm(i, seq_id)) {
                     new_head = std::min(new_head, i);
                 }
+            }
+
+            if (verify) {
+                for (uint32_t i = 0; i < cells.size(); ++i) {
+                    if (cells.pos_in(i, p0, p1) && cells.seq_has(i, seq_id)) {
+                        LLAMA_LOG_ERROR("host_trims_verify: SEQRM RESIDUAL seq=%d cell=%u pos=%d range=[%d,%d)\n",
+                                (int) seq_id, i, (int) cells.pos_get(i), (int) p0, (int) p1);
+                        if (cells.seq_rm(i, seq_id)) {
+                            new_head = std::min(new_head, i);
+                        }
+                    }
+                }
+                static const bool once = [] { LLAMA_LOG_INFO("host_trims_verify: seqrm checked\n"); return true; }();
+                (void) once;
             }
         } else {
             for (uint32_t i = 0; i < cells.size(); ++i) {
