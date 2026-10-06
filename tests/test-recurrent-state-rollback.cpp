@@ -528,7 +528,15 @@ static test_status test_shared_seq_reserve(const common_params & params, llama_m
     // this is what llama-batched-bench does for -pps
     llama_memory_seq_cp(llama_get_memory(ctx.get()), 0, 1, -1, -1);
 
-    for (uint32_t i = 0; i < n_continue; ++i) {
+    // Keep the other shared sequence idle so build_rs must preserve an extra state row.
+    for (uint32_t s = 0; s < n_seqs; ++s) {
+        if (!decode_one(ctx.get(), tok(s, n_prompt), n_prompt, s)) {
+            LOG_ERR("%s: single-seq decode after seq_cp failed\n", __func__);
+            return test_status::FAIL;
+        }
+    }
+
+    for (uint32_t i = 1; i < n_continue; ++i) {
         const llama_pos pos = (llama_pos) (n_prompt + i);
 
         common_batch batch(ctx.get());
