@@ -153,7 +153,8 @@ def run(kind, out, canary, budget):
                        '-b', 'CUDA0', '-o', 'MUL_MAT', '-p', params, '--output', 'sql']
             if kind == 'memcheck':
                 command = ['nice', '-n', '19', '/usr/local/cuda-13.2/bin/compute-sanitizer', '--tool', 'memcheck',
-                           '--error-exitcode', '99', '--print-limit', '50'] + command[3:]
+                           '--error-exitcode', '99', '--print-limit', '50',
+                           '--log-file', str(out / (f'{dev[-4:]}-{i}-{mode}' + '.sanitizer.txt'))] + command[3:]
             stem = f'{dev[-4:]}-{i}-{mode}'
             journal(began, out / 'journal.txt')
             remaining = deadline - time.monotonic() - 15
@@ -181,7 +182,8 @@ def run(kind, out, canary, budget):
             rows = sql_rows((out / (stem + '.sql')).read_text())
             check_rows(rows, expected, perf=kind == 'perf', stamp=stamp)
             if kind == 'memcheck':
-                check_sanitizer(log)
+                # The sanitizer report goes to --log-file: its default stdout is the SQL stream.
+                check_sanitizer((out / (stem + '.sanitizer.txt')).read_text())
             if mode != 'up':
                 for quant in ('iq4_xs', 'q5_K', 'q6_K', 'q8_0', 'q4_K'):
                     for width in widths:
