@@ -212,6 +212,10 @@ def run(kind, out, canary, budget):
         modes = [('patch', False), ('patch', True)]
     records = []
     for i, (mode, cold) in enumerate(modes):
+        while int(re.search(r'MemAvailable:\s+(\d+)', Path('/proc/meminfo').read_text())[1]) < 16*1024*1024:
+            if time.monotonic() + 30 >= deadline:
+                raise lib.Fail('probe: budget expired while waiting for RAM', 'timeout')
+            time.sleep(5)
         negative = mode == 'negative'
         root = ROOTS[mode]
         stamp = (root / 'SOURCE').read_text().splitlines()[0][:9]
