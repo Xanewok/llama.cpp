@@ -374,6 +374,12 @@ struct common_params_speculative_ngram_cache {
     std::string lookup_cache_dynamic; // path of dynamic ngram cache file for lookup decoding
 };
 
+// LLAMA_SPEC_VERIFY_PAD_ROWS=N (probe, default off): a verify batch of one MTP slot is padded to N rows with scratch rows
+// past the draft; they are never read back and are rolled back with the rejected draft rows.
+uint32_t common_spec_verify_pad_rows();
+// LLAMA_SPEC_VERIFY_PAD_LOGITS (default 1): the scratch rows request outputs, like real verify rows
+bool     common_spec_verify_pad_logits();
+
 struct common_params_speculative {
     std::vector<enum common_speculative_type> types = { COMMON_SPECULATIVE_TYPE_NONE };
 
@@ -403,7 +409,9 @@ struct common_params_speculative {
             return t == COMMON_SPECULATIVE_TYPE_DRAFT_MTP || t == COMMON_SPECULATIVE_TYPE_DRAFT_EAGLE3 || t == COMMON_SPECULATIVE_TYPE_DRAFT_DFLASH || t == COMMON_SPECULATIVE_TYPE_DRAFT_DSPARK;
         });
 
-        return needs_rs_seq ? draft.n_max : 0u;
+        // a padded batch rolls back its scratch rows too: one snapshot per row past the first
+        const uint32_t pad = common_spec_verify_pad_rows();
+        return needs_rs_seq ? std::max<uint32_t>(draft.n_max, pad > 0 ? pad - 1 : 0) : 0u;
     }
 };
 

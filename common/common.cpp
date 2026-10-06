@@ -1496,6 +1496,22 @@ char * common_get_model_or_exit(int argc, char * argv[]) {
     return path;
 }
 
+uint32_t common_spec_verify_pad_rows() {
+    static const uint32_t n = [] {
+        const char * v = std::getenv("LLAMA_SPEC_VERIFY_PAD_ROWS");
+        return v ? (uint32_t) std::max(0, std::atoi(v)) : 0u;
+    }();
+    return n;
+}
+
+bool common_spec_verify_pad_logits() {
+    static const bool on = [] {
+        const char * v = std::getenv("LLAMA_SPEC_VERIFY_PAD_LOGITS");
+        return !v || std::atoi(v) != 0;
+    }();
+    return on;
+}
+
 common_context_seq_rm_type common_context_can_seq_rm(llama_context * ctx) {
     auto * mem = llama_get_memory(ctx);
     if (mem == nullptr) {

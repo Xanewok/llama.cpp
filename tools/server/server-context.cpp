@@ -48,8 +48,12 @@ static common_speculative_output_limits server_output_limits(const common_params
         return { params.n_batch, 1 };
     }
 
-    auto result = common_speculative_get_output_limits(
-            params.n_batch, params.n_parallel, common_speculative_n_max(&params.speculative));
+    int32_t n_draft = common_speculative_n_max(&params.speculative);
+    if (n_draft > 0 && common_spec_verify_pad_logits()) {
+        n_draft = std::max<int32_t>(n_draft, (int32_t) common_spec_verify_pad_rows() - 1);
+    }
+
+    auto result = common_speculative_get_output_limits(params.n_batch, params.n_parallel, n_draft);
 
     result.total   = std::max<int32_t>(1, result.total);
     result.per_seq = std::max<int32_t>(1, result.per_seq);
@@ -3958,6 +3962,31 @@ private:
         }
     }
 
+    uint64_t n_verify_pad_rounds = 0;
+
+    // scratch rows to append to the current batch: only a pure verify batch of one slot is padded, and the rows go on that
+    // slot's sequence after its last draft row, so no real row can see them (causal order) and a rollback removes them
+    int32_t verify_pad_rows(int32_t off) const {
+        const int32_t n_pad_to = (int32_t) common_spec_verify_pad_rows();
+        const int32_t n = batch.size();
+        if (n_pad_to <= n || !spec || off != 0 || batch.view.size() != n || batch.has_embd) {
+            return 0;
+        }
+
+        const int32_t id_slot = batch.tokens[0].id_slot;
+        for (const auto & t : batch.tokens) {
+            if (t.id_slot != id_slot || t.is_prompt || !t.output) {
+                return 0;
+            }
+        }
+
+        if (slots[id_slot].spec_i_batch.empty() || batch.tokens.back().pos + (n_pad_to - n) >= n_ctx_slot()) {
+            return 0;
+        }
+
+        return n_pad_to - n;
+    }
+
     // returns true = success ; false = retry with smaller batch size
     // throw std::runtime_error on fatal error
     bool decode(int32_t & n_batch, int32_t off) {
@@ -3991,6 +4020,17 @@ private:
             has_output |= batch.tokens[i].output;
         }
 
+        const int32_t n_real = batch.view.size();
+        const int32_t n_pad  = verify_pad_rows(off);
+        for (int32_t j = 0; j < n_pad; ++j) {
+            const auto last = batch.view.tokens.back();
+            batch.view.add(last.id, last.pos[0] + 1, last.seq_id, common_spec_verify_pad_logits());
+        }
+        if (n_pad > 0 && (n_verify_pad_rounds++ % 256) == 0) {
+            SRV_INF("verify pad: %d rows = %d + %d scratch (logits %d), round %" PRIu64 "\n",
+                    n_real + n_pad, n_real, n_pad, (int) common_spec_verify_pad_logits(), n_verify_pad_rounds);
+        }
+
         // yield to the queue, so we can still handle metrics tasks while decoding
         // note: the sync is done here too, so that the wait is also covered by the yield
         int ret = 0;
@@ -4002,6 +4042,9 @@ private:
                 llama_synchronize(ctx_tgt);
             }
         });
+
+        // the scratch rows end here: the draft context and the metrics only see the real batch
+        batch.view.tokens.erase(batch.view.tokens.begin() + n_real, batch.view.tokens.end());
 
         if (ret != 0) {
             {
