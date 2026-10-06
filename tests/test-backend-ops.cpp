@@ -49,7 +49,7 @@
 #ifdef __EMSCRIPTEN__
 #   define N_THREADS 1
 #else
-#   define N_THREADS std::thread::hardware_concurrency()
+#   define N_THREADS (getenv("GGML_TEST_MMQ_SMALLJ") ? 8U : std::thread::hardware_concurrency())
 #endif
 
 static void init_tensor_uniform(ggml_tensor * tensor, float min = -1.0f, float max = 1.0f) {
@@ -1604,6 +1604,18 @@ struct test_case {
             return true;
         }
 
+        std::vector<ggml_tensor *> perf_outputs = {out};
+        if (getenv("GGML_TEST_MMQ_SMALLJ") && getenv("GGML_TEST_MMQ_SMALLJ_COLD")) {
+            GGML_ASSERT(out->op == GGML_OP_MUL_MAT);
+            const size_t weight_bytes = ggml_nbytes(out->src[0]);
+            const size_t copies = (64*1024*1024 + weight_bytes - 1) / weight_bytes + 1;
+            for (size_t i = 1; i < copies; ++i) {
+                ggml_tensor * a = ggml_dup_tensor(ctx.get(), out->src[0]);
+                perf_outputs.push_back(ggml_mul_mat(ctx.get(), a, out->src[1]));
+            }
+            fprintf(stderr, "mmq_smallj_cold: %s copies=%zu weight_bytes=%zu\n", vars().c_str(), copies, weight_bytes);
+        }
+
         ggml_backend_buffer_ptr buf_weights(nullptr);
         if (ctx_weights) {
             buf_weights.reset(ggml_backend_alloc_ctx_tensors(ctx_weights.get(), backend));
@@ -1630,7 +1642,9 @@ struct test_case {
 
         // build graph
         ggml_cgraph * gf = ggml_new_graph_custom(ctx.get(), graph_nodes, false);
-        ggml_build_forward_expand(gf, out);
+        for (ggml_tensor * perf_out : perf_outputs) {
+            ggml_build_forward_expand(gf, perf_out);
+        }
 
         // warmup run
         ggml_status status = ggml_backend_graph_compute(backend, gf);
@@ -1658,13 +1672,17 @@ struct test_case {
             n_runs = (int)std::min<int64_t>(ggml_graph_size(gf) - ggml_graph_n_nodes(gf), target_size / op_size(out)) + 1;
         }
 
+        n_runs = std::max(1, n_runs / (int) perf_outputs.size());
+
         // duplicate the op
         for (int i = 1; i < n_runs; i++) {
-            ggml_graph_add_node(gf, out);
+            for (ggml_tensor * perf_out : perf_outputs) {
+                ggml_graph_add_node(gf, perf_out);
+            }
         }
 
         // calculate memory
-        size_t mem = n_runs * op_size(out);
+        size_t mem = n_runs * perf_outputs.size() * op_size(out);
         auto tensor_op_size = [](ggml_tensor * t) {
             size_t size = ggml_nbytes(t);
             // add source tensors
@@ -1676,7 +1694,8 @@ struct test_case {
             return size;
         };
         for (int i = 0; i < ggml_graph_n_nodes(gf); ++i) {
-            if (ggml_is_view_op(ggml_graph_node(gf, i)->op) || ggml_graph_node(gf, i) == out) {
+            if (ggml_is_view_op(ggml_graph_node(gf, i)->op) ||
+                    std::find(perf_outputs.begin(), perf_outputs.end(), ggml_graph_node(gf, i)) != perf_outputs.end()) {
                 continue;
             }
             mem += tensor_op_size(ggml_graph_node(gf, i));
@@ -1697,7 +1716,7 @@ struct test_case {
 
             total_time_us += end_time - start_time;
             total_mem += mem;
-            total_runs += n_runs;
+            total_runs += n_runs * perf_outputs.size();
 
             // re-draw any data-dependent inputs (expert ids) outside the timed region
             reinit_perf_iter(ctx.get());
@@ -9391,6 +9410,32 @@ static const ggml_type other_types[] = {
 #pragma optimize("", off)
 #endif
 
+static std::vector<std::unique_ptr<test_case>> make_test_cases_mmq_smallj(bool perf) {
+    std::vector<std::unique_ptr<test_case>> test_cases;
+    const bool canary = getenv("GGML_TEST_MMQ_SMALLJ_CANARY") != nullptr;
+    const std::vector<std::array<int64_t, 2>> shapes = canary ?
+        std::vector<std::array<int64_t, 2>>{{3072, 5120}} :
+        std::vector<std::array<int64_t, 2>>{{8704, 5120}, {5120, 8704}, {5120, 6144}, {3072, 5120}, {6144, 5120}};
+
+    for (ggml_type type : {GGML_TYPE_IQ4_XS, GGML_TYPE_Q6_K, GGML_TYPE_Q5_K, GGML_TYPE_Q8_0, GGML_TYPE_Q4_K}) {
+        for (const auto & shape : shapes) {
+            const int64_t m = shape[0];
+            const int64_t k = shape[1];
+            for (int64_t n : {6, 8, 9, 12, 16, 17, 24}) {
+                test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, m, n, k, {1, 1}, {1, 1}));
+            }
+        }
+        if (!perf) {
+            for (int64_t m : {65, 128}) {
+                for (int64_t n : {9, 12, 16, 17, 24}) {
+                    test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, m, n, 5120, {1, 1}, {1, 1}));
+                }
+            }
+        }
+    }
+    return test_cases;
+}
+
 // Test cases for evaluation: should try to cover edge cases while using small input sizes to keep the runtime low
 static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     std::vector<std::unique_ptr<test_case>> test_cases;
@@ -12330,7 +12375,9 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
 
     std::vector<std::unique_ptr<test_case>> test_cases;
 
-    if (test_file_path == nullptr) {
+    if (test_file_path == nullptr && getenv("GGML_TEST_MMQ_SMALLJ") != nullptr) {
+        test_cases = make_test_cases_mmq_smallj(mode == MODE_PERF);
+    } else if (test_file_path == nullptr) {
         switch (mode) {
         case MODE_TEST:
         case MODE_GRAD:
