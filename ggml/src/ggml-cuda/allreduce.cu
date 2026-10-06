@@ -226,13 +226,19 @@ static __global__ void ggml_cuda_ar_add_kernel(
 // Pipeline structure
 // ---------------------------------------------------------------------------
 
-// Number of slots in the event / arrival ring.  Two slots is sufficient:
-// lockstep guarantees the two GPUs are at most one AR (or chunk) apart, so
-// slot[N%2] is always safe to reuse -- peer has already consumed slot[N%2]
-// from AR N-2 by the time we get to AR N.  acquire_slot's
-// cudaEventSynchronize on ev.ker for both devices makes that consumption
-// explicit before we overwrite host_buf[slot] for the new AR.
-static constexpr int GGML_CUDA_AR_POOL_SIZE = 2;
+// Slots in the event / arrival / staging ring; runtime depth via
+// GGML_CUDA_AR_POOL_SIZE (read once at init), arrays are sized by the max.
+//
+// Safety needs depth >= 2 and does not depend on the host wait in
+// acquire_slot: a GPU's AR k-1 (either path) consumes data the peer produced
+// after its own AR k-2 finished on the peer's compute stream, so by the time
+// AR k rewrites host_buf[slot] / the arrival token, the peer is done with
+// AR k-N for any N >= 2.  At depth 1 the peer may still be reading or spinning
+// on AR k-1's slot, so the minimum is 2.  The host wait on ev.ker only bounds
+// how far the host runs ahead; a deeper ring lets it queue more ARs first.
+static constexpr int GGML_CUDA_AR_POOL_MIN     = 2;
+static constexpr int GGML_CUDA_AR_POOL_DEFAULT = 2;
+static constexpr int GGML_CUDA_AR_POOL_MAX     = 8;
 
 // Maximum chunk size (bytes per GPU) handled by one chunked kernel launch.
 // Larger tensors are reduced by issuing multiple chunked launches.
@@ -312,6 +318,7 @@ struct ggml_cuda_ar_pipeline {
     size_t   copy_chunk_bytes;
     size_t   bf16_threshold; // tensors >= this size (bytes) are reduced via FP32->BF16 round-trip; 0 disables
     uint64_t call_count;
+    int      pool_size;    // active ring depth, [POOL_MIN, POOL_MAX]
 
     // Per-device resources.
     ggml_cuda_ar_host_mapping host_buf[GGML_CUDA_MAX_DEVICES];   // pinned staging (chunked kernel)
@@ -322,7 +329,7 @@ struct ggml_cuda_ar_pipeline {
     // (D2H and H2D serialized on one stream); a separate non-blocking stream when 2, so
     // the H2D of peer chunk c overlaps the D2H of our remaining chunks.
     cudaStream_t             streams_h2d[GGML_CUDA_MAX_DEVICES];
-    ggml_cuda_ar_event_slot  ev_pool[GGML_CUDA_MAX_DEVICES][GGML_CUDA_AR_POOL_SIZE];
+    ggml_cuda_ar_event_slot  ev_pool[GGML_CUDA_MAX_DEVICES][GGML_CUDA_AR_POOL_MAX];
 
     // Copy-engine: per-device "I finished reading my peer's host_large"
     // event.  Indexed by RECORDER device.  Recorded same-device on streams_h2d[i]
@@ -369,8 +376,8 @@ struct ggml_cuda_ar_slot_info {
 };
 
 static ggml_cuda_ar_slot_info ggml_cuda_ar_acquire_slot(ggml_cuda_ar_pipeline * p) {
-    const int  slot        = static_cast<int>(p->call_count % GGML_CUDA_AR_POOL_SIZE);
-    const bool pool_lapped = p->call_count >= GGML_CUDA_AR_POOL_SIZE;
+    const int  slot        = static_cast<int>(p->call_count % p->pool_size);
+    const bool pool_lapped = p->call_count >= (uint64_t) p->pool_size;
     p->call_count++;
 
     if (pool_lapped) {
@@ -427,6 +434,14 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
 
     auto * p = new ggml_cuda_ar_pipeline{};
     p->n_devices        = n_devices;
+    {
+        const uint64_t req = ggml_cuda_ar_env_u64("GGML_CUDA_AR_POOL_SIZE", GGML_CUDA_AR_POOL_DEFAULT);
+        if (req < GGML_CUDA_AR_POOL_MIN || req > GGML_CUDA_AR_POOL_MAX) {
+            GGML_LOG_WARN("%s: GGML_CUDA_AR_POOL_SIZE=%llu not in [%d,%d]; clamping\n",
+                          __func__, (unsigned long long) req, GGML_CUDA_AR_POOL_MIN, GGML_CUDA_AR_POOL_MAX);
+        }
+        p->pool_size = (int) std::min<uint64_t>(std::max<uint64_t>(req, GGML_CUDA_AR_POOL_MIN), GGML_CUDA_AR_POOL_MAX);
+    }
     p->copy_bytes       = GGML_CUDA_AR_COPY_MAX_BYTES;
     p->copy_threshold   = ggml_cuda_ar_env_u64("GGML_CUDA_AR_COPY_THRESHOLD", GGML_CUDA_AR_COPY_THRESHOLD_DEFAULT);
     // 0 = use the per-call heuristic (default).  Non-zero env value forces a
@@ -477,7 +492,7 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
             p->streams_h2d[i] = stream_h2d;
         }
 
-        for (int s = 0; s < GGML_CUDA_AR_POOL_SIZE; ++s) {
+        for (int s = 0; s < p->pool_size; ++s) {
             bool ok =
                 cudaEventCreateWithFlags(&p->ev_pool[i][s].app, cudaEventDisableTiming) == cudaSuccess &&
                 cudaEventCreateWithFlags(&p->ev_pool[i][s].h2d, cudaEventDisableTiming) == cudaSuccess &&
@@ -509,7 +524,7 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
 
     // Arrival ring: cache-line padded so each GPU's int is on its own line.
     const size_t arrival_bytes =
-        (size_t)GGML_CUDA_AR_POOL_SIZE * n_devices *
+        (size_t) p->pool_size * n_devices *
         GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_STRIDE;
     if (p->arrival.alloc(arrival_bytes) != cudaSuccess) {
         GGML_LOG_ERROR("%s: alloc for arrival ring failed (%zu bytes)\n",
@@ -525,11 +540,11 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
         return nullptr;
     }
 
-    // Per-device pinned staging buffers -- POOL_SIZE-deep ring so the chunked-
+    // Per-device pinned staging buffers -- pool_size-deep ring so the chunked-
     // kernel can write the next slot's data while the peer is still reading
     // the previous slot's. Indexed by (slot * buf_bytes) at the call site.
     p->buf_bytes = GGML_CUDA_AR_MAX_BYTES;
-    const size_t host_buf_total = (size_t) GGML_CUDA_AR_POOL_SIZE * p->buf_bytes;
+    const size_t host_buf_total = (size_t) p->pool_size * p->buf_bytes;
     for (size_t i = 0; i < n_devices; ++i) {
         if (p->host_buf[i].alloc(host_buf_total) != cudaSuccess) {
             GGML_LOG_ERROR("%s: alloc for staging failed (%zu bytes)\n",
@@ -561,8 +576,10 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
 
     GGML_LOG_INFO("%s: initialized AllReduce pipeline: %zu GPUs, "
                   "%zu KB chunked kernel staging + %zu MB copy-engine staging per GPU, "
-                  "copy-engine H2D streams per GPU: %d\n",
-                  __func__, n_devices, p->buf_bytes >> 10, p->copy_bytes >> 20, split_h2d ? 2 : 1);
+                  "copy-engine H2D streams per GPU: %d, pool depth=%d "
+                  "(%zu KB pinned staging + %zu B arrival ring per GPU pair)\n",
+                  __func__, n_devices, p->buf_bytes >> 10, p->copy_bytes >> 20, split_h2d ? 2 : 1,
+                  p->pool_size, (n_devices * host_buf_total) >> 10, arrival_bytes);
 
     return p;
 }
@@ -591,7 +608,7 @@ void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline * p) {
             CUDA_CHECK(cudaFree(p->dev_tmp[i]));
         }
         ggml_cuda_set_device(p->devices[i]);
-        for (int s = 0; s < GGML_CUDA_AR_POOL_SIZE; ++s) {
+        for (int s = 0; s < p->pool_size; ++s) {
             if (p->ev_pool[i][s].app) { CUDA_CHECK(cudaEventDestroy(p->ev_pool[i][s].app)); }
             for (int c = 0; c < GGML_CUDA_AR_COPY_MAX_CHUNKS; ++c) {
                 if (p->ev_pool[i][s].cpy[c]) { CUDA_CHECK(cudaEventDestroy(p->ev_pool[i][s].cpy[c])); }
