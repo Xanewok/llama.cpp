@@ -1,6 +1,8 @@
 #include "server-context.h"
 #include "llama.h"
 #include "log.h"
+#include "ggml-round-trace.h"
+#include "../ggml/src/ggml-backend-impl.h"
 
 #include <cstdlib>
 #include <fstream>
@@ -13,6 +15,23 @@ static void require(bool ok, const char * message) {
     }
 }
 
+static ggml_backend_t (*cpu_init)(ggml_backend_dev_t, const char *);
+
+static bool owned_cpu(ggml_backend_t, const ggml_backend_tensor_transfer * transfers, size_t count) {
+    if (count) {
+        const auto stamp = ggml_round_trace_now();
+        ggml_round_trace_event("input_cpu_proxy", stamp, stamp, -1, count);
+        ggml_backend_tensor_set_batch(transfers, count);
+    }
+    return true;
+}
+
+static ggml_backend_t init_owned_cpu(ggml_backend_dev_t dev, const char * params) {
+    auto * backend = cpu_init(dev, params);
+    backend->iface.set_tensor_batch_owned = owned_cpu;
+    return backend;
+}
+
 int main(int argc, char ** argv) {
     require(argc == 7, "usage: host-identity MODEL OUTPUT META NP SEED TOKENS");
     require(std::getenv("CUDA_VISIBLE_DEVICES") && !*std::getenv("CUDA_VISIBLE_DEVICES"), "CPU-only guard");
@@ -21,6 +40,11 @@ int main(int argc, char ** argv) {
     require(np == 1 || np == 2, "bad parallel count");
     llama_backend_init();
     common_log_set_verbosity_thold(5);
+    auto * cpu_dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    if (std::getenv("HOST_INPUT_COUNT")) {
+        cpu_init = cpu_dev->iface.init_backend;
+        cpu_dev->iface.init_backend = init_owned_cpu;
+    }
     common_params params;
     params.model.path = argv[1];
     params.n_ctx = 4096;
@@ -103,4 +127,5 @@ int main(int argc, char ** argv) {
     std::ofstream out(argv[2]);
     out << json{{"tokens", tokens}, {"stats", stats}}.dump(2) << '\n';
     require(bool(out), "output write failed");
+    ggml_round_trace_flush();
 }

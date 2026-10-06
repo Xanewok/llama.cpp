@@ -16,7 +16,7 @@ results = []
 
 
 def draft_candidates(log):
-    return re.findall(r"draft candidate\s+\d+, pos\s+\d+:\s+(\d+)\s+\(([\d.]+)\)", log)
+    return re.findall(r"draft candidate\s+\d+, pos\s+\d+:\s+(\d+)\s+\(\s*([\d.]+)\)", log)
 
 
 def run(arm, meta, np, seed):

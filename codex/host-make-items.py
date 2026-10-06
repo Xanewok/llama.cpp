@@ -45,7 +45,7 @@ def main():
         x = tomllib.loads((EVAL / "harness/experiments/duo-np2-depth.toml").read_text())
         reference = tomllib.loads((EVAL / "harness/experiments/stack6-depth-j5q.toml").read_text())
         name = f"host-trims-np{np}-{quant}"
-        x.update(id=name, title=f"stack6 vs host-trims: np{np} {quant}, indexed seq_rm and bulk MTP verify hidden rows, ABBA",
+        x.update(id=name, title=f"stack6 vs host-trims: np{np} {quant}, indexed seq_rm and bulk MTP verify hidden rows, ABBA; inherited ignore_eos target fallback",
                  out=str(ROOT / "codex/gpu-results" / name),
                  cpu_evidence={"path": str(ROOT / "codex/REPORT-host-trims.md"),
                                "command": "host-gate.sh: CPU and Meta(CPU,CPU), deterministic np1/np2 MTP identity and production mutants"},

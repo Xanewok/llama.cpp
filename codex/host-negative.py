@@ -49,7 +49,7 @@ for name, relative, old, new in (
             bad = json.loads(mutant.read_text())
             for data in (good, bad):
                 data["stats"].sort(key=lambda item: item["slot"])
-            pattern = r"draft candidate\s+\d+, pos\s+\d+:\s+(\d+)\s+\(([\d.]+)\)"
+            pattern = r"draft candidate\s+\d+, pos\s+\d+:\s+(\d+)\s+\(\s*([\d.]+)\)"
             good_draft = re.findall(pattern, (OUT / "identity/patch-m1-np2-s1729.log").read_text())
             bad_draft = re.findall(pattern, (OUT / "negative-mtp-offset.log").read_text())
             assert good != bad or good_draft != bad_draft, "MTP row-offset mutant escaped identity/draft oracle"
