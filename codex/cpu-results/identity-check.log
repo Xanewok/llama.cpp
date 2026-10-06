@@ -1,0 +1,30 @@
+model /mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf; draft n_max 3; n_predict 48; MTP draft = the target's own MTP head (as the existing CPU fixtures)
+base binary /home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/base-cpu/ar-node-server-cpu (stack6 ac7465885), spike binary /home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/build-cpu/bin/ar-node-server-cpu
+PASS m0-np1-t0-s1729: base == base2 == off == on, 993480 bytes, sha256 3f64329fe23a2b1b, wall base 28s; plan lines 0
+PASS m0-np1-t1-s1729: base == base2 == off == on, 993480 bytes, sha256 4fcb2b74a320ffc2, wall base 25s; plan lines 0
+PASS m0-np1-t1-s2718: base == base2 == off == on, 993480 bytes, sha256 8491fd5952cf2265, wall base 21s; plan lines 0
+PASS m0-np2-t0-s1729: base == base2 == off == on, 993680 bytes, sha256 dba0d7b81fd3829c, wall base 30s; plan lines 0
+PASS m0-np2-t1-s1729: base == base2 == off == on, 993680 bytes, sha256 7a7e9967fcd768a0, wall base 26s; plan lines 0
+PASS m0-np2-t1-s2718: base == base2 == off == on, 993680 bytes, sha256 584c8d69cfa001f3, wall base 125s; plan lines 0
+model /mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf; draft n_max 3; n_predict 48; MTP draft = the target's own MTP head (as the existing CPU fixtures)
+base binary /home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/base-cpu/ar-node-server-cpu (stack6 ac7465885), spike binary /home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/build-cpu/bin/ar-node-server-cpu
+PASS m1-np1-t0-s1729: base == base2 == off == on, 993480 bytes, sha256 53440da6cb3d3ebc, wall base 35s; plan lines 14
+PASS m1-np1-t1-s1729: base == base2 == off == on, 993480 bytes, sha256 b5984470955398a7, wall base 31s; plan lines 14
+PASS m1-np1-t1-s2718: base == base2 == off == on, 993480 bytes, sha256 eef37d386f0bf44b, wall base 57s; plan lines 12
+PASS m1-np2-t0-s1729: base == base2 == off == on, 993680 bytes, sha256 09447ca4cd3b5317, wall base 100s; plan lines 26
+PASS m1-np2-t1-s1729: base == base2 == off == on, 993680 bytes, sha256 98c7259fb14d6fff, wall base 62s; plan lines 19
+PASS m1-np2-t1-s2718: base == base2 == off == on, 993680 bytes, sha256 b184619df1be6b2f, wall base 79s; plan lines 16
+PASS negative control (a)/(b): a one-bit perturbed token stream is rejected by the comparison
+would-be node plans on CPU (Meta(CPU,CPU)), per graph kind (rows = tokens per graph): (sites, split M, nodes K, cgraph nodes)
+  rows=1: [(2, 3, 1, 49), (2, 3, 1, 51), (2, 4, 2, 70), (2, 4, 2, 82), (64, 65, 1, 2140), (64, 65, 1, 2156)]
+  rows=2: [(2, 3, 1, 49), (2, 3, 1, 51), (2, 4, 2, 70), (2, 4, 2, 82), (64, 65, 1, 2140), (64, 65, 1, 2156)]
+  rows=3: [(2, 3, 1, 49), (64, 65, 1, 2140), (64, 65, 1, 2156)]
+  rows=4: [(2, 3, 1, 49), (2, 3, 1, 51), (64, 65, 1, 2140), (64, 65, 1, 2156)]
+  rows=6: [(2, 3, 1, 51)]
+  rows=8: [(2, 3, 1, 51), (64, 65, 1, 2156)]
+  rows=14: [(2, 3, 1, 51), (64, 65, 1, 2156)]
+  rows=16: [(2, 3, 1, 51)]
+  rows=22: [(2, 3, 1, 49), (64, 65, 1, 2140)]
+PASS (d) forced node insertion on CPU aborts in the stub: exit -6; ../../../ggml/src/ggml-backend-meta.cpp:2233: meta_ar_node: AllReduce node allreduce node 0 was executed by a backend without node support
+PASS (d) the hook is inert without GGML_META_AR_NODE=1
+SUMMARY: 6 cases (meta 0/1 x np 1/2 x 3 sampling configs), each 4 runs, all byte-identical

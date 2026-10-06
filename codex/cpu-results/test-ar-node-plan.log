@@ -1,0 +1,22 @@
+== normal run
+PASS split: 4 subgraphs
+PASS node: qualified boundary fused, gather and large stay splits
+PASS node: subgraph count 4 -> 3
+PASS node: all qualified -> 1 subgraph, 3 sites
+PASS split: qualified ignored without node mode
+PASS node: final boundary flag ignored
+PASS node: single boundary -> 1 subgraph, 0 sites
+PASS node: adjacent boundaries
+ALL PASSED (0 failures)
+rc=0
+== negative control (AR_PLAN_WRONG_EXPECTATION=1, must fail)
+PASS split: 4 subgraphs
+PASS node: qualified boundary fused, gather and large stay splits
+FAIL node: subgraph count 4 -> 3
+PASS node: all qualified -> 1 subgraph, 3 sites
+PASS split: qualified ignored without node mode
+PASS node: final boundary flag ignored
+PASS node: single boundary -> 1 subgraph, 0 sites
+PASS node: adjacent boundaries
+FAILED (1 failures)
+rc=1
