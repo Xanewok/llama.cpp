@@ -20,6 +20,7 @@
 #include <string>
 #include <random>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 // the ring buffer works similarly to std::deque, but with a fixed capacity
@@ -957,6 +958,7 @@ struct spec_trace_top3 {
 struct spec_trace_pos {
     spec_trace_top3 top;
     float           p_x;
+    std::vector<std::pair<llama_token, float>> all; // position 0 only: NH5 needs the whole row, not a renormalised top-3
 };
 
 struct spec_trace_state {
@@ -996,6 +998,19 @@ spec_trace_state * spec_trace() {
     return st;
 }
 
+template <typename T>
+void spec_trace_all_json(std::string & out, const T & row) {
+    char tmp[64];
+    out += '[';
+    bool first = true;
+    for (const auto & e : row) {
+        std::snprintf(tmp, sizeof(tmp), "%s[%d,%.6g]", first ? "" : ",", (int) e.first, e.second);
+        out += tmp;
+        first = false;
+    }
+    out += ']';
+}
+
 void spec_trace_top3_json(std::string & out, const spec_trace_top3 & t) {
     char tmp[64];
     out += '[';
@@ -1010,6 +1025,10 @@ void spec_trace_top3_json(std::string & out, const spec_trace_top3 & t) {
 void spec_trace_round(spec_trace_state * st, const llama_tokens & draft,
         const std::vector<std::vector<llama_token_data>> & draft_q,
         const std::vector<spec_trace_pos> & pos, const std::vector<llama_token> & result) {
+    if (draft.empty()) {
+        return;
+    }
+
     const size_t L = result.size() - 1;
     char tmp[64];
 
@@ -1055,6 +1074,15 @@ void spec_trace_round(spec_trace_state * st, const llama_tokens & draft,
     if (L == 0) {
         row += ",\"emit1\":" + std::to_string(result.back());
     }
+
+    std::vector<std::pair<llama_token, float>> q0;
+    for (const auto & e : draft_q[0]) {
+        q0.emplace_back(e.id, e.p);
+    }
+    row += ",\"q0all\":";
+    spec_trace_all_json(row, q0);
+    row += ",\"p0all\":";
+    spec_trace_all_json(row, pos[0].all);
     row += "}\n";
 
     std::lock_guard<std::mutex> lock(st->mtx);
@@ -1152,7 +1180,12 @@ std::vector<llama_token> common_sampler_sample_and_accept_n_rejection_rows(struc
                 tp.top.add(cur_p->data[k].id, p_of(k));
             }
             tp.p_x = p_x;
-            trace_pos.push_back(tp);
+            if (i == 0) {
+                for (size_t k = 0; k < cur_p->size; ++k) {
+                    tp.all.emplace_back(cur_p->data[k].id, p_of(k));
+                }
+            }
+            trace_pos.push_back(std::move(tp));
         }
 
         if (q_x > 0.0f && (p_x >= q_x || uni(gsmpl->rng) < p_x / q_x)) {

@@ -109,11 +109,6 @@ std::vector<llama_token> common_sampler_sample_and_accept_n_rejection_rows(struc
 
 // LLAMA_SPEC_TRACE=<path>: append one JSON line per rejection-verified round (acceptance data, log only).
 // Reads arrays the verifier already has; never touches the samplers or their RNG.
-// Rows are buffered; the request end flushes them (one request id per flush).
-void common_spec_trace_end_request();
-
-// LLAMA_SPEC_TRACE=<path>: append one JSON line per rejection-verified round (acceptance data, log only).
-// Reads arrays the verifier already has; never touches the samplers or their RNG.
 // Rows are buffered; the request end flushes them and advances the request id ("r").
 void common_spec_trace_end_request();
 
