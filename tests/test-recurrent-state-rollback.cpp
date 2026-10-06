@@ -477,6 +477,28 @@ static test_status test_rollback(const common_params & params, llama_model * mod
     return test_status::PASS;
 }
 
+// Counts the graph nodes that only exist when a ubatch uses fewer cells than the cache span (n_rs > n_seqs).
+struct graph_probe {
+    int n_getter = 0; // gated delta net nodes reading their state by row id
+    int n_extra  = 0; // copies that move the states of idle sequences out of the way
+};
+
+static bool graph_probe_cb(ggml_tensor * t, bool ask, void * user_data) {
+    auto * probe = (graph_probe *) user_data;
+    if (!ask) {
+        return true;
+    }
+    if (t->op == GGML_OP_GATED_DELTA_NET && t->src[6]) {
+        probe->n_getter++;
+    }
+    // build_rs: the gathered states of the rows past the ubatch go back into the cache
+    if (t->op == GGML_OP_CPY && ggml_nelements(t) > 0 && t->src[0]->op == GGML_OP_VIEW &&
+        t->src[0]->view_src->op == GGML_OP_GET_ROWS) {
+        probe->n_extra++;
+    }
+    return false;
+}
+
 // Decode a prompt into seq 0, share its cells with a second sequence, then keep
 // decoding both.
 static test_status test_shared_seq_reserve(const common_params & params, llama_model * model, uint8_t fill) {
@@ -528,7 +550,8 @@ static test_status test_shared_seq_reserve(const common_params & params, llama_m
     // this is what llama-batched-bench does for -pps
     llama_memory_seq_cp(llama_get_memory(ctx.get()), 0, 1, -1, -1);
 
-    // Keep the other shared sequence idle so build_rs must preserve an extra state row.
+    // One sequence per ubatch while the other stays idle. After seq_cp both share a cell, so this does not make n_rs
+    // exceed n_seqs (test_idle_slot_state covers that); it covers decoding and reserving on a shared cell.
     for (uint32_t s = 0; s < n_seqs; ++s) {
         if (!decode_one(ctx.get(), tok(s, n_prompt), n_prompt, s)) {
             LOG_ERR("%s: single-seq decode after seq_cp failed\n", __func__);
@@ -567,6 +590,318 @@ static test_status test_shared_seq_reserve(const common_params & params, llama_m
     return test_status::PASS;
 }
 
+// Two slots decode in one ubatch next to a slot that holds a state but does not decode. With the idle slot between the
+// active ones their cells are not adjacent, so the cache span exceeds the ubatch (n_rs > n_seqs): the state of the idle
+// slot has to survive the gathers, the multi-token verify, the rollback and the replay of its neighbours. It is checked
+// where that can be exact, when the idle slot resumes alone against a context that only ever held it, and the logits
+// of another slot's state must read as a mismatch. Without the idle slot the same script is the control
+// (n_rs == n_seqs); the graph probe proves which shape each run exercised.
+//
+// Multi-sequence ubatches are not bitwise equal to single-sequence ones on the CPU fixture (nmse up to 4e-3, the same
+// on the base commit), so they are not compared with the reference contexts. What an idle slot must not change is
+// compared exactly instead: the logits of the active slots equal those of the control layout.
+using idle_logits = std::vector<std::pair<std::string, std::vector<float>>>;
+
+static test_status test_idle_slot_state(const common_params & params, llama_model * model, uint8_t fill, bool with_idle, idle_logits & recorded) {
+    const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
+
+    constexpr uint32_t n_active   = 2;
+    constexpr uint32_t n_prompt   = 24;
+    constexpr uint32_t n_steps    = 4;
+    constexpr uint32_t n_rollback = 2;
+    constexpr uint32_t n_resume   = 4;
+    constexpr float    nmse_eps   = 1e-6f;
+
+    const uint32_t n_slots = with_idle ? 3 : 2;
+    const uint32_t n_idle  = 1; // slot index of the idle sequence
+    const uint32_t active[n_active] = { 0, with_idle ? 2u : 1u };
+    const char * layout = with_idle ? "idle slot between" : "adjacent slots";
+
+    graph_probe probe;
+
+    auto cparams = common_context_params_to_llama(params);
+    cparams.n_seq_max  = n_slots;
+    cparams.n_rs_seq   = 4;
+    cparams.n_ctx      = 512;
+    cparams.n_batch    = 64;
+    cparams.n_ubatch   = 32;
+    cparams.kv_unified = true;
+    cparams.cb_eval           = graph_probe_cb;
+    cparams.cb_eval_user_data = &probe;
+
+    llama_context_ptr ctx = init_ctx(model, cparams, fill);
+    if (!ctx) {
+        LOG_ERR("%s: failed to init context\n", __func__);
+        return test_status::FAIL;
+    }
+    if (llama_n_rs_seq(ctx.get()) < n_rollback) {
+        LOG_INF("%s: skipping because n_rs_seq is too small\n", __func__);
+        return test_status::SKIP;
+    }
+
+    // one context per slot that only ever holds that slot's sequence
+    auto cparams_ref = cparams;
+    cparams_ref.n_seq_max         = 1;
+    cparams_ref.cb_eval           = nullptr;
+    cparams_ref.cb_eval_user_data = nullptr;
+    std::vector<llama_context_ptr> ref;
+    for (uint32_t s = 0; s < n_slots; ++s) {
+        ref.push_back(init_ctx(model, cparams_ref, fill));
+        if (!ref.back()) {
+            LOG_ERR("%s: failed to init the reference context %u\n", __func__, s);
+            return test_status::FAIL;
+        }
+    }
+
+    // the token stream follows the position in the active list, so both layouts feed the same two streams
+    const auto tok = [&](uint32_t slot, llama_pos pos) {
+        const uint32_t stream = slot == n_idle && with_idle ? 2 : slot == active[1] ? 1 : 0;
+        return (llama_token) ((7*(uint32_t) pos + 31*stream + 1) % (uint32_t) n_vocab);
+    };
+
+    struct item {
+        uint32_t  slot;
+        llama_pos pos;
+    };
+
+    // all items of a batch ask for logits; item i of the batch is output i
+    const auto decode = [&](llama_context * c, const std::vector<item> & items, bool is_ref) {
+        common_batch batch(c);
+        for (const auto & it : items) {
+            batch.add(tok(it.slot, it.pos), it.pos, is_ref ? 0 : (llama_seq_id) it.slot, true);
+        }
+        return llama_process(c, LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0;
+    };
+
+    double nmse_worst = 0.0;
+    int    n_bad      = 0;
+
+    // multi: the ubatch held several sequences, so the logits are only recorded for the layout comparison;
+    // single-sequence ubatches have to match the reference context
+    const auto compare = [&](const char * what, uint32_t slot, llama_pos pos, int out_ctx, int out_ref, bool multi) {
+        const float * a = llama_get_logits_ith(ctx.get(), out_ctx);
+        const float * b = llama_get_logits_ith(ref[slot].get(), out_ref);
+        if (a == nullptr || b == nullptr) {
+            LOG_ERR("%s: missing logits (%s, slot %u, pos %d)\n", __func__, what, slot, pos);
+            n_bad++;
+            return;
+        }
+        if (multi) {
+            recorded.push_back({ std::string(what) + " stream " + std::to_string(slot == active[1] ? 1 : 0) + " pos " + std::to_string(pos),
+                                 std::vector<float>(a, a + n_vocab) });
+            return;
+        }
+        const double d = nmse(b, a, n_vocab);
+        nmse_worst = std::max(nmse_worst, d);
+        if (d > nmse_eps) {
+            LOG_ERR("%s: %s: %s, slot %u, pos %d: nmse %g vs a context without the other slots\n", __func__, layout, what, slot, pos, d);
+            n_bad++;
+        }
+    };
+
+    // prompts: one slot at a time, so slot s gets cell s
+    for (uint32_t s = 0; s < n_slots; ++s) {
+        std::vector<item> items;
+        for (llama_pos pos = 0; pos < (llama_pos) n_prompt; ++pos) {
+            items.push_back({ s, pos });
+        }
+        if (!decode(ctx.get(), items, false) || !decode(ref[s].get(), items, true)) {
+            LOG_ERR("%s: prompt decode failed\n", __func__);
+            return test_status::FAIL;
+        }
+        compare("prompt", s, n_prompt - 1, (int) n_prompt - 1, (int) n_prompt - 1, false);
+    }
+
+    probe = {};
+
+    // the active slots advance together while the idle slot waits
+    for (uint32_t i = 0; i < n_steps; ++i) {
+        const llama_pos pos = n_prompt + i;
+        if (!decode(ctx.get(), { { active[0], pos }, { active[1], pos } }, false)) {
+            LOG_ERR("%s: mixed decode failed at step %u\n", __func__, i);
+            return test_status::FAIL;
+        }
+        for (uint32_t a = 0; a < n_active; ++a) {
+            if (!decode(ref[active[a]].get(), { { active[a], pos } }, true)) {
+                LOG_ERR("%s: reference decode failed\n", __func__);
+                return test_status::FAIL;
+            }
+            compare("active step", active[a], pos, (int) a, 0, true);
+        }
+    }
+
+    // MTP-style verify: one ubatch of n_rollback + 1 tokens per active slot, then one slot drops the tail of it.
+    // Rollback only reaches back into the last ubatch, so the snapshots must come from this one.
+    const llama_pos p_verify = n_prompt + n_steps;
+    {
+        std::vector<item> verify[n_active];
+        common_batch batch(ctx.get());
+        for (uint32_t a = 0; a < n_active; ++a) {
+            for (uint32_t i = 0; i <= n_rollback; ++i) {
+                verify[a].push_back({ active[a], p_verify + (llama_pos) i });
+                batch.add(tok(active[a], p_verify + (llama_pos) i), p_verify + (llama_pos) i, (llama_seq_id) active[a], true);
+            }
+        }
+        if (llama_process(ctx.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+            LOG_ERR("%s: verify decode failed\n", __func__);
+            return test_status::FAIL;
+        }
+        for (uint32_t a = 0; a < n_active; ++a) {
+            if (!decode(ref[active[a]].get(), verify[a], true)) {
+                LOG_ERR("%s: reference verify failed\n", __func__);
+                return test_status::FAIL;
+            }
+            for (uint32_t i = 0; i <= n_rollback; ++i) {
+                compare("verify", active[a], verify[a][i].pos, (int) (a*(n_rollback + 1) + i), (int) i, true);
+            }
+        }
+    }
+
+    // the second active slot drops the last n_rollback tokens while the idle slot still holds its cell, then replays
+    // them in a multi-token ubatch next to the first one, which moves on
+    {
+        const llama_pos p0 = p_verify + 1;
+        if (!llama_memory_seq_rm(llama_get_memory(ctx.get()), (llama_seq_id) active[1], p0, -1) ||
+            !llama_memory_seq_rm(llama_get_memory(ref[active[1]].get()), 0, p0, -1)) {
+            LOG_ERR("%s: rollback failed\n", __func__);
+            return test_status::FAIL;
+        }
+        std::vector<item> replay[n_active];
+        for (uint32_t i = 0; i < n_rollback; ++i) {
+            replay[0].push_back({ active[0], (llama_pos) (p_verify + n_rollback + 1 + i) });
+            replay[1].push_back({ active[1], p0 + (llama_pos) i });
+        }
+        common_batch batch(ctx.get());
+        for (uint32_t a = 0; a < n_active; ++a) {
+            for (const auto & it : replay[a]) {
+                batch.add(tok(it.slot, it.pos), it.pos, (llama_seq_id) it.slot, true);
+            }
+        }
+        if (llama_process(ctx.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+            LOG_ERR("%s: replay decode failed\n", __func__);
+            return test_status::FAIL;
+        }
+        for (uint32_t a = 0; a < n_active; ++a) {
+            if (!decode(ref[active[a]].get(), replay[a], true)) {
+                LOG_ERR("%s: reference replay failed\n", __func__);
+                return test_status::FAIL;
+            }
+            for (uint32_t i = 0; i < n_rollback; ++i) {
+                compare("rollback replay", active[a], replay[a][i].pos, (int) (a*n_rollback + i), (int) i, true);
+            }
+        }
+    }
+
+    // both active slots in one more ubatch
+    {
+        const llama_pos pos0 = p_verify + n_rollback + 1 + n_rollback;
+        const llama_pos pos2 = pos0 - (llama_pos) n_rollback;
+        const std::vector<item> both = { { active[0], pos0 }, { active[1], pos2 } };
+        if (!decode(ctx.get(), both, false)) {
+            LOG_ERR("%s: final decode failed\n", __func__);
+            return test_status::FAIL;
+        }
+        for (size_t i = 0; i < both.size(); ++i) {
+            if (!decode(ref[both[i].slot].get(), { both[i] }, true)) {
+                LOG_ERR("%s: final reference decode failed\n", __func__);
+                return test_status::FAIL;
+            }
+            compare("final", both[i].slot, both[i].pos, (int) i, 0, true);
+        }
+    }
+
+    const int n_extra_active  = probe.n_extra;
+    const int n_getter_active = probe.n_getter;
+
+    // the idle slot resumes where it stopped, alone: its state went through the gathers, the rollback and the
+    // relocations of its neighbours, and must still be what its prompt left
+    double wrong = 0.0;
+    if (with_idle) {
+        for (uint32_t i = 0; i < n_resume; ++i) {
+            const llama_pos pos = n_prompt + (llama_pos) i;
+            if (!decode(ctx.get(), { { n_idle, pos } }, false) || !decode(ref[n_idle].get(), { { n_idle, pos } }, true)) {
+                LOG_ERR("%s: resume decode failed\n", __func__);
+                return test_status::FAIL;
+            }
+            compare("idle slot resume", n_idle, pos, 0, 0, false);
+        }
+        // negative control: the logits of another slot's state must read as a mismatch
+        wrong = nmse(llama_get_logits_ith(ref[active[0]].get(), 0), llama_get_logits_ith(ctx.get(), 0), n_vocab);
+    }
+
+    if (n_bad > 0) {
+        LOG_ERR("%s: %s: %d logit comparisons failed (worst nmse %g)\n", __func__, layout, n_bad, nmse_worst);
+        return test_status::FAIL;
+    }
+
+    if (with_idle && !(wrong > 100.0*nmse_eps)) {
+        LOG_ERR("%s: %s: the comparison cannot tell two slots apart (nmse %g)\n", __func__, layout, wrong);
+        return test_status::FAIL;
+    }
+
+    // engagement: the graphs under test existed, and the idle slot is what made the span larger than the ubatch
+    if (n_getter_active == 0 || (n_extra_active > 0) != with_idle) {
+        LOG_ERR("%s: %s: %d getter nodes, %d extra-state copies in the mixed ubatches\n", __func__, layout, n_getter_active, n_extra_active);
+        return test_status::FAIL;
+    }
+
+    LOG_INF("%s: %s: single-sequence worst nmse %g (another slot reads as %g), %d getter nodes, %d extra-state copies in the mixed ubatches\n",
+            __func__, layout, nmse_worst, wrong, n_getter_active, n_extra_active);
+    return test_status::PASS;
+}
+
+// Runs the script with and without the idle slot; the active slots must see bitwise the same logits in both.
+static test_status test_idle_slot_pair(const common_params & params, llama_model * model, uint8_t fill) {
+    const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
+
+    idle_logits control;
+    idle_logits idle;
+    const test_status s0 = test_idle_slot_state(params, model, fill, false, control);
+    const test_status s1 = test_idle_slot_state(params, model, fill, true,  idle);
+    if (s0 == test_status::FAIL || s1 == test_status::FAIL) {
+        return test_status::FAIL;
+    }
+    if (s0 == test_status::SKIP || s1 == test_status::SKIP) {
+        return test_status::SKIP;
+    }
+
+    constexpr double nmse_exact = 1e-9;
+    double worst = 0.0;
+    int    n_bad = 0;
+    if (control.size() != idle.size() || control.empty()) {
+        LOG_ERR("%s: the two layouts recorded %zu and %zu logit sets\n", __func__, control.size(), idle.size());
+        return test_status::FAIL;
+    }
+    for (size_t i = 0; i < control.size(); ++i) {
+        const double d = nmse(control[i].second.data(), idle[i].second.data(), n_vocab);
+        worst = std::max(worst, d);
+        if (control[i].first != idle[i].first || d > nmse_exact) {
+            LOG_ERR("%s: %s: nmse %g between the layouts\n", __func__, control[i].first.c_str(), d);
+            n_bad++;
+        }
+    }
+    if (n_bad > 0) {
+        LOG_ERR("%s: %d of %zu active-slot logit sets changed with an idle slot present (worst nmse %g)\n", __func__, n_bad, control.size(), worst);
+        return test_status::FAIL;
+    }
+
+    // negative control: the two streams must differ, or equal logits across layouts prove nothing
+    double apart = 0.0;
+    for (size_t i = 0; i + 1 < control.size(); ++i) {
+        if (control[i].first.find("stream 0") != std::string::npos && control[i + 1].first.find("stream 1") != std::string::npos) {
+            apart = std::max(apart, nmse(control[i].second.data(), control[i + 1].second.data(), n_vocab));
+        }
+    }
+    if (!(apart > 1e-3)) {
+        LOG_ERR("%s: the two streams are indistinguishable (nmse %g)\n", __func__, apart);
+        return test_status::FAIL;
+    }
+
+    LOG_INF("%s: %zu active-slot logit sets identical with and without the idle slot (worst nmse %g, streams differ by %g)\n",
+            __func__, control.size(), worst, apart);
+    return test_status::PASS;
+}
+
 static test_status merge_status(test_status a, test_status b) {
     if (a == test_status::FAIL || b == test_status::FAIL) {
         return test_status::FAIL;
@@ -581,6 +916,7 @@ struct test_results {
     test_status rollback = test_status::SKIP;
     test_status replay   = test_status::SKIP;
     test_status shared   = test_status::SKIP;
+    test_status idle     = test_status::SKIP;
 };
 
 // Run every test for an initialized model over both cache fills.
@@ -591,10 +927,12 @@ static test_results run_tests(const common_params & params, llama_model * model)
         const test_status rb = test_rollback(params, model, fill);
         const test_status rp = test_multi_seq_split_replay(params, model, fill);
         const test_status ss = test_shared_seq_reserve(params, model, fill);
+        const test_status is = test_idle_slot_pair(params, model, fill);
         res.rollback = merge_status(res.rollback, rb);
         res.replay   = merge_status(res.replay,   rp);
         res.shared   = merge_status(res.shared,   ss);
-        if (rb == test_status::FAIL || rp == test_status::FAIL || ss == test_status::FAIL) {
+        res.idle     = merge_status(res.idle,     is);
+        if (rb == test_status::FAIL || rp == test_status::FAIL || ss == test_status::FAIL || is == test_status::FAIL) {
             break;
         }
     }
@@ -613,7 +951,7 @@ static test_results run_tests_for_model(const std::string & model_path, const st
     if (model == nullptr) {
         LOG_ERR("%s: failed to init model '%s'\n", __func__, model_path.c_str());
         // a model that cannot be loaded is a failure, not a skip
-        return { test_status::FAIL, test_status::FAIL, test_status::FAIL };
+        return { test_status::FAIL, test_status::FAIL, test_status::FAIL, test_status::FAIL };
     }
 
     if (!llama_model_is_recurrent(model) && !llama_model_is_hybrid(model)) {
@@ -699,12 +1037,12 @@ int main(int argc, char ** argv) {
         // silence everything but the table itself (LOG has verbosity LOG_LEVEL_OUTPUT = 0)
         common_log_set_verbosity_thold(0);
 
-        LOG("%-*s  %-8s  %-11s  %s\n", (int) name_width, "Model", "rollback", "split replay", "shared seq");
+        LOG("%-*s  %-8s  %-11s  %-10s  %s\n", (int) name_width, "Model", "rollback", "split replay", "shared seq", "idle slot");
         common_log_flush(common_log_main());
 
-        size_t n_pass[3] = { 0, 0, 0 };
-        size_t n_skip[3] = { 0, 0, 0 };
-        size_t n_fail[3] = { 0, 0, 0 };
+        size_t n_pass[4] = { 0, 0, 0, 0 };
+        size_t n_skip[4] = { 0, 0, 0, 0 };
+        size_t n_fail[4] = { 0, 0, 0, 0 };
         for (const auto & model_path : models) {
             const auto name = std::filesystem::path(model_path).filename().string();
 
@@ -714,12 +1052,12 @@ int main(int argc, char ** argv) {
 
             // all status strings have the same raw length, so the columns line up;
             // pad the first status to the width of the "rollback" header + separator
-            LOG("  %s      %s         %s", test_status_str(res.rollback), test_status_str(res.replay), test_status_str(res.shared));
+            LOG("  %s      %s         %s        %s", test_status_str(res.rollback), test_status_str(res.replay), test_status_str(res.shared), test_status_str(res.idle));
             LOG("\n");
             common_log_flush(common_log_main());
 
-            const test_status all[3] = { res.rollback, res.replay, res.shared };
-            for (int t = 0; t < 3; ++t) {
+            const test_status all[4] = { res.rollback, res.replay, res.shared, res.idle };
+            for (int t = 0; t < 4; ++t) {
                 switch (all[t]) {
                     case test_status::PASS: n_pass[t]++; break;
                     case test_status::FAIL: n_fail[t]++; break;
@@ -737,12 +1075,15 @@ int main(int argc, char ** argv) {
                 __func__, n_pass[1], n_skip[1], n_fail[1], models.size());
         LOG_INF("%s: shared seq:   %zu passed, %zu skipped, %zu failed (of %zu)\n",
                 __func__, n_pass[2], n_skip[2], n_fail[2], models.size());
+        LOG_INF("%s: idle slot:    %zu passed, %zu skipped, %zu failed (of %zu)\n",
+                __func__, n_pass[3], n_skip[3], n_fail[3], models.size());
 
-        return (n_fail[0] + n_fail[1] + n_fail[2]) == 0 ? 0 : 1;
+        return (n_fail[0] + n_fail[1] + n_fail[2] + n_fail[3]) == 0 ? 0 : 1;
     }
 
     // single-model mode
     const test_results res = run_tests_for_model(params.model.path, params);
 
-    return (res.rollback == test_status::FAIL || res.replay == test_status::FAIL || res.shared == test_status::FAIL) ? 1 : 0;
+    return (res.rollback == test_status::FAIL || res.replay == test_status::FAIL || res.shared == test_status::FAIL ||
+            res.idle == test_status::FAIL) ? 1 : 0;
 }
