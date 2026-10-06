@@ -101,12 +101,15 @@ case ${1:-} in
         fi
         compile cmake -B "$build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER_FORCED=ON \
             -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.2/bin/nvcc -DGGML_CUDA=ON -DCUDAToolkit_ROOT=/usr/local/cuda-13.2 \
-            -DGGML_CUDA_NCCL=OFF -DCMAKE_CUDA_ARCHITECTURES=120 -DGGML_OPENMP_FETCH=OFF -DLLAMA_BUILD_UI=OFF \
+            -DGGML_CUDA_NCCL=OFF -DCMAKE_CUDA_ARCHITECTURES=120a -DGGML_OPENMP_FETCH=OFF -DLLAMA_BUILD_UI=OFF \
             -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_EXAMPLES=OFF -DGGML_CUDA_CCCL_VERSION=v3.4.3 \
             -DFETCHCONTENT_SOURCE_DIR_CCCL=/home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3 \
             -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DFETCHCONTENT_UPDATES_DISCONNECTED=ON -DGGML_CCACHE=ON \
             -DCMAKE_CUDA_FLAGS="$flags"
         compile cmake --build "$build" --target llama-server test-backend-ops -j4
+        # Without CCCL >= 3.4.3 the CUB DeviceTopK path is compiled out (stack6 has 25 strings): a speed confound, not a result.
+        topk=$(strings "$build/bin/libggml-cuda.so" | grep -c DeviceTopK || true)
+        [[ $topk == 25 ]] || { echo "CCCL check failed: $topk DeviceTopK strings in $build/bin/libggml-cuda.so, expected 25" >&2; exit 1; }
         cp "$build/bin/llama-server" "$build/bin/round-trace"
         ;;
     resources)
