@@ -33,6 +33,7 @@
 #include <cmath>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <numeric>
 #include <regex>
 #include <sstream>
@@ -1237,6 +1238,9 @@ struct llama_model::impl {
     bool has_tensor_overrides;
 
     std::vector<float> tensor_split_owned;
+
+    std::mutex draft_ext_mutex;
+    const llama_context * draft_ext_owner = nullptr;
 };
 
 bool llama_prec_policy::apply(ggml_tensor * res) const {
@@ -1301,6 +1305,10 @@ llama_model::llama_model(const llama_model_params & params) : params(params), pi
             throw std::invalid_argument("missing draft vocabulary ids");
         }
         draft_vocab_ids.assign(params.draft_vocab_ids, params.draft_vocab_ids + params.n_draft_vocab);
+    }
+    n_draft_vocab_base = draft_vocab_ids.size();
+    if (params.n_draft_vocab_ext && draft_vocab_ids.empty()) {
+        throw std::invalid_argument("a draft vocabulary extension needs a reduced draft vocabulary");
     }
     pimpl->has_tensor_overrides = params.tensor_buft_overrides && params.tensor_buft_overrides[0].pattern;
 }
@@ -1531,6 +1539,16 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
             if (id < 0 || (uint32_t) id >= vocab.n_tokens() || !unique.insert(id).second) {
                 throw std::invalid_argument("invalid or duplicate draft vocabulary id");
             }
+        }
+        // every extension row always holds a distinct real id, so the head needs no mask; start with the lowest unused ids
+        draft_vocab_ids.resize(n_draft_vocab_base);
+        for (llama_token id = 0; draft_vocab_ids.size() < n_draft_vocab_base + params.n_draft_vocab_ext && (uint32_t) id < vocab.n_tokens(); ++id) {
+            if (!unique.count(id)) {
+                draft_vocab_ids.push_back(id);
+            }
+        }
+        if (draft_vocab_ids.size() != n_draft_vocab_base + params.n_draft_vocab_ext) {
+            throw std::invalid_argument("draft vocabulary extension larger than the rest of the vocabulary");
         }
     }
     const auto & split_mode   = params.split_mode;
@@ -1965,6 +1983,15 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
         if (!head) {
             throw std::invalid_argument("missing MTP output head");
         }
+        if (draft_vocab_ids.size() > n_draft_vocab_base && head->buffer) {
+            // extension rows are copied from the loaded head at run time; CPU extra buffers (repack) cannot be read back
+            ggml_backend_buffer_type_t head_buft = ggml_backend_buffer_get_type(head->buffer);
+            ggml_backend_dev_t head_dev = ggml_backend_buft_get_device(head_buft);
+            if (head_dev && ggml_backend_dev_type(head_dev) == GGML_BACKEND_DEVICE_TYPE_CPU && !ggml_backend_buft_is_host(head_buft)) {
+                throw std::invalid_argument(std::string("draft vocabulary extension cannot read the LM head back from buffer type ") +
+                        ggml_backend_buft_name(head_buft) + "; disable weight repacking");
+            }
+        }
         ggml_context_ptr ctx { ggml_init({ggml_tensor_overhead(), nullptr, true}) };
         if (!ctx) {
             throw std::runtime_error("failed to allocate draft head context");
@@ -2007,6 +2034,10 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
         pimpl->ctxs_bufs.emplace_back(std::move(ctx), std::move(bufs));
         LLAMA_LOG_INFO("%s: reduced draft head: %zu tokens, %zu bytes (%s)\n", __func__, draft_vocab_ids.size(),
                 ggml_nbytes(draft_output), ggml_type_name(draft_output->type));
+        if (draft_vocab_ids.size() > n_draft_vocab_base) {
+            LLAMA_LOG_INFO("%s: draft vocabulary extension: %zu rows after %zu reduced-head rows\n", __func__,
+                    draft_vocab_ids.size() - n_draft_vocab_base, n_draft_vocab_base);
+        }
     }
 
     // print memory requirements per buffer type
@@ -2095,6 +2126,36 @@ uint32_t llama_model::n_gpu_layers() const {
 
 llama_split_mode llama_model::split_mode() const {
     return params.split_mode;
+}
+
+bool llama_model::draft_vocab_ext_acquire(const llama_context * ctx) const {
+    std::lock_guard<std::mutex> lock(pimpl->draft_ext_mutex);
+    if (pimpl->draft_ext_owner && pimpl->draft_ext_owner != ctx) {
+        return false;
+    }
+    pimpl->draft_ext_owner = ctx;
+    return true;
+}
+
+void llama_model::draft_vocab_ext_release(const llama_context * ctx) const {
+    std::lock_guard<std::mutex> lock(pimpl->draft_ext_mutex);
+    if (pimpl->draft_ext_owner == ctx) {
+        pimpl->draft_ext_owner = nullptr;
+    }
+}
+
+void llama_model::draft_vocab_ext_place(const llama_context * ctx, size_t row, llama_token id) const {
+    GGML_ASSERT(pimpl->draft_ext_owner == ctx);
+    GGML_ASSERT(row >= n_draft_vocab_base && row < draft_vocab_ids.size());
+    GGML_ASSERT(id >= 0 && (uint32_t) id < vocab.n_tokens());
+    const ggml_tensor * head = layers.back().nextn.shared_head_head ? layers.back().nextn.shared_head_head : output;
+    const size_t row_bytes = ggml_row_size(head->type, head->ne[0]);
+    GGML_ASSERT(head->type == draft_output->type && row_bytes == draft_output->nb[1]);
+    std::vector<uint8_t> buf(row_bytes);
+    ggml_backend_tensor_get(head, buf.data(), size_t(id) * row_bytes, row_bytes);
+    ggml_backend_tensor_set(draft_output, buf.data(), row * row_bytes, row_bytes);
+    // the holder is the only reader of the extension ids while it holds them; llama_model is never created const
+    const_cast<llama_model *>(this)->draft_vocab_ids[row] = id;
 }
 
 bool llama_model::logits_vocab_split(bool draft) const {
@@ -3054,6 +3115,7 @@ llama_model_params llama_model_default_params() {
         /*.kv_overrides                =*/ nullptr,
         /*.draft_vocab_ids             =*/ nullptr,
         /*.n_draft_vocab               =*/ 0,
+        /*.n_draft_vocab_ext           =*/ 0,
         /*.vocab_only                  =*/ false,
         /*.check_tensors               =*/ false,
         /*.use_extra_bufts             =*/ true,

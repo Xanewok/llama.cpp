@@ -138,6 +138,13 @@ llama_context::llama_context(
 
     cparams.ctx_type          = params.ctx_type;
     cparams.rope_scaling_type = params.rope_scaling_type;
+
+    if (has_draft_vocab() && model.draft_vocab_ids.size() > model.n_draft_vocab_base) {
+        if (!model.draft_vocab_ext_acquire(this)) {
+            throw std::runtime_error("the draft vocabulary extension rows of this model belong to another MTP context");
+        }
+        draft_ext_holder = decltype(draft_ext_holder)(this, draft_ext_release{&model});
+    }
     cparams.pooling_type      = params.pooling_type;
 
     cparams.n_ctx            = params.n_ctx           == 0    ? hparams.n_ctx_train           : params.n_ctx;
@@ -1336,6 +1343,102 @@ void llama_context::expand_draft_logits() {
         }
         draft_logits_pending[i] = false;
     }
+}
+
+void llama_context::draft_ext_release::operator()(const llama_context * ctx) const {
+    model->draft_vocab_ext_release(ctx);
+}
+
+uint32_t llama_context::draft_vocab_ext_capacity() const {
+    return has_draft_vocab() ? (uint32_t) (model.draft_vocab_ids.size() - model.n_draft_vocab_base) : 0;
+}
+
+int32_t llama_context::set_draft_vocab_ext(llama_seq_id seq_id, const llama_token * ids, size_t n_ids) {
+    const size_t n_base = model.n_draft_vocab_base;
+    const size_t n_pool = draft_vocab_ext_capacity();
+    const int32_t n_vocab = model.vocab.n_tokens();
+    if (n_pool == 0 || seq_id < 0 || (uint32_t) seq_id >= cparams.n_seq_max || (n_ids > 0 && !ids)) {
+        return -1;
+    }
+    for (size_t i = 0; i < n_ids; ++i) {
+        if (ids[i] < 0 || ids[i] >= n_vocab) {
+            return -1;
+        }
+    }
+
+    // nothing may read the head or the id map while they change; rows still pending are expanded with the old map
+    synchronize();
+    logits_deferred_fetch();
+    expand_draft_logits();
+
+    // the model holds the id map and the row bytes; this context holds them (constructor) and alone changes them
+    GGML_ASSERT(draft_ext_holder);
+    const auto & map = model.draft_vocab_ids;
+    if (draft_ext_ids.empty()) {
+        draft_ext_ids.assign(cparams.n_seq_max, {});
+    }
+
+    std::vector<uint8_t> used(n_vocab, 0);
+    for (size_t i = 0; i < n_base; ++i) {
+        used[map[i]] = 1;
+    }
+
+    const size_t quota = n_pool / cparams.n_seq_max;
+    auto & mine = draft_ext_ids[seq_id];
+    mine.clear();
+    {
+        std::vector<uint8_t> seen = used;
+        for (size_t i = 0; i < n_ids && mine.size() < quota; ++i) {
+            if (!seen[ids[i]]) {
+                seen[ids[i]] = 1;
+                mine.push_back(ids[i]);
+            }
+        }
+    }
+
+    // the quotas sum to at most n_pool, so every sequence's ids fit; rows that keep a wanted id are not rewritten, and
+    // the other rows keep their old (distinct, non-base) ids until a wanted id needs the row
+    std::vector<uint8_t> wanted(n_vocab, 0);
+    for (const auto & seq_ids : draft_ext_ids) {
+        for (llama_token id : seq_ids) {
+            wanted[id] = 1;
+        }
+    }
+    std::vector<size_t> free_rows;
+    for (size_t p = n_base; p < map.size(); ++p) {
+        if (wanted[map[p]] == 1) {
+            wanted[map[p]] = 2;
+        } else {
+            free_rows.push_back(p);
+        }
+    }
+    std::vector<llama_token> missing;
+    for (const auto & seq_ids : draft_ext_ids) {
+        for (llama_token id : seq_ids) {
+            if (wanted[id] == 1) {
+                wanted[id] = 2;
+                missing.push_back(id);
+            }
+        }
+    }
+    GGML_ASSERT(missing.size() <= free_rows.size());
+
+    for (size_t i = 0; i < missing.size(); ++i) {
+        model.draft_vocab_ext_place(this, free_rows[i], missing[i]);
+    }
+
+    if (!missing.empty() && sampling.vocab_ids) {
+        std::vector<float> fids(map.size());
+        for (size_t i = 0; i < map.size(); ++i) {
+            fids[i] = (float) map[i];
+        }
+        ggml_backend_tensor_set(sampling.vocab_ids, fids.data(), 0, ggml_nbytes(sampling.vocab_ids));
+    }
+
+    LLAMA_LOG_INFO("%s: seq %d: %zu ids in the draft head (quota %zu), %zu rows copied\n", __func__,
+            (int) seq_id, mine.size(), quota, missing.size());
+
+    return (int32_t) mine.size();
 }
 
 bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
@@ -4241,6 +4344,14 @@ float * llama_get_embeddings_layer_inp(llama_context * ctx, uint32_t lid) {
 
 bool llama_set_sampler(llama_context * ctx, llama_seq_id seq_id, llama_sampler * smpl) {
     return ctx->set_sampler(seq_id, smpl);
+}
+
+uint32_t llama_draft_vocab_ext_capacity(const llama_context * ctx) {
+    return ctx->draft_vocab_ext_capacity();
+}
+
+int32_t llama_set_draft_vocab_ext(llama_context * ctx, llama_seq_id seq_id, const llama_token * ids, size_t n_ids) {
+    return ctx->set_draft_vocab_ext(seq_id, ids, n_ids);
 }
 
 llama_token llama_get_sampled_token_ith(llama_context * ctx, int32_t i) {

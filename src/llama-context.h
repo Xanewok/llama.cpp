@@ -265,6 +265,9 @@ public:
     // tensor split: allocate sampling.vocab_ids once; false if that failed
     bool sampling_init_vocab_ids();
 
+    uint32_t draft_vocab_ext_capacity() const;
+    int32_t  set_draft_vocab_ext(llama_seq_id seq_id, const llama_token * ids, size_t n_ids);
+
 private:
     llm_graph_result * get_gf_res_prev();
     void reset_graphs();
@@ -308,6 +311,15 @@ private:
     buffer_view<float> logits = {nullptr, 0};
     buffer_view<float> draft_logits = {nullptr, 0};
     std::vector<uint8_t> draft_logits_pending;
+
+    // MTP context of a model with draft vocabulary extension rows: holds them (llama_model::draft_vocab_ext_acquire)
+    // until destroyed, also when the constructor throws
+    struct draft_ext_release {
+        const llama_model * model;
+        void operator()(const llama_context * ctx) const;
+    };
+    std::unique_ptr<const llama_context, draft_ext_release> draft_ext_holder{nullptr, draft_ext_release{nullptr}};
+    std::vector<std::vector<llama_token>> draft_ext_ids; // per sequence, as placed
 
     // embeddings output (2-dimensional array: [n_outputs][n_embd])
     // populated only when pooling_type == LLAMA_POOLING_TYPE_NONE

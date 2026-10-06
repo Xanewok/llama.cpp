@@ -349,6 +349,8 @@ extern "C" {
         // Optional MTP head rows, copied during model loading. Token embeddings and target logits keep the full vocabulary.
         const llama_token * draft_vocab_ids;
         size_t n_draft_vocab;
+        // Extra rows of that head that each MTP context fills per sequence (llama_set_draft_vocab_ext); 0 = none.
+        uint32_t n_draft_vocab_ext;
 
         // Keep the booleans together to avoid misalignment during copy-by-value.
         bool vocab_only;      // only load the vocabulary, no weights
@@ -1435,6 +1437,15 @@ extern "C" {
     // attach a sampler to the context
     // note: prefer initializing the context with llama_context_params.samplers when possible
     LLAMA_API bool llama_set_sampler(struct llama_context * ctx, llama_seq_id seq_id, struct llama_sampler * smpl);
+
+    // [EXPERIMENTAL]
+    // Rows of the reduced MTP draft head that sequences can fill with their own token ids (n_draft_vocab_ext), or 0.
+    LLAMA_API uint32_t llama_draft_vocab_ext_capacity(const struct llama_context * ctx);
+
+    // Replace seq_id's extension ids, given in priority order. Ids already in the reduced head, repeats and ids past the
+    // per-sequence quota (capacity / n_seq_max) are skipped. All sequences share the extension rows, so any sequence
+    // may draft any extension id. Call between decodes. Returns how many of seq_id's ids the head holds, or -1.
+    LLAMA_API int32_t llama_set_draft_vocab_ext(struct llama_context * ctx, llama_seq_id seq_id, const llama_token * ids, size_t n_ids);
 
     // mirror of llama_sampler_i:
     LLAMA_API struct llama_sampler * llama_sampler_init  (      struct llama_sampler_i * iface, llama_sampler_context_t ctx);

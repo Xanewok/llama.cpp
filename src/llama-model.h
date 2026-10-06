@@ -664,7 +664,8 @@ struct llama_model {
     struct ggml_tensor * output_norm_b   = nullptr;
     struct ggml_tensor * output          = nullptr;
     struct ggml_tensor * draft_output    = nullptr;
-    std::vector<llama_token> draft_vocab_ids;
+    std::vector<llama_token> draft_vocab_ids;   // reduced head ids, then the extension rows' initial ids
+    size_t                   n_draft_vocab_base = 0; // ids before the extension rows
     struct ggml_tensor * output_b        = nullptr;
     struct ggml_tensor * output_norm_enc = nullptr;
 
@@ -778,6 +779,14 @@ struct llama_model {
     bool logits_vocab_split(bool draft = false) const;
     // the fewest vocab rows of the logits on one device when vocab-split in one plain segment, else 0
     int64_t logits_vocab_shard_min(bool draft = false) const;
+
+    // Rows of draft_output after n_draft_vocab_base belong to at most one MTP context at a time. Only the holder
+    // rewrites them, row bytes and draft_vocab_ids together, so a context created later reads a map that matches the
+    // rows. acquire is false while another context holds them.
+    bool draft_vocab_ext_acquire(const llama_context * ctx) const;
+    void draft_vocab_ext_release(const llama_context * ctx) const;
+    // copy id's row of the MTP LM head into extension row `row` and record id there; holder only, between its decodes
+    void draft_vocab_ext_place(const llama_context * ctx, size_t row, llama_token id) const;
 
     std::map<ggml_backend_buffer_type_t, size_t> memory_breakdown() const;
 
