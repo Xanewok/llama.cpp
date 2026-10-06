@@ -14,12 +14,20 @@ def rows(path, kind, max_tokens=8, per_device=False):
     result = collections.defaultdict(list)
     for line in path.read_text().splitlines():
         record = json.loads(line)
-        for phase in record.get("phases", []):
-            if not 0 < phase["n_tokens"] <= max_tokens:
+        if not isinstance(record, dict):
+            continue
+        for phase in record.get("phases") or []:
+            if not isinstance(phase, dict):
+                continue
+            tokens = phase.get("n_tokens")
+            if not isinstance(tokens, int) or not 0 < tokens <= max_tokens or not phase.get("phase"):
                 continue
             counts = collections.Counter()
-            for counter in phase.get("counters", []):
-                if counter["kind"] == kind:
+            for counter in phase.get("counters") or []:
+                if not isinstance(counter, dict):
+                    continue
+                if (counter.get("kind") == kind and isinstance(counter.get("device"), int)
+                        and isinstance(counter.get("count"), int)):
                     counts[counter["device"]] += counter["count"]
             for device, count in (counts.items() if per_device else [(-1, sum(counts.values()))]):
                 if count:
@@ -30,6 +38,10 @@ def rows(path, kind, max_tokens=8, per_device=False):
 
 recorded = Path.home() / "repos/qwen38-eval/results/2026-10-04-duo-np2-depth/canary-a3/1-patch/round-trace.jsonl"
 assert rows(recorded, "input_owned"), "recorded GPU trace parser did not find staged inputs"
+unknown = OUT / "input-count-unknown.jsonl"
+unknown.write_text(json.dumps({"phases": [None, {}, {"phase": "future", "n_tokens": None},
+    {"phase": "V", "n_tokens": 2, "counters": [None, {}, {"kind": "input", "device": 0, "count": None}]}]}) + "\n")
+assert not rows(unknown, "input"), "unknown counters must not create transfer evidence"
 gpu_counts = []
 for label, artifact in (
     ("np2 stack3 IQ4_XS target fallback", recorded),
@@ -59,5 +71,5 @@ assert counts, "owned CPU transfers did not engage"
 result = [dict(phase=p, tokens_M=n, transfer_descriptors_M=sorted(set(values)), observations_M=len(values))
           for (p, n), values in sorted(counts.items())]
 (OUT / "input-count.json").write_text(json.dumps({"unit": "CPU Meta(CPU,CPU) owned transfer descriptors, all CPU callbacks (Meta ranks and any CPU splits)",
-    "model": "Qwen3.5-4B", "status": "PASS", "results": result, "recorded_parser_artifact": str(recorded), "recorded_gpu": gpu_counts}, indent=2) + "\n")
+    "model": "Qwen3.5-4B", "status": "PASS", "unknown_record_control": "PASS", "results": result, "recorded_parser_artifact": str(recorded), "recorded_gpu": gpu_counts}, indent=2) + "\n")
 print(json.dumps(result, indent=2))
