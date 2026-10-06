@@ -1,0 +1,269 @@
+From 3945edc367ff9b2c589251015ebd0c3cb0c94b60 Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Tue, 6 Oct 2026 11:45:28 +0200
+Subject: [PATCH 4/4] llama : read the recurrent state in place in GDN layers
+
+With snapshots enabled, build_recurrent_attn() gathers the selected
+rollback row of each sequence into a compact state (build_rs) before the
+GDN op. Use GGML_OP_GATED_DELTA_NET_INDEXED instead when the backend
+supports it and no extra rows have to be relocated (n_rs == n_seqs), so
+the gather is omitted and the state is read from the cache. Otherwise
+the previous path is taken.
+
+build_recurrent_attn() now builds the state itself, so the callers no
+longer pass it.
+---
+ src/models/bailingmoe3.cpp    |  4 +---
+ src/models/delta-net-base.cpp | 38 +++++++++++++++++++++++++++++------
+ src/models/glm5-next.cpp      |  4 +---
+ src/models/kimi-k3.cpp        |  4 +---
+ src/models/models.h           |  3 +--
+ src/models/qwen35.cpp         |  6 +-----
+ src/models/qwen35moe.cpp      |  6 +-----
+ src/models/qwen3next.cpp      |  6 +-----
+ src/models/qwen4exp.cpp       |  6 +-----
+ 9 files changed, 40 insertions(+), 37 deletions(-)
+
+diff --git a/src/models/bailingmoe3.cpp b/src/models/bailingmoe3.cpp
+index 907b25c67..da7e7ab08 100644
+--- a/src/models/bailingmoe3.cpp
++++ b/src/models/bailingmoe3.cpp
+@@ -289,11 +289,9 @@ llama_model_bailingmoe3::graph::graph(const llama_model & model, const llm_graph
+             k = build_gdn_l2_norm(ctx0, k, hparams.f_norm_rms_eps);
+ 
+             ggml_tensor * states_all = mctx_cur->get_s_l(il);
+-            ggml_tensor * state = build_rs(inp_rs, states_all, hparams.n_embd_s(), n_seqs);
+-            state = ggml_reshape_4d(ctx0, state, head_dim, head_dim, n_head, n_seqs);
+ 
+             ggml_tensor * out = ggml_cont(ctx0, build_recurrent_attn(
+-                    inp_rs, states_all, q, k, v, gate, beta, state, il));
++                    inp_rs, states_all, q, k, v, gate, beta, il));
+ 
+             ggml_tensor * out_gate = ggml_mul_mat(ctx0, layer.ssm_g_a, cur);
+             out_gate = ggml_reshape_3d(ctx0, out_gate, head_dim, n_head, n_tokens);
+diff --git a/src/models/delta-net-base.cpp b/src/models/delta-net-base.cpp
+index ad6612647..882343376 100644
+--- a/src/models/delta-net-base.cpp
++++ b/src/models/delta-net-base.cpp
+@@ -532,19 +532,44 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
+         ggml_tensor *        v,
+         ggml_tensor *        g,
+         ggml_tensor *        b,
+-        ggml_tensor *        s,
+         int                  il) {
+     const auto * mctx_cur   = inp->mctx;
+     const auto   kv_head    = mctx_cur->get_head();
+     const uint32_t mem_size = mctx_cur->get_size();
+ 
+-    const int64_t S_v          = s->ne[0];
+-    const int64_t H_v          = s->ne[2];
+-    const int64_t n_seqs       = s->ne[3];
++    const int64_t S_v          = v->ne[0];
++    const int64_t H_v          = v->ne[1];
++    const int64_t n_seqs       = v->ne[3];
+     const int64_t n_seq_tokens = q->ne[2];
+ 
+     const bool keep = cparams.n_rs_seq > 0;
+ 
++    ggml_tensor * gdn_out = nullptr;
++    // Extra rows must be gathered before relocation can overwrite a source row.
++    if (keep && cparams.offload_kqv && mctx_cur->get_n_rs() == n_seqs) {
++        ggml_tensor * states = ggml_reshape_4d(ctx0, ssm_states_all, S_v, S_v, H_v, ssm_states_all->ne[1]);
++        ggml_tensor * indexed = ggml_gated_delta_net_indexed(ctx0, q, k, v, g, b, states, inp->s_copy_main, cparams.n_rs_seq + 1);
++        ggml_backend_buffer_type_t buft = ggml_backend_buffer_get_type(ssm_states_all->buffer);
++        ggml_backend_dev_t dev = ggml_backend_buft_get_device(buft);
++        if (!dev && ggml_backend_buft_is_host(buft)) {
++            dev = ggml_backend_get_device(backend_cpu);
++        }
++        if (dev && ggml_backend_dev_supports_op(dev, indexed)) {
++            const int32_t rs_zero = mctx_cur->get_rs_z();
++            ggml_tensor * state_zero = ggml_view_1d(ctx0, ssm_states_all, hparams.n_embd_s() * (rs_zero >= 0),
++                    rs_zero * ssm_states_all->nb[1] * (rs_zero >= 0));
++            ggml_build_forward_expand(gf, ggml_scale_inplace(ctx0, state_zero, 0));
++            gdn_out = indexed;
++        }
++    }
++
++    ggml_tensor * s = nullptr;
++    if (!gdn_out) {
++        s = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs);
++        s = ggml_reshape_4d(ctx0, s, S_v, S_v, H_v, n_seqs);
++        cb(s, "state_predelta", il);
++    }
++
+     if (!keep) {
+         auto attn_out = build_delta_net(q, k, v, g, b, s, il);
+         ggml_tensor * output    = attn_out.first;
+@@ -563,8 +588,9 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
+     const int64_t D = S_v * S_v * H_v;
+     const int64_t K = cparams.n_rs_seq + 1;
+ 
+-    // state s is 4D [S_v, S_v, H_v, n_seqs]; K snapshot slots are written into the output.
+-    ggml_tensor * gdn_out = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, K);
++    if (!gdn_out) {
++        gdn_out = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, K);
++    }
+     if (n_seq_tokens > 1) {
+         res->add_fused_node({LLM_FUSED_OP_GDN_CH, gdn_out, il});
+     } else {
+diff --git a/src/models/glm5-next.cpp b/src/models/glm5-next.cpp
+index 839f223d2..60f4176e7 100644
+--- a/src/models/glm5-next.cpp
++++ b/src/models/glm5-next.cpp
+@@ -730,15 +730,13 @@ ggml_tensor * llama_model_glm5_next::graph::build_kda_layer(
+     cb(beta, "kda_beta", il);
+ 
+     ggml_tensor * ssm_states_all = mctx_cur->get_s_l(il);
+-    ggml_tensor * state = build_rs(inp_rs, ssm_states_all, hparams.n_embd_s(), n_seqs);
+-    state = ggml_reshape_4d(ctx0, state, head_dim, head_dim, n_head_kda, n_seqs);
+ 
+     // Match FLA l2 norm
+     constexpr float l2_eps = 1e-6f;
+     Qcur = build_gdn_l2_norm(ctx0, Qcur, l2_eps);
+     Kcur = build_gdn_l2_norm(ctx0, Kcur, l2_eps);
+ 
+-    ggml_tensor * output = build_recurrent_attn(inp_rs, ssm_states_all, Qcur, Kcur, Vcur, g1, beta, state, il);
++    ggml_tensor * output = build_recurrent_attn(inp_rs, ssm_states_all, Qcur, Kcur, Vcur, g1, beta, il);
+     output = ggml_cont(ctx0, output);
+     cb(output, "kda_scan_out", il);
+ 
+diff --git a/src/models/kimi-k3.cpp b/src/models/kimi-k3.cpp
+index 112b09849..d2604c9e1 100644
+--- a/src/models/kimi-k3.cpp
++++ b/src/models/kimi-k3.cpp
+@@ -449,14 +449,12 @@ ggml_tensor * llama_model_kimi_k3::graph::build_kda_layer(
+     ggml_tensor * cur_3d = ggml_reshape_3d(ctx0, cur, cur->ne[0], n_seq_tokens, n_seqs);
+ 
+     ggml_tensor * ssm_states_all = mctx_cur->get_s_l(il);
+-    ggml_tensor * state = build_rs(inp_rs, ssm_states_all, hparams.n_embd_s(), n_seqs);
+-    state = ggml_reshape_4d(ctx0, state, head_dim, head_dim, n_head_kda, n_seqs);
+ 
+     const float eps_norm = hparams.f_norm_rms_eps;
+     Qcur = build_gdn_l2_norm(ctx0, Qcur, eps_norm);
+     Kcur = build_gdn_l2_norm(ctx0, Kcur, eps_norm);
+ 
+-    ggml_tensor * output = build_recurrent_attn(inp_rs, ssm_states_all, Qcur, Kcur, Vcur, g1, beta, state, il);
++    ggml_tensor * output = build_recurrent_attn(inp_rs, ssm_states_all, Qcur, Kcur, Vcur, g1, beta, il);
+     output = ggml_cont(ctx0, output);
+     cb(output, "kda_scan_out", il);
+ 
+diff --git a/src/models/models.h b/src/models/models.h
+index 387a4adcb..ef2031b69 100644
+--- a/src/models/models.h
++++ b/src/models/models.h
+@@ -87,7 +87,7 @@ struct llm_build_delta_net_base : public llm_graph_context {
+             int                  il);
+ 
+     // run delta-net attention and write the new recurrent state(s) back to ssm_states_all
+-    // s: (head_v_dim, head_v_dim, num_v_heads, n_seqs); returns output: (head_v_dim, num_v_heads, n_seq_tokens, n_seqs)
++    // returns output: (head_v_dim, num_v_heads, n_seq_tokens, n_seqs)
+     ggml_tensor * build_recurrent_attn(
+             llm_graph_input_rs * inp,
+             ggml_tensor *        ssm_states_all,
+@@ -96,7 +96,6 @@ struct llm_build_delta_net_base : public llm_graph_context {
+             ggml_tensor *        v,
+             ggml_tensor *        g,
+             ggml_tensor *        b,
+-            ggml_tensor *        s,
+             int                  il);
+ };
+ 
+diff --git a/src/models/qwen35.cpp b/src/models/qwen35.cpp
+index ab98744a5..5f509d22d 100644
+--- a/src/models/qwen35.cpp
++++ b/src/models/qwen35.cpp
+@@ -398,10 +398,6 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
+ 
+     ggml_tensor * conv_input = build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, il);
+ 
+-    ggml_tensor * state = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs);
+-    state = ggml_reshape_4d(ctx0, state, head_v_dim, head_v_dim, num_v_heads, n_seqs);
+-    cb(state, "state_predelta", il);
+-
+     ggml_tensor * conv_output_proper = ggml_ssm_conv(ctx0, conv_input, conv_kernel);
+     cb(conv_output_proper, "conv_output_raw", il);
+ 
+@@ -459,7 +455,7 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
+     cb(k_conv, "k_conv_predelta", il);
+     cb(v_conv, "v_conv_predelta", il);
+ 
+-    ggml_tensor * output = build_recurrent_attn(inp, ssm_states_all, q_conv, k_conv, v_conv, gate, beta, state, il);
++    ggml_tensor * output = build_recurrent_attn(inp, ssm_states_all, q_conv, k_conv, v_conv, gate, beta, il);
+ 
+     // z: [head_dim, n_heads, n_tokens, n_seqs] -> [n_heads * n_tokens * n_seqs, head_dim]
+     ggml_tensor * z_2d = ggml_reshape_4d(ctx0, z, head_v_dim, num_v_heads, n_seq_tokens, n_seqs);
+diff --git a/src/models/qwen35moe.cpp b/src/models/qwen35moe.cpp
+index f0f917af7..a771560d5 100644
+--- a/src/models/qwen35moe.cpp
++++ b/src/models/qwen35moe.cpp
+@@ -408,10 +408,6 @@ ggml_tensor * llama_model_qwen35moe::graph::build_layer_attn_linear(
+ 
+     ggml_tensor * conv_input = build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, il);
+ 
+-    ggml_tensor * state = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs);
+-    state = ggml_reshape_4d(ctx0, state, head_v_dim, head_v_dim, num_v_heads, n_seqs);
+-    cb(state, "state_predelta", il);
+-
+     ggml_tensor * conv_output_proper = ggml_ssm_conv(ctx0, conv_input, conv_kernel);
+     cb(conv_output_proper, "conv_output_raw", il);
+ 
+@@ -469,7 +465,7 @@ ggml_tensor * llama_model_qwen35moe::graph::build_layer_attn_linear(
+     cb(k_conv, "k_conv_predelta", il);
+     cb(v_conv, "v_conv_predelta", il);
+ 
+-    ggml_tensor * output = build_recurrent_attn(inp, ssm_states_all, q_conv, k_conv, v_conv, gate, beta, state, il);
++    ggml_tensor * output = build_recurrent_attn(inp, ssm_states_all, q_conv, k_conv, v_conv, gate, beta, il);
+ 
+     // z: [head_dim, n_heads, n_tokens, n_seqs] -> [n_heads * n_tokens * n_seqs, head_dim]
+     ggml_tensor * z_2d = ggml_reshape_4d(ctx0, z, head_v_dim, num_v_heads, n_seq_tokens, n_seqs);
+diff --git a/src/models/qwen3next.cpp b/src/models/qwen3next.cpp
+index 340ef28f7..eebd544a6 100644
+--- a/src/models/qwen3next.cpp
++++ b/src/models/qwen3next.cpp
+@@ -464,10 +464,6 @@ ggml_tensor * llama_model_qwen3next::graph::build_layer_attn_linear(
+ 
+     ggml_tensor * conv_input = build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel_size, conv_channels, il);
+ 
+-    ggml_tensor * state = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs);
+-    state = ggml_reshape_4d(ctx0, state, head_v_dim, head_v_dim, num_v_heads, n_seqs);
+-    cb(state, "state_predelta", il);
+-
+     ggml_tensor * conv_output_proper = ggml_ssm_conv(ctx0, conv_input, conv_kernel);
+     cb(conv_output_proper, "conv_output_raw", il);
+ 
+@@ -540,7 +536,7 @@ ggml_tensor * llama_model_qwen3next::graph::build_layer_attn_linear(
+     cb(k_conv, "k_conv_predelta", il);
+     cb(v_conv, "v_conv_predelta", il);
+ 
+-    ggml_tensor * output = build_recurrent_attn(inp, ssm_states_all, q_conv, k_conv, v_conv, gate, beta, state, il);
++    ggml_tensor * output = build_recurrent_attn(inp, ssm_states_all, q_conv, k_conv, v_conv, gate, beta, il);
+ 
+     // z: [head_dim, n_heads, n_tokens, n_seqs] -> [n_heads * n_tokens * n_seqs, head_dim]
+     ggml_tensor * z_2d = ggml_reshape_4d(ctx0, z, head_v_dim, num_v_heads, n_seq_tokens, n_seqs);
+diff --git a/src/models/qwen4exp.cpp b/src/models/qwen4exp.cpp
+index 250eb74da..520d59e84 100644
+--- a/src/models/qwen4exp.cpp
++++ b/src/models/qwen4exp.cpp
+@@ -1071,10 +1071,6 @@ ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn_linear(
+     ggml_tensor * conv_input = build_conv_state_at(inp, conv_states_all, qkv_mixed,
+             conv_kernel_size - 1, conv_channels, il);
+ 
+-    ggml_tensor * state = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs);
+-    state = ggml_reshape_4d(ctx0, state, head_v_dim, head_v_dim, num_v_heads, n_seqs);
+-    cb(state, "state_predelta", il);
+-
+     ggml_tensor * conv_output_proper = ggml_ssm_conv(ctx0, conv_input, conv_kernel);
+     cb(conv_output_proper, "conv_output_raw", il);
+ 
+@@ -1125,7 +1121,7 @@ ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn_linear(
+     cb(k_conv, "k_conv_predelta", il);
+     cb(v_conv, "v_conv_predelta", il);
+ 
+-    ggml_tensor * output = build_recurrent_attn(inp, ssm_states_all, q_conv, k_conv, v_conv, gate, beta, state, il);
++    ggml_tensor * output = build_recurrent_attn(inp, ssm_states_all, q_conv, k_conv, v_conv, gate, beta, il);
+ 
+     ggml_tensor * z_2d = ggml_reshape_4d(ctx0, z, head_v_dim, num_v_heads, n_seq_tokens, n_seqs);
+ 
+-- 
+2.43.0
+

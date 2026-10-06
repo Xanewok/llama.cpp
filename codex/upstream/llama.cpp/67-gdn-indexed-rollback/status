@@ -1,0 +1,3 @@
+needs-GPU-check
+getter primary; CPU checks and builds recorded in EVIDENCE.md
+staged replacement; parent installs canonical package 67

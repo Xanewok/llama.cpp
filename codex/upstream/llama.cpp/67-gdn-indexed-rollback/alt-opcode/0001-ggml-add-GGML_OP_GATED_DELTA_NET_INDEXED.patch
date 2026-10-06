@@ -1,0 +1,268 @@
+From 583d0343c8a1b42c6b01050404918e7a62cbf04b Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Tue, 6 Oct 2026 11:45:27 +0200
+Subject: [PATCH 1/4] ggml : add GGML_OP_GATED_DELTA_NET_INDEXED
+
+Same inputs and output as GGML_OP_GATED_DELTA_NET, except that the state
+is a [S_v, S_v, H_v, n_state_rows] tensor and an I32 [n_seqs] tensor
+selects the row each sequence starts from. This lets a caller that keeps
+several states per sequence (recurrent rollback snapshots) skip the
+GET_ROWS that gathers the selected rows into a compact state first.
+
+It is a separate op so that backends which only know the plain op report
+it as unsupported and the caller keeps the gather. The CPU backend reads
+the row in the same loop; the meta backend keeps the index tensor
+mirrored; RPC rejects it.
+---
+ ggml/include/ggml-rpc.h        |  4 +--
+ ggml/include/ggml.h            | 15 +++++++++++
+ ggml/src/ggml-backend-meta.cpp |  4 +++
+ ggml/src/ggml-cpu/ggml-cpu.c   |  3 +++
+ ggml/src/ggml-cpu/ops.cpp      |  7 ++---
+ ggml/src/ggml-rpc/ggml-rpc.cpp |  3 +--
+ ggml/src/ggml.c                | 47 ++++++++++++++++++++++++++++++----
+ 7 files changed, 71 insertions(+), 12 deletions(-)
+
+diff --git a/ggml/include/ggml-rpc.h b/ggml/include/ggml-rpc.h
+index 1f8cb7906..05267f1af 100644
+--- a/ggml/include/ggml-rpc.h
++++ b/ggml/include/ggml-rpc.h
+@@ -8,10 +8,10 @@ extern "C" {
+ 
+ #define RPC_PROTO_MAJOR_VERSION    7
+ #define RPC_PROTO_MINOR_VERSION    0
+-#define RPC_PROTO_PATCH_VERSION    0
++#define RPC_PROTO_PATCH_VERSION    1
+ 
+ #ifdef  __cplusplus
+-static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT has changed - update RPC_PROTO_PATCH_VERSION");
++static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT has changed - update RPC_PROTO_PATCH_VERSION");
+ #endif
+ 
+ #define GGML_RPC_MAX_SERVERS       16
+diff --git a/ggml/include/ggml.h b/ggml/include/ggml.h
+index 224bdef92..bb6d31efd 100644
+--- a/ggml/include/ggml.h
++++ b/ggml/include/ggml.h
+@@ -601,6 +601,8 @@ extern "C" {
+ 
+         GGML_OP_GLU,
+ 
++        GGML_OP_GATED_DELTA_NET_INDEXED,
++
+         GGML_OP_COUNT,
+     };
+ 
+@@ -2659,6 +2661,19 @@ extern "C" {
+             struct ggml_tensor  * state,
+             int64_t               K);
+ 
++    // Same output as ggml_gated_delta_net; state is [S_v, S_v, H_v, n_state_rows].
++    // indices is I32 [n_seqs], with each value in [0, n_state_rows).
++    GGML_API struct ggml_tensor * ggml_gated_delta_net_indexed(
++            struct ggml_context * ctx,
++            struct ggml_tensor  * q,
++            struct ggml_tensor  * k,
++            struct ggml_tensor  * v,
++            struct ggml_tensor  * g,
++            struct ggml_tensor  * beta,
++            struct ggml_tensor  * state,
++            struct ggml_tensor  * indices,
++            int64_t               K);
++
+     // DSA lightning indexer
+     //
+     // q:       [n_embd_idx, n_head_idx, n_batch, ne3 ]
+diff --git a/ggml/src/ggml-backend-meta.cpp b/ggml/src/ggml-backend-meta.cpp
+index 0394433c0..16daef2ba 100644
+--- a/ggml/src/ggml-backend-meta.cpp
++++ b/ggml/src/ggml-backend-meta.cpp
+@@ -815,6 +815,9 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_get_split_state(
+     };
+ 
+     auto handle_gated_delta_net = [&](const std::vector<ggml_backend_meta_split_state> & src_ss) -> ggml_backend_meta_split_state {
++        if (tensor->src[6]) {
++            GGML_ASSERT(src_ss[6].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED);
++        }
+         if (src_ss[0].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED && src_ss[1].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED &&
+                 src_ss[2].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED && src_ss[3].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED &&
+                 src_ss[4].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED && src_ss[5].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED) {
+@@ -1033,6 +1036,7 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_get_split_state(
+             case GGML_OP_SOLVE_TRI: {
+                 split_state = handle_generic(src_ss, /*scalar_only =*/ true);
+             } break;
++            case GGML_OP_GATED_DELTA_NET_INDEXED:
+             case GGML_OP_GATED_DELTA_NET: {
+                 split_state = handle_gated_delta_net(src_ss);
+             } break;
+diff --git a/ggml/src/ggml-cpu/ggml-cpu.c b/ggml/src/ggml-cpu/ggml-cpu.c
+index 7c274c03b..e367450eb 100644
+--- a/ggml/src/ggml-cpu/ggml-cpu.c
++++ b/ggml/src/ggml-cpu/ggml-cpu.c
+@@ -2085,6 +2085,7 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
+             {
+                 ggml_compute_forward_solve_tri(params, tensor);
+             } break;
++        case GGML_OP_GATED_DELTA_NET_INDEXED:
+         case GGML_OP_GATED_DELTA_NET:
+             {
+                 ggml_compute_forward_gated_delta_net(params, tensor);
+@@ -2284,6 +2285,7 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads) {
+             } break;
+         case GGML_OP_COUNT_EQUAL:
+         case GGML_OP_SOLVE_TRI:
++        case GGML_OP_GATED_DELTA_NET_INDEXED:
+         case GGML_OP_GATED_DELTA_NET:
+         case GGML_OP_DSV4_HC_COMB:
+         case GGML_OP_DSV4_HC_PRE:
+@@ -3022,6 +3024,7 @@ struct ggml_cplan ggml_graph_plan(
+                     {
+                         cur = ggml_type_size(node->type)*(n_tasks + node->src[0]->ne[0]*n_tasks);
+                     } break;
++                case GGML_OP_GATED_DELTA_NET_INDEXED:
+                 case GGML_OP_GATED_DELTA_NET:
+                     {
+                         const int64_t S_v = node->src[2]->ne[0];
+diff --git a/ggml/src/ggml-cpu/ops.cpp b/ggml/src/ggml-cpu/ops.cpp
+index 16a916d20..f12f7627e 100644
+--- a/ggml/src/ggml-cpu/ops.cpp
++++ b/ggml/src/ggml-cpu/ops.cpp
+@@ -11208,9 +11208,10 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
+             ? state_work
+             : state_out_base + (iv3 * H + iv1) * S_v * S_v;
+ 
+-        // copy input state into the working buffer and operate in-place
+-        // state layout [S_v, S_v, H, n_seqs]: seq iv3 starts at iv3 * state_seq_stride.
+-        const float * s_in = state_in_base + iv3 * state_seq_stride + iv1 * S_v * S_v;
++        // Input rows can be reordered; output sequences keep batch order.
++        const int64_t state_row = dst->src[6] ? ((const int32_t *) dst->src[6]->data)[iv3] : iv3;
++        GGML_ASSERT(state_row >= 0 && state_row < src_state->ne[3]);
++        const float * s_in = state_in_base + state_row * state_seq_stride + iv1 * S_v * S_v;
+         memcpy(s_out, s_in, S_v * S_v * sizeof(float));
+ 
+         // attn output pointer for first token of this (head, seq)
+diff --git a/ggml/src/ggml-rpc/ggml-rpc.cpp b/ggml/src/ggml-rpc/ggml-rpc.cpp
+index 158a15bb8..d3df5943c 100644
+--- a/ggml/src/ggml-rpc/ggml-rpc.cpp
++++ b/ggml/src/ggml-rpc/ggml-rpc.cpp
+@@ -2217,9 +2217,8 @@ static ggml_backend_buffer_type_t ggml_backend_rpc_device_get_buffer_type(ggml_b
+ 
+ static bool ggml_backend_rpc_device_supports_op(ggml_backend_dev_t dev, const struct ggml_tensor * op) {
+     GGML_UNUSED(dev);
+-    GGML_UNUSED(op);
+     //TODO: call the remote backend and cache the results
+-    return true;
++    return op->op != GGML_OP_GATED_DELTA_NET_INDEXED;
+ }
+ 
+ static bool ggml_backend_rpc_device_supports_buft(ggml_backend_dev_t dev, ggml_backend_buffer_type_t buft) {
+diff --git a/ggml/src/ggml.c b/ggml/src/ggml.c
+index 9bcabdbd3..9770a4c8b 100644
+--- a/ggml/src/ggml.c
++++ b/ggml/src/ggml.c
+@@ -1099,9 +1099,10 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
+     "OPT_STEP_SGD",
+ 
+     "GLU",
++    "GATED_DELTA_NET_INDEXED",
+ };
+ 
+-static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 101");
++static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
+ 
+ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
+     "none",
+@@ -1214,9 +1215,10 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
+     "sgd(x)",
+ 
+     "glu(x)",
++    "gated_delta_net(q, k, v, g, beta, s[indices])",
+ };
+ 
+-static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 101");
++static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
+ 
+ static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
+ 
+@@ -6372,7 +6374,7 @@ struct ggml_tensor * ggml_solve_tri(
+ 
+ // ggml_gated_delta_net
+ 
+-struct ggml_tensor * ggml_gated_delta_net(
++static struct ggml_tensor * ggml_gated_delta_net_impl(
+         struct ggml_context * ctx,
+         struct ggml_tensor  * q,
+         struct ggml_tensor  * k,
+@@ -6380,6 +6382,7 @@ struct ggml_tensor * ggml_gated_delta_net(
+         struct ggml_tensor  * g,
+         struct ggml_tensor  * beta,
+         struct ggml_tensor  * state,
++        struct ggml_tensor  * indices,
+         int64_t               K) {
+     GGML_ASSERT(ggml_is_contiguous_rows(q));
+     GGML_ASSERT(ggml_is_contiguous_rows(k));
+@@ -6408,7 +6411,14 @@ struct ggml_tensor * ggml_gated_delta_net(
+     GGML_ASSERT(state->ne[0] == S_v);
+     GGML_ASSERT(state->ne[1] == S_v);
+     GGML_ASSERT(state->ne[2] == H);
+-    GGML_ASSERT(state->ne[3] == n_seqs);
++    if (indices) {
++        GGML_ASSERT(indices->type == GGML_TYPE_I32);
++        GGML_ASSERT(ggml_is_vector(indices) && ggml_is_contiguous(indices));
++        GGML_ASSERT(indices->ne[0] == n_seqs);
++        GGML_ASSERT(state->ne[3] > 0);
++    } else {
++        GGML_ASSERT(state->ne[3] == n_seqs);
++    }
+     GGML_ASSERT(K >= 1);
+     const int64_t state_rows = K * S_v * n_seqs;
+     const int64_t ne[4] = { S_v * H, n_tokens * n_seqs + state_rows, 1, 1 };
+@@ -6416,17 +6426,44 @@ struct ggml_tensor * ggml_gated_delta_net(
+ 
+     ggml_set_op_params_i32(result, 0, (int32_t) K);
+ 
+-    result->op     = GGML_OP_GATED_DELTA_NET;
++    result->op     = indices ? GGML_OP_GATED_DELTA_NET_INDEXED : GGML_OP_GATED_DELTA_NET;
+     result->src[0] = q;
+     result->src[1] = k;
+     result->src[2] = v;
+     result->src[3] = g;
+     result->src[4] = beta;
+     result->src[5] = state;
++    result->src[6] = indices;
+ 
+     return result;
+ }
+ 
++struct ggml_tensor * ggml_gated_delta_net(
++        struct ggml_context * ctx,
++        struct ggml_tensor  * q,
++        struct ggml_tensor  * k,
++        struct ggml_tensor  * v,
++        struct ggml_tensor  * g,
++        struct ggml_tensor  * beta,
++        struct ggml_tensor  * state,
++        int64_t               K) {
++    return ggml_gated_delta_net_impl(ctx, q, k, v, g, beta, state, NULL, K);
++}
++
++struct ggml_tensor * ggml_gated_delta_net_indexed(
++        struct ggml_context * ctx,
++        struct ggml_tensor  * q,
++        struct ggml_tensor  * k,
++        struct ggml_tensor  * v,
++        struct ggml_tensor  * g,
++        struct ggml_tensor  * beta,
++        struct ggml_tensor  * state,
++        struct ggml_tensor  * indices,
++        int64_t               K) {
++    GGML_ASSERT(indices);
++    return ggml_gated_delta_net_impl(ctx, q, k, v, g, beta, state, indices, K);
++}
++
+ // ggml_lightning_indexer
+ 
+ struct ggml_tensor * ggml_lightning_indexer(
+-- 
+2.43.0
+

@@ -1,0 +1,10 @@
+Base: 7049ff0cb (upstream master)
+Source: /home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream
+Branch: topic/gdn-getter
+Commits: fa1c8cb6c (ggml API, CPU/CUDA kernels, backend guards and op checks), 5a91f7b87 (GDN getter and shared-sequence rollback reserve test), 472791d90 (idle shared child forces n_rs > n_seqs)
+Apply: git am 0001-ggml-read-gated-delta-net-state-by-row-id.patch 0002-llama-use-a-recurrent-state-getter-for-GDN.patch 0003-tests-reserve-GDN-state-with-an-idle-shared-sequence.patch
+No new opcode or RPC opcode-count/version change. Existing callers pass NULL ids.
+alt-opcode/ holds the previous package and its evidence; it is not the primary series.
+This is a staged replacement, authored only inside the assigned worktree. The parent installs it at ~/repos/qwen38-eval/patches/upstream/llama.cpp/67-gdn-indexed-rollback/; do not retain old opcode patches or on-63/ at the package root.
+Validation and stack6-port provenance: EVIDENCE.md and codex/REPORT-gdn-getter.md.
+No PR text. No AI attribution trailers.

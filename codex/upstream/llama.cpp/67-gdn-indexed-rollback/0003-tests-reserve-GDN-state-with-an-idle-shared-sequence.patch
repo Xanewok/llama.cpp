@@ -1,0 +1,33 @@
+From 472791d9052cecd75dd9bd4e4f8b4a4010d70566 Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Tue, 6 Oct 2026 13:13:16 +0200
+Subject: [PATCH 3/3] tests : reserve GDN state with an idle shared sequence
+
+---
+ tests/test-recurrent-state-rollback.cpp | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/tests/test-recurrent-state-rollback.cpp b/tests/test-recurrent-state-rollback.cpp
+index 94bb633ff..0e60b6690 100644
+--- a/tests/test-recurrent-state-rollback.cpp
++++ b/tests/test-recurrent-state-rollback.cpp
+@@ -528,7 +528,15 @@ static test_status test_shared_seq_reserve(const common_params & params, llama_m
+     // this is what llama-batched-bench does for -pps
+     llama_memory_seq_cp(llama_get_memory(ctx.get()), 0, 1, -1, -1);
+ 
+-    for (uint32_t i = 0; i < n_continue; ++i) {
++    // Keep the other shared sequence idle so build_rs must preserve an extra state row.
++    for (uint32_t s = 0; s < n_seqs; ++s) {
++        if (!decode_one(ctx.get(), tok(s, n_prompt), n_prompt, s)) {
++            LOG_ERR("%s: single-seq decode after seq_cp failed\n", __func__);
++            return test_status::FAIL;
++        }
++    }
++
++    for (uint32_t i = 1; i < n_continue; ++i) {
+         const llama_pos pos = (llama_pos) (n_prompt + i);
+ 
+         common_batch batch(ctx.get());
+-- 
+2.43.0
+

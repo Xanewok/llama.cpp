@@ -1,0 +1,3 @@
+none required for the CUDA/CPU op and the graph use on master 7049ff0cb.
+Optional, CPU-only test runs: 51-meta-host-views (Meta(CPU,CPU) crashes on master before this op is reachable) and 66-meta-kv-stream-copy (Meta np2 seq_cp).
+Overlap, not a prerequisite: 63-cuda-ssm-conv-snapshot-fusion/prerequisites/0001 edits the same three model hunks as 0004 here; both orders conflict. Apply `on-63/0001-*.patch` in place of 0004 when 63's prerequisite is applied first.
