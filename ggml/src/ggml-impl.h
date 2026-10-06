@@ -206,6 +206,11 @@ struct ggml_custom_op_params {
     void           * userdata;
 };
 
+// A GGML_OP_CUSTOM node the meta backend inserts for an in-graph AllReduce: userdata is the backend's descriptor and
+// the magic sits just after ggml_custom_op_params in op_params.
+#define GGML_AR_NODE_MAGIC_PARAM 6
+#define GGML_AR_NODE_MAGIC       0x41524e44 // "ARND"
+
 // bitset
 
 typedef uint32_t ggml_bitset_t;

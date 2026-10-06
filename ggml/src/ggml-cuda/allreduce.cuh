@@ -27,3 +27,23 @@ bool ggml_cuda_ar_allreduce(
     ggml_backend_t        * backends,
     ggml_tensor           ** tensors);
 
+
+// Node mode: the AllReduce is a stream-ordered node of the per-device graph
+// (and thus capturable), instead of a host-driven call between subgraphs.
+
+// Immutable launch descriptor, owned by the pipeline and deduplicated by
+// (rank, site, data, count, type, compute) so its address is stable across plans.
+struct ggml_cuda_ar_node_desc;
+
+// Plan time: returns the descriptor for `tensor` (the rank's shard) at static
+// `site`, or nullptr when the chunked-kernel rules do not hold (type, layout,
+// alignment, wire bytes >= copy threshold or > staging, tail elements).
+// Allocates per-site staging on first use; sites are shared by all graphs.
+// Never call during stream capture.
+ggml_cuda_ar_node_desc * ggml_cuda_ar_node_plan(
+    ggml_cuda_ar_pipeline * pipeline, int rank, const ggml_tensor * tensor, int site, bool compute);
+
+int ggml_cuda_ar_node_rank(const ggml_cuda_ar_node_desc * desc);
+
+// Stream work only: no event, no host sync, no allocation.  Capturable.
+void ggml_cuda_ar_node_launch(const ggml_cuda_ar_node_desc * desc, cudaStream_t stream);

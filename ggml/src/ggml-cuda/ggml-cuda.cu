@@ -1358,6 +1358,26 @@ static bool ggml_backend_cuda_comm_allreduce_tensor(void * comm_ctx_v, struct gg
     return comm_ctx->try_allreduce(comm_ctx, tensors);
 }
 
+// Plan-time query of the meta backend: can this AllReduce run as a node of the rank's own graph?  Only the internal
+// pipeline can, and only if the graph will be captured (a node blocks on the peer device, see ggml_cuda_graph::has_ar_node).
+static void * ggml_backend_cuda_comm_allreduce_node(void * comm_ctx_v, int rank, struct ggml_tensor * tensor, int site) {
+#ifdef USE_CUDA_GRAPH
+    if (comm_ctx_v == nullptr || tensor == nullptr) {
+        return nullptr;
+    }
+    auto * comm_ctx = static_cast<ggml_backend_cuda_comm_context *>(comm_ctx_v);
+    static const bool graphs_disabled = getenv("GGML_CUDA_DISABLE_GRAPHS") != nullptr;
+    if (graphs_disabled || comm_ctx->ar_pipeline == nullptr || comm_ctx->backends.size() != 2 ||
+            comm_ctx->try_allreduce != ggml_backend_cuda_comm_try_allreduce_internal) {
+        return nullptr;
+    }
+    return ggml_cuda_ar_node_plan(comm_ctx->ar_pipeline, rank, tensor, site, (tensor->flags & GGML_TENSOR_FLAG_COMPUTE) != 0);
+#else
+    GGML_UNUSED(comm_ctx_v); GGML_UNUSED(rank); GGML_UNUSED(tensor); GGML_UNUSED(site);
+    return nullptr;
+#endif // USE_CUDA_GRAPH
+}
+
 // host buffer type
 
 static const char * ggml_backend_cuda_host_buffer_type_name(ggml_backend_buffer_type_t buft) {
@@ -2220,8 +2240,20 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
         nb1, nb2, nb3, stream);
 }
 
+static bool ggml_cuda_is_ar_node(const ggml_tensor * node) {
+    return node->op == GGML_OP_CUSTOM && ggml_get_op_params_i32(node, GGML_AR_NODE_MAGIC_PARAM) == GGML_AR_NODE_MAGIC;
+}
+
 static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct ggml_tensor * dst) {
     switch (dst->op) {
+        case GGML_OP_CUSTOM:
+            if (!ggml_cuda_is_ar_node(dst)) {
+                return false;
+            }
+            ggml_cuda_ar_node_launch(
+                static_cast<const ggml_cuda_ar_node_desc *>(((const ggml_custom_op_params *) dst->op_params)->userdata),
+                ctx.stream());
+            break;
         case GGML_OP_ARGMAX:
             ggml_cuda_argmax(ctx, dst);
             break;
@@ -2883,6 +2915,16 @@ static bool ggml_cuda_graph_update_required(ggml_backend_cuda_context * cuda_ctx
     }
 
     graph->uid = cgraph->uid;
+
+    graph->has_ar_node = false;
+    graph->n_ar_nodes  = 0;
+    for (int i = 0; i < cgraph->n_nodes; i++) {
+        if (ggml_cuda_is_ar_node(cgraph->nodes[i])) {
+            graph->has_ar_node = true;
+            const auto * params = (const ggml_custom_op_params *) cgraph->nodes[i]->op_params;
+            graph->n_ar_nodes += ggml_cuda_ar_node_rank(static_cast<const ggml_cuda_ar_node_desc *>(params->userdata)) == 0;
+        }
+    }
 
     // Check if the graph size has changed
     if ((int)graph->node_props.size() != cgraph->n_nodes) {
@@ -4885,8 +4927,9 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     ggml_cuda_graph_set_enabled(cuda_ctx, graph_key);
 
     ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
+    bool graph_compatible = false;
     if (graph->is_enabled()) {
-        const bool graph_compatible = ggml_cuda_graph_check_compability(cgraph);
+        graph_compatible = ggml_cuda_graph_check_compability(cgraph);
         if (graph_compatible) {
             bool properties_changed;
             {
@@ -4895,7 +4938,12 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
             }
             if (properties_changed) { ggml_round_trace_count("cuda_changed", cuda_ctx->device); }
 
-            if (!graph->warmup_complete) {
+            if (graph->has_ar_node) {
+                // No warm-up: the first submission must already be a graph launch (see ggml_cuda_graph::has_ar_node).
+                graph->warmup_complete = true;
+                use_cuda_graph = true;
+                cuda_graph_update_required = properties_changed || graph->instance == nullptr;
+            } else if (!graph->warmup_complete) {
                 // Warmup: need at least 2 calls with no property change on the 2nd call
                 if (!properties_changed) {
                     graph->warmup_complete = true;
@@ -4917,6 +4965,19 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
                 }
             }
         }
+    }
+
+    if (!graph->is_enabled() || !graph_compatible) {
+        for (int i = 0; i < cgraph->n_nodes; i++) {
+            if (ggml_cuda_is_ar_node(cgraph->nodes[i])) {
+                GGML_ABORT("%s: a graph with AllReduce nodes cannot run without CUDA graph capture "
+                           "(CUDA graphs disabled or unsupported node); unset GGML_META_AR_NODE\n", __func__);
+            }
+        }
+    }
+    if (graph->has_ar_node && use_cuda_graph) {
+        const auto now = ggml_round_trace_now();
+        ggml_round_trace_event("ar_node", now, now, cuda_ctx->device, graph->n_ar_nodes);
     }
 #endif // USE_CUDA_GRAPH
 
@@ -6259,6 +6320,9 @@ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, con
     }
     if (strcmp(name, "ggml_backend_comm_allreduce_tensor") == 0) {
         return (void *)ggml_backend_cuda_comm_allreduce_tensor;
+    }
+    if (strcmp(name, "ggml_backend_comm_allreduce_node") == 0) {
+        return (void *)ggml_backend_cuda_comm_allreduce_node;
     }
     if (strcmp(name, "ggml_backend_register_host_buffer") == 0) {
         return (void *)ggml_backend_cuda_register_host_buffer;
