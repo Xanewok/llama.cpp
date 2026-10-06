@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <map>
@@ -405,6 +406,13 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
         const auto & positions = cells.seq_pos_get(seq_id);
         auto it = positions.lower_bound({p0, 0});
         while (it != positions.end() && it->first < p1) {
+            static const bool proof = [] {
+                if (std::getenv("LLAMA_HOST_TRIMS_PROOF")) {
+                    LLAMA_LOG_INFO("host_trims: kv_seq_rm_indexed engaged\n");
+                }
+                return true;
+            }();
+            (void) proof;
             const uint32_t i = (it++)->second;
             // seq_rm erases this entry; position order need not match cell order.
             if (cells.seq_rm(i, seq_id)) {

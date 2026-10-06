@@ -1636,6 +1636,13 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             verify_h_rows[seq_id] = n_rows;
             verify_h[seq_id].resize((size_t) n_rows * n_embd);
 
+            static const bool proof = [n_rows] {
+                if (std::getenv("LLAMA_HOST_TRIMS_PROOF")) {
+                    LOG_INF("host_trims: mtp_verify_bulk rows=%d\n", n_rows);
+                }
+                return true;
+            }();
+            (void) proof;
             std::memcpy(verify_h[seq_id].data(), h_tgt + (size_t) i_batch_beg[seq_id] * n_embd, (size_t) n_rows * row_bytes);
 
             std::memcpy(pending_h[seq_id].data(),
