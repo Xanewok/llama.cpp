@@ -1,0 +1,39 @@
+ROW0_MUTANT active
+Testing 1 devices
+
+Backend 1/1: CPU
+  Device description: AMD Ryzen 9 3900X 12-Core Processor
+  Device memory: 31992 MB (31992 MB free)
+
+[SUB] ERR = 1.893322945 > 0.000010000   GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=16,n_seq_tokens=6,n_seqs=1,v_repeat=2,permuted=0,kda=0,K=6,repeated=0): [1;31mFAIL[0m
+[SUB] ERR = 2.148280859 > 0.000010000   GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=16,n_seq_tokens=6,n_seqs=2,v_repeat=2,permuted=0,kda=0,K=6,repeated=0): [1;31mFAIL[0m
+[SUB] ERR = 1.938308716 > 0.000010000   GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=32,n_seq_tokens=6,n_seqs=1,v_repeat=2,permuted=0,kda=0,K=6,repeated=0): [1;31mFAIL[0m
+[SUB] ERR = 2.082365036 > 0.000010000   GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=32,n_seq_tokens=6,n_seqs=2,v_repeat=2,permuted=0,kda=0,K=6,repeated=0): [1;31mFAIL[0m
+[SUB] ERR = 2.085136890 > 0.000010000   GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=64,n_seq_tokens=6,n_seqs=1,v_repeat=2,permuted=0,kda=0,K=6,repeated=0): [1;31mFAIL[0m
+[SUB] ERR = 2.103101969 > 0.000010000   GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=64,n_seq_tokens=6,n_seqs=2,v_repeat=2,permuted=0,kda=0,K=6,repeated=0): [1;31mFAIL[0m
+[SUB] ERR = 2.000072718 > 0.000010000   GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=128,n_seq_tokens=6,n_seqs=1,v_repeat=2,permuted=0,kda=0,K=6,repeated=0): [1;31mFAIL[0m
+[SUB] ERR = 2.082957745 > 0.000010000   GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=128,n_seq_tokens=6,n_seqs=2,v_repeat=2,permuted=0,kda=0,K=6,repeated=0): [1;31mFAIL[0m
+[SUB] ERR = 1.965819120 > 0.000010000   GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=32,n_seq_tokens=1,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=1,repeated=0): [1;31mFAIL[0m
+[SUB] ERR = 1.982974052 > 0.000010000   GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=32,n_seq_tokens=1,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=6,repeated=0): [1;31mFAIL[0m
+[SUB] ERR = 2.050311089 > 0.000010000   GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=32,n_seq_tokens=4,n_seqs=2,v_repeat=1,permuted=1,kda=1,K=4,repeated=0): [1;31mFAIL[0m
+[SUB] ERR = 1.632835388 > 0.000010000   GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=32,n_seq_tokens=8,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=3,repeated=0): [1;31mFAIL[0m
+[SUB] ERR = 1.990160584 > 0.000010000   GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=32,n_seq_tokens=6,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=6,repeated=1): [1;31mFAIL[0m
+  0/13 tests passed
+
+Failing tests:
+  GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=16,n_seq_tokens=6,n_seqs=1,v_repeat=2,permuted=0,kda=0,K=6,repeated=0)
+  GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=16,n_seq_tokens=6,n_seqs=2,v_repeat=2,permuted=0,kda=0,K=6,repeated=0)
+  GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=32,n_seq_tokens=6,n_seqs=1,v_repeat=2,permuted=0,kda=0,K=6,repeated=0)
+  GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=32,n_seq_tokens=6,n_seqs=2,v_repeat=2,permuted=0,kda=0,K=6,repeated=0)
+  GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=64,n_seq_tokens=6,n_seqs=1,v_repeat=2,permuted=0,kda=0,K=6,repeated=0)
+  GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=64,n_seq_tokens=6,n_seqs=2,v_repeat=2,permuted=0,kda=0,K=6,repeated=0)
+  GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=128,n_seq_tokens=6,n_seqs=1,v_repeat=2,permuted=0,kda=0,K=6,repeated=0)
+  GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=128,n_seq_tokens=6,n_seqs=2,v_repeat=2,permuted=0,kda=0,K=6,repeated=0)
+  GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=32,n_seq_tokens=1,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=1,repeated=0)
+  GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=32,n_seq_tokens=1,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=6,repeated=0)
+  GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=32,n_seq_tokens=4,n_seqs=2,v_repeat=1,permuted=1,kda=1,K=4,repeated=0)
+  GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=32,n_seq_tokens=8,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=3,repeated=0)
+  GATED_DELTA_NET_INDEXED(type=f32,head_count=4,head_size=32,n_seq_tokens=6,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=6,repeated=1)
+  Backend CPU: [1;31mFAIL[0m
+0/1 backends passed
+[1;31mFAIL[0m

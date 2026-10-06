@@ -1,0 +1,27 @@
+warning: no usable GPU found, --gpu-layers option will be ignored
+warning: one possible reason is that llama.cpp was compiled without GPU support
+warning: consult docs/build.md for compilation instructions
+0.01.212.593 W model has unused tensor blk.32.attn_norm.weight (size = 10240 bytes) -- ignoring
+0.01.212.602 W model has unused tensor blk.32.post_attention_norm.weight (size = 10240 bytes) -- ignoring
+0.01.212.613 W model has unused tensor blk.32.attn_q.weight (size = 11796480 bytes) -- ignoring
+0.01.212.616 W model has unused tensor blk.32.attn_k.weight (size = 1474560 bytes) -- ignoring
+0.01.212.621 W model has unused tensor blk.32.attn_v.weight (size = 2150400 bytes) -- ignoring
+0.01.212.633 W model has unused tensor blk.32.attn_output.weight (size = 5898240 bytes) -- ignoring
+0.01.212.637 W model has unused tensor blk.32.attn_q_norm.weight (size = 1024 bytes) -- ignoring
+0.01.212.640 W model has unused tensor blk.32.attn_k_norm.weight (size = 1024 bytes) -- ignoring
+0.01.212.645 W model has unused tensor blk.32.ffn_gate.weight (size = 13271040 bytes) -- ignoring
+0.01.212.649 W model has unused tensor blk.32.ffn_down.weight (size = 13271040 bytes) -- ignoring
+0.01.212.653 W model has unused tensor blk.32.ffn_up.weight (size = 13271040 bytes) -- ignoring
+0.01.212.660 W model has unused tensor blk.32.nextn.eh_proj.weight (size = 13926400 bytes) -- ignoring
+0.01.212.665 W model has unused tensor blk.32.nextn.enorm.weight (size = 10240 bytes) -- ignoring
+0.01.212.670 W model has unused tensor blk.32.nextn.hnorm.weight (size = 10240 bytes) -- ignoring
+0.01.212.682 W model has unused tensor blk.32.nextn.shared_head_norm.weight (size = 10240 bytes) -- ignoring
+STATE_MOVERS trial=0 seq=0 accepted=2 state_logits_hash=a2fdb28db97c71d0 token=131
+STATE_MOVERS trial=1 seq=0 accepted=6 state_logits_hash=c6f4b5d3691d7bb3 token=317
+STATE_MOVERS trial=2 seq=0 accepted=1 state_logits_hash=5eb1f9a6e97fd69f token=410
+STATE_MOVERS trial=3 seq=0 accepted=4 state_logits_hash=040d98c5dab16772 token=317
+STATE_MOVERS trial=4 seq=0 accepted=3 state_logits_hash=770661cfbd2bccb0 token=1256
+STATE_MOVERS trial=5 seq=0 accepted=5 state_logits_hash=5ce9b305dbf5431f token=317
+STATE_MOVERS trial=6 seq=0 accepted=4 state_logits_hash=3630801cdb522568 token=131
+STATE_MOVERS trial=7 seq=0 accepted=6 state_logits_hash=bc9a9fec6d2034ed token=317
+STATE_MOVERS negative_controls=PASS

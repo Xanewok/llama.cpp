@@ -1,0 +1,24 @@
+warning: no usable GPU found, --gpu-layers option will be ignored
+warning: one possible reason is that llama.cpp was compiled without GPU support
+warning: consult docs/build.md for compilation instructions
+0.00.978.212 W model has unused tensor blk.32.attn_norm.weight (size = 10240 bytes) -- ignoring
+0.00.978.219 W model has unused tensor blk.32.post_attention_norm.weight (size = 10240 bytes) -- ignoring
+0.00.978.230 W model has unused tensor blk.32.attn_q.weight (size = 11796480 bytes) -- ignoring
+0.00.978.233 W model has unused tensor blk.32.attn_k.weight (size = 1474560 bytes) -- ignoring
+0.00.978.237 W model has unused tensor blk.32.attn_v.weight (size = 2150400 bytes) -- ignoring
+0.00.978.250 W model has unused tensor blk.32.attn_output.weight (size = 5898240 bytes) -- ignoring
+0.00.978.254 W model has unused tensor blk.32.attn_q_norm.weight (size = 1024 bytes) -- ignoring
+0.00.978.257 W model has unused tensor blk.32.attn_k_norm.weight (size = 1024 bytes) -- ignoring
+0.00.978.261 W model has unused tensor blk.32.ffn_gate.weight (size = 13271040 bytes) -- ignoring
+0.00.978.265 W model has unused tensor blk.32.ffn_down.weight (size = 13271040 bytes) -- ignoring
+0.00.978.269 W model has unused tensor blk.32.ffn_up.weight (size = 13271040 bytes) -- ignoring
+0.00.978.274 W model has unused tensor blk.32.nextn.eh_proj.weight (size = 13926400 bytes) -- ignoring
+0.00.978.278 W model has unused tensor blk.32.nextn.enorm.weight (size = 10240 bytes) -- ignoring
+0.00.978.282 W model has unused tensor blk.32.nextn.hnorm.weight (size = 10240 bytes) -- ignoring
+0.00.978.293 W model has unused tensor blk.32.nextn.shared_head_norm.weight (size = 10240 bytes) -- ignoring
+0.04.577.462 I run_tests: testing with cache fill 0x00
+0.07.279.617 I test_rollback: recurrent rollback checkpoint restored successfully
+0.07.463.457 W llama_context: n_ctx is not divisible by n_seq_max - rounding down to 512
+0.07.891.931 W llama_context: n_ctx is not divisible by n_seq_max - rounding down to 512
+0.15.032.797 E test_multi_seq_split_replay: multi-seq split replay logits mismatch (max diff 13.4578, nmse 0.018913, first at seq 0 pos 16)
+0.24.037.560 I test_shared_seq_reserve: shared-seq decode succeeded (64 tokens after seq_cp)

@@ -1,0 +1,9 @@
+__pycache__/
+*.index
+*.lock
+fixtures/canary-control/
+frozen/*/build/bin/*
+!frozen/*/build/bin/SHA256SUMS
+up-headers/
+reference/
+test-llama-archs-bounded.cpp

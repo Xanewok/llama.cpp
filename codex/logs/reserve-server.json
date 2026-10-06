@@ -1,0 +1,8 @@
+{
+  "command": [
+    "python3",
+    "codex/reserve_cpu.py"
+  ],
+  "rc": 0,
+  "wall_s_M": 11.532777448068373
+}

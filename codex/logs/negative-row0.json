@@ -1,0 +1,14 @@
+{
+  "command": [
+    "build-cpu/bin/gdn-backend-cpu",
+    "test",
+    "-b",
+    "CPU",
+    "-o",
+    "GATED_DELTA_NET_INDEXED",
+    "-j",
+    "1"
+  ],
+  "rc": 1,
+  "wall_s_M": 1.131439064978622
+}

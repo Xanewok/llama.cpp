@@ -1,0 +1,1 @@
+{"prompt": "List the integers from 1 to 50, one per line.\n1\n2\n3\n", "n_cmpl": 2, "n_predict": 32, "temperature": 0.8, "seed": 1729, "cache_prompt": true}

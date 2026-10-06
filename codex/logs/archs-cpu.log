@@ -1,0 +1,318 @@
+0.00.000.371 I main: using seed 42, stdev 0.100000
+|     Model arch.|                             Device|Config|   NMSE vs. CPU|Roundtrip|    Mixed batch|
+|----------------|-----------------------------------|------|---------------|---------|---------------|
+|            clip|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            clip|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           llama|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.09e-09)|
+|           llama|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           llama|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.01e-09)|
+|           llama|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          llama4|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.51e-08)|
+|          llama4|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            deci|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.48e-09)|
+|            deci|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          falcon|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.43e-10)|
+|          falcon|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        baichuan|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.81e-09)|
+|        baichuan|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            grok|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (0.00e+00)|
+|            grok|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            gpt2|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (5.18e-09)|
+|            gpt2|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            gptj|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            gptj|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         gptneox|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.28e-09)|
+|         gptneox|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|             mpt|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (3.07e-09)|
+|             mpt|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       starcoder|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (5.18e-09)|
+|       starcoder|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          refact|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.16e-08)|
+|          refact|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          refact|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.28e-09)|
+|          refact|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            bert|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            bert|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|     modern-bert|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|     modern-bert|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      nomic-bert|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      nomic-bert|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|  nomic-bert-moe|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|  nomic-bert-moe|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        neo-bert|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        neo-bert|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|    jina-bert-v2|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|    jina-bert-v2|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|    jina-bert-v3|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|    jina-bert-v3|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        eurobert|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        eurobert|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           bloom|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (5.30e-09)|
+|           bloom|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        stablelm|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (3.44e-09)|
+|        stablelm|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            qwen|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.50e-09)|
+|            qwen|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           qwen2|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (4.87e-09)|
+|           qwen2|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        qwen2moe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.87e-09)|
+|        qwen2moe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         qwen2vl|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.90e-09)|
+|         qwen2vl|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           qwen3|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.09e-09)|
+|           qwen3|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        qwen3moe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.74e-09)|
+|        qwen3moe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       qwen3next|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.43e-09)|
+|       qwen3next|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         qwen3vl|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.36e-09)|
+|         qwen3vl|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      qwen3vlmoe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.86e-09)|
+|      qwen3vlmoe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          qwen35|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.53e-09)|
+|          qwen35|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       qwen35moe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.49e-09)|
+|       qwen35moe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            clef|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            clef|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        qwen4exp|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (3.48e-14)|
+|        qwen4exp|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            phi2|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (9.17e-10)|
+|            phi2|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            phi3|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.60e-09)|
+|            phi3|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          phimoe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (9.59e-10)|
+|          phimoe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           plamo|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.80e-09)|
+|           plamo|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          plamo2|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.86e-07)|
+|          plamo2|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          plamo3|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.67e-07)|
+|          plamo3|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       codeshell|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.08e-09)|
+|       codeshell|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           orion|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (3.25e-09)|
+|           orion|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       internlm2|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.93e-09)|
+|       internlm2|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         minicpm|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (4.47e-10)|
+|         minicpm|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         minicpm|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (4.85e-10)|
+|         minicpm|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        minicpm3|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (9.11e-12)|
+|        minicpm3|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           gemma|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.85e-11)|
+|           gemma|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          gemma2|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.82e-09)|
+|          gemma2|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          gemma3|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.43e-07)|
+|          gemma3|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         gemma3n|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|     [1;33mSKIP[0m|  [1;32mOK[0m (8.22e-07)|
+|         gemma3n|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+| gemma-embedding|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+| gemma-embedding|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      starcoder2|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.08e-09)|
+|      starcoder2|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           mamba|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (0.00e+00)|
+|           mamba|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          mamba2|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (0.00e+00)|
+|          mamba2|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           maple|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (5.80e-09)|
+|           maple|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           jamba|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.84e-09)|
+|           jamba|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       falcon-h1|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.41e-09)|
+|       falcon-h1|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          xverse|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.93e-09)|
+|          xverse|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       command-r|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.00e-09)|
+|       command-r|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         cohere2|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.15e-09)|
+|         cohere2|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      cohere2moe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.17e-09)|
+|      cohere2moe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            dbrx|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.36e-12)|
+|            dbrx|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            olmo|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (5.62e-09)|
+|            olmo|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           olmo2|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.80e-07)|
+|           olmo2|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           olmoe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.77e-09)|
+|           olmoe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|    muse-glimmer|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (4.74e-09)|
+|    muse-glimmer|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         openelm|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (9.82e-10)|
+|         openelm|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          arctic|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.40e-09)|
+|          arctic|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        deepseek|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.30e-09)|
+|        deepseek|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       deepseek2|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.11e-09)|
+|       deepseek2|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|   deepseek2-ocr|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|   deepseek2-ocr|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      deepseek32|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.05e-09)|
+|      deepseek32|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       deepseek4|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|[1;33mSKIP[0m           |
+|       deepseek4|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         chatglm|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.23e-09)|
+|         chatglm|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            glm4|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.11e-07)|
+|            glm4|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         glm4moe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.61e-09)|
+|         glm4moe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         glm-dsa|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.05e-09)|
+|         glm-dsa|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          bitnet|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|     [1;33mSKIP[0m|  [1;32mOK[0m (2.03e-09)|
+|          bitnet|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|              t5|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|              t5|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       t5encoder|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       t5encoder|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            jais|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (8.50e-10)|
+|            jais|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           jais2|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.53e-10)|
+|           jais2|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        nemotron|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.53e-10)|
+|        nemotron|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      nemotron_h|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (9.04e-10)|
+|      nemotron_h|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|  nemotron_h_moe|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (9.04e-10)|
+|  nemotron_h_moe|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          exaone|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.58e-09)|
+|          exaone|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         exaone4|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.11e-07)|
+|         exaone4|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      exaone-moe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (5.70e-09)|
+|      exaone-moe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           rwkv6|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           rwkv6|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      rwkv6qwen2|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      rwkv6qwen2|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           rwkv7|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           rwkv7|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          arwkv7|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          arwkv7|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         granite|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.96e-09)|
+|         granite|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         granite|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (3.17e-09)|
+|         granite|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      granitemoe|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.96e-09)|
+|      granitemoe|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      granitemoe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (3.17e-09)|
+|      granitemoe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|   granitehybrid|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.31e-10)|
+|   granitehybrid|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|   graniteswitch|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|   graniteswitch|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|     granite_swa|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.46e-09)|
+|     granite_swa|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       chameleon|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       chameleon|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|wavtokenizer-dec|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|wavtokenizer-dec|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|             plm|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|             plm|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      bailingmoe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.50e-09)|
+|      bailingmoe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|     bailingmoe2|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.66e-12)|
+|     bailingmoe2|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|     bailingmoe3|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.45e-08)|
+|     bailingmoe3|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           dots1|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.39e-09)|
+|           dots1|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       dots3note|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.55e-10)|
+|       dots3note|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           arcee|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.24e-09)|
+|           arcee|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           afmoe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.45e-09)|
+|           afmoe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          laguna|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.91e-09)|
+|          laguna|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        ernie4_5|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.93e-09)|
+|        ernie4_5|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|    ernie4_5-moe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.39e-09)|
+|    ernie4_5-moe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|     hunyuan-moe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.97e-09)|
+|     hunyuan-moe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|   hunyuan-dense|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.08e-09)|
+|   hunyuan-dense|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      hunyuan_vl|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.08e-09)|
+|      hunyuan_vl|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           hy_v3|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.69e-09)|
+|           hy_v3|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           hy_v4|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (8.38e-08)|
+|           hy_v4|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         smollm3|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.93e-09)|
+|         smollm3|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         gpt-oss|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.53e-09)|
+|         gpt-oss|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            lfm2|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.27e-09)|
+|            lfm2|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         lfm2moe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.54e-09)|
+|         lfm2moe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           dream|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|[1;33mSKIP[0m           |
+|           dream|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|    smallthinker|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.85e-09)|
+|    smallthinker|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           llada|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|[1;33mSKIP[0m           |
+|           llada|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       llada-moe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|[1;33mSKIP[0m           |
+|       llada-moe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        seed_oss|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.66e-09)|
+|        seed_oss|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        grovemoe|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.73e-09)|
+|        grovemoe|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         apertus|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|     [1;33mSKIP[0m|  [1;32mOK[0m (1.13e-09)|
+|         apertus|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      minimax-m2|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.42e-09)|
+|      minimax-m2|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          cogvlm|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|[1;33mSKIP[0m           |
+|          cogvlm|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|            rnd1|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|[1;33mSKIP[0m           |
+|            rnd1|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|  pangu-embedded|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.32e-09)|
+|  pangu-embedded|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        mistral3|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.09e-09)|
+|        mistral3|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        mistral3|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.01e-09)|
+|        mistral3|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        mistral4|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.11e-09)|
+|        mistral4|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       paddleocr|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.32e-09)|
+|       paddleocr|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|           mimo2|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (8.48e-10)|
+|           mimo2|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          step35|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|     [1;33mSKIP[0m|  [1;32mOK[0m (1.05e-09)|
+|          step35|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        spark2_5|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.79e-09)|
+|        spark2_5|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|     llama-embed|AMD Ryzen 9 3900X 12-Core Processor| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|     llama-embed|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|     llama-embed|AMD Ryzen 9 3900X 12-Core Processor|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|     llama-embed|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       maincoder|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.67e-09)|
+|       maincoder|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|     kimi-linear|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (2.81e-10)|
+|     kimi-linear|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|         kimi-k3|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.48e-07)|
+|         kimi-k3|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       glm5-next|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.70e-08)|
+|       glm5-next|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          talkie|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (9.27e-11)|
+|          talkie|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|          mellum|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.45e-09)|
+|          mellum|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      minimax-m3|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (3.39e-09)|
+|      minimax-m3|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        nanbeige|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.33e-09)|
+|        nanbeige|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        qwen3tts|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (7.44e-09)|
+|        qwen3tts|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|       pockettts|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.43e-08)|
+|       pockettts|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|      minimax-01|AMD Ryzen 9 3900X 12-Core Processor|   MoE|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (6.21e-10)|
+|      minimax-01|                               Meta|   MoE|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+|        hrm_text|AMD Ryzen 9 3900X 12-Core Processor| Dense|  [1;32mOK[0m (0.00e+00)|       [1;32mOK[0m|  [1;32mOK[0m (1.02e-08)|
+|        hrm_text|                               Meta| Dense|[1;33mSKIP[0m           |     [1;33mSKIP[0m|[1;33mSKIP[0m           |
+Summary: all 133 test(s) passed

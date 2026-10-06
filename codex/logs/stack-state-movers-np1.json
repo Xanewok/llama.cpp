@@ -1,0 +1,24 @@
+{
+  "command": [
+    "build-stack-cpu/bin/test-recurrent-state-rollback",
+    "--state-movers",
+    "-m",
+    "/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf",
+    "-ngl",
+    "0",
+    "-t",
+    "8",
+    "-tb",
+    "8",
+    "-c",
+    "4096",
+    "-b",
+    "64",
+    "-ub",
+    "16",
+    "-np",
+    "1"
+  ],
+  "rc": 0,
+  "wall_s_M": 8.713006781064905
+}

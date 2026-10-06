@@ -1,0 +1,9 @@
+{
+  "command": [
+    "build-cpu/bin/gdn-archs-cpu",
+    "-s",
+    "42"
+  ],
+  "rc": 0,
+  "wall_s_M": 17.042657105019316
+}
