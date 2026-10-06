@@ -3,10 +3,11 @@ static constexpr __host__ __device__ ggml_cuda_mmq_config ggml_cuda_mmq_get_conf
     if (cc == GGML_CUDA_CC_BLACKWELL && (J == 8 || J == 16 || J == 24)) {
         switch (type) {
             case GGML_TYPE_IQ4_XS:
-            case GGML_TYPE_Q4_K:
-            case GGML_TYPE_Q5_K:
             case GGML_TYPE_Q8_0:
                 return ggml_cuda_mmq_config(type, 128, 2, 64, J, GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_0, MMQ_ITER_K, true, fallback);
+            case GGML_TYPE_Q4_K:
+            case GGML_TYPE_Q5_K:
+                return ggml_cuda_mmq_config(type, 128, 2, 64, J, GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_1, MMQ_ITER_K, true, fallback);
             case GGML_TYPE_Q6_K:
                 return ggml_cuda_mmq_config(type, 128, 2, 64, J, GGML_CUDA_MMQ_SRAM_LAYOUT_Q6_K, MMQ_ITER_K, true, fallback);
             default:
