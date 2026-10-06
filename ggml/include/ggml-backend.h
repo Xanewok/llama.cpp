@@ -210,6 +210,9 @@ extern "C" {
     typedef void * (*ggml_backend_comm_init_t)(ggml_backend_t * backends, size_t n_backends);
     typedef void   (*ggml_backend_comm_free_t)(void * comm_ctx);
     typedef bool   (*ggml_backend_comm_allreduce_tensor_t)(void * comm_ctx, struct ggml_tensor ** tensors);
+    // Optional: an AllReduce that the backend executes as a node of its own graph. Returns an opaque descriptor for the
+    // given rank's shard at static site index `site`, or NULL when this AllReduce is not supported as a node.
+    typedef void * (*ggml_backend_comm_allreduce_node_t)(void * comm_ctx, int rank, struct ggml_tensor * tensor, int site);
 
     // Split buffer type for tensor parallelism (old)
     typedef ggml_backend_buffer_type_t   (*ggml_backend_split_buffer_type_t)(int main_device, const float * tensor_split);

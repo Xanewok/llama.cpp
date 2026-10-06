@@ -7,9 +7,15 @@
 #include "ggml-impl.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <map>
+#include <memory>
+#include <tuple>
+#include <vector>
 
 // ---------------------------------------------------------------------------
 // AllReduce for tensor-parallel inference across two GPUs (CUDA or
@@ -107,6 +113,67 @@ static constexpr int GGML_CUDA_AR_KERNEL_BLOCKS = 8;
 // blocks.  Tail elements (the leftover < ELEMS_PER_VEC at the end) are
 // handled only by block 0 to avoid cross-block writes to the same slots.
 // ---------------------------------------------------------------------------
+
+// Phases 1 and 3 are shared with the node-mode kernel; keep them free of
+// token/handshake logic so both kernels sum in the same order.  The vector unit
+// is the arch's widest single-instruction copy (16 B on Volta+): each phase-1
+// iter writes one vector to host memory, each phase-3 iter reads one and
+// produces ELEMS_PER_VEC sums.
+template <typename T_dst, typename T_wire>
+static __device__ __forceinline__ void ggml_cuda_ar_phase1(
+        const T_dst * sendbuf, T_wire * __restrict__ host_mine, int count) {
+    constexpr int ELEMS_PER_VEC = ggml_cuda_get_max_cpy_bytes() / sizeof(T_wire);
+
+    const int tid       = threadIdx.x;
+    const int gtid      = blockIdx.x * blockDim.x + tid;
+    const int gnt       = gridDim.x * blockDim.x;
+    const int count_vec = count / ELEMS_PER_VEC;
+    const int tail      = count_vec * ELEMS_PER_VEC;
+
+    for (int i = gtid; i < count_vec; i += gnt) {
+        const int off = i * ELEMS_PER_VEC;
+        T_wire wire[ELEMS_PER_VEC];
+        #pragma unroll
+        for (int k = 0; k < ELEMS_PER_VEC; ++k) {
+            wire[k] = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
+        }
+        ggml_cuda_memcpy_1<sizeof(wire)>(&host_mine[off], wire);
+    }
+    if (blockIdx.x == 0 && tid < count - tail) {
+        host_mine[tail + tid] = ggml_cuda_cast<T_wire>(sendbuf[tail + tid]);
+    }
+}
+
+template <typename T_dst, typename T_wire>
+static __device__ __forceinline__ void ggml_cuda_ar_phase3(
+        const T_dst * sendbuf, T_dst * recvbuf, const T_wire * __restrict__ host_other, int count) {
+    constexpr int ELEMS_PER_VEC = ggml_cuda_get_max_cpy_bytes() / sizeof(T_wire);
+
+    const int tid       = threadIdx.x;
+    const int gtid      = blockIdx.x * blockDim.x + tid;
+    const int gnt       = gridDim.x * blockDim.x;
+    const int count_vec = count / ELEMS_PER_VEC;
+    const int tail      = count_vec * ELEMS_PER_VEC;
+
+    for (int i = gtid; i < count_vec; i += gnt) {
+        const int off = i * ELEMS_PER_VEC;
+        T_wire wire[ELEMS_PER_VEC];
+        ggml_cuda_memcpy_1<sizeof(wire)>(wire, &host_other[off]);
+        #pragma unroll
+        for (int k = 0; k < ELEMS_PER_VEC; ++k) {
+            const T_wire d_low = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
+            recvbuf[off + k] = ggml_cuda_cast<T_dst>(
+                ggml_cuda_cast<float>(d_low) + ggml_cuda_cast<float>(wire[k]));
+        }
+    }
+    if (blockIdx.x == 0 && tid < count - tail) {
+        const T_wire d_low = ggml_cuda_cast<T_wire>(sendbuf[tail + tid]);
+        recvbuf[tail + tid] = ggml_cuda_cast<T_dst>(
+            ggml_cuda_cast<float>(d_low) +
+            ggml_cuda_cast<float>(host_other[tail + tid]));
+    }
+}
+
 template <typename T_dst, typename T_wire>
 static __global__ void ggml_cuda_ar_kernel(
         const T_dst  *              sendbuf,
@@ -118,35 +185,13 @@ static __global__ void ggml_cuda_ar_kernel(
         int *                       arrival_other,
         int                         token) {
 
-    // Vector unit for the wire type, sized to the arch's widest single-instruction
-    // copy (16 B on Volta+).  Each phase-1 iter writes one vector to host memory;
-    // each phase-3 iter reads one and produces ELEMS_PER_VEC sums.
-    constexpr int ELEMS_PER_VEC = ggml_cuda_get_max_cpy_bytes() / sizeof(T_wire);
-    constexpr int ARRIVAL_INTS  = (int)(GGML_CUDA_AR_ARRIVAL_STRIDE / sizeof(int));
+    constexpr int ARRIVAL_INTS = (int)(GGML_CUDA_AR_ARRIVAL_STRIDE / sizeof(int));
 
-    const int tid       = threadIdx.x;
-    const int nt        = blockDim.x;
-    const int bid       = blockIdx.x;
-    const int gtid      = bid * nt + tid;
-    const int gnt       = gridDim.x * nt;
-    const int count_vec = count / ELEMS_PER_VEC;
-    const int tail      = count_vec * ELEMS_PER_VEC;
+    const int tid = threadIdx.x;
+    const int bid = blockIdx.x;
 
     // Phase 1: cast sendbuf (T_dst) -> host_mine (T_wire) and store as vectors.
-    {
-        for (int i = gtid; i < count_vec; i += gnt) {
-            const int off = i * ELEMS_PER_VEC;
-            T_wire wire[ELEMS_PER_VEC];
-            #pragma unroll
-            for (int k = 0; k < ELEMS_PER_VEC; ++k) {
-                wire[k] = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
-            }
-            ggml_cuda_memcpy_1<sizeof(wire)>(&host_mine[off], wire);
-        }
-        if (bid == 0 && tid < count - tail) {
-            host_mine[tail + tid] = ggml_cuda_cast<T_wire>(sendbuf[tail + tid]);
-        }
-    }
+    ggml_cuda_ar_phase1<T_dst, T_wire>(sendbuf, host_mine, count);
 
     // Commit this block's host writes before signalling.
     __threadfence_system();
@@ -181,26 +226,111 @@ static __global__ void ggml_cuda_ar_kernel(
 
     // Phase 3: read peer's T_wire vector, cast both sides through T_wire for
     // bit-equivalence, sum in T_dst precision, and write back to recvbuf.
-    {
-        for (int i = gtid; i < count_vec; i += gnt) {
-            const int off = i * ELEMS_PER_VEC;
-            T_wire wire[ELEMS_PER_VEC];
-            ggml_cuda_memcpy_1<sizeof(wire)>(wire, &host_other[off]);
-            #pragma unroll
-            for (int k = 0; k < ELEMS_PER_VEC; ++k) {
-                const T_wire d_low = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
-                recvbuf[off + k] = ggml_cuda_cast<T_dst>(
-                    ggml_cuda_cast<float>(d_low) + ggml_cuda_cast<float>(wire[k]));
-            }
-        }
-        if (bid == 0 && tid < count - tail) {
-            const T_wire d_low = ggml_cuda_cast<T_wire>(sendbuf[tail + tid]);
-            recvbuf[tail + tid] = ggml_cuda_cast<T_dst>(
-                ggml_cuda_cast<float>(d_low) +
-                ggml_cuda_cast<float>(host_other[tail + tid]));
+    ggml_cuda_ar_phase3<T_dst, T_wire>(sendbuf, recvbuf, host_other, count);
+}
+
+#if !defined(GGML_USE_HIP)
+
+// ---------------------------------------------------------------------------
+// Node-mode kernel (in-graph AllReduce; see ggml_cuda_ar_node_plan)
+//
+// Same phases, stripes and summation order as ggml_cuda_ar_kernel, but the call
+// token is device-resident so that a CUDA-graph replay advances it:
+//
+//   * every block's thread 0 reads gen[site] at kernel start; token = gen + 1;
+//   * the last block to finish (done_cnt) stores gen = token and clears
+//     done_cnt.  All blocks read gen before they bump done_cnt, so they agree.
+//
+// Staging is reused across forwards (one buffer per site), so before phase 1
+// block b waits until the peer's block b published done == gen, i.e. it finished
+// reading the stripe of our staging written by this block in the previous use.
+// A block's stripe is a function of the element index only (qualification
+// rejects counts with tail elements), so per-block done words cover all reuse.
+// Waits are signed ">=" tests: a peer may be ahead by one use at most.
+// ---------------------------------------------------------------------------
+
+static __device__ __forceinline__ unsigned long long ggml_cuda_ar_globaltimer() {
+    unsigned long long t;
+    asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t));
+    return t;
+}
+
+// Spin until *p >= want (wrapping compare).  Traps once spin_ns elapsed: a
+// deadlock (peer graph never launched) must fail loudly instead of hanging.
+static __device__ __forceinline__ void ggml_cuda_ar_node_wait(
+        const int * p, int want, unsigned long long spin_ns, const char * what) {
+    const unsigned long long t0 = ggml_cuda_ar_globaltimer();
+    while ((int)((unsigned) ggml_cuda_ar_signal_get(p) - (unsigned) want) < 0) {
+#if __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
+        __nanosleep(100);
+#else
+        NO_DEVICE_CODE;
+#endif // __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
+        if (ggml_cuda_ar_globaltimer() - t0 > spin_ns) {
+            printf("ggml_cuda_ar_node: spin timeout waiting for peer (%s), block %d, want %d, got %d\n",
+                   what, (int) blockIdx.x, want, ggml_cuda_ar_signal_get(p));
+            __trap();
         }
     }
 }
+
+template <typename T_dst, typename T_wire>
+static __global__ void ggml_cuda_ar_node_kernel(
+        T_dst        *              data,
+        T_wire       * __restrict__ host_mine,
+        const T_wire * __restrict__ host_other,
+        int                         count,
+        int *                       arrival_mine,
+        const int *                 arrival_other,
+        int *                       done_mine,
+        const int *                 done_other,
+        int *                       gen,
+        int *                       done_cnt,
+        unsigned long long          spin_ns) {
+
+    constexpr int ARRIVAL_INTS = (int)(GGML_CUDA_AR_ARRIVAL_STRIDE / sizeof(int));
+
+    const int tid = threadIdx.x;
+    const int bid = blockIdx.x;
+
+    int token = 0;
+    if (tid == 0) {
+        const int g = ggml_cuda_ar_signal_get(gen);
+        token = g + 1;
+        ggml_cuda_ar_node_wait(done_other + bid * ARRIVAL_INTS, g, spin_ns, "buffer reuse");
+    }
+    __syncthreads();
+
+    ggml_cuda_ar_phase1<T_dst, T_wire>(data, host_mine, count);
+
+    __threadfence_system();
+    __syncthreads();
+
+    if (tid == 0) {
+        ggml_cuda_ar_signal_set(arrival_mine + bid * ARRIVAL_INTS, token);
+        __threadfence_system();
+        ggml_cuda_ar_node_wait(arrival_other + bid * ARRIVAL_INTS, token, spin_ns, "arrival");
+    }
+    __syncthreads();
+    __threadfence_system();
+
+    ggml_cuda_ar_phase3<T_dst, T_wire>(data, data, host_other, count);
+
+    // All phase-3 reads of the peer's staging are complete once every thread
+    // passed the barrier; only then may the peer overwrite it.
+    __syncthreads();
+    if (tid == 0) {
+        __threadfence_system();
+        ggml_cuda_ar_signal_set(done_mine + bid * ARRIVAL_INTS, token);
+        __threadfence_system();
+        if (atomicAdd(done_cnt, 1) == (int) gridDim.x - 1) {
+            ggml_cuda_ar_signal_set(done_cnt, 0);
+            ggml_cuda_ar_signal_set(gen, token);
+        }
+    }
+}
+
+#endif // !defined(GGML_USE_HIP)
 
 // Combined load-convert-add kernel.  The peer's contribution arrives as T_src
 // (which may be a lower-precision type than T_dst when the BF16 round-trip is
@@ -303,6 +433,45 @@ struct ggml_cuda_ar_host_mapping {
     }
 };
 
+// Node mode: sites are provisioned in slabs so that pinned memory grows with the
+// number of sites actually used while earlier sites keep their addresses (they
+// are baked into captured CUDA graphs).
+static constexpr int    GGML_CUDA_AR_NODE_SLAB_SITES = 16;
+static constexpr int    GGML_CUDA_AR_NODE_MAX_SITES  = 1024;
+static constexpr size_t GGML_CUDA_AR_NODE_SITE_BYTES_DEFAULT = 256 * 1024;
+static constexpr uint64_t GGML_CUDA_AR_NODE_SPIN_MS_DEFAULT = 10000;
+// Per (site, rank): GGML_CUDA_AR_KERNEL_BLOCKS arrival words, then as many done words.
+static constexpr size_t GGML_CUDA_AR_NODE_CTL_PER_RANK =
+    2 * GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_STRIDE;
+static constexpr size_t GGML_CUDA_AR_NODE_DEV_STATE_STRIDE = 128; // {gen, done_cnt} per site and rank
+
+struct ggml_cuda_ar_node_slab {
+    ggml_cuda_ar_host_mapping stage[GGML_CUDA_MAX_DEVICES];  // per rank: GGML_CUDA_AR_NODE_SLAB_SITES * site_bytes
+    ggml_cuda_ar_host_mapping ctl;                           // arrival + done words of all (site, rank)
+    int *                     dev_state[GGML_CUDA_MAX_DEVICES] = {}; // per rank: {gen, done_cnt} per site
+};
+
+struct ggml_cuda_ar_node_desc {
+    int                rank;
+    int                site;
+    int                device;
+    bool               compute;
+    bool               use_bf16;
+    ggml_type          type;        // type of the tensor; the wire type is BF16 when use_bf16
+    void *             data;
+    int                count;
+    size_t             nbytes;      // tensor bytes (not wire bytes)
+    uint8_t *          stage_mine;
+    const uint8_t *    stage_other;
+    int *              arrival_mine;
+    const int *        arrival_other;
+    int *              done_mine;
+    const int *        done_other;
+    int *              gen;
+    int *              done_cnt;
+    unsigned long long spin_ns;
+};
+
 struct ggml_cuda_ar_pipeline {
     int      n_devices;
     int      devices[GGML_CUDA_MAX_DEVICES];
@@ -342,6 +511,13 @@ struct ggml_cuda_ar_pipeline {
     // memory; CPU never reads/writes -- only the kernel and cudaMemset.
     // Use ggml_cuda_ar_arrival_ptr() to index.
     ggml_cuda_ar_host_mapping arrival;
+
+    // Node mode (in-graph AllReduce).  Memory is disjoint from host_buf/arrival
+    // above, so node-mode and host-driven ARs need no ordering between them.
+    size_t               node_site_bytes = 0;  // staging bytes per site and rank
+    uint64_t             node_spin_ns    = 0;
+    std::vector<std::unique_ptr<ggml_cuda_ar_node_slab>> node_slabs;
+    std::map<std::tuple<int, int, const void *, int, int, bool>, std::unique_ptr<ggml_cuda_ar_node_desc>> node_descs;
 };
 
 // Base pointer for the (slot, rank) per-block token block.  The kernel adds
@@ -529,6 +705,12 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
     // kernel can write the next slot's data while the peer is still reading
     // the previous slot's. Indexed by (slot * buf_bytes) at the call site.
     p->buf_bytes = GGML_CUDA_AR_MAX_BYTES;
+    p->node_site_bytes = std::min<size_t>(
+        p->buf_bytes, (size_t) ggml_cuda_ar_env_u64("GGML_CUDA_AR_NODE_SITE_BYTES", GGML_CUDA_AR_NODE_SITE_BYTES_DEFAULT) & ~(size_t) 15);
+    {
+        const uint64_t spin_ms = ggml_cuda_ar_env_u64("GGML_CUDA_AR_NODE_SPIN_MS", GGML_CUDA_AR_NODE_SPIN_MS_DEFAULT);
+        p->node_spin_ns = (spin_ms > 0 ? spin_ms : GGML_CUDA_AR_NODE_SPIN_MS_DEFAULT) * 1000000ull;
+    }
     const size_t host_buf_total = (size_t) GGML_CUDA_AR_POOL_SIZE * p->buf_bytes;
     for (size_t i = 0; i < n_devices; ++i) {
         if (p->host_buf[i].alloc(host_buf_total) != cudaSuccess) {
@@ -580,6 +762,24 @@ void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline * p) {
             if (p->streams_h2d[i] && p->streams_h2d[i] != p->streams[i]) {
                 CUDA_CHECK(cudaStreamSynchronize(p->streams_h2d[i]));
             }
+        }
+    }
+
+    if (!p->node_slabs.empty()) {
+        // Node-mode kernels run on the compute streams, not on p->streams.
+        for (int i = 0; i < p->n_devices; ++i) {
+            ggml_cuda_set_device(p->devices[i]);
+            CUDA_CHECK(cudaDeviceSynchronize());
+        }
+        for (auto & slab : p->node_slabs) {
+            for (int i = 0; i < p->n_devices; ++i) {
+                slab->stage[i].free();
+                if (slab->dev_state[i]) {
+                    ggml_cuda_set_device(p->devices[i]);
+                    CUDA_CHECK(cudaFree(slab->dev_state[i]));
+                }
+            }
+            slab->ctl.free();
         }
     }
 
@@ -1003,6 +1203,177 @@ bool ggml_cuda_ar_allreduce(
     return ok;
 }
 
+// ---------------------------------------------------------------------------
+// Node mode: AllReduce as a stream-ordered graph node
+// ---------------------------------------------------------------------------
+
+#if !defined(GGML_USE_HIP)
+
+static bool ggml_cuda_ar_node_ensure_slab(ggml_cuda_ar_pipeline * p, size_t slab_idx) {
+    const int prev_device = ggml_cuda_get_device();
+    while (p->node_slabs.size() <= slab_idx) {
+        auto slab = std::make_unique<ggml_cuda_ar_node_slab>();
+        bool ok = true;
+        const size_t stage_bytes = (size_t) GGML_CUDA_AR_NODE_SLAB_SITES * p->node_site_bytes;
+        const size_t ctl_bytes   = (size_t) GGML_CUDA_AR_NODE_SLAB_SITES * 2 * GGML_CUDA_AR_NODE_CTL_PER_RANK;
+        const size_t dev_bytes   = (size_t) GGML_CUDA_AR_NODE_SLAB_SITES * GGML_CUDA_AR_NODE_DEV_STATE_STRIDE;
+        for (int r = 0; ok && r < p->n_devices; ++r) {
+            ggml_cuda_set_device(p->devices[r]);
+            ok = slab->stage[r].alloc(stage_bytes) == cudaSuccess;
+            if (ok) {
+                memset(slab->stage[r].host, 0, stage_bytes);
+                ok = cudaMalloc(reinterpret_cast<void **>(&slab->dev_state[r]), dev_bytes) == cudaSuccess &&
+                     cudaMemset(slab->dev_state[r], 0, dev_bytes) == cudaSuccess;
+            }
+        }
+        if (ok) {
+            ggml_cuda_set_device(p->devices[0]);
+            ok = slab->ctl.alloc(ctl_bytes) == cudaSuccess;
+            if (ok) {
+                memset(slab->ctl.host, 0, ctl_bytes);
+            }
+        }
+        if (!ok) {
+            (void) cudaGetLastError();
+            GGML_LOG_WARN("%s: node-mode staging allocation failed for slab %zu; sites stay host-driven\n", __func__, slab_idx);
+            for (int r = 0; r < p->n_devices; ++r) {
+                slab->stage[r].free();
+                if (slab->dev_state[r]) {
+                    ggml_cuda_set_device(p->devices[r]);
+                    (void) cudaFree(slab->dev_state[r]);
+                }
+            }
+            slab->ctl.free();
+            ggml_cuda_set_device(prev_device);
+            return false;
+        }
+        p->node_slabs.push_back(std::move(slab));
+    }
+    ggml_cuda_set_device(prev_device);
+    return true;
+}
+
+ggml_cuda_ar_node_desc * ggml_cuda_ar_node_plan(
+        ggml_cuda_ar_pipeline * p, int rank, const ggml_tensor * tensor, int site, bool compute) {
+    if (p == nullptr || p->n_devices != 2 || rank < 0 || rank >= 2 || site < 0 || site >= GGML_CUDA_AR_NODE_MAX_SITES) {
+        return nullptr;
+    }
+
+    const ggml_type type = tensor->type;
+    if (type != GGML_TYPE_F32 && type != GGML_TYPE_F16 && type != GGML_TYPE_BF16) {
+        return nullptr;
+    }
+    const int64_t ne = ggml_nelements(tensor);
+    if (ne <= 0 || ne > std::numeric_limits<int>::max() ||
+            !ggml_is_contiguously_allocated(tensor) || ((uintptr_t) tensor->data & 0xF) != 0) {
+        return nullptr;
+    }
+
+    // Same rule as ggml_cuda_ar_allreduce, so the wire type and the chunked-path
+    // size gate agree bit for bit.
+    const size_t input_nbytes = ggml_nbytes(tensor);
+    const bool   use_bf16     = type == GGML_TYPE_F32 && p->bf16_threshold > 0 && input_nbytes >= p->bf16_threshold;
+    const size_t wire_size    = use_bf16 ? sizeof(nv_bfloat16) : ggml_type_size(type);
+    const size_t wire_bytes   = (size_t) ne * wire_size;
+    if ((input_nbytes & 0xF) != 0 ||
+            (p->copy_threshold > 0 && wire_bytes >= p->copy_threshold) ||
+            wire_bytes > p->buf_bytes || wire_bytes > p->node_site_bytes) {
+        return nullptr;
+    }
+    // Tail elements are written by block 0 only; excluding them keeps the owner
+    // block of every staging byte independent of the element count.
+    if (ne % (16 / wire_size) != 0) {
+        return nullptr;
+    }
+
+    const auto key = std::make_tuple(rank, site, (const void *) tensor->data, (int) ne, (int) type, compute);
+    auto it = p->node_descs.find(key);
+    if (it != p->node_descs.end()) {
+        return it->second.get();
+    }
+
+    if (!ggml_cuda_ar_node_ensure_slab(p, (size_t) site / GGML_CUDA_AR_NODE_SLAB_SITES)) {
+        return nullptr;
+    }
+    ggml_cuda_ar_node_slab & slab = *p->node_slabs[(size_t) site / GGML_CUDA_AR_NODE_SLAB_SITES];
+    const size_t in_slab = (size_t) site % GGML_CUDA_AR_NODE_SLAB_SITES;
+    const int    peer    = 1 - rank;
+
+    auto ctl = [&](int r, int kind) {
+        return reinterpret_cast<int *>(slab.ctl.dev + (in_slab * 2 + r) * GGML_CUDA_AR_NODE_CTL_PER_RANK +
+                                       (size_t) kind * GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_STRIDE);
+    };
+
+    auto d = std::make_unique<ggml_cuda_ar_node_desc>();
+    d->rank          = rank;
+    d->site          = site;
+    d->device        = p->devices[rank];
+    d->compute       = compute;
+    d->use_bf16      = use_bf16;
+    d->type          = type;
+    d->data          = tensor->data;
+    d->count         = (int) ne;
+    d->nbytes        = input_nbytes;
+    d->stage_mine    = slab.stage[rank].dev + in_slab * p->node_site_bytes;
+    d->stage_other   = slab.stage[peer].dev + in_slab * p->node_site_bytes;
+    d->arrival_mine  = ctl(rank, 0);
+    d->arrival_other = ctl(peer, 0);
+    d->done_mine     = ctl(rank, 1);
+    d->done_other    = ctl(peer, 1);
+    d->gen           = reinterpret_cast<int *>(reinterpret_cast<char *>(slab.dev_state[rank]) + in_slab * GGML_CUDA_AR_NODE_DEV_STATE_STRIDE);
+    d->done_cnt      = d->gen + 1;
+    d->spin_ns       = p->node_spin_ns;
+
+    ggml_cuda_ar_node_desc * ret = d.get();
+    p->node_descs.emplace(key, std::move(d));
+    return ret;
+}
+
+int ggml_cuda_ar_node_rank(const ggml_cuda_ar_node_desc * d) {
+    return d->rank;
+}
+
+void ggml_cuda_ar_node_launch(const ggml_cuda_ar_node_desc * d, cudaStream_t stream) {
+    // Inactive shards contribute zeros, same rule as the host-driven path.
+    if (!d->compute) {
+        CUDA_CHECK(cudaMemsetAsync(d->data, 0, d->nbytes, stream));
+    }
+
+#define LAUNCH_AR_NODE_KERNEL(T_dst, T_wire) \
+    ggml_cuda_ar_node_kernel<T_dst, T_wire><<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256), 0, stream>>>( \
+        reinterpret_cast<T_dst *>(d->data), \
+        reinterpret_cast<T_wire *>(d->stage_mine), \
+        reinterpret_cast<const T_wire *>(d->stage_other), \
+        d->count, d->arrival_mine, d->arrival_other, d->done_mine, d->done_other, d->gen, d->done_cnt, d->spin_ns)
+
+    if (d->use_bf16) {
+        LAUNCH_AR_NODE_KERNEL(float, nv_bfloat16);
+    } else {
+        switch (d->type) {
+            case GGML_TYPE_F32:  LAUNCH_AR_NODE_KERNEL(float,       float);       break;
+            case GGML_TYPE_F16:  LAUNCH_AR_NODE_KERNEL(half,        half);        break;
+            case GGML_TYPE_BF16: LAUNCH_AR_NODE_KERNEL(nv_bfloat16, nv_bfloat16); break;
+            default: GGML_ABORT("ggml_cuda_ar_node_launch: unsupported type");
+        }
+    }
+#undef LAUNCH_AR_NODE_KERNEL
+    CUDA_CHECK(cudaGetLastError());
+}
+
+#else // defined(GGML_USE_HIP)
+
+ggml_cuda_ar_node_desc * ggml_cuda_ar_node_plan(ggml_cuda_ar_pipeline *, int, const ggml_tensor *, int, bool) {
+    return nullptr;
+}
+int ggml_cuda_ar_node_rank(const ggml_cuda_ar_node_desc *) {
+    return 0;
+}
+void ggml_cuda_ar_node_launch(const ggml_cuda_ar_node_desc *, cudaStream_t) {
+    GGML_ABORT("node-mode AllReduce is not available on HIP");
+}
+
+#endif // !defined(GGML_USE_HIP)
+
 #else // defined(GGML_USE_MUSA)
 
 // MUSA lacks the host-mapped pinned-memory APIs (cudaHostAllocPortable
@@ -1018,6 +1389,15 @@ void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline *) {
 }
 bool ggml_cuda_ar_allreduce(ggml_cuda_ar_pipeline *, ggml_backend_t *, ggml_tensor **) {
     return false;
+}
+ggml_cuda_ar_node_desc * ggml_cuda_ar_node_plan(ggml_cuda_ar_pipeline *, int, const ggml_tensor *, int, bool) {
+    return nullptr;
+}
+int ggml_cuda_ar_node_rank(const ggml_cuda_ar_node_desc *) {
+    return 0;
+}
+void ggml_cuda_ar_node_launch(const ggml_cuda_ar_node_desc *, cudaStream_t) {
+    GGML_ABORT("node-mode AllReduce is not available on MUSA");
 }
 
 #endif // !defined(GGML_USE_MUSA)

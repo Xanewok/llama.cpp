@@ -1275,6 +1275,10 @@ struct ggml_cuda_graph {
     std::vector<cudaGraphNode_t> nodes;
     bool disable_due_to_gpu_arch = false;
     bool warmup_complete = false;
+    // Meta-backend AllReduce nodes block on the peer device: a forward must never
+    // be submitted eagerly node by node, so these graphs skip warm-up.
+    bool has_ar_node = false;
+    int  n_ar_nodes  = 0; // rank-0 nodes only: one per AllReduce, comparable to ar_call
     uint64_t uid = 0;
     int64_t last_used_time = 0;
     struct node_properties {
