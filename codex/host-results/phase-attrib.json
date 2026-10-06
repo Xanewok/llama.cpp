@@ -1,0 +1,2838 @@
+{
+  "np1": {
+    "artifact": "/mnt/scratch/work/attrib-stack6-iq4/full-a1/decode-8k.sqlite",
+    "rounds_M": 154,
+    "sample_spacing_ms_M": 0.575356,
+    "host": [
+      {
+        "phase": "V",
+        "context": "cuda_sync",
+        "function": "ggml_cuda_ar_acquire_slot(ggml_cuda_ar_pipeline*)",
+        "samples_M": 140,
+        "sampled_ms_per_round_M": 0.5230509090909091
+      },
+      {
+        "phase": "V",
+        "context": "cuda_sync",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 110,
+        "sampled_ms_per_round_M": 0.4109685714285714
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 29,
+        "sampled_ms_per_round_M": 0.10834625974025973
+      },
+      {
+        "phase": "D1",
+        "context": "cuda_sync",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 28,
+        "sampled_ms_per_round_M": 0.10461018181818181
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "common_sampler::top_k_select(float const*, int)",
+        "samples_M": 26,
+        "sampled_ms_per_round_M": 0.09713802597402597
+      },
+      {
+        "phase": "D3",
+        "context": "cuda_sync",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 26,
+        "sampled_ms_per_round_M": 0.09713802597402597
+      },
+      {
+        "phase": "D4",
+        "context": "cuda_sync",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 25,
+        "sampled_ms_per_round_M": 0.09340194805194804
+      },
+      {
+        "phase": "D2",
+        "context": "cuda_sync",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 22,
+        "sampled_ms_per_round_M": 0.08219371428571429
+      },
+      {
+        "phase": "D5",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 22,
+        "sampled_ms_per_round_M": 0.08219371428571429
+      },
+      {
+        "phase": "D5",
+        "context": "cuda_sync",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 21,
+        "sampled_ms_per_round_M": 0.07845763636363637
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_kv_cache::seq_rm(int, int, int)",
+        "samples_M": 17,
+        "sampled_ms_per_round_M": 0.06351332467532467
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "llama_kv_cache::seq_rm(int, int, int)",
+        "samples_M": 16,
+        "sampled_ms_per_round_M": 0.05977724675324675
+      },
+      {
+        "phase": "C",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 14,
+        "sampled_ms_per_round_M": 0.052305090909090905
+      },
+      {
+        "phase": "D2",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 13,
+        "sampled_ms_per_round_M": 0.04856901298701299
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 13,
+        "sampled_ms_per_round_M": 0.04856901298701299
+      },
+      {
+        "phase": "V",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 12,
+        "sampled_ms_per_round_M": 0.04483293506493506
+      },
+      {
+        "phase": "D1",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 12,
+        "sampled_ms_per_round_M": 0.04483293506493506
+      },
+      {
+        "phase": "D3",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 11,
+        "sampled_ms_per_round_M": 0.04109685714285714
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "llm_graph_input_mem_hybrid::set_input(llama_ubatch const*)",
+        "samples_M": 11,
+        "sampled_ms_per_round_M": 0.04109685714285714
+      },
+      {
+        "phase": "D4",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 11,
+        "sampled_ms_per_round_M": 0.04109685714285714
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "dequantize_row_iq4_xs",
+        "samples_M": 9,
+        "sampled_ms_per_round_M": 0.0336247012987013
+      },
+      {
+        "phase": "V",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*)",
+        "samples_M": 8,
+        "sampled_ms_per_round_M": 0.029888623376623374
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "dequantize_row_iq4_xs",
+        "samples_M": 7,
+        "sampled_ms_per_round_M": 0.026152545454545453
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "void std::vector<float, std::allocator<float> >::_M_range_insert<float const*>(__gnu_cxx::__normal_iterator<float*, std::vector<float, std::allocator<float> > >, float const*, float const*, std::forward_iterator_tag)",
+        "samples_M": 6,
+        "sampled_ms_per_round_M": 0.02241646753246753
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 5,
+        "sampled_ms_per_round_M": 0.018680389610389612
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "std::vector<float, std::allocator<float> >::_M_default_append(unsigned long)",
+        "samples_M": 5,
+        "sampled_ms_per_round_M": 0.018680389610389612
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 5,
+        "sampled_ms_per_round_M": 0.018680389610389612
+      },
+      {
+        "phase": "D2",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*)",
+        "samples_M": 5,
+        "sampled_ms_per_round_M": 0.018680389610389612
+      },
+      {
+        "phase": "D5",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*)",
+        "samples_M": 5,
+        "sampled_ms_per_round_M": 0.018680389610389612
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llm_graph_result::set_inputs(llama_ubatch const*)",
+        "samples_M": 4,
+        "sampled_ms_per_round_M": 0.014944311688311687
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "ggml_cuda_set_device(int)",
+        "samples_M": 4,
+        "sampled_ms_per_round_M": 0.014944311688311687
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "void set_input_kq_mask_impl<unsigned short, true, false, true, false>(args_set_input_kq_mask const&, unsigned short*)",
+        "samples_M": 4,
+        "sampled_ms_per_round_M": 0.014944311688311687
+      },
+      {
+        "phase": "D3",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*)",
+        "samples_M": 4,
+        "sampled_ms_per_round_M": 0.014944311688311687
+      },
+      {
+        "phase": "C",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*)",
+        "samples_M": 4,
+        "sampled_ms_per_round_M": 0.014944311688311687
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_cuda_set_device(int)",
+        "samples_M": 4,
+        "sampled_ms_per_round_M": 0.014944311688311687
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "std::_Rb_tree<unsigned int, unsigned int, std::_Identity<unsigned int>, std::less<unsigned int>, std::allocator<unsigned int> >::erase(unsigned int const&)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.011208233766233765
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "dequantize_row_iq4_xs",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.011208233766233765
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.011208233766233765
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.011208233766233765
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.011208233766233765
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "server_queue::yield_to_queue(std::function<void ()>&&)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_backend_meta_get_split_state(ggml_backend_meta_simple_tensor_container&, ggml_tensor const*, bool)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_backend_meta_get_split_state(ggml_backend_meta_simple_tensor_container&, ggml_tensor const*, bool)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "void set_input_kq_mask_impl<unsigned short, true, false, true, false>(args_set_input_kq_mask const&, unsigned short*)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_kv_cache::seq_pos_max(int) const",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "[libllama-server-impl.so]",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_batch_allocr::clear()",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "llm_graph_result::set_inputs(llama_ubatch const*)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_batch_allocr::init(llama_batch_ext const&, llama_vocab const&, bool)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "C",
+        "context": "cuda_sync",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_backend_meta_get_split_state(ggml_backend_meta_simple_tensor_container&, ggml_tensor const*, bool)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "server_queue::yield_to_queue(std::function<void ()>&&)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "ggml_cuda_set_device(int)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_context::output_reserve(int)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.007472155844155844
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_backend_sched_compute_splits(ggml_backend_sched*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "llm_graph_input_sampling::set_input(llama_ubatch const*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "server_task::~server_task()",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "llama_context::output_reserve(int)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_backend_meta_graph_compute_impl(ggml_backend*, ggml_cgraph*, ggml_backend_meta_graph_plan*, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "[libllama-common.so.0.5.0]",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_cuda_set_device(int)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "ggml_backend_meta_simple_backend",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "common_sampler_row_from_ctx(llama_context*, int)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "ggml_backend_sched_compute_splits(ggml_backend_sched*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_cuda_graph_set_enabled(ggml_backend_cuda_context*, void const*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "[libllama-common.so.0.5.0]",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "ggml_backend_cpu_get_proc_address(ggml_backend_reg*, char const*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_backend_cuda_context::cuda_graph(void const*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "llama_log_internal_v(ggml_log_level, char const*, __va_list_tag*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "std::_Rb_tree<std::pair<int, unsigned int>, std::pair<int, unsigned int>, std::_Identity<std::pair<int, unsigned int> >, std::less<std::pair<int, unsigned int> >, std::allocator<std::pair<int, unsigned int> > >::erase(std::pair<int, unsigned int> const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "std::pair<std::_Rb_tree_iterator<std::pair<int, unsigned int> >, bool> std::_Rb_tree<std::pair<int, unsigned int>, std::pair<int, unsigned int>, std::_Identity<std::pair<int, unsigned int> >, std::less<std::pair<int, unsigned int> >, std::allocator<std::pair<int, unsigned int> > >::_M_insert_unique<std::pair<int, unsigned int> >(std::pair<int, unsigned int>&&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_batch_allocr::clear()",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_backend_meta_buffer_simple_tensor(ggml_tensor const*, unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_backend_meta_buffer_type_is_host(ggml_backend_buffer_type*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "std::vector<int, std::allocator<int> >::_M_default_append(unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_backend_meta_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "server_tokens::get_text_tokens() const",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "ggml_backend_buffer_get_type",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "dequantize_row_iq4_xs",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "cuda_sync",
+        "function": "[[kernel.kallsyms]]",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "void std::vector<int, std::allocator<int> >::_M_realloc_insert<int const&>(__gnu_cxx::__normal_iterator<int*, std::vector<int, std::allocator<int> > >, int const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_log_internal",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "common_speculative_impl_draft_mtp::process(common_batch const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_batch_allocr::init(llama_batch_ext const&, llama_vocab const&, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "cuda_sync",
+        "function": "[libcuda.so.595.84]",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "void std::vector<llama_kv_cells, std::allocator<llama_kv_cells> >::_M_realloc_insert<llama_kv_cells>(__gnu_cxx::__normal_iterator<llama_kv_cells*, std::vector<llama_kv_cells, std::allocator<llama_kv_cells> > >, llama_kv_cells&&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "llm_graph_input_embd_h::set_input(llama_ubatch const*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_process",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "dequantize_row_iq4_xs",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "llama_sampler_dist_apply(llama_sampler*, llama_token_data_array*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "task_params::task_params(task_params&&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "std::_Hashtable<int, int, std::allocator<int>, std::__detail::_Identity, std::equal_to<int>, std::hash<int>, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<false, true, true> >::_M_rehash(unsigned long, unsigned long const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_context::process_ubatch(llama_ubatch const&, llm_graph_type, llama_memory_context_i*, ggml_status&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_is_empty",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "std::vector<float, std::allocator<float> >::_M_default_append(unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "llama_context::graph_compute(ggml_cgraph*, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "llama_batch_allocr::clear()",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_backend_meta_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_batch_ext::clear()",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_backend_sched_can_stage_inputs",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "llama_kv_cache::prepare(std::vector<llama_ubatch, std::allocator<llama_ubatch> > const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "[libggml-base.so.0.25.3]",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_nbytes",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "std::_Hashtable<int, int, std::allocator<int>, std::__detail::_Identity, std::equal_to<int>, std::hash<int>, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<false, true, true> >::_M_rehash(unsigned long, unsigned long const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "server_queue::post(server_task&&, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "common_speculative_impl_draft_mtp::draft(std::vector<common_speculative_draft_params, std::allocator<common_speculative_draft_params> >&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_kv_cache_context::llama_kv_cache_context(llama_kv_cache*, llama_context*, bool, llama_kv_cache::stream_copy_info)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "std::_Rb_tree<unsigned int, unsigned int, std::_Identity<unsigned int>, std::less<unsigned int>, std::allocator<unsigned int> >::erase(unsigned int const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_graph_compute",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_cuda_ar_acquire_slot(ggml_cuda_ar_pipeline*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_get_model",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "std::vector<int, std::allocator<int> >::_M_fill_insert(__gnu_cxx::__normal_iterator<int*, std::vector<int, std::allocator<int> > >, unsigned long, int const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_batch_allocr::ubatch_add(std::vector<int, std::allocator<int> > const&, unsigned int, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "void std::vector<llama_kv_cells, std::allocator<llama_kv_cells> >::_M_realloc_insert<llama_kv_cells>(__gnu_cxx::__normal_iterator<llama_kv_cells*, std::vector<llama_kv_cells, std::allocator<llama_kv_cells> > >, llama_kv_cells&&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "ggml_aligned_malloc",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "[libggml-cuda.so.0.25.3]",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "std::pair<std::_Rb_tree_iterator<unsigned int>, bool> std::_Rb_tree<unsigned int, unsigned int, std::_Identity<unsigned int>, std::less<unsigned int>, std::allocator<unsigned int> >::_M_insert_unique<unsigned int const&>(unsigned int const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "llama_kv_cache::prepare(std::vector<llama_ubatch, std::allocator<llama_ubatch> > const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "llama_batch_allocr::get_n_tokens() const",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "ggml_time_us",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "llama_batch_allocr::ubatch_add(std::vector<int, std::allocator<int> > const&, unsigned int, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_time_us",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_cpu_extra_work_size",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "[libggml-base.so.0.25.3]",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "dequantize_row_iq4_xs",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "void set_input_kq_mask_impl<unsigned short, true, false, true, false>(args_set_input_kq_mask const&, unsigned short*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_kv_cache::prepare(std::vector<llama_ubatch, std::allocator<llama_ubatch> > const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "server_context_impl::pre_decode()",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "ggml_backend_meta_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_time_us",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.003736077922077922
+      }
+    ],
+    "h2d": [
+      {
+        "phase": "C",
+        "device": 0,
+        "bytes_M": 65572,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "C",
+        "device": 1,
+        "bytes_M": 65572,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "C",
+        "device": 1,
+        "bytes_M": 147456,
+        "activities_per_round_M": 0.5324675324675324
+      },
+      {
+        "phase": "D1",
+        "device": 0,
+        "bytes_M": 320,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D1",
+        "device": 0,
+        "bytes_M": 65572,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D1",
+        "device": 1,
+        "bytes_M": 320,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D1",
+        "device": 1,
+        "bytes_M": 65572,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D2",
+        "device": 0,
+        "bytes_M": 320,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D2",
+        "device": 0,
+        "bytes_M": 65572,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D2",
+        "device": 1,
+        "bytes_M": 320,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D2",
+        "device": 1,
+        "bytes_M": 65572,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D3",
+        "device": 0,
+        "bytes_M": 320,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D3",
+        "device": 0,
+        "bytes_M": 65572,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D3",
+        "device": 1,
+        "bytes_M": 320,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D3",
+        "device": 1,
+        "bytes_M": 65572,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D4",
+        "device": 0,
+        "bytes_M": 320,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D4",
+        "device": 0,
+        "bytes_M": 65572,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D4",
+        "device": 1,
+        "bytes_M": 320,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D4",
+        "device": 1,
+        "bytes_M": 65572,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 0,
+        "bytes_M": 24,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 0,
+        "bytes_M": 100,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 0,
+        "bytes_M": 320,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 0,
+        "bytes_M": 16480,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 0,
+        "bytes_M": 122880,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 0,
+        "bytes_M": 147456,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 0,
+        "bytes_M": 262144,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 1,
+        "bytes_M": 24,
+        "activities_per_round_M": 0.14935064935064934
+      },
+      {
+        "phase": "D5",
+        "device": 1,
+        "bytes_M": 100,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 1,
+        "bytes_M": 320,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 1,
+        "bytes_M": 16480,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 1,
+        "bytes_M": 122880,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 1,
+        "bytes_M": 147456,
+        "activities_per_round_M": 0.11688311688311688
+      },
+      {
+        "phase": "D5",
+        "device": 1,
+        "bytes_M": 262144,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "V",
+        "device": 0,
+        "bytes_M": 192,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "V",
+        "device": 0,
+        "bytes_M": 147456,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "V",
+        "device": 0,
+        "bytes_M": 245760,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "V",
+        "device": 1,
+        "bytes_M": 24,
+        "activities_per_round_M": 0.8376623376623377
+      },
+      {
+        "phase": "V",
+        "device": 1,
+        "bytes_M": 192,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "V",
+        "device": 1,
+        "bytes_M": 147456,
+        "activities_per_round_M": 1.3376623376623376
+      },
+      {
+        "phase": "V",
+        "device": 1,
+        "bytes_M": 245760,
+        "activities_per_round_M": 1.0
+      }
+    ]
+  },
+  "np2": {
+    "artifact": "/mnt/scratch/work/attrib-stack6-duo-iq4/full-a1/decode-8k.sqlite",
+    "rounds_M": 119,
+    "sample_spacing_ms_M": 0.578903,
+    "host": [
+      {
+        "phase": "V",
+        "context": "cuda_sync",
+        "function": "ggml_cuda_ar_acquire_slot(ggml_cuda_ar_pipeline*)",
+        "samples_M": 174,
+        "sampled_ms_per_round_M": 0.8464632100840336
+      },
+      {
+        "phase": "V",
+        "context": "cuda_sync",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 173,
+        "sampled_ms_per_round_M": 0.8415984789915966
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "common_sampler::top_k_select(float const*, int)",
+        "samples_M": 76,
+        "sampled_ms_per_round_M": 0.36971956302521003
+      },
+      {
+        "phase": "D2",
+        "context": "cuda_sync",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 34,
+        "sampled_ms_per_round_M": 0.16540085714285713
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_kv_cache::seq_rm(int, int, int)",
+        "samples_M": 32,
+        "sampled_ms_per_round_M": 0.15567139495798318
+      },
+      {
+        "phase": "D3",
+        "context": "cuda_sync",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 30,
+        "sampled_ms_per_round_M": 0.1459419327731092
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "llama_kv_cache::seq_rm(int, int, int)",
+        "samples_M": 30,
+        "sampled_ms_per_round_M": 0.1459419327731092
+      },
+      {
+        "phase": "D4",
+        "context": "cuda_sync",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 27,
+        "sampled_ms_per_round_M": 0.1313477394957983
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 26,
+        "sampled_ms_per_round_M": 0.12648300840336135
+      },
+      {
+        "phase": "D5",
+        "context": "cuda_sync",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 26,
+        "sampled_ms_per_round_M": 0.12648300840336135
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 25,
+        "sampled_ms_per_round_M": 0.12161827731092437
+      },
+      {
+        "phase": "D1",
+        "context": "cuda_sync",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 24,
+        "sampled_ms_per_round_M": 0.11675354621848738
+      },
+      {
+        "phase": "C",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 17,
+        "sampled_ms_per_round_M": 0.08270042857142856
+      },
+      {
+        "phase": "D5",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 14,
+        "sampled_ms_per_round_M": 0.06810623529411763
+      },
+      {
+        "phase": "V",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 13,
+        "sampled_ms_per_round_M": 0.06324150420168068
+      },
+      {
+        "phase": "V",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*)",
+        "samples_M": 13,
+        "sampled_ms_per_round_M": 0.06324150420168068
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "dequantize_row_iq4_xs",
+        "samples_M": 13,
+        "sampled_ms_per_round_M": 0.06324150420168068
+      },
+      {
+        "phase": "D1",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 11,
+        "sampled_ms_per_round_M": 0.05351204201680671
+      },
+      {
+        "phase": "D3",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 11,
+        "sampled_ms_per_round_M": 0.05351204201680671
+      },
+      {
+        "phase": "D4",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 10,
+        "sampled_ms_per_round_M": 0.04864731092436975
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "dequantize_row_iq4_xs",
+        "samples_M": 10,
+        "sampled_ms_per_round_M": 0.04864731092436975
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llm_graph_result::set_inputs(llama_ubatch const*)",
+        "samples_M": 7,
+        "sampled_ms_per_round_M": 0.03405311764705882
+      },
+      {
+        "phase": "C",
+        "context": "cuda_sync",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 7,
+        "sampled_ms_per_round_M": 0.03405311764705882
+      },
+      {
+        "phase": "C",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*)",
+        "samples_M": 6,
+        "sampled_ms_per_round_M": 0.029188386554621845
+      },
+      {
+        "phase": "D2",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 5,
+        "sampled_ms_per_round_M": 0.024323655462184873
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "void set_input_kq_mask_impl<unsigned short, true, false, true, false>(args_set_input_kq_mask const&, unsigned short*)",
+        "samples_M": 5,
+        "sampled_ms_per_round_M": 0.024323655462184873
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "server_tokens::get_text_tokens() const",
+        "samples_M": 5,
+        "sampled_ms_per_round_M": 0.024323655462184873
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "void std::vector<float, std::allocator<float> >::_M_range_insert<float const*>(__gnu_cxx::__normal_iterator<float*, std::vector<float, std::allocator<float> > >, float const*, float const*, std::forward_iterator_tag)",
+        "samples_M": 5,
+        "sampled_ms_per_round_M": 0.024323655462184873
+      },
+      {
+        "phase": "D4",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*)",
+        "samples_M": 4,
+        "sampled_ms_per_round_M": 0.019458924369747898
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_backend_meta_get_split_state(ggml_backend_meta_simple_tensor_container&, ggml_tensor const*, bool)",
+        "samples_M": 4,
+        "sampled_ms_per_round_M": 0.019458924369747898
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 4,
+        "sampled_ms_per_round_M": 0.019458924369747898
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_cuda_set_device(int)",
+        "samples_M": 4,
+        "sampled_ms_per_round_M": 0.019458924369747898
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_batch_allocr::init(llama_batch_ext const&, llama_vocab const&, bool)",
+        "samples_M": 4,
+        "sampled_ms_per_round_M": 0.019458924369747898
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 4,
+        "sampled_ms_per_round_M": 0.019458924369747898
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "D5",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "llm_graph_input_mem_hybrid::set_input(llama_ubatch const*)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "ggml_cuda_set_device(int)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_kv_cache::prepare(std::vector<llama_ubatch, std::allocator<llama_ubatch> > const&)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "dequantize_row_iq4_xs",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "std::pair<std::_Rb_tree_iterator<unsigned int>, bool> std::_Rb_tree<unsigned int, unsigned int, std::_Identity<unsigned int>, std::less<unsigned int>, std::allocator<unsigned int> >::_M_insert_unique<unsigned int const&>(unsigned int const&)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "D3",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "std::vector<unsigned int, std::allocator<unsigned int> >* std::__do_uninit_copy<__gnu_cxx::__normal_iterator<std::vector<unsigned int, std::allocator<unsigned int> > const*, std::vector<std::vector<unsigned int, std::allocator<unsigned int> >, std::allocator<std::vector<unsigned int, std::allocator<unsigned int> > > > >, std::vector<unsigned int, std::allocator<unsigned int> >*>(__gnu_cxx::__normal_iterator<std::vector<unsigned int, std::allocator<unsigned int> > const*, std::vector<std::vector<unsigned int, std::allocator<unsigned int> >, std::allocator<std::vector<unsigned int, std::allocator<unsigned int> > > > >, __gnu_cxx::__normal_iterator<std::vector<unsigned int, std::allocator<unsigned int> > const*, std::vector<std::vector<unsigned int, std::allocator<unsigned int> >, std::allocator<std::vector<unsigned int, std::allocator<unsigned int> > > > >, std::vector<unsigned int, std::allocator<unsigned int> >*)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_batch_allocr::ubatch_add(std::vector<int, std::allocator<int> > const&, unsigned int, bool)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples_M": 3,
+        "sampled_ms_per_round_M": 0.014594193277310923
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "std::pair<std::_Rb_tree_iterator<unsigned int>, bool> std::_Rb_tree<unsigned int, unsigned int, std::_Identity<unsigned int>, std::less<unsigned int>, std::allocator<unsigned int> >::_M_insert_unique<unsigned int const&>(unsigned int const&)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "D1",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_cuda_set_device(int)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "common_speculative_accept(common_speculative*, int, unsigned short)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "llama_batch_allocr::clear()",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_batch_allocr::clear()",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "void std::vector<llama_kv_cells, std::allocator<llama_kv_cells> >::_M_realloc_insert<llama_kv_cells>(__gnu_cxx::__normal_iterator<llama_kv_cells*, std::vector<llama_kv_cells, std::allocator<llama_kv_cells> > >, llama_kv_cells&&)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "dequantize_row_iq4_xs",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_cuda_set_device(int)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_vocab::n_tokens() const",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "std::__detail::_Map_base<std::bitset<256ul>, std::pair<std::bitset<256ul> const, std::vector<int, std::allocator<int> > >, std::allocator<std::pair<std::bitset<256ul> const, std::vector<int, std::allocator<int> > > >, std::__detail::_Select1st, std::equal_to<std::bitset<256ul> >, std::hash<std::bitset<256ul> >, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<false, false, true>, true>::operator[](std::bitset<256ul> const&)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "void std::vector<llama_kv_cells, std::allocator<llama_kv_cells> >::_M_realloc_insert<llama_kv_cells>(__gnu_cxx::__normal_iterator<llama_kv_cells*, std::vector<llama_kv_cells, std::allocator<llama_kv_cells> > >, llama_kv_cells&&)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "int& std::vector<int, std::allocator<int> >::emplace_back<int>(int&&)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "std::_Function_handler<void (server_slot&), server_context_impl::pre_decode()::{lambda(server_slot&)#2}>::_M_invoke(std::_Any_data const&, server_slot&)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_backend_sched_can_stage_inputs",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_backend_meta_buffer_simple_tensor(ggml_tensor const*, unsigned long)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "std::_Rb_tree<std::pair<int, unsigned int>, std::pair<int, unsigned int>, std::_Identity<std::pair<int, unsigned int> >, std::less<std::pair<int, unsigned int> >, std::allocator<std::pair<int, unsigned int> > >::erase(std::pair<int, unsigned int> const&)",
+        "samples_M": 2,
+        "sampled_ms_per_round_M": 0.009729462184873949
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "void std::_Hashtable<int, int, std::allocator<int>, std::__detail::_Identity, std::equal_to<int>, std::hash<int>, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<false, true, true> >::_M_assign<std::_Hashtable<int, int, std::allocator<int>, std::__detail::_Identity, std::equal_to<int>, std::hash<int>, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<false, true, true> > const&, std::__detail::_AllocNode<std::allocator<std::__detail::_Hash_node<int, false> > > >(std::_Hashtable<int, int, std::allocator<int>, std::__detail::_Identity, std::equal_to<int>, std::hash<int>, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<false, true, true> > const&, std::__detail::_AllocNode<std::allocator<std::__detail::_Hash_node<int, false> > > const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_context::graph_params(llm_graph_result*, llama_ubatch const&, llama_memory_context_i const*, llm_graph_type) const",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_backend_cuda_get_tensor_2d_async(ggml_backend*, ggml_tensor const*, void*, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "llama_kv_cache::prepare(std::vector<llama_ubatch, std::allocator<llama_ubatch> > const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_backend_meta_buffer_simple_tensor(ggml_tensor const*, unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_batch_allocr::get_n_tokens() const",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "std::pair<std::_Rb_tree_iterator<std::pair<int, unsigned int> >, bool> std::_Rb_tree<std::pair<int, unsigned int>, std::pair<int, unsigned int>, std::_Identity<std::pair<int, unsigned int> >, std::less<std::pair<int, unsigned int> >, std::allocator<std::pair<int, unsigned int> > >::_M_insert_unique<std::pair<int, unsigned int> >(std::pair<int, unsigned int>&&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_critical_section_end",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "std::pair<std::__detail::_Node_iterator<int, true, false>, bool> std::_Hashtable<int, int, std::allocator<int>, std::__detail::_Identity, std::equal_to<int>, std::hash<int>, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<false, true, true> >::_M_insert_unique<int const&, int const&, std::__detail::_AllocNode<std::allocator<std::__detail::_Hash_node<int, false> > > >(int const&, int const&, std::__detail::_AllocNode<std::allocator<std::__detail::_Hash_node<int, false> > > const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "common_speculative_impl_draft_mtp::process(common_batch const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "ggml_backend_synchronize",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "void set_input_kq_mask_impl<unsigned short, true, false, true, false>(args_set_input_kq_mask const&, unsigned short*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "std::vector<float, std::allocator<float> >::_M_default_append(unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "llama_kv_cache::seq_pos_max(int) const",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "void std::vector<float, std::allocator<float> >::_M_range_insert<float const*>(__gnu_cxx::__normal_iterator<float*, std::vector<float, std::allocator<float> > >, float const*, float const*, std::forward_iterator_tag)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "server_context_impl::decode(int&, int)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "llama_batch_allocr::init(llama_batch_ext const&, llama_vocab const&, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "llama_kv_cache::prepare(std::vector<llama_ubatch, std::allocator<llama_ubatch> > const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "llama_kv_cache::prepare(std::vector<llama_ubatch, std::allocator<llama_ubatch> > const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "[libllama.so.0.5.0]",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "llama_context::graph_params(llm_graph_result*, llama_ubatch const&, llama_memory_context_i const*, llm_graph_type) const",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_backend_meta_buffer_simple_tensor(ggml_tensor const*, unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "llama_batch_allocr::seq_pos_min(int) const",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_context::get_sampled_probs_ith(int)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "llama_kv_cache::set_input_k_rot(ggml_tensor*) const",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "std::_Function_handler<void (), server_context_impl::init()::{lambda()#1}>::_M_invoke(std::_Any_data const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "ggml_backend_sched_get_tensor_backend",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "llm_graph_input_sampling::can_reuse(llm_graph_params const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_kv_cache::apply_ubatch(llama_kv_cache::slot_info const&, llama_ubatch const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "ggml_backend_meta_buffer_simple_tensor(ggml_tensor const*, unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "server_task& std::deque<server_task, std::allocator<server_task> >::emplace_front<server_task>(server_task&&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llm_graph_input_out_ids::can_reuse(llm_graph_params const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "void std::vector<llama_kv_cells, std::allocator<llama_kv_cells> >::_M_realloc_insert<llama_kv_cells>(__gnu_cxx::__normal_iterator<llama_kv_cells*, std::vector<llama_kv_cells, std::allocator<llama_kv_cells> > >, llama_kv_cells&&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "ggml_cuda_set_device(int)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "std::vector<int, std::allocator<int> >::_M_default_append(unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "[libllama.so.0.5.0]",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "std::vector<std::bitset<256ul>, std::allocator<std::bitset<256ul> > >::_M_default_append(unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "ggml_backend_sched_compute_splits(ggml_backend_sched*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "llama_kv_cache::apply_ubatch(llama_kv_cache::slot_info const&, llama_ubatch const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_sampler_dist_clone(llama_sampler const*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_aligned_free",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_backend_sched_buffer_supported(ggml_backend_sched*, ggml_tensor*, int)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "std::pair<std::_Rb_tree_iterator<std::pair<int, unsigned int> >, bool> std::_Rb_tree<std::pair<int, unsigned int>, std::pair<int, unsigned int>, std::_Identity<std::pair<int, unsigned int> >, std::less<std::pair<int, unsigned int> >, std::allocator<std::pair<int, unsigned int> > >::_M_insert_unique<std::pair<int, unsigned int> >(std::pair<int, unsigned int>&&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "std::vector<int*, std::allocator<int*> >::_M_default_append(unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "ggml_time_us",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_backend_cuda_synchronize(ggml_backend*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_memory_recurrent::seq_pos_max(int) const",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "server_queue::yield_to_queue(std::function<void ()>&&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "llama_vocab::n_tokens() const",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "llama_kv_cache::prepare(std::vector<llama_ubatch, std::allocator<llama_ubatch> > const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "std::pair<std::__detail::_Node_iterator<int, true, false>, bool> std::_Hashtable<int, int, std::allocator<int>, std::__detail::_Identity, std::equal_to<int>, std::hash<int>, std::__detail::_Mod_range_hashing, std::__detail::_Default_ranged_hash, std::__detail::_Prime_rehash_policy, std::__detail::_Hashtable_traits<false, true, true> >::_M_insert_unique<int const&, int const&, std::__detail::_AllocNode<std::allocator<std::__detail::_Hash_node<int, false> > > >(int const&, int const&, std::__detail::_AllocNode<std::allocator<std::__detail::_Hash_node<int, false> > > const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "ggml_backend_sched_compute_splits(ggml_backend_sched*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_time_us",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "llm_graph_input_out_ids::set_input(llama_ubatch const*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "llama_batch_ext::clear()",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "[libllama.so.0.5.0]",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "common_token_to_piece[abi:cxx11](llama_vocab const*, int, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "ggml_is_empty",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_sampler_backend_begin(llama_sampler*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "[libllama-common.so.0.5.0]",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "common_batch::add(int, int, int, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "dequantize_row_iq4_xs",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "llama_sampler_chain_apply(llama_sampler*, llama_token_data_array*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_cuda_ar_acquire_slot(ggml_cuda_ar_pipeline*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "ggml_type_size",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "[libllama-common.so.0.5.0]",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "task_params::task_params(task_params&&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "ggml_cuda_set_device(int)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "llama_kv_cache::init_batch(llama_batch_allocr&, unsigned int, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "std::_Rb_tree<std::pair<int, unsigned int>, std::pair<int, unsigned int>, std::_Identity<std::pair<int, unsigned int> >, std::less<std::pair<int, unsigned int> >, std::allocator<std::pair<int, unsigned int> > >::erase(std::pair<int, unsigned int> const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "std::vector<float, std::allocator<float> >::_M_default_append(unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "std::pair<std::_Rb_tree_iterator<unsigned int>, bool> std::_Rb_tree<unsigned int, unsigned int, std::_Identity<unsigned int>, std::less<unsigned int>, std::allocator<unsigned int> >::_M_insert_unique<unsigned int const&>(unsigned int const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_backend_buft_is_host",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "dequantize_row_iq4_xs",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "std::vector<unsigned int, std::allocator<unsigned int> >::reserve(unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_backend_meta_get_split_state(ggml_backend_meta_simple_tensor_container&, ggml_tensor const*, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "void std::vector<float, std::allocator<float> >::_M_range_insert<float const*>(__gnu_cxx::__normal_iterator<float*, std::vector<float, std::allocator<float> > >, float const*, float const*, std::forward_iterator_tag)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_get_tensor_2d_async(ggml_backend*, ggml_tensor const*, void*, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_context::output_resolve_row(int) const",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "std::_Rb_tree<int, int, std::_Identity<int>, std::less<int>, std::allocator<int> >::_M_erase(std::_Rb_tree_node<int>*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_backend_buft_is_meta",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_graph_plan",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D3",
+        "context": "host",
+        "function": "llm_graph_input_embd_h::can_reuse(llm_graph_params const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "llama_kv_cache_context::llama_kv_cache_context(llama_kv_cache*, llama_context*, bool, llama_kv_cache::stream_copy_info)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "task_params::task_params(task_params&&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_backend_buft_is_meta",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "cuda_api",
+        "function": "ggml_backend_cuda_get_tensor_async(ggml_backend*, ggml_tensor const*, void*, unsigned long, unsigned long)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_graph_compute",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "server_context_impl::decode(int&, int)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "ggml_backend_cuda_context::cuda_graph(void const*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "llama_kv_cache::apply_ubatch(llama_kv_cache::slot_info const&, llama_ubatch const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "ggml_nbytes",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_backend_buffer_get_size",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "server_context_impl::send_partial_response(server_slot&, completion_token_output const&, bool, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "ggml_backend_meta_get_split_state(ggml_backend_meta_simple_tensor_container&, ggml_tensor const*, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "ggml_backend_cuda_graph_compute(ggml_backend*, ggml_cgraph*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "host",
+        "function": "std::_Rb_tree<unsigned int, unsigned int, std::_Identity<unsigned int>, std::less<unsigned int>, std::allocator<unsigned int> >::erase(unsigned int const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_sampler_softmax_impl(llama_token_data_array*, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "std::_Rb_tree<unsigned int, unsigned int, std::_Identity<unsigned int>, std::less<unsigned int>, std::allocator<unsigned int> >::erase(unsigned int const&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "llama_sampler_chain_clone(llama_sampler const*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D2",
+        "context": "host",
+        "function": "ggml_backend_meta_get_split_state(ggml_backend_meta_simple_tensor_container&, ggml_tensor const*, bool)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D1",
+        "context": "host",
+        "function": "void std::vector<float, std::allocator<float> >::_M_range_insert<float const*>(__gnu_cxx::__normal_iterator<float*, std::vector<float, std::allocator<float> > >, float const*, float const*, std::forward_iterator_tag)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D4",
+        "context": "host",
+        "function": "void std::vector<llama_kv_cells, std::allocator<llama_kv_cells> >::_M_realloc_insert<llama_kv_cells>(__gnu_cxx::__normal_iterator<llama_kv_cells*, std::vector<llama_kv_cells, std::allocator<llama_kv_cells> > >, llama_kv_cells&&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "D5",
+        "context": "host",
+        "function": "llm_graph_input_out_ids::set_input(llama_ubatch const*)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "void std::vector<llama_token_data, std::allocator<llama_token_data> >::_M_realloc_insert<llama_token_data>(__gnu_cxx::__normal_iterator<llama_token_data*, std::vector<llama_token_data, std::allocator<llama_token_data> > >, llama_token_data&&)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "V",
+        "context": "cuda_sync",
+        "function": "[libcuda.so.595.84]",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      },
+      {
+        "phase": "C",
+        "context": "host",
+        "function": "void std::__adjust_heap<__gnu_cxx::__normal_iterator<llama_token_data*, std::vector<llama_token_data, std::allocator<llama_token_data> > >, long, llama_token_data, __gnu_cxx::__ops::_Iter_comp_iter<common_sampler::top_k_select(float const*, int)::{lambda(llama_token_data const&, llama_token_data const&)#1}> >(__gnu_cxx::__normal_iterator<llama_token_data*, std::vector<llama_token_data, std::allocator<llama_token_data> > >, long, __gnu_cxx::__normal_iterator<llama_token_data*, std::vector<llama_token_data, std::allocator<llama_token_data> > >, llama_token_data, __gnu_cxx::__ops::_Iter_comp_iter<common_sampler::top_k_select(float const*, int)::{lambda(llama_token_data const&, llama_token_data const&)#1}>)",
+        "samples_M": 1,
+        "sampled_ms_per_round_M": 0.0048647310924369745
+      }
+    ],
+    "h2d": [
+      {
+        "phase": "C",
+        "device": 0,
+        "bytes_M": 8,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "C",
+        "device": 0,
+        "bytes_M": 64,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "C",
+        "device": 0,
+        "bytes_M": 49152,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "C",
+        "device": 0,
+        "bytes_M": 81920,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "C",
+        "device": 1,
+        "bytes_M": 8,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "C",
+        "device": 1,
+        "bytes_M": 64,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "C",
+        "device": 1,
+        "bytes_M": 49152,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "C",
+        "device": 1,
+        "bytes_M": 81920,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "C",
+        "device": 1,
+        "bytes_M": 294912,
+        "activities_per_round_M": 0.9915966386554622
+      },
+      {
+        "phase": "D1",
+        "device": 0,
+        "bytes_M": 8,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D1",
+        "device": 0,
+        "bytes_M": 64,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D1",
+        "device": 0,
+        "bytes_M": 480,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D1",
+        "device": 0,
+        "bytes_M": 49152,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D1",
+        "device": 0,
+        "bytes_M": 81920,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D1",
+        "device": 1,
+        "bytes_M": 8,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D1",
+        "device": 1,
+        "bytes_M": 64,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D1",
+        "device": 1,
+        "bytes_M": 480,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D1",
+        "device": 1,
+        "bytes_M": 49152,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D1",
+        "device": 1,
+        "bytes_M": 81920,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D2",
+        "device": 0,
+        "bytes_M": 8,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D2",
+        "device": 0,
+        "bytes_M": 64,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D2",
+        "device": 0,
+        "bytes_M": 480,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D2",
+        "device": 0,
+        "bytes_M": 49152,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D2",
+        "device": 0,
+        "bytes_M": 81920,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D2",
+        "device": 1,
+        "bytes_M": 8,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D2",
+        "device": 1,
+        "bytes_M": 64,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D2",
+        "device": 1,
+        "bytes_M": 480,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D2",
+        "device": 1,
+        "bytes_M": 49152,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D2",
+        "device": 1,
+        "bytes_M": 81920,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D3",
+        "device": 0,
+        "bytes_M": 8,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D3",
+        "device": 0,
+        "bytes_M": 64,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D3",
+        "device": 0,
+        "bytes_M": 480,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D3",
+        "device": 0,
+        "bytes_M": 49152,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D3",
+        "device": 0,
+        "bytes_M": 81920,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D3",
+        "device": 1,
+        "bytes_M": 8,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D3",
+        "device": 1,
+        "bytes_M": 64,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D3",
+        "device": 1,
+        "bytes_M": 480,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D3",
+        "device": 1,
+        "bytes_M": 49152,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D3",
+        "device": 1,
+        "bytes_M": 81920,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D4",
+        "device": 0,
+        "bytes_M": 8,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D4",
+        "device": 0,
+        "bytes_M": 64,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D4",
+        "device": 0,
+        "bytes_M": 480,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D4",
+        "device": 0,
+        "bytes_M": 49152,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D4",
+        "device": 0,
+        "bytes_M": 81920,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D4",
+        "device": 1,
+        "bytes_M": 8,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D4",
+        "device": 1,
+        "bytes_M": 64,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D4",
+        "device": 1,
+        "bytes_M": 480,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D4",
+        "device": 1,
+        "bytes_M": 49152,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D4",
+        "device": 1,
+        "bytes_M": 81920,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 0,
+        "bytes_M": 48,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 0,
+        "bytes_M": 200,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 0,
+        "bytes_M": 480,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 0,
+        "bytes_M": 16576,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 0,
+        "bytes_M": 245760,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 0,
+        "bytes_M": 262144,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 0,
+        "bytes_M": 294912,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 1,
+        "bytes_M": 200,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 1,
+        "bytes_M": 480,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 1,
+        "bytes_M": 16576,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 1,
+        "bytes_M": 245760,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "D5",
+        "device": 1,
+        "bytes_M": 262144,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "V",
+        "device": 0,
+        "bytes_M": 384,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "V",
+        "device": 0,
+        "bytes_M": 294912,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "V",
+        "device": 0,
+        "bytes_M": 491520,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "V",
+        "device": 1,
+        "bytes_M": 48,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "V",
+        "device": 1,
+        "bytes_M": 384,
+        "activities_per_round_M": 1.0
+      },
+      {
+        "phase": "V",
+        "device": 1,
+        "bytes_M": 294912,
+        "activities_per_round_M": 1.0084033613445378
+      },
+      {
+        "phase": "V",
+        "device": 1,
+        "bytes_M": 491520,
+        "activities_per_round_M": 1.0
+      }
+    ]
+  }
+}

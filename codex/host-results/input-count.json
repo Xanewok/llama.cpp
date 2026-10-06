@@ -1,0 +1,857 @@
+{
+  "unit": "CPU Meta(CPU,CPU) owned transfer descriptors, all CPU callbacks (Meta ranks and any CPU splits)",
+  "model": "Qwen3.5-4B",
+  "status": "PASS",
+  "unknown_record_control": "PASS",
+  "results": [
+    {
+      "phase": "C",
+      "tokens_M": 1,
+      "transfer_descriptors_M": [
+        12
+      ],
+      "observations_M": 1
+    },
+    {
+      "phase": "C",
+      "tokens_M": 2,
+      "transfer_descriptors_M": [
+        12
+      ],
+      "observations_M": 1
+    },
+    {
+      "phase": "C",
+      "tokens_M": 3,
+      "transfer_descriptors_M": [
+        12
+      ],
+      "observations_M": 1
+    },
+    {
+      "phase": "C",
+      "tokens_M": 4,
+      "transfer_descriptors_M": [
+        12
+      ],
+      "observations_M": 1
+    },
+    {
+      "phase": "C",
+      "tokens_M": 5,
+      "transfer_descriptors_M": [
+        24
+      ],
+      "observations_M": 1
+    },
+    {
+      "phase": "C",
+      "tokens_M": 6,
+      "transfer_descriptors_M": [
+        24
+      ],
+      "observations_M": 1
+    },
+    {
+      "phase": "C",
+      "tokens_M": 8,
+      "transfer_descriptors_M": [
+        12
+      ],
+      "observations_M": 40
+    },
+    {
+      "phase": "D1",
+      "tokens_M": 1,
+      "transfer_descriptors_M": [
+        14
+      ],
+      "observations_M": 4
+    },
+    {
+      "phase": "D1",
+      "tokens_M": 2,
+      "transfer_descriptors_M": [
+        14
+      ],
+      "observations_M": 40
+    },
+    {
+      "phase": "D2",
+      "tokens_M": 1,
+      "transfer_descriptors_M": [
+        14
+      ],
+      "observations_M": 4
+    },
+    {
+      "phase": "D2",
+      "tokens_M": 2,
+      "transfer_descriptors_M": [
+        14
+      ],
+      "observations_M": 40
+    },
+    {
+      "phase": "D3",
+      "tokens_M": 1,
+      "transfer_descriptors_M": [
+        14
+      ],
+      "observations_M": 4
+    },
+    {
+      "phase": "D3",
+      "tokens_M": 2,
+      "transfer_descriptors_M": [
+        14
+      ],
+      "observations_M": 40
+    },
+    {
+      "phase": "V",
+      "tokens_M": 1,
+      "transfer_descriptors_M": [
+        14
+      ],
+      "observations_M": 1
+    },
+    {
+      "phase": "V",
+      "tokens_M": 2,
+      "transfer_descriptors_M": [
+        14
+      ],
+      "observations_M": 1
+    },
+    {
+      "phase": "V",
+      "tokens_M": 3,
+      "transfer_descriptors_M": [
+        14
+      ],
+      "observations_M": 1
+    },
+    {
+      "phase": "V",
+      "tokens_M": 4,
+      "transfer_descriptors_M": [
+        14
+      ],
+      "observations_M": 1
+    },
+    {
+      "phase": "V",
+      "tokens_M": 5,
+      "transfer_descriptors_M": [
+        28
+      ],
+      "observations_M": 1
+    },
+    {
+      "phase": "V",
+      "tokens_M": 6,
+      "transfer_descriptors_M": [
+        28
+      ],
+      "observations_M": 1
+    },
+    {
+      "phase": "V",
+      "tokens_M": 8,
+      "transfer_descriptors_M": [
+        14
+      ],
+      "observations_M": 40
+    }
+  ],
+  "recorded_parser_artifact": "/home/xanewok/repos/qwen38-eval/results/2026-10-04-duo-np2-depth/canary-a3/1-patch/round-trace.jsonl",
+  "recorded_gpu": [
+    {
+      "label": "np2 stack3 IQ4_XS target fallback",
+      "artifact": "/home/xanewok/repos/qwen38-eval/results/2026-10-04-duo-np2-depth/canary-a3/1-patch/round-trace.jsonl",
+      "unit": "GPU input descriptors per rank",
+      "results": [
+        {
+          "phase": "C",
+          "tokens_M": 1,
+          "device": 0,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "C",
+          "tokens_M": 1,
+          "device": 1,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "C",
+          "tokens_M": 4,
+          "device": 0,
+          "transfer_descriptors_M": [
+            6,
+            390,
+            774
+          ],
+          "observations_M": 5
+        },
+        {
+          "phase": "C",
+          "tokens_M": 4,
+          "device": 1,
+          "transfer_descriptors_M": [
+            6,
+            390,
+            774
+          ],
+          "observations_M": 5
+        },
+        {
+          "phase": "C",
+          "tokens_M": 5,
+          "device": 0,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 2
+        },
+        {
+          "phase": "C",
+          "tokens_M": 5,
+          "device": 1,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 2
+        },
+        {
+          "phase": "C",
+          "tokens_M": 6,
+          "device": 0,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 251
+        },
+        {
+          "phase": "C",
+          "tokens_M": 6,
+          "device": 1,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 251
+        },
+        {
+          "phase": "C",
+          "tokens_M": 8,
+          "device": 0,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "C",
+          "tokens_M": 8,
+          "device": 1,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "C",
+          "tokens_M": 10,
+          "device": 0,
+          "transfer_descriptors_M": [
+            12
+          ],
+          "observations_M": 2
+        },
+        {
+          "phase": "C",
+          "tokens_M": 10,
+          "device": 1,
+          "transfer_descriptors_M": [
+            12
+          ],
+          "observations_M": 2
+        },
+        {
+          "phase": "C",
+          "tokens_M": 11,
+          "device": 0,
+          "transfer_descriptors_M": [
+            12
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "C",
+          "tokens_M": 11,
+          "device": 1,
+          "transfer_descriptors_M": [
+            12
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "C",
+          "tokens_M": 12,
+          "device": 0,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 180
+        },
+        {
+          "phase": "C",
+          "tokens_M": 12,
+          "device": 1,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 180
+        },
+        {
+          "phase": "D1",
+          "tokens_M": 1,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 254
+        },
+        {
+          "phase": "D1",
+          "tokens_M": 1,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 254
+        },
+        {
+          "phase": "D1",
+          "tokens_M": 2,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 182
+        },
+        {
+          "phase": "D1",
+          "tokens_M": 2,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 182
+        },
+        {
+          "phase": "D2",
+          "tokens_M": 1,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 254
+        },
+        {
+          "phase": "D2",
+          "tokens_M": 1,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 254
+        },
+        {
+          "phase": "D2",
+          "tokens_M": 2,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 182
+        },
+        {
+          "phase": "D2",
+          "tokens_M": 2,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 182
+        },
+        {
+          "phase": "D3",
+          "tokens_M": 1,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 254
+        },
+        {
+          "phase": "D3",
+          "tokens_M": 1,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 254
+        },
+        {
+          "phase": "D3",
+          "tokens_M": 2,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 182
+        },
+        {
+          "phase": "D3",
+          "tokens_M": 2,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 182
+        },
+        {
+          "phase": "D4",
+          "tokens_M": 1,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 254
+        },
+        {
+          "phase": "D4",
+          "tokens_M": 1,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 254
+        },
+        {
+          "phase": "D4",
+          "tokens_M": 2,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 182
+        },
+        {
+          "phase": "D4",
+          "tokens_M": 2,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 182
+        },
+        {
+          "phase": "D5",
+          "tokens_M": 1,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7,
+            391
+          ],
+          "observations_M": 254
+        },
+        {
+          "phase": "D5",
+          "tokens_M": 1,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7,
+            391
+          ],
+          "observations_M": 254
+        },
+        {
+          "phase": "D5",
+          "tokens_M": 2,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 182
+        },
+        {
+          "phase": "D5",
+          "tokens_M": 2,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 182
+        },
+        {
+          "phase": "V",
+          "tokens_M": 1,
+          "device": 0,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "V",
+          "tokens_M": 1,
+          "device": 1,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "V",
+          "tokens_M": 4,
+          "device": 0,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 5
+        },
+        {
+          "phase": "V",
+          "tokens_M": 4,
+          "device": 1,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 5
+        },
+        {
+          "phase": "V",
+          "tokens_M": 5,
+          "device": 0,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 2
+        },
+        {
+          "phase": "V",
+          "tokens_M": 5,
+          "device": 1,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 2
+        },
+        {
+          "phase": "V",
+          "tokens_M": 6,
+          "device": 0,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 251
+        },
+        {
+          "phase": "V",
+          "tokens_M": 6,
+          "device": 1,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 251
+        },
+        {
+          "phase": "V",
+          "tokens_M": 8,
+          "device": 0,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "V",
+          "tokens_M": 8,
+          "device": 1,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "V",
+          "tokens_M": 10,
+          "device": 0,
+          "transfer_descriptors_M": [
+            18
+          ],
+          "observations_M": 2
+        },
+        {
+          "phase": "V",
+          "tokens_M": 10,
+          "device": 1,
+          "transfer_descriptors_M": [
+            18
+          ],
+          "observations_M": 2
+        },
+        {
+          "phase": "V",
+          "tokens_M": 11,
+          "device": 0,
+          "transfer_descriptors_M": [
+            18
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "V",
+          "tokens_M": 11,
+          "device": 1,
+          "transfer_descriptors_M": [
+            18
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "V",
+          "tokens_M": 12,
+          "device": 0,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 180
+        },
+        {
+          "phase": "V",
+          "tokens_M": 12,
+          "device": 1,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 180
+        }
+      ]
+    },
+    {
+      "label": "np1 stack6 J5q target fallback",
+      "artifact": "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack6-depth-j5q/canary-a1/1-s6/round-trace.jsonl",
+      "unit": "GPU input descriptors per rank",
+      "results": [
+        {
+          "phase": "C",
+          "tokens_M": 3,
+          "device": 0,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "C",
+          "tokens_M": 3,
+          "device": 1,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "C",
+          "tokens_M": 4,
+          "device": 0,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 3
+        },
+        {
+          "phase": "C",
+          "tokens_M": 4,
+          "device": 1,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 3
+        },
+        {
+          "phase": "C",
+          "tokens_M": 6,
+          "device": 0,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 291
+        },
+        {
+          "phase": "C",
+          "tokens_M": 6,
+          "device": 1,
+          "transfer_descriptors_M": [
+            6
+          ],
+          "observations_M": 291
+        },
+        {
+          "phase": "D1",
+          "tokens_M": 1,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 293
+        },
+        {
+          "phase": "D1",
+          "tokens_M": 1,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 293
+        },
+        {
+          "phase": "D2",
+          "tokens_M": 1,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 293
+        },
+        {
+          "phase": "D2",
+          "tokens_M": 1,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 293
+        },
+        {
+          "phase": "D3",
+          "tokens_M": 1,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 293
+        },
+        {
+          "phase": "D3",
+          "tokens_M": 1,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 293
+        },
+        {
+          "phase": "D4",
+          "tokens_M": 1,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 293
+        },
+        {
+          "phase": "D4",
+          "tokens_M": 1,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 293
+        },
+        {
+          "phase": "D5",
+          "tokens_M": 1,
+          "device": 0,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 293
+        },
+        {
+          "phase": "D5",
+          "tokens_M": 1,
+          "device": 1,
+          "transfer_descriptors_M": [
+            7
+          ],
+          "observations_M": 293
+        },
+        {
+          "phase": "V",
+          "tokens_M": 3,
+          "device": 0,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "V",
+          "tokens_M": 3,
+          "device": 1,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 1
+        },
+        {
+          "phase": "V",
+          "tokens_M": 4,
+          "device": 0,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 3
+        },
+        {
+          "phase": "V",
+          "tokens_M": 4,
+          "device": 1,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 3
+        },
+        {
+          "phase": "V",
+          "tokens_M": 6,
+          "device": 0,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 291
+        },
+        {
+          "phase": "V",
+          "tokens_M": 6,
+          "device": 1,
+          "transfer_descriptors_M": [
+            9
+          ],
+          "observations_M": 291
+        }
+      ]
+    }
+  ]
+}

@@ -55,6 +55,9 @@ assert lib.min_free_vram(recorded / "smi.csv", x["devices"])
 rejects(lambda: lib.min_free_vram(recorded / "smi.csv", ["GPU-missing-control"]))
 staging_artifact = EVAL / "results/2026-10-04-duo-np2-depth/canary-a3/1-patch/round-trace.jsonl"
 staging = lib.check_staging(lib.trace_counts(staging_artifact))
+stack6_log = EVAL / "results/2026-10-05-stack6-depth-j5q/canary-a1/1-s6/server.log"
+lib.verify_log_patterns(stack6_log.read_text(errors="replace"),
+    [r"copy-engine H2D streams per GPU: 2\b", r"n_kv_pad += 4096\b"], "recorded stack6 serving gates")
 journal = (recorded / "journal.txt").read_text(errors="replace")
 assert not re.search(lib.XID_RE, journal)
 assert re.search(lib.XID_RE, journal + "\nNVRM: Xid (PCI:0000:01:00): 13, recorded parser control\n")
@@ -68,6 +71,6 @@ for pattern in (r"host_trims: kv_seq_rm_indexed engaged\b", r"host_trims: mtp_ve
     assert any(re.search(pattern, path.read_text(errors="replace")) for path in cpu_logs), pattern
 (ROOT / "codex/host-results/parser-check.json").write_text(json.dumps({
     "artifact": str(recorded), "depth_M": 8192, "overlap": window,
-    "staging": staging, "staging_artifact": str(staging_artifact), "negative_controls_M": negative, "fixtures": str(fixtures), "status": "PASS"
+    "stack6_serving_log": str(stack6_log), "staging": staging, "staging_artifact": str(staging_artifact), "negative_controls_M": negative, "fixtures": str(fixtures), "status": "PASS"
 }, indent=2) + "\n")
 print(f"PASS recorded GPU parser checks; negative controls M={negative}")

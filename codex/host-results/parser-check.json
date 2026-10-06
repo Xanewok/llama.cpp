@@ -1,0 +1,31 @@
+{
+  "artifact": "/home/xanewok/repos/qwen38-eval/results/2026-10-04-duo-np2-depth/full-a3/0-up",
+  "depth_M": 8192,
+  "overlap": {
+    "window_ns": [
+      482588818429987,
+      482593499629279
+    ],
+    "overlap_s": 4.681199292,
+    "overlap_frac": 1.0,
+    "window_tokens": [
+      511,
+      231
+    ],
+    "tok_s": [
+      109.16006094277604,
+      49.34632891933711
+    ],
+    "agg_tok_s": 158.50638986211314
+  },
+  "stack6_serving_log": "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack6-depth-j5q/canary-a1/1-s6/server.log",
+  "staging": {
+    "input_fence_staged": 852,
+    "input_fence_sync": 0,
+    "graph_hit": 3644
+  },
+  "staging_artifact": "/home/xanewok/repos/qwen38-eval/results/2026-10-04-duo-np2-depth/canary-a3/1-patch/round-trace.jsonl",
+  "negative_controls_M": 9,
+  "fixtures": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures",
+  "status": "PASS"
+}

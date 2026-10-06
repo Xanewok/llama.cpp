@@ -1,0 +1,24 @@
+{
+  "status": "PASS",
+  "controls_M": 3,
+  "results": [
+    {
+      "mutant": "kv-bound",
+      "status": "rejected",
+      "reason": "seq_rm position differs from scan"
+    },
+    {
+      "mutant": "kv-head",
+      "status": "rejected",
+      "reason": "seq_rm did not select the lowest freed cell"
+    },
+    {
+      "mutant": "mtp-offset",
+      "status": "rejected",
+      "reason": {
+        "target_or_counters_differ": true,
+        "draft_candidates_differ": true
+      }
+    }
+  ]
+}

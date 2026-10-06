@@ -1,0 +1,41 @@
+{
+  "status": "PASS",
+  "target_kv": "q8_0",
+  "cases_M": 4,
+  "runs_M": 8,
+  "negative_controls_M": 4,
+  "results": [
+    {
+      "name": "base-m0-np1",
+      "decoded_ids_M": 1038
+    },
+    {
+      "name": "patch-m0-np1",
+      "decoded_ids_M": 1038
+    },
+    {
+      "name": "base-m0-np2",
+      "decoded_ids_M": 1998
+    },
+    {
+      "name": "patch-m0-np2",
+      "decoded_ids_M": 1998
+    },
+    {
+      "name": "base-m1-np1",
+      "decoded_ids_M": 1038
+    },
+    {
+      "name": "patch-m1-np1",
+      "decoded_ids_M": 1038
+    },
+    {
+      "name": "base-m1-np2",
+      "decoded_ids_M": 1998
+    },
+    {
+      "name": "patch-m1-np2",
+      "decoded_ids_M": 1998
+    }
+  ]
+}

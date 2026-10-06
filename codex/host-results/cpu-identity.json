@@ -1,0 +1,104 @@
+{
+  "status": "PASS",
+  "runs_M": 16,
+  "cases_M": 8,
+  "comparison_negative_controls_M": 8,
+  "results": [
+    {
+      "name": "base-m0-np1-s1729",
+      "sha256": "a99ac3886aad981fb03d85a2cb7014fef32436de1406ce7c575961ac7c1ea32f",
+      "tokens_M": 48,
+      "draft_candidates_M": 387
+    },
+    {
+      "name": "patch-m0-np1-s1729",
+      "sha256": "a99ac3886aad981fb03d85a2cb7014fef32436de1406ce7c575961ac7c1ea32f",
+      "tokens_M": 48,
+      "draft_candidates_M": 387
+    },
+    {
+      "name": "base-m0-np1-s2718",
+      "sha256": "b0e50b403e24754046487dbb2196a7cacafbf25183575a579a2473ee23259a2a",
+      "tokens_M": 48,
+      "draft_candidates_M": 396
+    },
+    {
+      "name": "patch-m0-np1-s2718",
+      "sha256": "b0e50b403e24754046487dbb2196a7cacafbf25183575a579a2473ee23259a2a",
+      "tokens_M": 48,
+      "draft_candidates_M": 396
+    },
+    {
+      "name": "base-m0-np2-s1729",
+      "sha256": "48e49b5f205b2683e23504858a21ccb0efe6a69da30b43223a7f182029cac599",
+      "tokens_M": 96,
+      "draft_candidates_M": 756
+    },
+    {
+      "name": "patch-m0-np2-s1729",
+      "sha256": "48e49b5f205b2683e23504858a21ccb0efe6a69da30b43223a7f182029cac599",
+      "tokens_M": 96,
+      "draft_candidates_M": 756
+    },
+    {
+      "name": "base-m0-np2-s2718",
+      "sha256": "d8eea960aa6d460f66480700f7f4f8c8e61d584daa1ddf3439eae41531248735",
+      "tokens_M": 96,
+      "draft_candidates_M": 756
+    },
+    {
+      "name": "patch-m0-np2-s2718",
+      "sha256": "d8eea960aa6d460f66480700f7f4f8c8e61d584daa1ddf3439eae41531248735",
+      "tokens_M": 96,
+      "draft_candidates_M": 756
+    },
+    {
+      "name": "base-m1-np1-s1729",
+      "sha256": "5f4cca4e3ecfc33ad7040d8bd8588aa7bf5a4f70a90162ac2f2ee0dafea78abd",
+      "tokens_M": 48,
+      "draft_candidates_M": 387
+    },
+    {
+      "name": "patch-m1-np1-s1729",
+      "sha256": "5f4cca4e3ecfc33ad7040d8bd8588aa7bf5a4f70a90162ac2f2ee0dafea78abd",
+      "tokens_M": 48,
+      "draft_candidates_M": 387
+    },
+    {
+      "name": "base-m1-np1-s2718",
+      "sha256": "3b0a1acc05e65c59f5a6e17a48bc6e40afc772f64fb508ab12987f7114412575",
+      "tokens_M": 48,
+      "draft_candidates_M": 396
+    },
+    {
+      "name": "patch-m1-np1-s2718",
+      "sha256": "3b0a1acc05e65c59f5a6e17a48bc6e40afc772f64fb508ab12987f7114412575",
+      "tokens_M": 48,
+      "draft_candidates_M": 396
+    },
+    {
+      "name": "base-m1-np2-s1729",
+      "sha256": "1b685419ea79d573fc60d5a1b29d22ab255b612948f4dba0735798f5b3a3cc0f",
+      "tokens_M": 96,
+      "draft_candidates_M": 756
+    },
+    {
+      "name": "patch-m1-np2-s1729",
+      "sha256": "1b685419ea79d573fc60d5a1b29d22ab255b612948f4dba0735798f5b3a3cc0f",
+      "tokens_M": 96,
+      "draft_candidates_M": 756
+    },
+    {
+      "name": "base-m1-np2-s2718",
+      "sha256": "bb8037aa84d236a6a8e10554defda9b6842386a3a9a196a3461bfa153907e53e",
+      "tokens_M": 96,
+      "draft_candidates_M": 756
+    },
+    {
+      "name": "patch-m1-np2-s2718",
+      "sha256": "bb8037aa84d236a6a8e10554defda9b6842386a3a9a196a3461bfa153907e53e",
+      "tokens_M": 96,
+      "draft_candidates_M": 756
+    }
+  ]
+}
