@@ -40,7 +40,7 @@ for name, relative, old, new in (
         if name.startswith("kv-"):
             rc = command("negative-" + name, [str(ROOT / "build-cpu/bin/test-kv-mask")], check=False)
             assert rc != 0, f"{name}: production mutant escaped KV oracle"
-            reason = (OUT / ("negative-" + name + ".log")).read_text().splitlines()[-1]
+            reason = (OUT / ("negative-" + name + ".log")).read_text(errors="replace").splitlines()[-1]
         else:
             mutant = OUT / "negative-mtp-offset.json"
             command("negative-mtp-offset", [str(ROOT / "build-cpu/bin/host-identity"),
@@ -50,8 +50,8 @@ for name, relative, old, new in (
             for data in (good, bad):
                 data["stats"].sort(key=lambda item: item["slot"])
             pattern = r"draft candidate\s+\d+, pos\s+\d+:\s+(\d+)\s+\(\s*([\d.]+)\)"
-            good_draft = re.findall(pattern, (OUT / "identity/patch-m1-np2-s1729.log").read_text())
-            bad_draft = re.findall(pattern, (OUT / "negative-mtp-offset.log").read_text())
+            good_draft = re.findall(pattern, (OUT / "identity/patch-m1-np2-s1729.log").read_text(errors="replace"))
+            bad_draft = re.findall(pattern, (OUT / "negative-mtp-offset.log").read_text(errors="replace"))
             assert good != bad or good_draft != bad_draft, "MTP row-offset mutant escaped identity/draft oracle"
             reason = dict(target_or_counters_differ=good != bad, draft_candidates_differ=good_draft != bad_draft)
         results.append(dict(mutant=name, status="rejected", reason=reason))

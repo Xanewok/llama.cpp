@@ -51,6 +51,9 @@ int main(int argc, char ** argv) {
     params.n_parallel = np;
     params.n_batch = params.n_ubatch = 128;
     params.n_gpu_layers = 0;
+    if (std::getenv("HOST_KV_Q8")) {
+        params.cache_type_k = params.cache_type_v = GGML_TYPE_Q8_0;
+    }
     params.cpuparams.n_threads = params.cpuparams_batch.n_threads = meta ? 4 : 8;
     params.speculative.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
     params.speculative.draft.n_max = 3;
@@ -124,8 +127,16 @@ int main(int argc, char ** argv) {
     for (const auto & ids : tokens) {
         require(ids.size() == (size_t) std::atoi(argv[6]), "short completion");
     }
+    json token_rows = json::array();
+    for (const auto & ids : tokens) {
+        json row = json::array();
+        for (llama_token token : ids) {
+            row.push_back(token);
+        }
+        token_rows.push_back(std::move(row));
+    }
     std::ofstream out(argv[2]);
-    out << json{{"tokens", tokens}, {"stats", stats}}.dump(2) << '\n';
+    out << json{{"tokens", token_rows}, {"stats", stats}}.dump(2) << '\n';
     require(bool(out), "output write failed");
     ggml_round_trace_flush();
 }

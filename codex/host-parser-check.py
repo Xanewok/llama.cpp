@@ -52,16 +52,18 @@ bad = copy.deepcopy(record["streams"][0])
 bad["error"] = "HTTP 500 recorded control"
 rejects(lambda: depth.gate(x["depth"], bad, lambda _: None))
 assert lib.min_free_vram(recorded / "smi.csv", x["devices"])
-assert not re.search(lib.XID_RE, (recorded / "journal.txt").read_text())
+staging_artifact = EVAL / "results/2026-10-04-duo-np2-depth/canary-a3/1-patch/round-trace.jsonl"
+staging = lib.check_staging(lib.trace_counts(staging_artifact))
+assert not re.search(lib.XID_RE, (recorded / "journal.txt").read_text(errors="replace"))
 for pattern in (r"host_trims: kv_seq_rm_indexed engaged\b", r"host_trims: mtp_verify_bulk rows=[1-9]\d*\b"):
-    log = (recorded / "server.log").read_text()
+    log = (recorded / "server.log").read_text(errors="replace")
     rejects(lambda: lib.verify_log_patterns(log, [pattern], "missing new engagement proof"))
     # Real CPU executions below must produce the new signatures; recorded GPU logs cannot prove new code engagement.
     cpu_logs = list((ROOT / "codex/host-results/identity").glob("patch-*.log"))
     assert cpu_logs, "CPU identity logs missing"
-    assert any(re.search(pattern, path.read_text()) for path in cpu_logs), pattern
+    assert any(re.search(pattern, path.read_text(errors="replace")) for path in cpu_logs), pattern
 (ROOT / "codex/host-results/parser-check.json").write_text(json.dumps({
     "artifact": str(recorded), "depth_M": 8192, "overlap": window,
-    "negative_controls_M": negative, "fixtures": str(fixtures), "status": "PASS"
+    "staging": staging, "staging_artifact": str(staging_artifact), "negative_controls_M": negative, "fixtures": str(fixtures), "status": "PASS"
 }, indent=2) + "\n")
 print(f"PASS recorded GPU parser checks; negative controls M={negative}")

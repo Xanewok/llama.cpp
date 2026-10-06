@@ -69,6 +69,8 @@ def main():
         x["server"]["knobs"] += ["LLAMA_ARG_LOG_VERBOSITY", "LLAMA_HOST_TRIMS_PROOF"]
         x["depth"]["streams"] = np
         if np == 1:
+            args[args.index("-c") + 1] = "102400"
+            args[args.index("-np") + 1] = "1"
             x["depth"]["identity"] = "cross-arm"
             x["depth"].pop("identity_off_reason", None)
         else:

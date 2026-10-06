@@ -30,7 +30,7 @@ assert not trace.exists(), "use a fresh counter trace"
 env = dict(os.environ, HOST_INPUT_COUNT="1", LLAMA_ROUND_TRACE=str(trace), GGML_SCHED_INPUT_STAGING="1",
            LD_LIBRARY_PATH=str(ROOT / "build-cpu/bin"))
 output = OUT / "input-count-identity.json"
-with (OUT / "input-count.log").open("w") as log:
+with (OUT / "input-count-model.log").open("w") as log:
     subprocess.run(["bash", str(ROOT / "codex/host-gate.sh"), str(ROOT / "build-cpu/bin/host-identity"),
         "/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf", str(output), "1", "2", "1729", "48"],
         env=env, stdout=log, stderr=subprocess.STDOUT, check=True)

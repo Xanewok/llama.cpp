@@ -29,7 +29,7 @@ def run(arm, meta, np, seed):
                         str(meta), str(np), str(seed), "48"], env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
     data = json.loads(path.read_text())
     data["stats"].sort(key=lambda item: item["slot"])
-    drafts = draft_candidates((OUT / (name + ".log")).read_text())
+    drafts = draft_candidates((OUT / (name + ".log")).read_text(errors="replace"))
     assert drafts, "no draft candidates captured"
     data["draft_candidates"] = drafts
     digest = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
