@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import statistics
 import subprocess
 import sys
 import time
@@ -32,6 +33,8 @@ def sql_rows(content):
         statements = re.findall(r'CREATE TABLE IF NOT EXISTS test_backend_ops \([\s\S]*?\);|INSERT INTO test_backend_ops [^\n]*;', content)
         db.executescript('\n'.join(statements))
         return [dict(row) for row in db.execute('SELECT * FROM test_backend_ops WHERE op_name IN ("MUL_MAT", "MUL_MAT_ID")')]
+    except sqlite3.Error as error:
+        raise lib.Fail('probe: integrity: unreadable SQL: ' + str(error), 'integrity') from error
     finally:
         db.close()
 
@@ -74,6 +77,20 @@ def check_sanitizer(content):
         raise lib.Fail('probe: sanitizer finding', 'deterministic')
 
 
+def perf_summary(records):
+    samples = {}
+    for record in records:
+        for row in record['rows']:
+            key = ('cold:' if record['cold'] else 'hot:') + case_name(row)
+            samples.setdefault(key, {}).setdefault(record['mode'], []).append(row['time_us'])
+    result = {}
+    for key, modes in samples.items():
+        result[key] = {mode + '_us_M': statistics.median(values) for mode, values in modes.items()}
+        if 'base' in modes and 'patch' in modes:
+            result[key]['delta_us_D'] = result[key]['patch_us_M'] - result[key]['base_us_M']
+    return result
+
+
 def journal(since, out):
     result = subprocess.run(['journalctl', '-k', '--no-pager', '--since', f'@{int(since)}'],
                             capture_output=True, text=True, timeout=10)
@@ -84,12 +101,28 @@ def journal(since, out):
         raise lib.Fail('probe: GPU hazard', 'hazard')
 
 
+def library_gate(process, root, out):
+    deadline = time.monotonic() + 10
+    while process.poll() is None and time.monotonic() < deadline:
+        maps = Path(f'/proc/{process.pid}/maps').read_text()
+        if '/libggml-cuda.so' in maps:
+            outside = lib.libs_outside(process.pid, root)
+            if outside:
+                raise lib.Fail('probe: integrity: libraries outside frozen root: ' + ', '.join(outside), 'integrity')
+            out.write_text('\n'.join(line for line in maps.splitlines() if '/libggml' in line))
+            return
+        time.sleep(0.02)
+    raise lib.Fail('probe: integrity: loaded CUDA library proof missing', 'integrity')
+
+
 def selftest():
     for filename in ('perf-real.sql', 'stock-real.sql'):
         rows = sql_rows((HERE / 'fixtures' / filename).read_text())
         names = [case_name(row) for row in rows if case_name(row)]
         assert names
         check_rows(rows, names, perf=True)
+        summary = perf_summary([dict(mode=mode, cold=False, rows=rows) for mode in ('base', 'patch', 'patch', 'base')])
+        assert all(item['delta_us_D'] == 0 for item in summary.values())
         assert sql_rows((HERE / 'fixtures' / filename).read_text().replace('INSERT INTO', '[MUL_MAT] ERR = 4.0 > 0.0005 INSERT INTO')) == rows
         for broken in (rows[:-1], rows + rows[:1], [dict(row, time_us=-1) for row in rows],
                        [dict(row, passed=0) for row in rows]):
@@ -210,6 +243,8 @@ def run(kind, out, canary, budget):
         with (out / (stem + '.sql')).open('w') as stdout, (out / (stem + '.log')).open('w') as stderr:
             process = subprocess.Popen(command, env=env, stdout=stdout, stderr=stderr)
             try:
+                if kind == 'perf':
+                    library_gate(process, root, out / (stem + '.libraries.txt'))
                 rc = process.wait(timeout=min(1400 if kind == 'memcheck' else 600, remaining))
             except subprocess.TimeoutExpired:
                 raise lib.Fail('probe: budget stage cap', 'timeout')
@@ -236,6 +271,8 @@ def run(kind, out, canary, budget):
             raise lib.Fail('probe: integrity: weight rotation evidence missing', 'integrity')
         records.append(dict(mode=mode, cold=cold, rows=rows))
         (out / 'results.json').write_text(json.dumps(records, indent=2))
+        if kind == 'perf':
+            (out / 'summary.json').write_text(json.dumps(perf_summary(records), indent=2))
     (out / 'PASS.json').write_text(json.dumps(dict(kind=kind, canary=canary,
         frozen_commit=(ROOTS['patch'] / 'SOURCE').read_text().splitlines()[0],
         binary_digest=lib.file_sha(ROOTS['patch'] / 'build/bin/SHA256SUMS'), wall_s_M=time.time()-began)))
