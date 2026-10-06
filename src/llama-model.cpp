@@ -31,6 +31,7 @@
 #include <cstdint>
 #include <cstring>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -2152,7 +2153,10 @@ void llama_model::draft_vocab_ext_place(const llama_context * ctx, size_t row, l
     const size_t row_bytes = ggml_row_size(head->type, head->ne[0]);
     GGML_ASSERT(head->type == draft_output->type && row_bytes == draft_output->nb[1]);
     std::vector<uint8_t> buf(row_bytes);
-    ggml_backend_tensor_get(head, buf.data(), size_t(id) * row_bytes, row_bytes);
+    // local negative control: copy the neighbouring row, so the head disagrees with the id map
+    static const bool mutant_row = getenv("LLAMA_DRAFT_VOCAB_EXT_MUTANT") && std::string(getenv("LLAMA_DRAFT_VOCAB_EXT_MUTANT")) == "row";
+    const llama_token src = mutant_row ? (id + 1) % (llama_token) vocab.n_tokens() : id;
+    ggml_backend_tensor_get(head, buf.data(), size_t(src) * row_bytes, row_bytes);
     ggml_backend_tensor_set(draft_output, buf.data(), row * row_bytes, row_bytes);
     // the holder is the only reader of the extension ids while it holds them; llama_model is never created const
     const_cast<llama_model *>(this)->draft_vocab_ids[row] = id;
