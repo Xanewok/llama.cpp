@@ -1741,6 +1741,10 @@ static ggml_openvino_op_support is_op_supported_case(const ggml_tensor * op) {
 }
 
 static ggml_openvino_op_support ggml_backend_openvino_device_supports_op_impl(ggml_backend_dev_t dev, const ggml_tensor * op) {
+    if (op->op == GGML_OP_GATED_DELTA_NET && op->src[6]) {
+        return {false, "indexed recurrent states are not supported"};
+    }
+
     GGML_ASSERT(dev->reg != nullptr);
 
     ggml_backend_openvino_device_context * dev_ctx = (ggml_backend_openvino_device_context *) dev->context;
