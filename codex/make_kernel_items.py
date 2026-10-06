@@ -10,7 +10,7 @@ EVAL = Path('/home/xanewok/repos/qwen38-eval/harness')
 
 def render(kind):
     j = json.dumps
-    run_budget = 1200 if kind == 'memcheck' else 1800
+    run_budget = 1200 if kind == 'memcheck' else 2400
     canary_budget = 300
     entry = ['python3', str(HERE / 'kernel_item.py'), kind]
     out = HERE / 'gpu-results' / kind
@@ -21,11 +21,12 @@ def render(kind):
     files.add(HERE / 'REPORT-mmvq-np2.md')
     text = f'''id = "mmvq-np2-{kind}"
 title = "Wide MMVQ {kind}: five types, TP2 projection shapes; memcheck must pass before perf"
+# G estimates: memcheck 2 x 300 s <= 0.7 x 1200 s; perf 12 x 100 s <= 0.7 x 2400 s.
 kind = "measure"
 ab = {'true' if kind == 'perf' else 'false'}
 retry = "fresh"
 budget_s = {run_budget + canary_budget + 150}
-est_s = {700 if kind == 'memcheck' else 1300}
+est_s = {700 if kind == 'memcheck' else 1400}
 startup_grace_s = 120
 exit_codes = {{ "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }}
 signatures = [

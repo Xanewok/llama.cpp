@@ -114,6 +114,15 @@ def run(kind, out, canary, budget):
     if any(p.name != 'console.log' for p in out.iterdir()):
         raise lib.Fail('probe: integrity: output is not fresh', 'integrity')
     preflight()
+    if kind == 'perf':
+        stamp = (PATCH / 'SOURCE').read_text().splitlines()[0]
+        evidence = []
+        for path in (HERE / 'gpu-results/memcheck').glob('full-a*/PASS.json'):
+            record = json.loads(path.read_text())
+            if record.get('kind') == 'memcheck' and record.get('canary') is False and record.get('frozen_commit') == stamp:
+                evidence.append(path)
+        if not evidence:
+            raise lib.Fail('probe: integrity: clean full memcheck evidence missing', 'integrity')
     began = time.time()
     deadline = time.monotonic() + budget
     widths = [9, 12, 16] if canary else list(range(9, 17)) if kind == 'memcheck' else [6, 12]
@@ -121,7 +130,7 @@ def run(kind, out, canary, budget):
     expected = [f'mmvq-wide:{t}:{m}:{k}:{n}' for t in ('iq4_xs', 'q5_K', 'q6_K', 'q8_0', 'q4_K') for m, k in shapes for n in widths]
     width_regex = '(' + '|'.join(map(str, widths)) + ')'
     shape_regex = '(' + '|'.join(f'm={m},n={width_regex},k={k},' for m, k in shapes) + ')'
-    params = r'type_a=(iq4_xs|q5_K|q6_K|q8_0|q4_K),type_b=f32,' + shape_regex + r'bs=\[1,1\],nr=\[1,1\]' 
+    params = r'type_a=(iq4_xs|q5_K|q6_K|q8_0|q4_K),type_b=f32,' + shape_regex + r'bs=\[1,1\],nr=\[1,1\]'
     modes = ['wide', 'split'] if kind == 'memcheck' else ['up', 'wide', 'split', 'split', 'wide', 'up']
     if canary:
         modes = ['wide'] if kind == 'memcheck' else ['up', 'wide', 'split']
@@ -175,13 +184,15 @@ def run(kind, out, canary, budget):
                 check_sanitizer(log)
             if mode != 'up':
                 for quant in ('iq4_xs', 'q5_K', 'q6_K', 'q8_0', 'q4_K'):
-                    width = 12
-                    signature = f'mmvq_wide: type={quant} columns={width} mode={mode}'
-                    if signature not in log:
-                        raise lib.Fail('probe: integrity: wide path did not engage: ' + signature, 'integrity')
+                    for width in widths:
+                        if width <= 8:
+                            continue
+                        signature = f'mmvq_wide: type={quant} columns={width} mode={mode}'
+                        if signature not in log:
+                            raise lib.Fail('probe: integrity: wide path did not engage: ' + signature, 'integrity')
             records.append(dict(device=dev, mode=mode, rows=rows))
             (out / 'results.json').write_text(json.dumps(records, indent=2))
-    (out / 'PASS.json').write_text(json.dumps(dict(kind=kind, canary=canary, wall_s_M=time.time()-began)))
+    (out / 'PASS.json').write_text(json.dumps(dict(kind=kind, canary=canary, frozen_commit=(PATCH / 'SOURCE').read_text().splitlines()[0], wall_s_M=time.time()-began)))
     print('probe: PASS', flush=True)
 
 
