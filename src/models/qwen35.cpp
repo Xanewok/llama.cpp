@@ -3,6 +3,8 @@
 #include "llama-kv-cache.h"
 #include "llama-memory-recurrent.h"
 
+#include <cstdlib>
+
 void llama_model_qwen35::load_arch_hparams(llama_model_loader & ml) {
     ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS,       hparams.f_norm_rms_eps);
     ml.get_key_or_arr(LLM_KV_ROPE_DIMENSION_SECTIONS,    hparams.rope_sections, 4, true);
@@ -275,9 +277,12 @@ void llama_model_qwen35::graph::build_mtp_fold(
     ggml_set_input(inp->h_prev);
     ggml_set_name(inp->h_prev, "mtp_fold_h_prev");
 
+    // test only: LLAMA_MTP_FOLD_DEBUG_MUTANT=1 pairs row i with nextn row i, which identity tests must catch
+    static const size_t mutant_rows = getenv("LLAMA_MTP_FOLD_DEBUG_MUTANT") && atoi(getenv("LLAMA_MTP_FOLD_DEBUG_MUTANT")) ? 1 : 0;
+
     ggml_tensor * h_embd = inp->h_prev;
     if (n_tokens > 1) {
-        ggml_tensor * h_shift = ggml_view_2d(ctx0, h_nextn, hparams.n_embd, n_tokens - 1, h_nextn->nb[1], 0);
+        ggml_tensor * h_shift = ggml_view_2d(ctx0, h_nextn, hparams.n_embd, n_tokens - 1, h_nextn->nb[1], mutant_rows * h_nextn->nb[1]);
         h_embd = ggml_concat(ctx0, h_embd, h_shift, 1);
     }
     cb(h_embd, "mtp_fold_h", il);

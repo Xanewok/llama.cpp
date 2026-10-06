@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
@@ -1415,6 +1416,25 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     // pending_h must not be reallocated while armed: the target reads it during its next decode.
     bool    fold          = false;
 
+    // test only, LLAMA_MTP_DRAFT_DUMP=path: one line per sampled draft token, "round step id cand_ids[10] probs[10]"
+    FILE * draft_dump  = nullptr;
+    int    draft_round = 0;
+
+    void draft_dump_step(int step, llama_token id, const llama_token_data_array * cur_p) {
+        if (!draft_dump) {
+            return;
+        }
+        std::fprintf(draft_dump, "%d %d %d", draft_round, step, id);
+        for (size_t i = 0; i < 10; ++i) {
+            std::fprintf(draft_dump, " %d", i < cur_p->size ? cur_p->data[i].id : -1);
+        }
+        for (size_t i = 0; i < 10; ++i) {
+            std::fprintf(draft_dump, " %.9g", i < cur_p->size ? cur_p->data[i].p : 0.0f);
+        }
+        std::fprintf(draft_dump, "\n");
+        std::fflush(draft_dump);
+    }
+
     // Per-sequence cross-batch carryover: pair (h_p, x_{p+1}) at MTP pos p+1.
     // The last h-row of one process() call needs the first token of the NEXT
     // call to pair with, so it's stashed here until that next call fires.
@@ -1515,6 +1535,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             }
             LOG_INF("MTP fold: %s\n", fold ? "on" : "off");
         }
+
+        if (const char * path = std::getenv("LLAMA_MTP_DRAFT_DUMP")) {
+            draft_dump = std::fopen(path, "w");
+        }
     }
 
     ~common_speculative_impl_draft_mtp() override {
@@ -1532,6 +1556,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             llama_sampler_free(backend_chains[seq_id]);
         }
         backend_chains.clear();
+        if (draft_dump) {
+            std::fclose(draft_dump);
+        }
     }
 
     void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
@@ -1717,6 +1744,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             }
         }
 
+        ++draft_round;
         int i = 0;
 
         while (n_drafting > 0) {
@@ -1770,6 +1798,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
                 // add drafted token for each sequence
                 const llama_token id = dparams.at(seq_id).result_q ? id_sampled : cur_p->data[0].id;
+
+                draft_dump_step(i, id, cur_p);
 
                 // only collect very high-confidence draft tokens
                 if (cur_p->data[0].p < params.p_min) {
