@@ -31,7 +31,7 @@ canary_log = ["(?s)n_kv_pad += 4096\\b.*n_kv_pad += 4096\\b", "copy-engine H2D s
 
 [arms.patch]
 label = "in-graph AllReduce node"
-commit = "@SPIKE_COMMIT@"
+commit = "65116d4de316d848db0df4baf5b550d093ab9241"
 root = "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike"
 bin = "build/bin"
 repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike"

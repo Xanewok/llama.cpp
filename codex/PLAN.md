@@ -33,3 +33,7 @@ b. env=1 on CPU: identical bytes, `unavailable` line, would-be plan lines (M->K 
 c. codex/test-ar-node-plan.cpp unit test + wrong-expectation negative control.
 d. test-only hook GGML_META_AR_NODE_FORCE_TEST=1: node inserted on CPU, stub aborts.
 e. test-alloc, test-sampling.
+
+## Status
+CPU a-e green (cpu-results/*.log). Frozen build codex/frozen/graph-capture-spike (SOURCE = 65116d4de). Items prepared, not
+submitted: codex/depth-item.toml (render of depth-experiment.toml), codex/memcheck/item.toml (gen_item.py). No GPU run yet.

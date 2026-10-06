@@ -9,7 +9,8 @@ STACK6 = f'{W}/frozen/stack6'
 GPUS = 'GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f'
 RES = '/home/xanewok/repos/qwen38-eval/results/2026-10-06-graph-capture-memcheck'
 RAW = '/mnt/scratch/work/graph-capture-spike/memcheck'
-CAP_S = 1500  # per stage: memcheck slows kernels ~100x, a 4B boot plus 32 tokens under it is the long pole
+CAP_S = 1500  # run stage: memcheck slows kernels ~100x, a 4B boot plus 32 tokens under it is the long pole
+CANARY_S = 840  # gpuq caps canary.timeout_s at 900; a control that hits its cap is 'not applicable', not a finding
 
 def pins():
     out = [f'{HERE}/memcheck.py', f'{HERE}/gen_item.py']
@@ -26,10 +27,10 @@ def main():
                                f'OUT = "{RES}/{sub}a{{attempt}}", RAW = "{RAW}/{sub}a{{attempt}}" }}')
     t = f'''id = "graph-capture-memcheck"
 title = "Both GPUs: compute-sanitizer memcheck of the in-graph AllReduce node (GGML_META_AR_NODE=1), stack6 control first"
-# Stage caps: canary {CAP_S}+60 s, run {CAP_S}+60 s; budget_s = preflight 120 + canary 1560 + run 1560 + margin.
+# Stage caps: canary {CANARY_S} s, run {CAP_S}+60 s; budget_s = preflight 120 + canary 900 + run 1560 + margin.
 priority = 90
 kind = "measure"
-budget_s = 3500
+budget_s = 2900
 est_s = 1800
 ab = false
 retry = "fresh"
@@ -51,8 +52,8 @@ timeout_s = 120
 
 [canary]
 cmd = ["python3", "{mc}", "--canary"]
-env = {env('canary-', CAP_S + 60)}
-timeout_s = {CAP_S + 120}
+env = {env('canary-', CANARY_S)}
+timeout_s = {CANARY_S + 60}
 
 [outputs]
 paths = ["{RES}/a{{attempt}}"]

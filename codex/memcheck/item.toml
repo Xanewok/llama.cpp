@@ -1,0 +1,100 @@
+id = "graph-capture-memcheck"
+title = "Both GPUs: compute-sanitizer memcheck of the in-graph AllReduce node (GGML_META_AR_NODE=1), stack6 control first"
+# Stage caps: canary 840 s, run 1500+60 s; budget_s = preflight 120 + canary 900 + run 1560 + margin.
+priority = 90
+kind = "measure"
+budget_s = 2900
+est_s = 1800
+ab = false
+retry = "fresh"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "integrity", regex = "probe: integrity" },
+  { class = "timeout", regex = "probe: budget" },
+]
+
+[run]
+cmd = ["python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/memcheck/memcheck.py", "--run"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/memcheck"
+env = { CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GPUQ_ACTIVE = "1", BUDGET_S = "1560", OUT = "/home/xanewok/repos/qwen38-eval/results/2026-10-06-graph-capture-memcheck/a{attempt}", RAW = "/mnt/scratch/work/graph-capture-spike/memcheck/a{attempt}" }
+ports = []
+
+[preflight]
+cmd = ["python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/memcheck/memcheck.py", "--preflight"]
+timeout_s = 120
+
+[canary]
+cmd = ["python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/memcheck/memcheck.py", "--canary"]
+env = { CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GPUQ_ACTIVE = "1", BUDGET_S = "840", OUT = "/home/xanewok/repos/qwen38-eval/results/2026-10-06-graph-capture-memcheck/canary-a{attempt}", RAW = "/mnt/scratch/work/graph-capture-spike/memcheck/canary-a{attempt}" }
+timeout_s = 900
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval/results/2026-10-06-graph-capture-memcheck/a{attempt}"]
+
+[fix]
+editable = []
+protected = ["probe", "frozen", "budget"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/memcheck/memcheck.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/memcheck/gen_item.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/memcheck/fixtures/memcheck-0err-testfail.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/memcheck/fixtures/memcheck-clean.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/memcheck/fixtures/memcheck-fault-stack-on.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/memcheck/fixtures/xid-lines.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/round-trace",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-spike/codex/frozen/graph-capture-spike/build/bin/round-trace",
+]
