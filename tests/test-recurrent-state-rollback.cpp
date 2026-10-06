@@ -498,6 +498,7 @@ static test_status test_shared_seq_reserve(const common_params & params, llama_m
 
     auto cparams = common_context_params_to_llama(params);
     cparams.n_seq_max  = n_seqs;
+    cparams.n_rs_seq   = 8;
     cparams.n_ctx      = 512;
     cparams.n_batch    = 256;
     cparams.n_ubatch   = 64;
