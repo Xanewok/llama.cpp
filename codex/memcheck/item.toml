@@ -1,0 +1,67 @@
+id = "gdn-getter-stack6-memcheck"
+title = "GDN getter: memcheck, racecheck, synccheck including multi-sequence indexed reads"
+# D: full stage caps 240 + 180 + 180 + 180 = 780 s <= 0.7 x 1200 s; canary caps total 210 s.
+# harness.mkitem supports server experiments only; this kernel-only manifest follows the prior sanitizer item.
+priority = 90
+kind = "measure"
+budget_s = 1800
+est_s = 900
+ab = false
+retry = "fresh"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "integrity", regex = "\\bintegrity\\b" }, { class = "timeout", regex = "\\bbudget\\b" }]
+[run]
+cmd = ["python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/memcheck/memcheck.py", "--stage", "run", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/gpu-results/memcheck/full-a{attempt}", "--budget", "1200"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex"
+env = { GPUQ_ACTIVE = "1", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", PYTHONDONTWRITEBYTECODE = "1" }
+ports = []
+[preflight]
+cmd = ["python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/memcheck/memcheck.py", "--stage", "preflight"]
+timeout_s = 120
+[canary]
+cmd = ["python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/memcheck/memcheck.py", "--stage", "canary", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/gpu-results/memcheck/canary-a{attempt}", "--budget", "450"]
+env = { GPUQ_ACTIVE = "1", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", PYTHONDONTWRITEBYTECODE = "1" }
+timeout_s = 450
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/gpu-results/memcheck/full-a{attempt}"]
+[fix]
+editable = []
+protected = ["frozen", "coverage", "correctness", "budget", "memcheck_first"]
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/memcheck/memcheck.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/xid-lines.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/backend-thread-cap.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/round-trace",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/frozen/gdn-getter-stack6/build/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/memcheck/fixtures/mc-old.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/memcheck/fixtures/mc-idx.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/memcheck/fixtures/rc-idx.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/gdn-indexed-upstream/codex/memcheck/fixtures/sc-idx.log",
+]

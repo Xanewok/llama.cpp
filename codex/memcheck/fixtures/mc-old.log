@@ -1,0 +1,82 @@
+========= COMPUTE-SANITIZER
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 15827 MiB):
+  Device 0: NVIDIA GeForce RTX 5060 Ti, compute capability 12.0, VMM: yes, VRAM: 15827 MiB
+Testing 2 devices
+
+Backend 1/2: CUDA0
+  Device description: NVIDIA GeForce RTX 5060 Ti
+  Device memory: 15827 MB (15506 MB free)
+
+  GATED_DELTA_NET(type=f32,head_count=32,head_size=128,n_seq_tokens=1,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=32,head_size=16,n_seq_tokens=1,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=32,head_size=16,n_seq_tokens=1,n_seqs=1,v_repeat=1,permuted=1,kda=1,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=32,head_size=16,n_seq_tokens=1,n_seqs=1,v_repeat=1,permuted=0,kda=1,K=1): [1;32mOK[0m
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+  GATED_DELTA_NET(type=f32,head_count=16,head_size=64,n_seq_tokens=1,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=4,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=1): [1;32mOK[0m
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=4,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=1): [1;32mOK[0m
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+  GATED_DELTA_NET(type=f32,head_count=8,head_size=32,n_seq_tokens=4,n_seqs=2,v_repeat=2,permuted=0,kda=0,K=1): [1;32mOK[0m
+ggml_backend_cuda_graph_compute: CUDA graph warmup reset
+ggml_backend_cuda_graph_compute: CUDA graph warmup reset
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=4,n_seqs=2,v_repeat=1,permuted=1,kda=0,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=4,n_seqs=1,v_repeat=1,permuted=1,kda=0,K=1): [1;32mOK[0m
+ggml_backend_cuda_graph_compute: CUDA graph warmup reset
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=1,n_seqs=1,v_repeat=1,permuted=0,kda=1,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=1,n_seqs=2,v_repeat=1,permuted=0,kda=1,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=16,n_seq_tokens=1,n_seqs=2,v_repeat=1,permuted=0,kda=1,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=32,n_seq_tokens=4,n_seqs=1,v_repeat=1,permuted=0,kda=1,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=4,n_seqs=2,v_repeat=1,permuted=0,kda=1,K=1): [1;32mOK[0m
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+  GATED_DELTA_NET(type=f32,head_count=8,head_size=32,n_seq_tokens=4,n_seqs=2,v_repeat=2,permuted=0,kda=1,K=1): [1;32mOK[0m
+ggml_backend_cuda_graph_compute: CUDA graph warmup reset
+ggml_backend_cuda_graph_compute: CUDA graph warmup reset
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=4,n_seqs=2,v_repeat=1,permuted=1,kda=1,K=1): [1;32mOK[0m
+ggml_backend_cuda_graph_compute: CUDA graph warmup reset
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=16,n_seq_tokens=4,n_seqs=2,v_repeat=1,permuted=1,kda=1,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=64,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=127,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=1): [1;32mOK[0m
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=256,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=1): [1;32mOK[0m
+ggml_backend_cuda_graph_compute: CUDA graph warmup reset
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=65,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=100,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=200,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=127,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=64,n_seqs=1,v_repeat=1,permuted=0,kda=1,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=33,n_seqs=1,v_repeat=1,permuted=0,kda=1,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=100,n_seqs=1,v_repeat=1,permuted=0,kda=1,K=1): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=16,n_seq_tokens=2,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=2): [1;32mOK[0m
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=32,n_seq_tokens=4,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=4): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=4,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=4): [1;32mOK[0m
+ggml_backend_cuda_graph_compute: CUDA graph warmup reset
+ggml_backend_cuda_graph_compute: CUDA graph warmup reset
+ggml_backend_cuda_graph_compute: CUDA graph warmup reset
+ggml_backend_cuda_graph_compute: CUDA graph warmup reset
+  GATED_DELTA_NET(type=f32,head_count=8,head_size=128,n_seq_tokens=4,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=4): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=4,n_seqs=2,v_repeat=1,permuted=0,kda=1,K=4): [1;32mOK[0m
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+  GATED_DELTA_NET(type=f32,head_count=8,head_size=32,n_seq_tokens=4,n_seqs=2,v_repeat=2,permuted=0,kda=1,K=4): [1;32mOK[0m
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=32,n_seq_tokens=8,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=3): [1;32mOK[0m
+  GATED_DELTA_NET(type=f32,head_count=4,head_size=64,n_seq_tokens=16,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=4): [1;32mOK[0m
+  GATED_DELTA_NET_CACHE_FUSION(type=f32,head_count=4,head_size=32,n_seq_tokens=2,n_seqs=1,K=2): [1;32mOK[0m
+  GATED_DELTA_NET_CACHE_FUSION(type=f32,head_count=4,head_size=64,n_seq_tokens=4,n_seqs=1,K=2): [1;32mOK[0m
+  GATED_DELTA_NET_CACHE_FUSION(type=f32,head_count=4,head_size=32,n_seq_tokens=4,n_seqs=1,K=4): [1;32mOK[0m
+  GATED_DELTA_NET_CACHE_FUSION(type=f32,head_count=8,head_size=32,n_seq_tokens=4,n_seqs=2,K=4): [1;32mOK[0m
+  GATED_DELTA_NET_CACHE_FUSION(type=f32,head_count=4,head_size=32,n_seq_tokens=8,n_seqs=1,K=4): [1;32mOK[0m
+  41/41 tests passed
+  Backend CUDA0: [1;32mOK[0m
+Backend 2/2: CPU
+  Skipping
+2/2 backends passed
+[1;32mOK[0m
+========= ERROR SUMMARY: 0 errors

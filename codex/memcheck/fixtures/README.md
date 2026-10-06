@@ -1,0 +1,1 @@
+Unmodified real GPU logs copied from /mnt/scratch/work/gdn-indexed-memcheck/a2/{mc-old,mc-idx,rc-idx,sc-idx}.log (gpuq gdn-indexed-memcheck, 2026-10-06). These are opcode-form format fixtures, not getter-form GPU evidence.

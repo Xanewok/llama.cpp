@@ -1,0 +1,5 @@
+CUDA_VISIBLE_DEVICES="" GIT_NO_LAZY_FETCH=1
+cmake -B build-stack-cuda -DGGML_CUDA=ON -DCUDAToolkit_ROOT=/usr/local/cuda-13.2 -DGGML_CUDA_NCCL=OFF -DCMAKE_CUDA_ARCHITECTURES=120a -DGGML_CCACHE=ON -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_TOOLS=ON -DLLAMA_BUILD_SERVER=ON
+buildgate cmake --build build-stack-cuda -j4 --target test-backend-ops llama-server
+llama-server copied to round-trace; backend-thread-cap.so copied from CPU build before freeze. No CUDA binary executed.
+QWEN38_WT_ROOT=$PWD/codex wt freeze $PWD gdn-getter-stack6 --build $PWD/build-stack-cuda
