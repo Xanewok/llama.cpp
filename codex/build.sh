@@ -11,6 +11,8 @@ export TMPDIR="$PWD/build-tmp"
 
 quiet() {
     local status
+    # Inside the gpuq build-window item the queue slot itself is the quiet period (the item shows as RUN).
+    [[ ${GPUQ_BUILD_WINDOW:-} == 1 ]] && return 0
     while true; do
         status=$(gpuq status --brief)
         printf '%s\n' "$status" >&2
@@ -51,7 +53,7 @@ gated() {
         pid=$! aborted=0
         while kill -0 "$pid" 2>/dev/null; do
             status=$(gpuq status --brief)
-            if [[ $status == *'gpuq: RUN '* ]]; then
+            if [[ ${GPUQ_BUILD_WINDOW:-} != 1 && $status == *'gpuq: RUN '* ]]; then
                 printf 'Build/test interrupted by queue start: %s\n' "$status" >&2
                 stop_job "$pid"
                 aborted=1
