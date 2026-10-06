@@ -54,6 +54,7 @@ int main(int argc, char ** argv) {
         require(server.load_model(params), "server model load failed");
         std::thread inference([&] { server.start_loop(); });
         std::string prompt = "The sequence of positive integers begins with 1, 2, 3, 4, 5. Continue the sequence:";
+        if (const char * custom = std::getenv("CPU_PROMPT")) { prompt = custom; }
         for (int i = 0; i < prefill_words; ++i) { prompt += " sequence"; }
         try {
             for (int request = 0; request < requests; ++request) {
