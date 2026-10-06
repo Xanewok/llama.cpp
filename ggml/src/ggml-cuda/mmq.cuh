@@ -251,7 +251,7 @@ static __host__ ggml_cuda_mmq_config ggml_cuda_mmq_get_config(const ggml_type ty
         if (prec_src1 != GGML_PREC_Q4 && (type == GGML_TYPE_NVFP4 || type == GGML_TYPE_MXFP4)) {
             return ggml_cuda_mmq_get_config_ampere(type, J, fallback);
         }
-        return ggml_cuda_mmq_get_config_blackwell(type, J, fallback);
+        return ggml_cuda_mmq_get_config_blackwell(type, J, fallback, ggml_cuda_highest_compiled_arch(cc));
     }
     if (ggml_cuda_highest_compiled_arch(cc) >= GGML_CUDA_CC_VOLTA) {
         return ggml_cuda_mmq_get_config_ampere(type, J, fallback);
@@ -283,7 +283,7 @@ static constexpr __device__ ggml_cuda_mmq_config ggml_cuda_mmq_get_config(ggml_t
     if (prec_src1 != GGML_PREC_Q4 && (type == GGML_TYPE_NVFP4 || type == GGML_TYPE_MXFP4)) {
         return ggml_cuda_mmq_get_config_ampere(type, J, fallback);
     }
-    return ggml_cuda_mmq_get_config_blackwell(type, J, fallback);
+    return ggml_cuda_mmq_get_config_blackwell(type, J, fallback, __CUDA_ARCH__);
 #elif !defined(GGML_USE_MUSA) && __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
     return ggml_cuda_mmq_get_config_ampere(type, J, fallback);
 #elif !defined(GGML_USE_MUSA) && __CUDA_ARCH__ >= GGML_CUDA_CC_DP4A
@@ -948,6 +948,14 @@ static __device__ __forceinline__ void mul_mat_q_process_tile(
         __syncthreads();
     }
 
+#ifdef GGML_CUDA_MMQ_SMALLJ_NEGATIVE_CONTROL
+    if constexpr (I == 64 && J <= 24) {
+        for (float & value : sum) {
+            value = -value;
+        }
+    }
+#endif
+
     if (fixup) {
         write_back(sum, ids_dst, tmp_fixup + blockIdx.x*(J*I), y_scale, I, I, J);
     } else {
@@ -1449,7 +1457,15 @@ static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & a
     const int ntiles_dst = ntx * nty * ntzw;
     const int tiles_nwaves = (ntiles_dst + nsm - 1) / nsm;
     const int tiles_efficiency_percent = 100 * ntiles_dst / (nsm*tiles_nwaves);
-    const dim3 block_nums_stream_k(GGML_CUDA_CC_IS_NVIDIA(cc) && tiles_efficiency_percent >= 90 ? ntiles_dst : nsm, 1, 1);
+    const int efficiency_min = config.I == 64 && config.nthreads == 128 && config.J <= 24 &&
+        ggml_cuda_highest_compiled_arch(cc) == GGML_CUDA_CC_BLACKWELL ? 66 : 90;
+    const dim3 block_nums_stream_k(GGML_CUDA_CC_IS_NVIDIA(cc) && tiles_efficiency_percent >= efficiency_min ? ntiles_dst : nsm, 1, 1);
+
+    if (config.I == 64 && config.J <= 24 && getenv("GGML_CUDA_DEBUG_MMQ_SMALLJ")) {
+        fprintf(stderr, "mmq_smallj: device=%d type=%s columns=%lld J=%d I=%d threads=%d occupancy=%d tiles=%d grid=%u\n",
+                id, ggml_type_name(type), (long long) args.ncols_opt, config.J, config.I, config.nthreads, config.occupancy,
+                ntiles_dst, block_nums_stream_k.x);
+    }
 
     GGML_ASSERT(ntiles_dst * blocks_per_ne00_fd.z < (1 << 30)); // Assert that variable kbc will not overflow.
 
