@@ -34,6 +34,10 @@ Cold probe: each graph rotates independent weight tensors with total weight stor
 
 ## Verification
 
+Current blocker: `nh6-nextn-q8-j5q` is RUN. Its configured item budget is 11200 s; two recorded boots took 2096 s and 2080 s (M), against its configured 950 s/boot estimate. The mandatory any-RUN gate prevents remaining CPU/CUDA compilation, resource diagnostics and freezing. `codex/finish.sh` waits for no RUN and no ready items, then executes those stages serially. Progress is in `codex/logs/finish.log` and `final-{cpu,cuda,negative,resources}.log`.
+
+Core evidence: `mmq-config-blackwell.cuh:1` (config), `mmq.cuh:254` and `:286` (matching compiled-arch selection), `mmq.cuh:1460` (tiling threshold), `mmq.cuh:951` (safe arithmetic negative control), `test-backend-ops.cpp:1607` (independent cold weights).
+
 M: CPU target compiled, table traversals passed for 1376 tuples in both config modes, wrong-I=96 negative control failed with rc 134, and recorded SQL/sanitizer/np2 parser controls passed. The expanded shape inventory still needs its final CPU compilation. CUDA compilation was automatically stopped when nh6-nextn-q8-j5q started and waits for the required idle gate; resource diagnostics and freezes remain pending. The first CPU build started after an IDLE status; when the next `spec-trace-j5q` item was observed RUN, this worktree's exact build PID and descendants were terminated. No CPU model or backend executable was run. Parent should treat that item's host timings as potentially affected by the overlapping build interval.
 
 Commands are in `codex/build.sh`: every compile checks for any RUN item and uses `bin/buildgate`; every CPU test checks the same gate and uses `bin/cpugate`. CUDA configuration is stack6's disconnected local CCCL configuration, with architecture 120 normalized by CMake to 120a, NCCL OFF and ccache ON. All author-side commands keep `CUDA_VISIBLE_DEVICES=""` and all git commands use `GIT_NO_LAZY_FETCH=1`.
@@ -42,7 +46,7 @@ The test executable is compiled for CPU but not run. CPU-side testing consists o
 
 ## Parent-run items
 
-Prepared by `codex/gen_items.py`, then checked with `gpuq submit --check`; never submitted here:
+Defined by `codex/gen_items.py`; generation and `gpuq submit --check` are still pending the CUDA freezes. Do not queue these paths yet. No item was submitted here:
 
 1. `codex/items/memcheck.gpuq.toml`: five types, seven widths, five TP2 shapes plus partial/low-occupancy cases and broadcast/non-broadcast MUL_MAT_ID; compute-sanitizer `--log-file`; safe arithmetic negative control after clean memcheck.
 2. `codex/items/perf.gpuq.toml`: one GPU, no sanitizer, hot and cold probes, base/patch/patch/base process order. SQL goes to files. Requires a full memcheck PASS tied to the frozen checksum manifest.
