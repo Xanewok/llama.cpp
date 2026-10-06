@@ -2439,6 +2439,7 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
         case GGML_OP_GATED_LINEAR_ATTN:
             ggml_cuda_op_gated_linear_attn(ctx, dst);
             break;
+        case GGML_OP_GATED_DELTA_NET_INDEXED:
         case GGML_OP_GATED_DELTA_NET:
             ggml_cuda_op_gated_delta_net(ctx, dst);
             break;
@@ -2815,7 +2816,7 @@ static int ggml_cuda_try_gdn_cache_fusion(
         const ggml_cgraph * cgraph, int node_idx, ggml_cuda_gated_delta_net_fused_cache & fused_state_cpy) {
     const ggml_tensor * gdn = cgraph->nodes[node_idx];
     // the kernel skips the snapshot tail, so the gdn output must not be a graph output
-    if (gdn->op != GGML_OP_GATED_DELTA_NET || gdn->type != GGML_TYPE_F32 ||
+    if ((gdn->op != GGML_OP_GATED_DELTA_NET && gdn->op != GGML_OP_GATED_DELTA_NET_INDEXED) || gdn->type != GGML_TYPE_F32 ||
         (gdn->flags & GGML_TENSOR_FLAG_OUTPUT)) {
         return 0;
     }
@@ -2825,6 +2826,10 @@ static int ggml_cuda_try_gdn_cache_fusion(
     const int64_t       H         = src_v->ne[1];
     const int64_t       n_tokens  = src_v->ne[2];
     const int64_t       n_seqs    = src_v->ne[3];
+    // Indexed sequences can read rows that another sequence overwrites.
+    if (gdn->src[6] && n_seqs > 1) {
+        return 0;
+    }
     const int64_t       D         = S_v * S_v * H;
     const int64_t       K         = ggml_get_op_params_i32(gdn, 0); // snapshot slot count
     const int64_t       n_written = std::min<int64_t>(n_tokens, K); // newest n_written slots are written
@@ -3586,7 +3591,7 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
     }
 
     // gated_delta_net -> cpy: scatter recurrent-state snapshots into the cache
-    if (node->op == GGML_OP_GATED_DELTA_NET) {
+    if (node->op == GGML_OP_GATED_DELTA_NET || node->op == GGML_OP_GATED_DELTA_NET_INDEXED) {
         ggml_cuda_gated_delta_net_fused_cache fused_state_cpy;
         const int nodes_to_skip = ggml_cuda_try_gdn_cache_fusion(cgraph, i, fused_state_cpy);
         if (nodes_to_skip > 0) {
@@ -5739,6 +5744,9 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
         case GGML_OP_GATED_LINEAR_ATTN:
         case GGML_OP_RWKV_WKV7:
             return true;
+        case GGML_OP_GATED_DELTA_NET_INDEXED:
+            // Multiple sequences need a gather to keep snapshot stores fused.
+            return op->src[2]->ne[3] == 1;
         case GGML_OP_GATED_DELTA_NET:
             return true;
         case GGML_OP_DSV4_HC_COMB:
