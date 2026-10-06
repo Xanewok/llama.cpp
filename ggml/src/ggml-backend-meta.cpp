@@ -1587,6 +1587,32 @@ static void ggml_backend_meta_buffer_memset_tensor(
     }
 }
 
+// A partial range of a tensor split along `axis` whose outer extent is 1: the logical bytes are the device chunks in device
+// order, so the range maps onto one contiguous range per device. Returns false for whole-chunk ranges (the chunk path).
+static bool ggml_backend_meta_split_range(
+        const ggml_tensor * tensor, int axis, size_t n_bufs, size_t offset, size_t size,
+        const std::function<void(ggml_tensor * simple, size_t data_offset, size_t simple_offset, size_t n)> & fn) {
+    const size_t chunk_size_full = tensor->nb[axis + 1];
+    if (chunk_size_full != ggml_nbytes(tensor) || (offset % chunk_size_full == 0 && size % chunk_size_full == 0)) {
+        return false;
+    }
+    GGML_ASSERT(offset % tensor->nb[axis] == 0 && size % tensor->nb[axis] == 0 && "range must cover whole slices of the split axis");
+    GGML_ASSERT(offset + size <= chunk_size_full);
+    size_t base = 0;
+    for (size_t j = 0; j < n_bufs; j++) {
+        ggml_tensor * simple_tensor = ggml_backend_meta_buffer_simple_tensor(tensor, j);
+        const size_t chunk_size_j = simple_tensor->nb[axis + 1];
+        const size_t lo = std::max(offset, base);
+        const size_t hi = std::min(offset + size, base + chunk_size_j);
+        if (lo < hi) {
+            fn(simple_tensor, lo - offset, lo - base, hi - lo);
+        }
+        base += chunk_size_j;
+    }
+    GGML_ASSERT(base == chunk_size_full);
+    return true;
+}
+
 static void ggml_backend_meta_buffer_set_tensor(ggml_backend_buffer_t buffer, ggml_tensor * tensor, const void * data, size_t offset, size_t size) {
     std::lock_guard<std::recursive_mutex> lock(meta_tensor_mutex);
     const size_t n_bufs = ggml_backend_meta_buffer_n_bufs(buffer);
@@ -1658,6 +1684,12 @@ static void ggml_backend_meta_buffer_set_tensor(ggml_backend_buffer_t buffer, gg
         case GGML_BACKEND_SPLIT_AXIS_0:
         case GGML_BACKEND_SPLIT_AXIS_1:
         case GGML_BACKEND_SPLIT_AXIS_2: {
+            if (ggml_backend_meta_split_range(tensor, split_state.axis, n_bufs, offset, size,
+                    [&](ggml_tensor * simple, size_t data_offset, size_t simple_offset, size_t n) {
+                        ggml_backend_tensor_set(simple, (const char *) data + data_offset, simple_offset, n);
+                    })) {
+                break;
+            }
             // Exploit that tensors are contiguous to splice it with simple tensors as "chunks".
             const size_t chunk_size_full = tensor->nb[split_state.axis + 1];
             GGML_ASSERT(offset % chunk_size_full == 0);
@@ -1787,6 +1819,12 @@ static void ggml_backend_meta_buffer_get_tensor(ggml_backend_buffer_t buffer, co
         case GGML_BACKEND_SPLIT_AXIS_0:
         case GGML_BACKEND_SPLIT_AXIS_1:
         case GGML_BACKEND_SPLIT_AXIS_2: {
+            if (ggml_backend_meta_split_range(tensor, split_state.axis, n_bufs, offset, size,
+                    [&](ggml_tensor * simple, size_t data_offset, size_t simple_offset, size_t n) {
+                        ggml_backend_tensor_get(simple, (char *) data + data_offset, simple_offset, n);
+                    })) {
+                break;
+            }
             // Exploit that tensors are contiguous to splice it with simple tensors as "chunks".
             const size_t chunk_size_full = tensor->nb[split_state.axis + 1];
             GGML_ASSERT(offset % chunk_size_full == 0);
