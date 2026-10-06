@@ -4,6 +4,9 @@ ulimit -c 0
 export CUDA_VISIBLE_DEVICES="" GIT_NO_LAZY_FETCH=1
 export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8
 export PYTHONDONTWRITEBYTECODE=1
+root=$(cd "$(dirname "$0")/.." && pwd)
+export TMPDIR="$root/build-tmp"
+mkdir -p "$TMPDIR"
 while true; do
     status=$(gpuq status --brief)
     printf '%s\n' "$status"
