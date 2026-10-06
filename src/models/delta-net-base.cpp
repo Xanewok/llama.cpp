@@ -532,18 +532,42 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
         ggml_tensor *        v,
         ggml_tensor *        g,
         ggml_tensor *        b,
-        ggml_tensor *        s,
         int                  il) {
     const auto * mctx_cur   = inp->mctx;
     const auto   kv_head    = mctx_cur->get_head();
     const uint32_t mem_size = mctx_cur->get_size();
 
-    const int64_t S_v          = s->ne[0];
-    const int64_t H_v          = s->ne[2];
-    const int64_t n_seqs       = s->ne[3];
+    const int64_t S_v          = v->ne[0];
+    const int64_t H_v          = v->ne[1];
+    const int64_t n_seqs       = v->ne[3];
     const int64_t n_seq_tokens = q->ne[2];
 
     const bool keep = cparams.n_rs_seq > 0;
+
+    const int64_t K = cparams.n_rs_seq + 1;
+    llm_graph_get_rows_fn get_state_rows;
+    if (keep && cparams.offload_kqv) {
+        auto get_gdn_rows = [&](ggml_context * ctx, ggml_tensor * states, ggml_tensor * ids) {
+            states = ggml_reshape_4d(ctx, states, S_v, S_v, H_v, states->ne[1]);
+            return ggml_gated_delta_net(ctx, q, k, v, g, b, states, ids, K);
+        };
+        ggml_tensor * probe = get_gdn_rows(ctx0, ssm_states_all, inp->s_copy_main);
+        ggml_backend_buffer_type_t buft = ggml_backend_buffer_get_type(ssm_states_all->buffer);
+        ggml_backend_dev_t dev = ggml_backend_buft_get_device(buft);
+        if (!dev && ggml_backend_buft_is_host(buft)) {
+            dev = ggml_backend_get_device(backend_cpu);
+        }
+        if (dev && ggml_backend_dev_supports_op(dev, probe)) {
+            get_state_rows = get_gdn_rows;
+        }
+    }
+
+    ggml_tensor * state = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs, get_state_rows);
+    ggml_tensor * s = nullptr;
+    if (!get_state_rows) {
+        s = ggml_reshape_4d(ctx0, state, S_v, S_v, H_v, n_seqs);
+        cb(s, "state_predelta", il);
+    }
 
     if (!keep) {
         auto attn_out = build_delta_net(q, k, v, g, b, s, il);
@@ -561,10 +585,7 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
     }
 
     const int64_t D = S_v * S_v * H_v;
-    const int64_t K = cparams.n_rs_seq + 1;
-
-    // state s is 4D [S_v, S_v, H_v, n_seqs]; K snapshot slots are written into the output.
-    ggml_tensor * gdn_out = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, nullptr, K);
+    ggml_tensor * gdn_out = get_state_rows ? state : ggml_gated_delta_net(ctx0, q, k, v, g, b, s, nullptr, K);
     if (n_seq_tokens > 1) {
         res->add_fused_node({LLM_FUSED_OP_GDN_CH, gdn_out, il});
     } else {
