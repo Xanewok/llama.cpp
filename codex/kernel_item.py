@@ -91,14 +91,46 @@ def perf_summary(records):
     return result
 
 
-def journal(since, out):
-    result = subprocess.run(['journalctl', '-k', '--no-pager', '--since', f'@{int(since)}'],
+APP_XIDS = {13, 31, 43, 45}  # graphics exception / MMU / ... faults: gpuq tolerates these app-level Xids, anything else halts the queue
+CHILD_NAME = re.compile(r'^test-backend-op|^compute-sanitiz')  # comm is truncated to 15 characters
+XID_LINE = re.compile(r'NVRM: Xid \(PCI:[^)]*\): (\d+)(?:, pid=([^,]*))?(?:, name=([^,]*))?')
+
+
+def classify_journal(text, since, pids=()):
+    """`journalctl -o short-unix` text -> ('hazard' | 'deterministic' | None, offending line).
+
+    Only lines stamped at or after `since` count. An app-level Xid is deterministic only when it names one of the probe's own
+    processes (launch pid or comm); every other Xid, and every non-Xid hazard line, stays a hazard and wins over it."""
+    mine = {str(pid) for pid in pids}
+    hazard = app = None
+    for line in text.splitlines():
+        stamp, _, rest = line.partition(' ')
+        try:
+            if float(stamp) < since:
+                continue
+        except ValueError:
+            pass  # unstamped: keep, a hazard must not hide behind a format surprise
+        if not re.search(lib.XID_RE, rest):
+            continue
+        match = XID_LINE.search(rest)
+        if match and int(match[1]) in APP_XIDS and ((match[2] or '').strip('\'') in mine or CHILD_NAME.match(match[3] or '')):
+            app = app or line
+        else:
+            hazard = hazard or line
+    return ('hazard', hazard) if hazard else ('deterministic', app) if app else (None, None)
+
+
+def journal(since, out, pids=()):
+    result = subprocess.run(['journalctl', '-k', '--no-pager', '-o', 'short-unix', '--since', f'@{int(since)}'],
                             capture_output=True, text=True, timeout=10)
     out.write_text(result.stdout + result.stderr)
     if result.returncode:
         raise lib.Fail('probe: integrity: kernel journal unavailable', 'integrity')
-    if re.search(lib.XID_RE, result.stdout):
-        raise lib.Fail('probe: GPU hazard', 'hazard')
+    kind, line = classify_journal(result.stdout, since, pids)
+    if kind == 'hazard':
+        raise lib.Fail('probe: GPU hazard: ' + line, 'hazard')
+    if kind:
+        raise lib.Fail('probe: GPU application Xid from the probe process: ' + line, kind)
 
 
 def library_gate(process, root, out):
@@ -115,7 +147,34 @@ def library_gate(process, root, out):
     raise lib.Fail('probe: integrity: loaded CUDA library proof missing', 'integrity')
 
 
+def journal_controls():
+    def xid(code, name, pid=77, at=1001.5):
+        return f'{at} host kernel: NVRM: Xid (PCI:0000:08:00): {code}, pid={pid}, name={name}, detail'
+    child, foreign, bus = 'test-backend-op', 'VLLM::Worker', '1001.7 host kernel: NVRM: GPU 0000:08:00.0: GPU has fallen off the bus.'
+    for code in sorted(APP_XIDS):
+        assert classify_journal(xid(code, child), 1000)[0] == 'deterministic'
+        assert classify_journal(xid(code, 'compute-sanitiz', pid=5), 1000)[0] == 'deterministic'
+        assert classify_journal(xid(code, 'renamed', pid=77), 1000, pids=[77])[0] == 'deterministic'
+        assert classify_journal(xid(code, foreign, pid=5), 1000, pids=[77])[0] == 'hazard'
+        assert classify_journal(xid(code, 'renamed', pid=77), 1000)[0] == 'hazard'
+    assert classify_journal(xid(79, child), 1000)[0] == 'hazard'
+    assert classify_journal(xid(154, child), 1000)[0] == 'hazard'
+    assert classify_journal(bus, 1000)[0] == 'hazard'
+    assert classify_journal(xid(13, child) + '\n' + bus, 1000)[0] == 'hazard'
+    assert classify_journal(xid(13, child) + '\n' + xid(13, foreign, pid=5), 1000)[0] == 'hazard'
+    assert classify_journal(xid(79, foreign, at=999.0) + '\n' + xid(13, child, at=999.9), 1000) == (None, None)
+    assert classify_journal(xid(13, child, at=1000.0), 1000)[0] == 'deterministic'
+    assert classify_journal('-- No entries --', 1000) == (None, None)
+    assert classify_journal('1001.0 host kernel: unrelated stop_xid_hash', 1000) == (None, None)
+
+
 def selftest():
+    engaged = {(q, j, f) for q in TYPES for j in (16, 24) for f in (False, True)}
+    full = reachable_launches(expected_cases('memcheck', False))
+    assert engaged <= full and {(q, 8, False) for q in ('q4_K', 'q5_K', 'q6_K')} <= full
+    assert not any(j == 8 and q in ('iq4_xs', 'q8_0') for q, j, f in full)
+    assert reachable_launches(expected_cases('memcheck', True, True)) == {(q, 16, True) for q in TYPES}
+    assert {(q, j, f) for q, j, f in reachable_launches(expected_cases('perf', False)) if f} == set()
     for filename in ('perf-real.sql', 'stock-real.sql'):
         rows = sql_rows((HERE / 'fixtures' / filename).read_text())
         names = [case_name(row) for row in rows if case_name(row)]
@@ -143,6 +202,7 @@ def selftest():
             raise AssertionError('sanitizer negative control escaped')
     assert re.search(lib.XID_RE, (HERE / 'fixtures/journal-real.txt').read_text())
     assert not re.search(lib.XID_RE, 'stop_xid_hash_s_G')
+    journal_controls()
     from harness import depth
     depth.fixture_test(EVAL / 'orchestration/gpuq/fixtures')
     record = json.loads((HERE / 'fixtures/duo-depth-real.json').read_text())
@@ -195,6 +255,29 @@ def expected_cases(kind, canary, negative=False):
     return names
 
 
+# Largest ne11 that Blackwell (cc 12.0) still routes to MMVQ (ggml_cuda_should_use_mmvq); MUL_MAT_ID takes MMVQ up to 8 there.
+MMVQ_MAX = {'q4_K': 5, 'q5_K': 6, 'q6_K': 7}
+
+
+def reachable_launches(names):
+    """(type, J, fallback) small-J launches the MMQ path must make for these cases, mirroring the dispatch:
+    MMQ takes ne11 above the MMVQ cut; J is the smallest tile minimizing ceil(ne11/J) (ncols_opt = ne11 off AMD RDNA3/4);
+    fallback = rows % 128 != 0. J=8 is only reachable by MUL_MAT where the MMVQ cut is below 8 (q4_K/q5_K/q6_K)."""
+    found = set()
+    for name in names:
+        parts = name.split(':')
+        if parts[0] == 'id':
+            quant, rows, width = parts[1], int(parts[2]), int(parts[4])
+            cut = 8
+        else:
+            quant, rows, width = parts[0], int(parts[1]), int(parts[3])
+            cut = MMVQ_MAX.get(quant, 8)
+        tile = -(-width // 8) * 8
+        if width > cut and tile in (8, 16, 24):
+            found.add((quant, tile, rows % 128 != 0))
+    return found
+
+
 def run(kind, out, canary, budget):
     if os.environ.get('GPUQ_ACTIVE') != '1':
         raise lib.Fail('probe: integrity: queue environment missing', 'integrity')
@@ -211,6 +294,7 @@ def run(kind, out, canary, budget):
     if kind == 'perf' and canary:
         modes = [('patch', False), ('patch', True)]
     records = []
+    checked = began
     for i, (mode, cold) in enumerate(modes):
         while int(re.search(r'MemAvailable:\s+(\d+)', Path('/proc/meminfo').read_text())[1]) < 16*1024*1024:
             if time.monotonic() + 30 >= deadline:
@@ -241,23 +325,26 @@ def run(kind, out, canary, budget):
         if kind == 'memcheck' and not negative:
             command = ['/usr/local/cuda-13.2/bin/compute-sanitizer', '--tool', 'memcheck', '--error-exitcode', '99',
                        '--print-limit', '50', '--log-file', str(out / (stem + '.sanitizer.txt'))] + command
-        command = ['nice', '-n', '19'] + command
-        journal(began, out / 'journal.txt')
+        if kind != 'perf':
+            command = ['nice', '-n', '19'] + command
+        journal(checked, out / 'journal.txt')
         remaining = deadline - time.monotonic() - 30
         if remaining <= 0:
             raise lib.Fail('probe: budget expired', 'timeout')
         (out / (stem + '.command.json')).write_text(json.dumps(command))
+        stage_began = time.time()
         with (out / (stem + '.sql')).open('w') as stdout, (out / (stem + '.log')).open('w') as stderr:
             process = subprocess.Popen(command, env=env, stdout=stdout, stderr=stderr)
             try:
                 if kind == 'perf':
                     library_gate(process, root, out / (stem + '.libraries.txt'))
-                rc = process.wait(timeout=min(1400 if kind == 'memcheck' else 600, remaining))
+                rc = process.wait(timeout=remaining if kind == 'memcheck' else min(600, remaining))
             except subprocess.TimeoutExpired:
                 raise lib.Fail('probe: budget stage cap', 'timeout')
             finally:
                 lib.stop_child(process, 10)
-        journal(began, out / 'journal.txt')
+        journal(stage_began, out / 'journal.txt', [process.pid])
+        checked = time.time()
         if (rc == 0) == negative or rc not in (0, 1):
             raise lib.Fail(f'probe: reference process rc {rc}', 'deterministic')
         raw = (out / (stem + '.sql')).read_text()
@@ -271,9 +358,10 @@ def run(kind, out, canary, budget):
         if kind == 'memcheck' and not negative:
             check_sanitizer((out / (stem + '.sanitizer.txt')).read_text())
         if mode != 'base' and (canary or kind == 'memcheck'):
-            for quant in TYPES:
-                if not re.search(r'mmq_smallj: device=0 type=' + quant + r' columns=12 J=16 I=64 threads=128 occupancy=2\b', log):
-                    raise lib.Fail('probe: integrity: small-J path did not engage: ' + quant, 'integrity')
+            for quant, width, fallback in sorted(reachable_launches(expected_cases(kind, canary, negative))):
+                if not re.search(r'mmq_smallj: device=0 type=' + quant + r' columns=\d+ J=' + str(width) +
+                                 r' I=64 threads=128 occupancy=2 fallback=' + str(int(fallback)) + r' tiles=[1-9]\d* grid=[1-9]\d*\b', log):
+                    raise lib.Fail(f'probe: integrity: small-J path did not engage: {quant} J={width} fallback={int(fallback)}', 'integrity')
         if cold and len(re.findall(r'mmq_smallj_cold: .* copies=\d+ weight_bytes=\d+', log)) != len(rows):
             raise lib.Fail('probe: integrity: weight rotation evidence missing', 'integrity')
         records.append(dict(mode=mode, cold=cold, rows=rows))
