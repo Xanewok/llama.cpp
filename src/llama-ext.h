@@ -109,6 +109,10 @@ LLAMA_API void llama_set_nextn_layer_offset(struct llama_context * ctx, int32_t 
 #define LLAMA_MTP_CHAIN_MAX 16
 LLAMA_API bool llama_set_mtp_chain(struct llama_context * ctx, int32_t n_chain);
 
+// top-k whose backend candidates come out in descending logit order, as the host top-k leaves them, so that a dist
+// sampler after it picks the token the host chain would for the same uniform. Host behaviour is the same as llama_sampler_init_top_k.
+LLAMA_API struct llama_sampler * llama_sampler_init_top_k_sorted(int32_t k);
+
 // Marks the entries that a joint decision head (clef) reads, the default is 0
 // See https://github.com/ggml-org/llama.cpp/pull/29831 for details
 // A run of entries with the same value is one span, spans must be separated by entries with value 0
