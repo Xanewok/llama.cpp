@@ -335,6 +335,7 @@ struct common_params_speculative_draft {
     bool backend_sampling = true; // offload draft sampling to the backend (default: on)
 
     std::vector<llama_token> vocab_ids;
+    uint32_t vocab_ext = 0; // rows after the reduced head that each request fills with its prompt's out-of-head ids
 
     bool probabilistic = false; // sample the draft and verify by rejection, instead of argmax and match
 

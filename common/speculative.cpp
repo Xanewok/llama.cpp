@@ -20,6 +20,8 @@
 #include <iomanip>
 #include <map>
 #include <cinttypes>
+#include <atomic>
+#include <unordered_map>
 
 #define SPC_DBG(fmt, ...) LOG_DBG("spec %12.*s: " fmt, 12, __func__, __VA_ARGS__)
 #define SPC_TRC(fmt, ...) LOG_TRC("spec %12.*s: " fmt, 12, __func__, __VA_ARGS__)
@@ -27,6 +29,24 @@
 #define SPC_WRN(fmt, ...) LOG_WRN("spec %12.*s: " fmt, 12, __func__, __VA_ARGS__)
 #define SPC_ERR(fmt, ...) LOG_ERR("spec %12.*s: " fmt, 12, __func__, __VA_ARGS__)
 #define SPC_CNT(fmt, ...) LOG_CNT(""              fmt,               __VA_ARGS__)
+
+static struct {
+    std::atomic<uint64_t> n_requests{0};
+    std::atomic<uint64_t> n_prompt_oov{0};
+    std::atomic<uint64_t> n_placed{0};
+    std::atomic<uint64_t> n_drafted_oov{0};
+    std::atomic<uint64_t> n_accepted_oov{0};
+} g_vocab_ext_stats;
+
+common_speculative_vocab_ext_stats common_speculative_get_vocab_ext_stats() {
+    common_speculative_vocab_ext_stats out;
+    out.n_requests     = g_vocab_ext_stats.n_requests.load();
+    out.n_prompt_oov   = g_vocab_ext_stats.n_prompt_oov.load();
+    out.n_placed       = g_vocab_ext_stats.n_placed.load();
+    out.n_drafted_oov  = g_vocab_ext_stats.n_drafted_oov.load();
+    out.n_accepted_oov = g_vocab_ext_stats.n_accepted_oov.load();
+    return out;
+}
 
 #define SPEC_VOCAB_MAX_SIZE_DIFFERENCE  128
 #define SPEC_VOCAB_CHECK_START_TOKEN_ID 5
@@ -1426,6 +1446,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     std::vector<int>                i_last;
     std::vector<std::vector<float>> chain_h;
 
+    // reduced draft head membership and each sequence's latest draft, for the per-request extension and its counters;
+    // empty unless --spec-draft-vocab-ext, so N = 0 adds no per-round work
+    std::vector<uint8_t>      in_head;
+    std::vector<llama_tokens> last_draft;
+
     common_speculative_impl_draft_mtp(const common_params_speculative & params, uint32_t n_seq)
         : common_speculative_impl(COMMON_SPECULATIVE_TYPE_DRAFT_MTP, n_seq, params.draft.n_max)
         , params(params.draft)
@@ -1500,6 +1525,60 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         verify_h.assign(n_seq, {});
         verify_h_rows.assign(n_seq, 0);
+
+        if (this->params.vocab_ext > 0 && !this->params.vocab_ids.empty()) {
+            last_draft.assign(n_seq, {});
+            in_head.assign(llama_vocab_n_tokens(llama_model_get_vocab(llama_get_model(ctx_dft))), 0);
+            for (llama_token id : this->params.vocab_ids) {
+                if (id >= 0 && (size_t) id < in_head.size()) {
+                    in_head[id] = 1;
+                }
+            }
+        }
+    }
+
+    bool outside_head(llama_token id) const {
+        return !in_head.empty() && id >= 0 && (size_t) id < in_head.size() && !in_head[id];
+    }
+
+    // Fill seq_id's extension rows with the prompt ids the reduced head lacks: most frequent first, then latest.
+    void set_vocab_ext(llama_seq_id seq_id, const llama_tokens & prompt) {
+        auto * ctx_dft = this->params.ctx_dft;
+        if (in_head.empty() || llama_draft_vocab_ext_capacity(ctx_dft) == 0) {
+            return;
+        }
+        std::unordered_map<llama_token, std::pair<int32_t, int32_t>> seen; // id -> (count, last position)
+        for (int32_t i = 0; i < (int32_t) prompt.size(); ++i) {
+            if (outside_head(prompt[i])) {
+                auto & e = seen[prompt[i]];
+                e.first++;
+                e.second = i;
+            }
+        }
+        std::vector<std::pair<llama_token, std::pair<int32_t, int32_t>>> ranked(seen.begin(), seen.end());
+        std::sort(ranked.begin(), ranked.end(), [](const auto & a, const auto & b) {
+            if (a.second.first != b.second.first) {
+                return a.second.first > b.second.first;
+            }
+            if (a.second.second != b.second.second) {
+                return a.second.second > b.second.second;
+            }
+            return a.first < b.first;
+        });
+        llama_tokens ids;
+        ids.reserve(ranked.size());
+        for (const auto & e : ranked) {
+            ids.push_back(e.first);
+        }
+        const int32_t n_placed = llama_set_draft_vocab_ext(ctx_dft, seq_id, ids.data(), ids.size());
+        if (n_placed < 0) {
+            SPC_WRN("draft vocab ext: seq %d: update failed\n", (int) seq_id);
+            return;
+        }
+        g_vocab_ext_stats.n_requests++;
+        g_vocab_ext_stats.n_prompt_oov += ids.size();
+        g_vocab_ext_stats.n_placed     += (uint64_t) n_placed;
+        SPC_INF("draft vocab ext: seq %d: %zu prompt OOV ids, %d in the draft head\n", (int) seq_id, ids.size(), n_placed);
     }
 
     ~common_speculative_impl_draft_mtp() override {
@@ -1519,6 +1598,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
         // reset here rather than per round, or two identical requests differ
         common_sampler_reset(smpls[seq_id].get());
+
+        set_vocab_ext(seq_id, prompt);
 
         const int32_t N = (int32_t) prompt.size();
         if (N <= 0) {
@@ -1814,12 +1895,27 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             if (dp.result->size() < (size_t) params.n_min) {
                 dp.result->clear();
             }
+
+            if (!in_head.empty()) {
+                last_draft[seq_id] = *dp.result;
+                for (llama_token id : *dp.result) {
+                    g_vocab_ext_stats.n_drafted_oov += outside_head(id);
+                }
+            }
         }
     }
 
     void accept(llama_seq_id seq_id, uint16_t n_accepted, bool /*is_other*/) override {
         if (seq_id < 0 || seq_id >= (llama_seq_id) n_seq) {
             return;
+        }
+
+        if (!in_head.empty()) {
+            const auto & d = last_draft[seq_id];
+            for (size_t i = 0; i < std::min<size_t>(n_accepted, d.size()); ++i) {
+                g_vocab_ext_stats.n_accepted_oov += outside_head(d[i]);
+            }
+            last_draft[seq_id].clear();
         }
 
         const int32_t n_rows = verify_h_rows[seq_id];

@@ -1632,6 +1632,11 @@ struct llama_model_params common_model_params_to_llama(common_params & params) {
     mparams.no_alloc                    = params.no_alloc;
     mparams.draft_vocab_ids             = params.speculative.draft.vocab_ids.data();
     mparams.n_draft_vocab               = params.speculative.has_dft() ? 0 : params.speculative.draft.vocab_ids.size();
+    mparams.n_draft_vocab_ext           = mparams.n_draft_vocab ? params.speculative.draft.vocab_ext : 0;
+    if (params.speculative.draft.vocab_ext > 0 && mparams.n_draft_vocab_ext == 0) {
+        LOG_WRN("%s: --spec-draft-vocab-ext ignored: it extends the --spec-draft-vocab head of the MTP draft (%s)\n", __func__,
+                params.speculative.has_dft() ? "a draft model is set" : "no --spec-draft-vocab");
+    }
     mparams.load_mtp                    = params.load_mtp || std::find(params.speculative.types.begin(), params.speculative.types.end(), COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != params.speculative.types.end();
 
     return mparams;

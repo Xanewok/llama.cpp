@@ -102,6 +102,17 @@ void common_speculative_set_state(common_speculative * spec, llama_seq_id seq_id
 // print statistics about the speculative decoding
 void common_speculative_print_stats(const common_speculative * spec);
 
+// process-wide MTP draft counters for the reduced head and its per-request extension (--spec-draft-vocab[-ext])
+struct common_speculative_vocab_ext_stats {
+    uint64_t n_requests     = 0; // requests that set an extension
+    uint64_t n_prompt_oov   = 0; // distinct prompt ids outside the reduced head, summed over requests
+    uint64_t n_placed       = 0; // of those, ids the draft head held
+    uint64_t n_drafted_oov  = 0; // drafted tokens outside the reduced head
+    uint64_t n_accepted_oov = 0; // accepted drafted tokens outside the reduced head
+};
+
+common_speculative_vocab_ext_stats common_speculative_get_vocab_ext_stats();
+
 struct common_speculative_deleter {
     void operator()(common_speculative * s) { common_speculative_free(s); }
 };

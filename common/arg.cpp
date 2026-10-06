@@ -4251,6 +4251,17 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
     add_opt(common_arg(
+        {"--spec-draft-vocab-ext"}, "N",
+        string_format("rows added to the --spec-draft-vocab head that each request fills with the ids of its prompt that the "
+                      "head lacks, N / parallel slots per request (default: %u, off)", params.speculative.draft.vocab_ext),
+        [](common_params & params, int value) {
+            if (value < 0) {
+                throw std::invalid_argument("invalid value");
+            }
+            params.speculative.draft.vocab_ext = (uint32_t) value;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_DRAFT_VOCAB_EXT"));
+    add_opt(common_arg(
         {"--spec-draft-sampling"}, "{greedy,probabilistic}",
         string_format("how the draft is sampled: greedy takes its argmax, probabilistic samples it and has "
                       "the target verify by rejection sampling (default: %s)",
