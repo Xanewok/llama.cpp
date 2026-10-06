@@ -601,6 +601,8 @@ extern "C" {
 
         GGML_OP_GLU,
 
+        GGML_OP_GATED_DELTA_NET_INDEXED,
+
         GGML_OP_COUNT,
     };
 
@@ -2657,6 +2659,19 @@ extern "C" {
             struct ggml_tensor  * g,
             struct ggml_tensor  * beta,
             struct ggml_tensor  * state,
+            int64_t               K);
+
+    // Same output as ggml_gated_delta_net; state is [S_v, S_v, H_v, n_state_rows].
+    // indices is I32 [n_seqs], with each value in [0, n_state_rows).
+    GGML_API struct ggml_tensor * ggml_gated_delta_net_indexed(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * q,
+            struct ggml_tensor  * k,
+            struct ggml_tensor  * v,
+            struct ggml_tensor  * g,
+            struct ggml_tensor  * beta,
+            struct ggml_tensor  * state,
+            struct ggml_tensor  * indices,
             int64_t               K);
 
     // DSA lightning indexer
