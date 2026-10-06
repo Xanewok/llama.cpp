@@ -730,15 +730,13 @@ ggml_tensor * llama_model_glm5_next::graph::build_kda_layer(
     cb(beta, "kda_beta", il);
 
     ggml_tensor * ssm_states_all = mctx_cur->get_s_l(il);
-    ggml_tensor * state = build_rs(inp_rs, ssm_states_all, hparams.n_embd_s(), n_seqs);
-    state = ggml_reshape_4d(ctx0, state, head_dim, head_dim, n_head_kda, n_seqs);
 
     // Match FLA l2 norm
     constexpr float l2_eps = 1e-6f;
     Qcur = build_gdn_l2_norm(ctx0, Qcur, l2_eps);
     Kcur = build_gdn_l2_norm(ctx0, Kcur, l2_eps);
 
-    ggml_tensor * output = build_recurrent_attn(inp_rs, ssm_states_all, Qcur, Kcur, Vcur, g1, beta, state, il);
+    ggml_tensor * output = build_recurrent_attn(inp_rs, ssm_states_all, Qcur, Kcur, Vcur, g1, beta, il);
     output = ggml_cont(ctx0, output);
     cb(output, "kda_scan_out", il);
 
