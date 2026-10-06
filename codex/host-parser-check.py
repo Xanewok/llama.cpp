@@ -52,9 +52,13 @@ bad = copy.deepcopy(record["streams"][0])
 bad["error"] = "HTTP 500 recorded control"
 rejects(lambda: depth.gate(x["depth"], bad, lambda _: None))
 assert lib.min_free_vram(recorded / "smi.csv", x["devices"])
+rejects(lambda: lib.min_free_vram(recorded / "smi.csv", ["GPU-missing-control"]))
 staging_artifact = EVAL / "results/2026-10-04-duo-np2-depth/canary-a3/1-patch/round-trace.jsonl"
 staging = lib.check_staging(lib.trace_counts(staging_artifact))
-assert not re.search(lib.XID_RE, (recorded / "journal.txt").read_text(errors="replace"))
+journal = (recorded / "journal.txt").read_text(errors="replace")
+assert not re.search(lib.XID_RE, journal)
+assert re.search(lib.XID_RE, journal + "\nNVRM: Xid (PCI:0000:01:00): 13, recorded parser control\n")
+negative += 1
 for pattern in (r"host_trims: kv_seq_rm_indexed engaged\b", r"host_trims: mtp_verify_bulk rows=[1-9]\d*\b"):
     log = (recorded / "server.log").read_text(errors="replace")
     rejects(lambda: lib.verify_log_patterns(log, [pattern], "missing new engagement proof"))
