@@ -9394,7 +9394,7 @@ static const ggml_type other_types[] = {
 // Test cases for evaluation: should try to cover edge cases while using small input sizes to keep the runtime low
 static void add_mmvq_wide_cases(std::vector<std::unique_ptr<test_case>> & cases) {
     // TP2 projection shapes: FFN up/down, attention Q/K/V/output, and GDN input/gate.
-    const std::array<std::array<int64_t, 2>, 6> shapes = {{{8704, 5120}, {5120, 8704}, {6144, 5120}, {512, 5120}, {5120, 3072}, {5120, 5120}}};
+    const std::array<std::array<int64_t, 2>, 7> shapes = {{{8704, 5120}, {5120, 8704}, {6144, 5120}, {512, 5120}, {5120, 3072}, {5120, 5120}, {3072, 5120}}};
     for (ggml_type type : {GGML_TYPE_IQ4_XS, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0, GGML_TYPE_Q4_K}) {
         for (int n : {6, 9, 10, 11, 12, 13, 14, 15, 16}) {
             for (const auto & shape : shapes) {

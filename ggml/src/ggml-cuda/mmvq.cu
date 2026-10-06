@@ -1230,6 +1230,12 @@ static void mul_mat_vec_q_switch_ncols_dst(
     if constexpr (mmvq_wide_type(type)) {
         if (ncols_dst > MMVQ_MAX_BATCH_SIZE) {
             GGML_ASSERT(!ids && !fusion.gate && !fusion.x_bias && !fusion.shared_up);
+            static const bool debug = std::getenv("GGML_CUDA_DEBUG_MMVQ_WIDE") != nullptr;
+            static thread_local bool reported[17] = {};
+            if (debug && !reported[ncols_dst]) {
+                reported[ncols_dst] = true;
+                GGML_LOG_INFO("mmvq_wide: type=%s columns=%d mode=%s\n", ggml_type_name(type), ncols_dst, mmvq_wide_split() ? "split" : "wide");
+            }
             if (mmvq_wide_split()) {
                 const int first = ncols_dst / 2;
                 for (int offset : {0, first}) {
@@ -1247,7 +1253,7 @@ static void mul_mat_vec_q_switch_ncols_dst(
                 const auto dims = calc_launch_params<type>(count, nrows_x, nchannels_dst, nsamples_dst, warp_size, table_id);
                 const ggml_cuda_kernel_launch_params params(dims.first, dims.second, 0, stream);
                 ggml_cuda_kernel_launch(mul_mat_vec_q<type, count, false>, params,
-                    vx, vy, nullptr, fusion, dst, ncols_x, nchannels_y_fd, stride_row_x, stride_col_y, stride_col_dst,
+                    vx, vy, ids, fusion, dst, ncols_x, nchannels_y_fd, stride_row_x, stride_col_y, stride_col_dst,
                     channel_ratio_fd, stride_channel_x, stride_channel_y, stride_channel_dst,
                     sample_ratio_fd, stride_sample_x, stride_sample_y, stride_sample_dst, ids_stride);
             };
