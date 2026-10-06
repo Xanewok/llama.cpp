@@ -6,3 +6,7 @@ reuse-results/
 input-results/
 runs/
 __pycache__/
+
+frozen/mmvq-np2/
+gpu-results/
+mmvq-resources.o

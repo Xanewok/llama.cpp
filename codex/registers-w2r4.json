@@ -1,0 +1,162 @@
+[
+  {
+    "type": 23,
+    "columns": 6,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 162
+  },
+  {
+    "type": 23,
+    "columns": 16,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 246
+  },
+  {
+    "type": 23,
+    "columns": 12,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 244
+  },
+  {
+    "type": 23,
+    "columns": 9,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 207
+  },
+  {
+    "type": 14,
+    "columns": 6,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 123
+  },
+  {
+    "type": 14,
+    "columns": 16,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 214
+  },
+  {
+    "type": 14,
+    "columns": 12,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 178
+  },
+  {
+    "type": 14,
+    "columns": 9,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 153
+  },
+  {
+    "type": 13,
+    "columns": 6,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 134
+  },
+  {
+    "type": 13,
+    "columns": 16,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 234
+  },
+  {
+    "type": 13,
+    "columns": 12,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 201
+  },
+  {
+    "type": 13,
+    "columns": 9,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 163
+  },
+  {
+    "type": 12,
+    "columns": 6,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 157
+  },
+  {
+    "type": 12,
+    "columns": 16,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 255
+  },
+  {
+    "type": 12,
+    "columns": 12,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 223
+  },
+  {
+    "type": 12,
+    "columns": 9,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 183
+  },
+  {
+    "type": 8,
+    "columns": 6,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 96
+  },
+  {
+    "type": 8,
+    "columns": 16,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 184
+  },
+  {
+    "type": 8,
+    "columns": 12,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 146
+  },
+  {
+    "type": 8,
+    "columns": 9,
+    "stack": 0,
+    "spill_stores": 0,
+    "spill_loads": 0,
+    "registers": 122
+  }
+]
