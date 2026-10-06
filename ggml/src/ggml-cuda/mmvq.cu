@@ -615,8 +615,11 @@ static constexpr __host__ __device__ int calc_nwarps(ggml_type type, int ncols_d
 }
 
 static constexpr __host__ __device__ int calc_rows_per_block(int ncols_dst, int table_id, bool small_k = false, int nwarps = 1) {
+    if (table_id == MMVQ_PARAMETERS_BLACKWELL && ncols_dst > MMVQ_MAX_BATCH_SIZE && ncols_dst <= 16) {
+        return 2;
+    }
     // RTX 5060 Ti: at 5-8 columns two warps over four rows keep more loads in flight than two rows (Q4_K-Q6_K/IQ4_XS +12-17 % at 6 columns, Q8_0 equal).
-    if (table_id == MMVQ_PARAMETERS_BLACKWELL && ncols_dst >= 5 && ncols_dst <= 16) {
+    if (table_id == MMVQ_PARAMETERS_BLACKWELL && ncols_dst >= 5 && ncols_dst <= MMVQ_MAX_BATCH_SIZE) {
         return 4;
     }
     if (table_id == MMVQ_PARAMETERS_GENERIC || table_id == MMVQ_PARAMETERS_GCN || table_id == MMVQ_PARAMETERS_TURING || table_id == MMVQ_PARAMETERS_GB10 || table_id == MMVQ_PARAMETERS_BLACKWELL) {

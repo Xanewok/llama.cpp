@@ -2020,6 +2020,7 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
         ggml_cuda_mul_mat_f(ctx, src0, src1, nullptr, dst);
         return;
     }
+    // Wide MMVQ and its split comparator require complete weight row blocks.
     if (ggml_cuda_should_use_mmvq(src0->type, cc, ne11) && (ne11 <= MMVQ_MAX_BATCH_SIZE || ne01 % 4 == 0)) {
         ggml_cuda_mul_mat_vec_q(ctx, src0, src1, nullptr, dst);
         return;
