@@ -2380,6 +2380,12 @@ struct llama_model_qwen35 : public llama_model_base {
                     ggml_tensor * input,
                             int   il);
 
+        // MTP fold: the K/V that graph_mtp would store for these rows, written to the draft cache (mctx_fold)
+        void build_mtp_fold(
+                    ggml_tensor * h_nextn,
+                    ggml_tensor * inp_pos,
+                            int * sections);
+
         const llama_model & model;
     };
 

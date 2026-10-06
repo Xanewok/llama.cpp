@@ -533,6 +533,23 @@ bool llm_graph_input_attn_kv::can_reuse(const llm_graph_params & params) {
     return res;
 }
 
+void llm_graph_input_mtp_fold::set_input(const llama_ubatch * ubatch) {
+    ggml_backend_tensor_set(h_prev, h_prev_src, 0, ggml_nbytes(h_prev));
+
+    kv->set_input(ubatch);
+}
+
+bool llm_graph_input_mtp_fold::can_reuse(const llm_graph_params & params) {
+    if (!params.mctx_fold || !params.fold_h_prev) {
+        return false;
+    }
+
+    kv->mctx   = static_cast<const llama_kv_cache_context *>(params.mctx_fold);
+    h_prev_src = params.fold_h_prev;
+
+    return kv->self_k_idxs->ne[0] == params.ubatch.n_tokens;
+}
+
 void llm_graph_input_attn_k::set_input(const llama_ubatch * ubatch) {
     mctx->set_input_k_idxs(self_k_idxs, ubatch);
 
@@ -1531,6 +1548,8 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
     cvec             (params.cvec),
     loras            (params.loras),
     mctx             (params.mctx),
+    mctx_fold        (params.mctx_fold),
+    fold_h_prev      (params.fold_h_prev),
     cross            (params.cross),
     prec_policy      (params.prec_policy),
     samplers         (params.samplers),
