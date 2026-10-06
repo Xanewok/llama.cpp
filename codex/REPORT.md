@@ -1,3 +1,5 @@
+Current task: [sm_120 small-J MMQ report](REPORT-mmq-smallj.md). The stack3 report below is inherited history.
+
 # stack3
 
 CPU-verified consolidation on `topic/stack3`. Graph retention and prefill pooling default ON; owned input staging defaults OFF. GPU integration identity, speed, and the first-large-prompt latency are unmeasured here. No GPU execution/query, CUDA application, network request, server process named `llama-server`, push, or submission ran.

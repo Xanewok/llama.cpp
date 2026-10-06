@@ -9430,6 +9430,11 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_mmq_smallj(bool p
                 for (int64_t n : {9, 12, 16, 17, 24}) {
                     test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, m, n, 5120, {1, 1}, {1, 1}));
                 }
+                for (int64_t n : {12, 24, 48}) {
+                    for (bool broadcast : {false, true}) {
+                        test_cases.emplace_back(new test_mul_mat_id(type, GGML_TYPE_F32, 4, 2, broadcast, m, n, 5120));
+                    }
+                }
             }
         }
     }
