@@ -4,6 +4,8 @@
 #include "vecdotq.cuh"
 
 #include <cstdint>
+#include <cstdlib>
+#include <string>
 #include <type_traits>
 
 // only enabled on DGX Spark, where it is a gain on every type below. On the higher-bandwidth parts the kernel
@@ -321,9 +323,33 @@ int get_mmvq_mmid_max_batch(ggml_type type, int cc) {
     return MMVQ_MAX_BATCH_SIZE;
 }
 
+static constexpr bool mmvq_wide_type(ggml_type type) {
+    return type == GGML_TYPE_IQ4_XS || type == GGML_TYPE_Q5_K || type == GGML_TYPE_Q6_K ||
+           type == GGML_TYPE_Q8_0 || type == GGML_TYPE_Q4_K;
+}
+
+static bool mmvq_wide_enabled(ggml_type type) {
+    static const std::string selection = [] {
+        const char * value = std::getenv("GGML_CUDA_MMVQ_WIDE");
+        return value ? std::string(value) : std::string();
+    }();
+    return mmvq_wide_type(type) && (selection == "all" || selection == ggml_type_name(type));
+}
+
+static bool mmvq_wide_split() {
+    static const bool split = [] {
+        const char * value = std::getenv("GGML_CUDA_MMVQ_WIDE_SPLIT");
+        return value && std::string(value) == "1";
+    }();
+    return split;
+}
+
 bool ggml_cuda_should_use_mmvq(enum ggml_type type, int cc, int64_t ne11) {
     if (!ggml_is_quantized(type)) {
         return false;
+    }
+    if (cc == GGML_CUDA_CC_BLACKWELL && ne11 > MMVQ_MAX_BATCH_SIZE && ne11 <= 16 && mmvq_wide_enabled(type)) {
+        return true;
     }
     // k-quants cost more to decode and mvq redoes that per column, so MMQ wins sooner.
     // Only list quant-types MMQ supports, others would fall back to cuBLAS.
@@ -457,6 +483,9 @@ static constexpr __device__ int get_mmvq_mmid_max_batch_for_device() {
 
 static constexpr __host__ __device__ int calc_nwarps(ggml_type type, int ncols_dst, mmvq_parameter_table_id table_id, bool small_k = false, bool halve_iters = false) {
     if (table_id == MMVQ_PARAMETERS_BLACKWELL) {
+        if (ncols_dst > MMVQ_MAX_BATCH_SIZE && ncols_dst <= 16) {
+            return 2;
+        }
         return calc_nwarps(type, ncols_dst, MMVQ_PARAMETERS_GENERIC, small_k, halve_iters);
     }
     if (table_id == MMVQ_PARAMETERS_GENERIC) {
@@ -587,7 +616,7 @@ static constexpr __host__ __device__ int calc_nwarps(ggml_type type, int ncols_d
 
 static constexpr __host__ __device__ int calc_rows_per_block(int ncols_dst, int table_id, bool small_k = false, int nwarps = 1) {
     // RTX 5060 Ti: at 5-8 columns two warps over four rows keep more loads in flight than two rows (Q4_K-Q6_K/IQ4_XS +12-17 % at 6 columns, Q8_0 equal).
-    if (table_id == MMVQ_PARAMETERS_BLACKWELL && ncols_dst >= 5 && ncols_dst <= MMVQ_MAX_BATCH_SIZE) {
+    if (table_id == MMVQ_PARAMETERS_BLACKWELL && ncols_dst >= 5 && ncols_dst <= 16) {
         return 4;
     }
     if (table_id == MMVQ_PARAMETERS_GENERIC || table_id == MMVQ_PARAMETERS_GCN || table_id == MMVQ_PARAMETERS_TURING || table_id == MMVQ_PARAMETERS_GB10 || table_id == MMVQ_PARAMETERS_BLACKWELL) {
@@ -1109,7 +1138,7 @@ static void mul_mat_vec_q_switch_ncols_dst(
         const int ids_stride, cudaStream_t stream) {
 
     GGML_ASSERT(ncols_x % ggml_blck_size(type) == 0);
-    GGML_ASSERT(ncols_dst <= MMVQ_MAX_BATCH_SIZE);
+    GGML_ASSERT(ncols_dst <= MMVQ_MAX_BATCH_SIZE || (!ids && ncols_dst <= 16 && mmvq_wide_type(type)));
 
     const uint3 nchannels_y_fd   = ids ? init_fastdiv_values(nchannels_y) : make_uint3(0, 0, 0);
     const uint3 channel_ratio_fd = ids ? make_uint3(0, 0, 0)              : init_fastdiv_values(nchannels_dst / nchannels_x);
@@ -1196,6 +1225,45 @@ static void mul_mat_vec_q_switch_ncols_dst(
             stride_channel_x, stride_channel_y, stride_channel_dst,
             ncols_dst, ids_stride, warp_size, nchannels_dst, stream);
         return;
+    }
+
+    if constexpr (mmvq_wide_type(type)) {
+        if (ncols_dst > MMVQ_MAX_BATCH_SIZE) {
+            GGML_ASSERT(!ids && !fusion.gate && !fusion.x_bias && !fusion.shared_up);
+            if (mmvq_wide_split()) {
+                const int first = ncols_dst / 2;
+                for (int offset : {0, first}) {
+                    const int count = offset == 0 ? first : ncols_dst - first;
+                    mul_mat_vec_q_switch_ncols_dst<type>(
+                        vx, (const block_q8_1 *) vy + offset*stride_col_y, nullptr, fusion, dst + offset*stride_col_dst,
+                        ncols_x, nrows_x, count, stride_row_x, stride_col_y, stride_col_dst,
+                        nchannels_x, nchannels_y, nchannels_dst, stride_channel_x, stride_channel_y, stride_channel_dst,
+                        nsamples_x, nsamples_dst, stride_sample_x, stride_sample_y, stride_sample_dst, ids_stride, stream);
+                }
+                return;
+            }
+            const auto launch = [&](auto columns) {
+                constexpr int count = decltype(columns)::value;
+                const auto dims = calc_launch_params<type>(count, nrows_x, nchannels_dst, nsamples_dst, warp_size, table_id);
+                const ggml_cuda_kernel_launch_params params(dims.first, dims.second, 0, stream);
+                ggml_cuda_kernel_launch(mul_mat_vec_q<type, count, false>, params,
+                    vx, vy, nullptr, fusion, dst, ncols_x, nchannels_y_fd, stride_row_x, stride_col_y, stride_col_dst,
+                    channel_ratio_fd, stride_channel_x, stride_channel_y, stride_channel_dst,
+                    sample_ratio_fd, stride_sample_x, stride_sample_y, stride_sample_dst, ids_stride);
+            };
+            switch (ncols_dst) {
+                case 9: launch(std::integral_constant<int, 9>{}); break;
+                case 10: launch(std::integral_constant<int, 10>{}); break;
+                case 11: launch(std::integral_constant<int, 11>{}); break;
+                case 12: launch(std::integral_constant<int, 12>{}); break;
+                case 13: launch(std::integral_constant<int, 13>{}); break;
+                case 14: launch(std::integral_constant<int, 14>{}); break;
+                case 15: launch(std::integral_constant<int, 15>{}); break;
+                case 16: launch(std::integral_constant<int, 16>{}); break;
+                default: GGML_ABORT("unsupported MMVQ width");
+            }
+            return;
+        }
     }
 
     switch (ncols_dst) {
