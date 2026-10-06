@@ -12,8 +12,12 @@
 #include <cctype>
 #include <climits>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
+#include <mutex>
+#include <string>
 #include <random>
 #include <unordered_map>
 #include <vector>
@@ -925,6 +929,151 @@ static float prob_of(const llama_token_data * data, size_t n, llama_token id) {
     return 0.0f;
 }
 
+namespace {
+
+struct spec_trace_top3 {
+    int         n = 0;
+    llama_token id[3] = {};
+    float       p[3]  = {};
+
+    void add(llama_token t, float v) {
+        int j = n;
+        if (n < 3) {
+            n++;
+        } else if (v <= p[2]) {
+            return;
+        } else {
+            j = 2;
+        }
+        for (; j > 0 && p[j - 1] < v; --j) {
+            p[j] = p[j - 1];
+            id[j] = id[j - 1];
+        }
+        p[j]  = v;
+        id[j] = t;
+    }
+};
+
+struct spec_trace_pos {
+    spec_trace_top3 top;
+    float           p_x;
+};
+
+struct spec_trace_state {
+    std::mutex  mtx;
+    std::string path;
+    std::string buf;
+    long        req = 0;
+
+    void flush_locked() {
+        if (buf.empty()) {
+            return;
+        }
+        if (FILE * f = std::fopen(path.c_str(), "ab")) {
+            std::fwrite(buf.data(), 1, buf.size(), f);
+            std::fclose(f);
+        }
+        buf.clear();
+    }
+};
+
+// null when unset: the only cost on the verify path is this check
+spec_trace_state * spec_trace() {
+    static spec_trace_state * st = [] () -> spec_trace_state * {
+        const char * path = std::getenv("LLAMA_SPEC_TRACE");
+        if (!path || !*path) {
+            return nullptr;
+        }
+        auto * s = new spec_trace_state;
+        s->path = path;
+        std::atexit([] {
+            auto * st = spec_trace();
+            std::lock_guard<std::mutex> lock(st->mtx);
+            st->flush_locked();
+        });
+        return s;
+    }();
+    return st;
+}
+
+void spec_trace_top3_json(std::string & out, const spec_trace_top3 & t) {
+    char tmp[64];
+    out += '[';
+    for (int j = 0; j < t.n; ++j) {
+        std::snprintf(tmp, sizeof(tmp), "%s[%d,%.6g]", j ? "," : "", (int) t.id[j], t.p[j]);
+        out += tmp;
+    }
+    out += ']';
+}
+
+// schema: harness q4 simulator (one row per round); L = accepted drafts, the emitted token is result.back()
+void spec_trace_round(spec_trace_state * st, const llama_tokens & draft,
+        const std::vector<std::vector<llama_token_data>> & draft_q,
+        const std::vector<spec_trace_pos> & pos, const std::vector<llama_token> & result) {
+    const size_t L = result.size() - 1;
+    char tmp[64];
+
+    std::string row;
+    row.reserve(512);
+
+    row += "\"L\":" + std::to_string(L) + ",\"k\":" + std::to_string(draft.size());
+
+    row += ",\"q\":[";
+    std::string qx;
+    for (size_t i = 0; i < draft.size(); ++i) {
+        spec_trace_top3 t;
+        for (const auto & e : draft_q[i]) {
+            t.add(e.id, e.p);
+        }
+        if (i) {
+            row += ',';
+            qx += ',';
+        }
+        spec_trace_top3_json(row, t);
+        std::snprintf(tmp, sizeof(tmp), "%.6g", prob_of(draft_q[i].data(), draft_q[i].size(), draft[i]));
+        qx += tmp;
+    }
+
+    row += "],\"d\":[";
+    for (size_t i = 0; i < draft.size(); ++i) {
+        row += (i ? "," : "") + std::to_string(draft[i]);
+    }
+
+    row += "],\"qx\":[" + qx + "],\"p\":[";
+    std::string px;
+    for (size_t i = 0; i < pos.size(); ++i) {
+        if (i) {
+            row += ',';
+            px += ',';
+        }
+        spec_trace_top3_json(row, pos[i].top);
+        std::snprintf(tmp, sizeof(tmp), "%.6g", pos[i].p_x);
+        px += tmp;
+    }
+
+    row += "],\"px\":[" + px + "],\"emit\":" + std::to_string(result.back());
+    if (L == 0) {
+        row += ",\"emit1\":" + std::to_string(result.back());
+    }
+    row += "}\n";
+
+    std::lock_guard<std::mutex> lock(st->mtx);
+    st->buf += "{\"r\":" + std::to_string(st->req) + "," + row;
+    if (st->buf.size() >= (1u << 20)) {
+        st->flush_locked();
+    }
+}
+
+} // namespace
+
+void common_spec_trace_end_request() {
+    if (auto * st = spec_trace()) {
+        std::lock_guard<std::mutex> lock(st->mtx);
+        st->flush_locked();
+        st->req++;
+    }
+}
+
 // Accept a drafted token with probability min(1, p/q), else draw from norm(max(0, p - q)).
 // Preserves the target distribution exactly, and accepts more often than matching does when the
 // draft samples instead of taking its argmax.
@@ -948,6 +1097,9 @@ std::vector<llama_token> common_sampler_sample_and_accept_n_rejection_rows(struc
     std::vector<llama_token_data> residual;
 
     std::vector<llama_token_data> cand; // candidate array masked by the grammar, if there is one
+
+    auto * trace = spec_trace();
+    std::vector<spec_trace_pos> trace_pos;
 
     size_t i = 0;
     for (; i < draft.size(); i++) {
@@ -994,6 +1146,15 @@ std::vector<llama_token> common_sampler_sample_and_accept_n_rejection_rows(struc
             }
         }
 
+        if (trace) {
+            spec_trace_pos tp;
+            for (size_t k = 0; k < cur_p->size; ++k) {
+                tp.top.add(cur_p->data[k].id, p_of(k));
+            }
+            tp.p_x = p_x;
+            trace_pos.push_back(tp);
+        }
+
         if (q_x > 0.0f && (p_x >= q_x || uni(gsmpl->rng) < p_x / q_x)) {
             common_sampler_accept(gsmpl, draft[i], true);
             result.push_back(draft[i]);
@@ -1036,6 +1197,10 @@ std::vector<llama_token> common_sampler_sample_and_accept_n_rejection_rows(struc
         common_sampler_accept(gsmpl, id, true);
 
         result.push_back(id);
+    }
+
+    if (trace) {
+        spec_trace_round(trace, draft, draft_q, trace_pos, result);
     }
 
     return result;

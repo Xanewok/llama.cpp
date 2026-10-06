@@ -576,6 +576,8 @@ struct server_slot {
 
             state = SLOT_STATE_IDLE;
 
+            common_spec_trace_end_request();
+
             // do not keep context of the child slots - the parent's context is enough
             if (task->is_child()) {
                 prompt_clear();

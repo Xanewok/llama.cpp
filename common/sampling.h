@@ -107,6 +107,16 @@ std::vector<llama_token> common_sampler_sample_and_accept_n(struct common_sample
 std::vector<llama_token> common_sampler_sample_and_accept_n_rejection(struct common_sampler * gsmpl, struct llama_context * ctx, const std::vector<int> & idxs, const llama_tokens & draft, const std::vector<std::vector<llama_token_data>> & draft_q, bool grammar_first = false);
 std::vector<llama_token> common_sampler_sample_and_accept_n_rejection_rows(struct common_sampler * gsmpl, const std::function<common_sampler_row(size_t)> & row_at, const llama_tokens & draft, const std::vector<std::vector<llama_token_data>> & draft_q, bool grammar_first = false);
 
+// LLAMA_SPEC_TRACE=<path>: append one JSON line per rejection-verified round (acceptance data, log only).
+// Reads arrays the verifier already has; never touches the samplers or their RNG.
+// Rows are buffered; the request end flushes them (one request id per flush).
+void common_spec_trace_end_request();
+
+// LLAMA_SPEC_TRACE=<path>: append one JSON line per rejection-verified round (acceptance data, log only).
+// Reads arrays the verifier already has; never touches the samplers or their RNG.
+// Rows are buffered; the request end flushes them and advances the request id ("r").
+void common_spec_trace_end_request();
+
 // assume idxs == [ 0, 1, 2, ..., draft.size() ]
 std::vector<llama_token> common_sampler_sample_and_accept_n(struct common_sampler * gsmpl, struct llama_context * ctx, const llama_tokens & draft, bool grammar_first = false);
 
