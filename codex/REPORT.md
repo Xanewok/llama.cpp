@@ -1,4 +1,10 @@
-# stack3
+# spec-tf build-window delivery
+
+`codex/bw-spec-tf.sh` and `codex/bw-spec-tf.toml` package the pending CPU validation, CUDA rebuild, `spec-tf-v2` freeze and GPU-item check. The manifest passed `gpuq submit --check`; Bash syntax and Python compilation checks passed (M). No build, test, model run, freeze or submission ran. Estimate: 10800 s (G); budget: 16200 s (D). All CPU controls must pass before Stage 2. Full criteria, failure codes and unattended risks are in `codex/REPORT-spec-tf.md` and the payload header.
+
+---
+
+# stack3 (inherited report)
 
 CPU-verified consolidation on `topic/stack3`. Graph retention and prefill pooling default ON; owned input staging defaults OFF. GPU integration identity, speed, and the first-large-prompt latency are unmeasured here. No GPU execution/query, CUDA application, network request, server process named `llama-server`, push, or submission ran.
 

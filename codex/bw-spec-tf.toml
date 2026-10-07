@@ -1,0 +1,111 @@
+id = "bw-spec-tf"
+title = "Build window (no GPU use): spec-tf carry rows, 16-prompt CPU matrix, negative/slice/determinism controls, CUDA freeze and item check"
+# Estimate G: 10800 s; budget D: 16200 s (1.5 x estimate). Payload rc 0 = pass; others -> 8. Retry never.
+priority = 2
+kind = "filler"
+budget_s = 16200
+est_s = 10800
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "deterministic", regex = "bw-run: FAIL" },
+]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/bw-spec-tf.sh", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/spec-tf-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", OK_RCS = "0" }  # gpuq requires it; the wrapper hides the GPUs
+ports = []
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/bw-spec-tf.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/spec-tf-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["budget"]
+
+[pins]
+files = [
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf",
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/xid-lines.txt",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-10000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-10500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-11000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-11500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-12000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-12500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-13000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-13500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-14000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-14500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-1500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-15000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-15500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-16000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-16500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-17000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-17500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-18000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-18500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-19000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-2000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-2500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-3000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-3500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-4000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-4500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-5000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-5500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-6000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-6500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-7000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-7500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-8000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-8500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-9000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base/depth-9500.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/pins.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-q8-j5q/a1/pins.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/mmq.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/draft-vocab-cov/swift_draft_vocab_ids.cov99.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/bw-spec-tf.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/bw-spec-tf.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/bw_spec_tf.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/check_controls.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/check_rows.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/check_vocab.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/cpu-exact/streams.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/cpu-exact/trace.jsonl",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/cpu_controls.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/cpu_pipeline.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/cpu_validate.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/gate.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/gen_gpu_item.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/gpu_payload.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/import_streams.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/run_tests.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/spec_tf.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/test_estimator_io.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/test_gpu_payload.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/test_import_streams.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-tf/codex/test_spec_tf.py",
+  "/mnt/scratch/work/models/nh6/a/J5q-nh6-a-00001-of-00002.gguf",
+  "/mnt/scratch/work/models/nh6/a/J5q-nh6-a-00002-of-00002.gguf",
+  "/mnt/scratch/work/models/nh6/c/J5q-nh6-c-00001-of-00002.gguf",
+  "/mnt/scratch/work/models/nh6/c/J5q-nh6-c-00002-of-00002.gguf",
+  "/mnt/scratch/work/models/nh6/d/J5q-nh6-d-00001-of-00002.gguf",
+  "/mnt/scratch/work/models/nh6/d/J5q-nh6-d-00002-of-00002.gguf",
+  "/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf",
+]

@@ -1,6 +1,6 @@
 # spec-tf validation report
 
-Status: BLOCKED by RUN/ready measure items. The estimator and trace extension are validated; the latest tool conditioning correction is committed but uncompiled. Do not queue this draft item or the preliminary frozen build.
+Status: The build-window payload is prepared and statically checked, but not executed. The latest tool conditioning correction is still uncompiled. Do not queue the draft GPU item or the preliminary frozen build.
 
 ## Conclusion so far
 
@@ -38,7 +38,21 @@ The initial broad unittest discovery imported the inherited `codex/test_input_st
 
 ## Pending
 
+The parent can queue `codex/bw-spec-tf.toml` (`bw-spec-tf`, filler, priority 2). Its wrapper runs `codex/bw-spec-tf.sh` with `GPUQ_BUILD_WINDOW=1` and GPUs hidden. `codex/gate.sh` skips the queue wait only inside that window; the RAM floor, buildgate and cpugate remain active. The payload never submits an item. The instructions below describe its pending work, not completed validation.
+
 First run `CUDA_VISIBLE_DEVICES="" GIT_NO_LAZY_FETCH=1 ./codex/gate.sh /home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate ./codex/gate.sh cmake --build build-cpu --target llama-spec-tf llama-server -j4`, then copy the CPU `llama-server` to `build-cpu/bin/spec-tf-cpu-server` (never execute the original name). Compile/test `8ff3e34e4` against `codex/cpu-exact/streams.json` and `trace.jsonl` into a fresh tool directory, with `--tf-chunk 6 --tf-carry-streams` and the flags in `codex/cpu_pipeline.sh`. The compile was held by `graph-capture-fix-notrace-depth-j5q` plus newly ready `mmq-smallj-*` measure items (`codex/build-cpu-carry.log`). No compile/link ran for this correction; the waiting process was stopped before handoff. Then run `codex/cpu_pipeline.sh codex/cpu-validation 16`, `codex/cpu_controls.sh`, and a real sliced-head control. Final freeze must be new `spec-tf-v2`; do not overwrite preliminary `spec-tf`. Rebuild CUDA, check the ggml stamp and 25 DeviceTopK entries (M), freeze, regenerate pins with `codex/gen_gpu_item.py`, and run `gpuq submit --check` plus CPU-only preflight through the gates. Full CPU matrix, negative controls, deterministic rerun, slice control and final freeze/check remain incomplete. Optional requantized-4B dose response has not run. No GPU speed or acceptance result is claimed.
+
+## Build-window payload
+
+`codex/bw-spec-tf.sh` documents each pass criterion and failure code in its header. CPU checks must pass before any CUDA build, freeze or GPU-item generation. The carry replay and the full prompt/seed matrix require nonempty rows, all requested tokens, p/q probability error <= 1e-3, zero support changes and the served backend/carry flags. The estimator/parser suite includes the recorded depth/SSE/journal artifacts. The existing hidden-offset and token-permutation controls must each lose at least 50% of speculative acceptance above the mandatory token.
+
+`codex/bw_spec_tf.py` creates a CPU vocab subset from the union of every saved full-head top-128 row, excluding a frequent top-1 token. Stage B loads that real reduced head. `check_vocab.py` must prove offline coverage/tie safety and match the real probabilities within 1e-3. A deliberately wrong vocab restores the excluded token; the comparator must return exactly 1 and record a finite discrepancy above 1e-3. The deterministic check compares the complete draft file inventory, headers and bytes, then repeats the server's first two seeded streams and their probability trace.
+
+The CUDA recipe matches `codex/build_cuda.sh`: CUDA 13.2, architecture 120a, local CCCL v3.4.3, NCCL off, disconnected CMake dependencies and ccache on. `round-trace` aliases `llama-spec-tf`; the ordinary server is built but never executed under its original name. Stamp pipelines consume all producer output. After `wt freeze spec-tf-v2`, the payload regenerates pins, checks the GPU manifest, and runs its CPU-only hash/stamp preflight.
+
+Estimate: 10800 s (G); manifest budget: 16200 s (D, 1.5 x estimate). No new CPU timings were measured. Static checks: `bash -n codex/bw-spec-tf.sh`, `bash -n codex/gate.sh`, `python3 -m py_compile codex/bw_spec_tf.py`, and `gpuq submit --check codex/bw-spec-tf.toml` passed (M). No configure, compile, link, test, model run, freeze or queue submission ran in this delivery.
+
+Unattended risks: the carry correction and all new gates remain unexecuted. Numeric/support/tie controls can stop Stage 1. RAM waits can consume the budget. The payload refuses existing CPU validation output and an existing final freeze; `retry = "never"` requires inspection after failure. A failure after freezing leaves `spec-tf-v2` intact for the parent to inspect, rather than overwriting it on retry. Payload failures never return 3 or 4; the wrapper accepts only 0 and maps every other payload status to 8.
 
 ## Upstream shape
 
