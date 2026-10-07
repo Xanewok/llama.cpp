@@ -1,0 +1,5 @@
+CUDA: codex/build_cuda.sh (stack6 recipe, 120a, CCCL v3.4.3, NCCL off, CCACHE on).
+CPU numeric validation: cmake -B build-cpu -DGGML_CUDA=OFF -DGGML_CCACHE=ON -DGGML_OPENMP_FETCH=OFF -DGGML_LLAMAFILE=OFF -DGGML_CPU_REPACK=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DCMAKE_BUILD_TYPE=Release
+Every configure/build goes through codex/gate.sh and bin/buildgate. Compile uses -j4.
+Every CPU validation goes through codex/gate.sh and bin/cpugate, nice 19, at most 8 threads and context 4096.
+Frozen round-trace is the teacher-forced example alias; the frozen llama-server is the ordinary server and is never executed by this worker.
