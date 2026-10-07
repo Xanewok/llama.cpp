@@ -1,0 +1,45 @@
+# spec-tf validation report
+
+Status: BLOCKED by RUN/ready measure items. The estimator and trace extension are validated; the latest tool conditioning correction is committed but uncompiled. Do not queue this draft item or the preliminary frozen build.
+
+## Conclusion so far
+
+The r-weighted teacher-forced estimator matches real rejection-sampling Monte Carlo on random small trees at k=5. Four trees give discrepancies of 0.043, 0.694, 1.026 and 2.355 combined standard errors (M), all below 3. The intentionally broken plain-product estimator misses by 92.193 standard errors on the biased tree (M). Identical input arms give paired delta exactly 0 and stream SE exactly 0 (D).
+
+The first CPU comparison fails the proposed 1e-3 probability-row tolerance. Two default CPU streams give maximum p error 0.0989324 and q error 0.0990024 (M); disabling repacking alone leaves p error 0.0796047 and q error 0.134229 (M). Disabling both CPU repacking and llamafile leaves p error 0.1306202 and q error 0.1705679 (M). Correct row/token alignment was checked. These are failed diagnostics, not selection-bias measurements.
+
+Source review found a definite implementation mismatch: Stage A forced host sampling, and Stage B omitted the served backend top-k attachment. Commit `0a2284bf0` corrects both paths. The design's statement that the host chain still runs under backend sampling is false in general: `common/sampling.cpp:819-837` returns a backend-sampled row without running the host chain. CPU can offload the full target chain; tensor splitting can restrict offload to a prefix.
+
+The backend correction compiled and was model-tested; it does not remove the initial numeric mismatch. With `--ctx-checkpoints 0` on the server and `--tf-chunk 6` on the tool, both streams' target rows agree within 5e-10 (M), the printed trace's decimal rounding. The first stream's draft rows also agree within 5e-10 with no support changes (M). Its harmonic prediction is 3.084624 (G) versus 3.215190 tokens/round over 79 trace rounds (M), a -0.130566 observed gap (D). The second stream's draft rows differ by up to 0.0847648 (M).
+
+The remaining source discrepancy is cross-request carry: `common/speculative.cpp:1495` initializes `pending_h` only in the constructor; `:1520-1540` resets the sampler in `begin()` without clearing this carry; `:1591-1598` feeds it into the first row of a prompt. The second CPU request has `cache_n=0` and `prompt_n=22`, so prompt reuse is ruled out (M). Commit `8ff3e34e4` adds explicit `--tf-carry-streams`, mirrors the server's checkpoint cuts at `tools/server/server-context.cpp:3890-3910`, and records prompt chunks for Stage B. This latest correction is source-verified but uncompiled: new RUN/ready measure items closed the gate before the compile started.
+
+## Design and source evidence
+
+Stage A uses the existing target sampler, including the model suppress list and `--ignore-eos` EOG biases, and writes its final probabilities. Stage B initializes only an independent MTP context, catches up with saved target hiddens, then feeds the true stream through each draft's own hidden chain. It writes both full-head top-128 logits and the real top-10 sampler probabilities. Chained heads follow the existing per-head prefix rebuild; assistants that require live target KV are rejected.
+
+The estimator uses `beta_j = sum min(p_j,q_j)`, `r_j = min(1,q_j(x_j)/p_j(x_j))`, and `T = 1 + sum product(r_before_j)*beta_j`. Absolute harmonic estimates and the corresponding paired deltas remain G until served row equivalence and start-selection bias are validated. Both arms use the base arm's `1/T` weights. Stream SE treats a stream as the sample unit. Per-start bootstrap is descriptive; adjacent starts are correlated.
+
+Rechecked design claims: `common/speculative.cpp:36` retunes top-k 10 plus temperature; `:1479` enables target/draft nextn hiddens; `:1591` shifts target hiddens in catch-up; `:1684` feeds the first pending hidden; `:1735` gets the draft's own hidden; `:1791` advances draft positions; `:1832` selects the accepted target hidden. `tools/server/server-context.cpp:495` gates positive-temperature rejection and `:4255` selects the rejection verifier. `tools/server/server-schema.cpp:480` appends EOG biases. The baseline design's `common/sampling.cpp:938-1042` references ac7465885; the two trace commits moved that function in this worktree. `common/speculative.cpp:2648-2655` sets `ctx_other = ctx_tgt`; `src/llama-context.cpp:157-172` discards it for independent Qwen MTP contexts. It is not unset in the initializer, as one design sentence implied.
+
+Design deviations: hidden rows are F32, to avoid introducing BF16 rounding into the row check. All k draft steps are retained, because a token outside the full head's top ten can remain inside an offline subset's top ten. Partial final starts are stored for trace checking but excluded from the full-horizon estimator. The AB mode exercises target, full-head and real sliced-head passes in one process for the queue canary. No target/draft sampler code or RNG behavior was changed; the trace extension only reads distributions and formats JSON.
+
+## Evidence and reproducibility
+
+- `codex/run_tests.sh`: 12 explicit tests pass (M), in `codex/tests-final.log`. Includes real `depth-1500.json` token parsing, real recorded journal faults, sparse-array size checks, coverage/tie refusal, invalid probability-row refusal, estimator MC and its negative control.
+- `codex/cpu-smoke/`: two 256-token streams from the renamed CPU server, context 4096, eight threads, probabilistic k=5, temp 1, top-k 20/top-p 0.95/min-p 0.05, q8_0 target KV and f16 draft KV. `rows.json` preserves the initial failed numeric comparison.
+- `codex/cpu-no-repack/`: same smoke with repacking disabled; `rows.json` preserves that failed diagnostic. `estimate/summary.json` records the exact-zero identical-arm control.
+- `codex/build-cuda-final.log`: CUDA compilation completed before the sampler corrections, through `buildgate`, GPUs hidden, stack6 recipe with arch 120a and CCCL v3.4.3. `strings libggml-cuda.so` contains 25 DeviceTopK entries (M); the ggml stamp is `ea9bb4e3a`. The preliminary `/home/xanewok/repos/qwen38-eval-worktrees/frozen/spec-tf/` pins that commit and is stale relative to the corrected source.
+- `codex/spec-tf-j5q.gpuq.toml`, `codex/gpu_ab.sh`: prepared only. The preliminary manifest passed `gpuq submit --check` (`codex/item-check.log`); the final v2 freeze and manifest check are pending. Input models, all split shards, both vocab files and all recorded streams are pinned. Stage A writes to `/mnt/scratch/work/spec-tf/`; Stage B covers served Q4_0, Q3_K, IQ3_S, whole-nextn Q8_0, full head and a real cov99 slice. Canary uses one tool process and one stream, with a 540-second payload cap (G). Own application faults map to 8; payload failures never map to 3 or 4.
+
+## Work-rule deviation
+
+The initial broad unittest discovery imported the inherited `codex/test_input_staging.py`, which compiled six tiny CPU-only stubs outside `buildgate`. This violated the compile-wrapper rule. They ran under nice 19 with CUDA hidden and did not link or execute CUDA. Subsequent checks use only explicit modules through `codex/run_tests.sh`.
+
+## Pending
+
+First run `CUDA_VISIBLE_DEVICES="" GIT_NO_LAZY_FETCH=1 ./codex/gate.sh /home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate ./codex/gate.sh cmake --build build-cpu --target llama-spec-tf llama-server -j4`, then copy the CPU `llama-server` to `build-cpu/bin/spec-tf-cpu-server` (never execute the original name). Compile/test `8ff3e34e4` against `codex/cpu-exact/streams.json` and `trace.jsonl` into a fresh tool directory, with `--tf-chunk 6 --tf-carry-streams` and the flags in `codex/cpu_pipeline.sh`. The compile was held by `graph-capture-fix-notrace-depth-j5q` plus newly ready `mmq-smallj-*` measure items (`codex/build-cpu-carry.log`). No compile/link ran for this correction; the waiting process was stopped before handoff. Then run `codex/cpu_pipeline.sh codex/cpu-validation 16`, `codex/cpu_controls.sh`, and a real sliced-head control. Final freeze must be new `spec-tf-v2`; do not overwrite preliminary `spec-tf`. Rebuild CUDA, check the ggml stamp and 25 DeviceTopK entries (M), freeze, regenerate pins with `codex/gen_gpu_item.py`, and run `gpuq submit --check` plus CPU-only preflight through the gates. Full CPU matrix, negative controls, deterministic rerun, slice control and final freeze/check remain incomplete. Optional requantized-4B dose response has not run. No GPU speed or acceptance result is claimed.
+
+## Upstream shape
+
+The extraction tool is general for independent and chained MTP models, with no Swift constants and no public API changes. It uses the existing experimental nextn API. It needs numeric validation, a compact upstream test fixture, a decision on output-format maintenance and discussion of scope before an upstream proposal. The Python estimator and queue harness are research artifacts under `codex/`. Nothing was posted or pushed.
