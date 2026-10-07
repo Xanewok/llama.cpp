@@ -2653,7 +2653,9 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
             backend_ctx->ctx.reset(ggml_init(params));
             for (size_t j = 0; j < n_backends; j++) {
                 auto & bcj = backend_ctx->backend_configs[j];
-                for (size_t i = 0; i < n_subgraphs; i++) {
+                // All max_subgraphs, not this call's n_subgraphs: the arena is only rebuilt when a capacity is raised, so a
+                // later graph with up to max_subgraphs subgraphs reuses it and would find the old arena's dangling pointers.
+                for (size_t i = 0; i < backend_ctx->max_subgraphs; i++) {
                     bcj.cgraphs[i].cgraph_main = ggml_new_graph_custom(backend_ctx->ctx.get(), backend_ctx->max_graph_nodes, /*grads =*/ false);
                 }
             }
