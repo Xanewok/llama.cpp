@@ -6,9 +6,8 @@ S=$HOME/qwen38-stack7
 export PATH="$S/tools/local/bin:$HOME/qwen38-tools/bin:/opt/homebrew/bin:$PATH"
 export S7_W=$S/w S7_EVAL=$S/eval S7_MODEL=$S/models/Qwen3.5-4B-UD-Q4_K_XL.gguf S7_VOCAB=$S/models/swift_draft_vocab_ids.json
 export S7_GATE=$ROOT/codex/hostgate.sh S7_BUILDGATE=$ROOT/codex/hostgate.sh S7_CCACHE=OFF S7_CPU_ONLY=1
-# -interposable: the getter row0 shim replaces an exported ggml-cpu function via DYLD_INSERT_LIBRARIES, which needs indirect calls
 # arm64 i8mm (mmla) sums 2-row mul_mat in another order than the 1-row path, so the np2 byte identity (stage 30) needs it off
-export S7_CPU_EXTRA=${S7_CPU_EXTRA--DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod -DCMAKE_SHARED_LINKER_FLAGS=-Wl,-interposable}
+export S7_CPU_EXTRA=${S7_CPU_EXTRA--DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod}
 export S7_JOBS=${S7_JOBS:-8} S7_BRANCH=$(git -C "$ROOT" branch --show-current)
 export GPUQ_BUILD_WINDOW=1 CMAKE_GENERATOR=Ninja
 exec bash "$ROOT/codex/bw-stack7.sh" "${1:-$S7_W/work/build-window-1007/stack7-a1}"

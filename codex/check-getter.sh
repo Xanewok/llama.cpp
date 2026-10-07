@@ -18,7 +18,7 @@ restore() { git restore --source=HEAD -- "$GATE_SRC"; }
 trap restore EXIT
 TEST=build-cpu/bin/test-recurrent-state-rollback
 SHIM_EXT=so; [[ $(uname) != Darwin ]] || SHIM_EXT=dylib
-# run_test NAME ARGS...: log in $OUT/NAME.log, rc in $RC; PRELOAD=lib preloads a shim into the test only (dyld interposing on Darwin)
+# run_test NAME ARGS...: log in $OUT/NAME.log, rc in $RC; PRELOAD=lib preloads a shim into the test only (not effective on Darwin: see S7_SKIP_ROW0)
 run_test() {
     local name=$1; shift
     RC=0
@@ -50,7 +50,7 @@ expect_fail() {
     fi
 }
 
-# S7_SKIP_ROW0=1 (diagnostic only, makes this stage a partial gate): dyld interposing of the shim did not take effect on arm64 macOS
+# S7_SKIP_ROW0=1 (diagnostic only, makes this stage a partial gate): neither DYLD_INSERT_LIBRARIES (flat namespace) nor __interpose on a -interposable libggml-cpu replaced the call on arm64 macOS
 if [[ ${S7_SKIP_ROW0:-0} != 1 ]]; then
 PRELOAD="$ROOT/build-cpu/bin/row0-mutant.$SHIM_EXT" run_test mut-row0 --getter-gate
 grep "ROW0_MUTANT active" "$OUT/mut-row0.log" >/dev/null || die 22 "row0 shim was not loaded (see $OUT/mut-row0.log)"
