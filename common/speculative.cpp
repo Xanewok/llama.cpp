@@ -1480,7 +1480,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         std::fflush(mtp_chain_dump);
     }
     std::vector<float>         mtp_chain_zeros; // h of the rows past step 0, which the chain replaces
-    bool mtp_chain_announced = false;
+    std::vector<bool> mtp_chain_announced; // [n_drafting]: the chain ran for that many sequences
 
     common_speculative_impl_draft_mtp(const common_params_speculative & params, uint32_t n_seq)
         : common_speculative_impl(COMMON_SPECULATIVE_TYPE_DRAFT_MTP, n_seq, params.draft.n_max)
@@ -1932,9 +1932,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             for (llama_seq_id seq_id : seqs) {
                 mtp_chain_rng_to(seq_id, true);
             }
-            if (!mtp_chain_announced) {
-                mtp_chain_announced = true;
-                SPC_INF("MTP chain: k=%d\n", k);
+            mtp_chain_announced.resize(n_seq + 1);
+            if (!mtp_chain_announced[n_d]) {
+                mtp_chain_announced[n_d] = true;
+                SPC_INF("MTP chain: k=%d seqs=%d\n", k, n_d);
             }
 
             ggml_round_trace_begin("DC", batch.size());
