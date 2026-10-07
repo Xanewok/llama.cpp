@@ -1612,6 +1612,13 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
 
     gf_res_prev_active = res;
 
+    // a plain graph would hand back each row's own draft as if the chain had produced it
+    if (cparams.mtp_chain > 0 && res->n_mtp_chain_seqs == 0) {
+        LLAMA_LOG_ERROR("%s: the batch does not fit the MTP chain of %d steps\n", __func__, cparams.mtp_chain);
+        ret = GGML_STATUS_FAILED;
+        return nullptr;
+    }
+
     // set the input data for the input tensors
     {
         //const auto t_start_us = ggml_time_us();

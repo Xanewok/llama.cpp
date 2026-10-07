@@ -982,6 +982,8 @@ public:
     std::vector<ggml_tensor *> t_sampled_logits;
     std::vector<ggml_tensor *> t_candidates;
 
+    int32_t n_mtp_chain_seqs = 0; // > 0: the graph runs the MTP draft chain (llama_set_mtp_chain) for that many sequences
+
     std::vector<llm_graph_input_ptr> inputs;
     std::vector<llm_graph_fused_node> fused_nodes;
 
