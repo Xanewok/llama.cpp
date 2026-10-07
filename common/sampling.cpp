@@ -153,8 +153,21 @@ struct common_sampler {
                 cur[i] = llama_token_data{sampled_ids[i], sampled_logits[i], 0.0f};
             }
             if (backend_candidates) {
+                // with a banning bias the backend took prefilter_bias.size() extra candidates (see common_sampler_init)
+                bool exact = true;
+                if (!prefilter_bias.empty()) {
+                    size_t n = 0;
+                    for (const auto & c : cur) {
+                        if (!banned(c.id)) {
+                            cur[n++] = c;
+                        } else {
+                            exact = exact && std::isfinite(c.logit); // the chain would turn +inf or NaN into NaN
+                        }
+                    }
+                    cur.resize(n);
+                }
                 std::sort(cur.begin(), cur.end(), [](const llama_token_data & a, const llama_token_data & b) { return a.logit > b.logit; });
-                bool exact = cur.size() > (size_t) prefilter_k;
+                exact = exact && cur.size() > (size_t) prefilter_k;
                 for (int32_t i = 0; exact && i <= prefilter_k; ++i) {
                     exact = std::isfinite(cur[i].logit) && (i == 0 || cur[i - 1].logit > cur[i].logit);
                 }
@@ -163,6 +176,7 @@ struct common_sampler {
                     return;
                 }
                 cur.resize(prefilter_k);
+                LOG_DBG("%s: using backend candidates: n_cand = %u, n_ban = %zu, top_k = %d\n", __func__, sampled_logits_count, prefilter_bias.size(), prefilter_k);
             }
         } else {
             const auto * logits = row.logits();
@@ -192,6 +206,12 @@ struct common_sampler {
     std::vector<llama_logit_bias> prefilter_bias; // the chain's logit bias, by token
 
     llama_sampler * backend_candidates = nullptr;
+
+    bool banned(llama_token id) const {
+        const auto it = std::lower_bound(prefilter_bias.begin(), prefilter_bias.end(), id,
+                [](const llama_logit_bias & lb, llama_token t) { return lb.token < t; });
+        return it != prefilter_bias.end() && it->token == id;
+    }
 
     // raw logits go into cur, as the chain's logit bias adds the bias itself; selection is on the biased logit.
     // Returns false, leaving cur to be refilled, when a tie among the k + 1 best could make the chain's own
@@ -559,8 +579,13 @@ struct common_sampler * common_sampler_init(
         llama_sampler_chain_add(chain, smpl);
     }
 
+    // Include n_ban extra candidates to retain the best k + 1 unbanned logits and their tie check.
+    // A finite bias can promote a token from outside the backend candidates.
     const int32_t candidate_k = common_sampler_prefilter_k(params);
-    const bool use_candidates = params.backend_sampling && candidate_k > 0 && candidate_k < 256 && prefilter_bias.empty();
+    const bool    bias_bans   = !prefilter_dup_bias && std::all_of(prefilter_bias.begin(), prefilter_bias.end(),
+            [](const llama_logit_bias & lb) { return lb.bias == -INFINITY; });
+    const int32_t n_ban       = bias_bans ? (int32_t) prefilter_bias.size() : 0;
+    const bool use_candidates = params.backend_sampling && candidate_k > 0 && candidate_k < 256 && bias_bans && n_ban < 256 - candidate_k;
 
     if (grmr && params.backend_sampling && !use_candidates) {
         LOG_WRN("%s: backend sampling is not compatible with grammar, disabling\n", __func__);
@@ -592,7 +617,7 @@ struct common_sampler * common_sampler_init(
     result->prefilter_bias = std::move(prefilter_bias);
     if (use_candidates) {
         result->backend_candidates = llama_sampler_chain_init(lparams);
-        llama_sampler_chain_add(result->backend_candidates, llama_sampler_init_top_k(candidate_k + 1));
+        llama_sampler_chain_add(result->backend_candidates, llama_sampler_init_top_k(candidate_k + 1 + n_ban));
     }
 
     return result;
