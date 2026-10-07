@@ -1,6 +1,6 @@
-purpose: Mac mini port of bw-stack7 CPU stages (spike)
-base: d98212aefb74dd518b6c744560a745a8e45586e8
+purpose: stack7 + package 55 per-type MMVQ (848391a78..3d12d526f) for IQ4 A/Bs
+base: ddedffacb3dd84790292e2c660c1f585d8d08dee
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack7-mac
-created: 2026-10-07T15:48:57+02:00
+branch: topic/stack7-p55
+created: 2026-10-08T00:17:45+02:00
 creator: xanewok
