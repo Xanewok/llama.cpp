@@ -13,6 +13,7 @@ inline bool ggml_round_trace_enabled() {
 GGML_API int64_t ggml_round_trace_now();
 GGML_API void ggml_round_trace_begin(const char * phase, int n_tokens);
 GGML_API void ggml_round_trace_end(int result);
+// Event, count and scope kinds must use immutable static storage; the writer can outlive the producer round.
 GGML_API void ggml_round_trace_event(const char * kind, int64_t begin, int64_t end,
                                    int device = -1, uint64_t count = 1, uint64_t bytes = 0);
 GGML_API void ggml_round_trace_flush();
