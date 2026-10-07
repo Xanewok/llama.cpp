@@ -9,6 +9,7 @@
 #include "../src/llama-memory.h"
 
 #include <algorithm>
+#include <cinttypes>
 #include <clocale>
 #include <cmath>
 #include <cstdio>
@@ -310,36 +311,47 @@ static test_status test_multi_seq_split_replay(const common_params & params, lla
     return test_status::PASS;
 }
 
-// Counts gated delta net nodes by how they read their state (row ids or a gathered copy) and by ubatch sequence count.
+// Counts gated delta net nodes by how they read their state (row ids or a gathered copy) and the recurrent state rows
+// that get_rows copies.
 struct gdn_probe {
-    int n_indexed[2] = { 0, 0 }; // [n_seqs > 1]
-    int n_plain[2]   = { 0, 0 };
+    int     n_indexed  = 0;
+    int     n_plain    = 0;
+    int64_t n_gathered = 0;
 };
 
 static bool gdn_probe_cb(ggml_tensor * t, bool ask, void * user_data) {
-    if (ask && t->op == GGML_OP_GATED_DELTA_NET) {
-        auto * probe = (gdn_probe *) user_data;
-        (t->src[6] ? probe->n_indexed : probe->n_plain)[t->src[2]->ne[3] > 1]++;
+    if (!ask) {
+        return false;
+    }
+    auto * probe = (gdn_probe *) user_data;
+    if (t->op == GGML_OP_GATED_DELTA_NET) {
+        (t->src[6] ? probe->n_indexed : probe->n_plain)++;
+    }
+    const ggml_tensor * src = t->op == GGML_OP_GET_ROWS ? t->src[0] : nullptr;
+    if (src && src->view_src) {
+        src = src->view_src;
+    }
+    if (src && strncmp(src->name, "cache_s_l", 9) == 0) {
+        probe->n_gathered += t->ne[1];
     }
     return false;
 }
 
-// The GDN state getter reads states in place, which the CUDA snapshot fusion cannot cover with several sequences in a
-// ubatch, so those ubatches keep the gather. The graph probe checks which form each ubatch shape built, and the logits
-// of every phase must equal those of a single-sequence context decoding the same stream (a wrong row reads another
-// sequence's state).
+// The GDN state getter reads states in place. A ubatch whose cell range holds only its own sequences (n_rs == n_seqs)
+// must read by id and gather no state; one with extra states in its range must keep the gather. The logits of every
+// phase must equal those of a single-sequence context decoding the same stream: a wrong row reads another sequence's
+// state, a lost extra state breaks the later phases of that sequence.
 static test_status test_getter_gate(const common_params & params, llama_model * model, uint8_t fill) {
     const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
 
     constexpr uint32_t n_ubatch = 16;
-    constexpr uint32_t n_seqs   = 2;
 
     gdn_probe probe;
-    const auto make_ctx_gate = [&](uint32_t n_seq_max, bool probed) {
+    const auto make_ctx_gate = [&](uint32_t n_seq, bool probed) {
         auto cparams = common_context_params_to_llama(params);
-        cparams.n_seq_max  = n_seq_max;
+        cparams.n_seq_max  = n_seq;
         cparams.n_rs_seq   = 8;
-        cparams.n_ctx      = 256;
+        cparams.n_ctx      = 256*n_seq;
         cparams.n_batch    = 256;
         cparams.n_ubatch   = n_ubatch;
         cparams.kv_unified = false;
@@ -350,93 +362,135 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
         return init_ctx(model, cparams, fill);
     };
 
-    llama_context_ptr ctx_gate = make_ctx_gate(n_seqs, true);
-    std::vector<llama_context_ptr> ctx_ref;
-    for (uint32_t s = 0; s < n_seqs; ++s) {
-        ctx_ref.push_back(make_ctx_gate(1, false));
-    }
-    if (!ctx_gate || !ctx_ref[0] || !ctx_ref[1]) {
-        LOG_ERR("%s: failed to init contexts\n", __func__);
-        return test_status::FAIL;
-    }
-    if (llama_n_rs_seq(ctx_gate.get()) == 0) {
-        LOG_INF("%s: skipping because n_rs_seq is disabled\n", __func__);
-        return test_status::SKIP;
-    }
-
     const auto tok = [&](uint32_t seq, llama_pos pos) {
         return (llama_token) ((11*(uint32_t) pos + 29*seq + 3) % (uint32_t) n_vocab);
     };
 
+    enum class form { BY_ID, GATHERED };
     // the streams share one batch in order, tokens from out_from on request logits
     struct phase {
         const char *          name;
         std::vector<uint32_t> streams;
         llama_pos             p0, p1, out_from;
+        form                  expect;
     };
-    const std::vector<phase> phases = {
-        { "prefill seq 0",             { 0 },    0, 19, 18 }, // two ubatches of one sequence
-        { "prefill seq 1",             { 1 },    0, 19, 18 },
-        { "verify batch, both seqs",   { 0, 1 }, 19, 25, 19 }, // n_seqs = 2, several tokens each
-        { "decode, both seqs",         { 0, 1 }, 25, 26, 25 }, // n_seqs = 2, one token each
-        { "decode, both seqs again",   { 0, 1 }, 26, 27, 26 },
-        { "seq 1 beside an idle slot", { 1 },    27, 28, 27 }, // n_seqs = 1, n_rs > n_seqs
+    struct scenario {
+        const char *       name;
+        uint32_t           n_seq;
+        std::vector<phase> phases;
+    };
+    const std::vector<scenario> scenarios = {
+        { "two slots", 2, {
+            { "prefill seq 0",             { 0 },    0, 19, 18, form::BY_ID }, // two ubatches of one sequence
+            { "prefill seq 1",             { 1 },    0, 19, 18, form::BY_ID },
+            { "verify batch, both seqs",   { 0, 1 }, 19, 25, 19, form::BY_ID }, // n_seqs = n_rs = 2, several tokens each
+            { "decode, both seqs",         { 0, 1 }, 25, 26, 25, form::BY_ID }, // one token each
+            { "decode, both seqs again",   { 0, 1 }, 26, 27, 26, form::BY_ID },
+            { "seq 1 beside an idle slot", { 1 },    27, 28, 27, form::BY_ID },
+        } },
+        // seq 1 takes the first cell, so the joint batch swaps the cells: each sequence reads the cell the other writes
+        { "swapped cells", 2, {
+            { "prefill seq 1",             { 1 },    0, 19, 18, form::BY_ID },
+            { "prefill seq 0",             { 0 },    0, 19, 18, form::BY_ID },
+            { "verify batch, both seqs",   { 0, 1 }, 19, 25, 19, form::BY_ID },
+            { "decode, both seqs",         { 0, 1 }, 25, 26, 25, form::BY_ID },
+        } },
+        // both start from the shared zero state in one batch
+        { "joint start", 2, {
+            { "prefill both seqs",         { 0, 1 }, 0, 12, 11, form::BY_ID },
+            { "decode, both seqs",         { 0, 1 }, 12, 13, 12, form::BY_ID },
+        } },
+        // seqs 0 and 2 leave seq 1 inside their cell range: its state is an extra state the gather must move
+        { "extra state", 3, {
+            { "prefill seq 0",              { 0 },    0, 19, 18, form::BY_ID },
+            { "prefill seq 1",              { 1 },    0, 19, 18, form::BY_ID },
+            { "prefill seq 2",              { 2 },    0, 19, 18, form::BY_ID },
+            { "verify batch, seqs 0 and 2", { 0, 2 }, 19, 25, 19, form::GATHERED },
+            { "seq 1 after the move",       { 1 },    19, 25, 19, form::BY_ID },
+            { "decode, seqs 0 and 1",       { 0, 1 }, 25, 26, 25, form::GATHERED }, // seq 2 now sits between them
+            { "decode, seqs 0 and 1 again", { 0, 1 }, 26, 27, 26, form::BY_ID },
+            { "seq 2 after the move",       { 2 },    25, 26, 25, form::BY_ID },
+        } },
     };
 
-    // batch shape alone moves a real model by up to ~1e-3 (CPU, 4B Q4_K_XL); a wrong state row costs ~0.1
-    constexpr double nmse_eps = 3e-3;
+    constexpr double nmse_eps = 1e-4;
 
-    for (const auto & ph : phases) {
-        common_batch batch(ctx_gate.get());
-        for (uint32_t s : ph.streams) {
-            for (llama_pos pos = ph.p0; pos < ph.p1; ++pos) {
-                batch.add(tok(s, pos), pos, (llama_seq_id) s, pos >= ph.out_from);
-            }
+    int n_gdn = 0;
+    for (const auto & sc : scenarios) {
+        llama_context_ptr ctx_gate = make_ctx_gate(sc.n_seq, true);
+        std::vector<llama_context_ptr> ctx_ref;
+        for (uint32_t s = 0; s < sc.n_seq; ++s) {
+            ctx_ref.push_back(make_ctx_gate(1, false));
         }
-        if (llama_process(ctx_gate.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
-            LOG_ERR("%s: %s: decode failed\n", __func__, ph.name);
+        if (!ctx_gate || std::any_of(ctx_ref.begin(), ctx_ref.end(), [](const llama_context_ptr & c) { return !c; })) {
+            LOG_ERR("%s: %s: failed to init contexts\n", __func__, sc.name);
             return test_status::FAIL;
         }
+        if (llama_n_rs_seq(ctx_gate.get()) == 0) {
+            LOG_INF("%s: skipping because n_rs_seq is disabled\n", __func__);
+            return test_status::SKIP;
+        }
 
-        for (size_t j = 0; j < ph.streams.size(); ++j) {
-            const uint32_t s = ph.streams[j];
-            common_batch batch_ref(ctx_ref[s].get());
-            for (llama_pos pos = ph.p0; pos < ph.p1; ++pos) {
-                batch_ref.add(tok(s, pos), pos, 0, pos >= ph.out_from);
+        for (const auto & ph : sc.phases) {
+            probe = {};
+            common_batch batch(ctx_gate.get());
+            for (uint32_t s : ph.streams) {
+                for (llama_pos pos = ph.p0; pos < ph.p1; ++pos) {
+                    batch.add(tok(s, pos), pos, (llama_seq_id) s, pos >= ph.out_from);
+                }
             }
-            if (llama_process(ctx_ref[s].get(), LLAMA_PROCESS_TYPE_DECODE, batch_ref.get()) != 0) {
-                LOG_ERR("%s: %s: reference decode failed\n", __func__, ph.name);
+            if (llama_process(ctx_gate.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+                LOG_ERR("%s: %s: %s: decode failed\n", __func__, sc.name, ph.name);
                 return test_status::FAIL;
             }
-            const int32_t first = (int32_t) j*(ph.p1 - ph.p0) - ph.p0; // batch index of pos is first + pos
-            for (llama_pos pos = ph.out_from; pos < ph.p1; ++pos) {
-                const float * l_gate = llama_get_logits_ith(ctx_gate.get(), first + pos);
-                const float * l_ref  = llama_get_logits_ith(ctx_ref[s].get(), (int32_t) (pos - ph.p0));
-                const double  err    = l_gate && l_ref ? nmse(l_ref, l_gate, n_vocab) : std::numeric_limits<double>::infinity();
-                if (err > nmse_eps) {
-                    LOG_ERR("%s: %s: seq %u pos %d logits differ from the single-sequence context (nmse %g)\n",
-                            __func__, ph.name, s, (int) pos, err);
+            llama_synchronize(ctx_gate.get());
+
+            for (size_t j = 0; j < ph.streams.size(); ++j) {
+                const uint32_t s = ph.streams[j];
+                common_batch batch_ref(ctx_ref[s].get());
+                for (llama_pos pos = ph.p0; pos < ph.p1; ++pos) {
+                    batch_ref.add(tok(s, pos), pos, 0, pos >= ph.out_from);
+                }
+                if (llama_process(ctx_ref[s].get(), LLAMA_PROCESS_TYPE_DECODE, batch_ref.get()) != 0) {
+                    LOG_ERR("%s: %s: %s: reference decode failed\n", __func__, sc.name, ph.name);
                     return test_status::FAIL;
                 }
+                const int32_t first = (int32_t) j*(ph.p1 - ph.p0) - ph.p0; // batch index of pos is first + pos
+                for (llama_pos pos = ph.out_from; pos < ph.p1; ++pos) {
+                    const float * l_gate = llama_get_logits_ith(ctx_gate.get(), first + pos);
+                    const float * l_ref  = llama_get_logits_ith(ctx_ref[s].get(), (int32_t) (pos - ph.p0));
+                    const double  err    = l_gate && l_ref ? nmse(l_ref, l_gate, n_vocab) : std::numeric_limits<double>::infinity();
+                    if (err > nmse_eps) {
+                        LOG_ERR("%s: %s: %s: seq %u pos %d logits differ from the single-sequence context (nmse %g)\n",
+                                __func__, sc.name, ph.name, s, (int) pos, err);
+                        return test_status::FAIL;
+                    }
+                }
+            }
+
+            LOG_INF("%s: %s: %s: gdn nodes %d by id, %d gathered; state rows gathered %" PRId64 "\n", __func__,
+                    sc.name, ph.name, probe.n_indexed, probe.n_plain, probe.n_gathered);
+            n_gdn += probe.n_indexed + probe.n_plain;
+            if (probe.n_indexed + probe.n_plain == 0) {
+                continue;
+            }
+            if (ph.expect == form::BY_ID && (probe.n_indexed == 0 || probe.n_plain != 0 || probe.n_gathered != 0)) {
+                LOG_ERR("%s: %s: %s: ubatches without extra states must read the state by id and gather none\n",
+                        __func__, sc.name, ph.name);
+                return test_status::FAIL;
+            }
+            if (ph.expect == form::GATHERED && (probe.n_plain == 0 || probe.n_indexed != 0)) {
+                LOG_ERR("%s: %s: %s: ubatches with extra states must keep the gathered state\n", __func__, sc.name, ph.name);
+                return test_status::FAIL;
             }
         }
     }
 
-    LOG_INF("%s: gdn nodes, one sequence: %d by id, %d gathered; several: %d by id, %d gathered\n", __func__,
-            probe.n_indexed[0], probe.n_plain[0], probe.n_indexed[1], probe.n_plain[1]);
-
-    if (probe.n_indexed[0] + probe.n_plain[0] + probe.n_indexed[1] + probe.n_plain[1] == 0) {
+    if (n_gdn == 0) {
         LOG_INF("%s: skipping because the model has no gated delta net\n", __func__);
         return test_status::SKIP;
     }
-    if (probe.n_indexed[0] == 0 || probe.n_plain[0] != 0) {
-        LOG_ERR("%s: single-sequence ubatches must read the state by id\n", __func__);
-        return test_status::FAIL;
-    }
-    if (probe.n_plain[1] == 0 || probe.n_indexed[1] != 0) {
-        LOG_ERR("%s: multi-sequence ubatches must keep the gathered state\n", __func__);
-        return test_status::FAIL;
-    }
+    LOG_INF("%s: all scenarios match the single-sequence contexts\n", __func__);
     return test_status::PASS;
 }
 
