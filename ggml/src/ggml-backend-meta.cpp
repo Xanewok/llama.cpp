@@ -2633,6 +2633,7 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
 
         if (max_nnodes_raised || graph_nodes_raised || ar_nodes_raised || n_subgraphs > backend_ctx->max_subgraphs) {
             backend_ctx->max_subgraphs = std::max(backend_ctx->max_subgraphs, n_subgraphs);
+            GGML_ASSERT(backend_ctx->max_subgraphs <= (size_t) backend_ctx->max_nnodes); // every subgraph has a node; bcj.cgraphs has max_nnodes entries
             const size_t n_nodes_per_device = 3 * owner->n_reduce_steps; // tmp + ADD (+zeroing) graph per step and device
             const size_t n_cgraphs_per_device = 2 * owner->n_reduce_steps; // ADD ( + zeroing) graph per step and device
             const size_t mem_per_device_graphs_main = backend_ctx->max_subgraphs*ggml_graph_overhead_custom(backend_ctx->max_graph_nodes, cgraph->grads);
