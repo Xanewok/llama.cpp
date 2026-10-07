@@ -1,0 +1,29 @@
+c68ec43293cb614957b67b812b964e79db7d7ba2	29e71fa0b9b74ad22deae6fcb226f058e638f7a4	ggml : read gated delta net state by row id
+8d8d2ed1cb96c2c76552780f5086491980e15080	3637dda662ee5ce59bba7ed77e274aef870fddea	llama : use a recurrent state getter for GDN
+0a473e8867a7311328b25e3495ccd02145e1e4eb	6727f3cb1a4cde04794bf2914011c354774dc148	cuda : trace GDN getter engagement
+743acb55f9873ea6bea15057458fd5249bdf83ea	0a305428808389955d06be568578df3d33ef1d1a	llama : remove the replaced stack6 GDN gathers
+f61fb1bfba9dd96b851a1388c8afea10804625fa	9a3af300a409bfef9a2035c59a99a64f6ad02efd	virtgpu : do not claim GDN state ids support
+5c7e310944a55f322e671e5ef78a1bc7f30aea49	4ba349250012348cb1214afd6a83b33da9eeb31b	llama : read GDN state by id only for single-sequence ubatches
+8f91e4816821e573e8da5679b3c2639b05fb1d71	8c013b9bb0717356c06d6e09e22f0a46657785cc	tests : check the GDN state getter gate by ubatch sequence count
+3b9585e43d7032c78b64cb51807f8e3d2a613ab6	a59f806e47112ddc70171efbd887ea0e115e4177	cuda : log GDN cache fusion per captured graph
+7ef7b587333b1f877e80b00165927379364369ae	8646cbd0ac849d2e4bc932ce7db580fae32eac7c	tests : roll back the multi-seq split replay within the last ubatch
+3c97c4af8e3c6e0736e2517fb48a2aee968a5527	ba8bc3fa0760b21f49b4b51b67facda1feafc12a	tests : GDN getter gate tolerance above the batch-shape noise floor
+36cb09139958c437e9cd6b4ca29244aae71bd1f4	447a47613ffb67aefca96f1eb780790ad48b3e0a	llama : remove KV sequence ranges through the position index
+3b5176efd5e9ff9692d396facaab4abcc0730c46	89637899daad1deee071aac9eee0ed85935ad396	speculative : copy MTP verify hidden rows in one readback
+f51358cc09c92696a149eb2aa8a91184810c9aeb	f61bee3fac1372fb36ac3d3d42473e72c2be255d	host-trims : report exercised paths for local A/B checks
+81159be0dd4a3944ab85c90602b0a0057f272a6e	d7bc08c2c5753169ad28b1253c39c310412af100	host-trims : env switches LLAMA_HOST_TRIMS_SEQRM and LLAMA_HOST_TRIMS_BULKH restore the stack6 paths
+f8a00adc57cd0dff5c6b461cbca0b1d045e2fb7e	89cff0ccfdda615de1f60c4cee93dd5df8ead8c4	host-trims : read the target nextn pointer after the draft catch-up decode; BULKH=2 keeps the hoisted pointer as a control
+5e7968aeec78a0a5baa06a19a9aefaa65bd6ee8a	f27ce25768e808cb9e05c5077e3edc74f4cda4ed	host-trims : test-only LLAMA_HOST_TRIMS_VERIFY cross-checks and LLAMA_HOST_TRIMS_MUTANT negative controls
+81f954b2a10924face43c53588b29518a4de136d	a7f31a570466bc4ac6dacdadff12d5d27624da79	speculative : log and offset the bulk row negative control
+06bfba82f109c16caee11e407e399ba42c49185c	151ab739b9cc287eaafa087f7bcb9277dde4fdc3	graph : split build_sampling into per-row helpers
+ac4f39358c90fd1909c33e4f0c2bae8e74cb3794	96e025496d0e81891ce9b66c69c9f3645fd87b60	llama : load a compact token embedding table for the draft vocabulary
+26e8945eb3a84280f2b2edf5a05e1c223e505381	d298d3dfd56cfa4abc60fabd32992d70991eb649	qwen35 : add a device-side MTP draft chain
+27f71a822f05c81e62975607d2c603a84442d008	aa037232ca8f8ce9bc42c501a988a84099b0e524	sampler : add a top-k that sorts its backend candidates
+74c4601374f29ffebb81c9c1d30725f73958028a	21ba77aa8d19a423ee08da2121b3d94f5a8d3cfd	speculative : draft the MTP steps of a round in one decode
+1e51d8c1f1f1b5839672cb58db7f136e3b6e907e	4be92a4faed40546a9ddcfa55d12450f4c2f1b4e	speculative : add negative controls and a draft dump for the MTP chain test
+0c5c3d4517d59d31b38e46b9e8a068b2bc7f4a66	d92da203fb863bb3308cc841e3cc2d5be55d89b4	speculative : attach a fresh sampler each time the MTP chain is switched
+74618074e0f5994c9ff23f8731ffd32ca47918b2	9afc6714e7a358cd295e36e3849eb8b718051664	ggml : move round trace writes off the decode thread
+8a0a5e78692a346172e4b520875272944aa1ae3e	6e99847f9b7b57e88ac152f673b14e00400fd187	ggml : restore static trace kinds and strengthen writer tests
+7f1fe261f33463cb46da358f879b48f74b2df818	ffdb7d6e89f0208ff4b51999e6b95ecb96852f6e	llama : fold the MTP catch-up K/V into the target decode (LLAMA_MTP_FOLD_C)
+cd4a9d49aedadce89c1eed21a83196a445592d8f	e99e52ef362600b08ffa9e64a943703b1a1060f4	speculative : add a draft dump and a fold mutant for the MTP fold test
+376e5c8d99d0a492ab6f24b5829e1c250786a8dc	14b23db7c8e4851d1e6123aef60c4d7bbaacb55c	ggml : include host-backed Meta views in graph planning

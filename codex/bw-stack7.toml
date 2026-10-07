@@ -1,0 +1,102 @@
+id = "bw-stack7"
+title = "Build window: integrate stack7, CPU exactness/engagement/mutants/graph rank, CUDA stack6 recipe, freeze and validate three GPU items; no GPU execution"
+kind = "filler"
+priority = 25
+# G: 15300 s estimate; D: budget = estimate x 1.5.
+est_s = 15300
+budget_s = 22950
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-run: FAIL" }]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/bw-stack7.sh", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/stack7-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0" }
+ports = []
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/bw-stack7.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/stack7-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/stack7-a{attempt}/payload.log"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "stages", "controls"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/bw-stack7.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-index.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/src/models/delta-net-base.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/bw-stack7.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/build.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/check-getter.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/check-host.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/check-chain.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/chain_cpu_identity.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/check_trace_writer.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/fold_cpu_identity.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/test_nh1_meta_engagement.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/check-interactions.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/check-np2-interactions.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/bw-np2-compare.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/make_stack7_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/gpu_stack7.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/bw-np2-driver.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/chain-cpu.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/fold-cpu.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/outproj-cpu.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/row0-mutant.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/test-round-trace.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/stack7-test/CMakeLists.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/trace-test/CMakeLists.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/items/stack7-depth-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/items/stack7-duo-soak-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/items/stack7-np2-real-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval/harness/__init__.py",
+  "/home/xanewok/repos/qwen38-eval/harness/__main__.py",
+  "/home/xanewok/repos/qwen38-eval/harness/mkitem.py",
+  "/home/xanewok/repos/qwen38-eval/harness/lib.py",
+  "/home/xanewok/repos/qwen38-eval/harness/depth.py",
+  "/home/xanewok/repos/qwen38-eval/harness/campaign.py",
+  "/home/xanewok/repos/qwen38-eval/harness/agents.py",
+  "/home/xanewok/repos/qwen38-eval/harness/probe.py",
+  "/home/xanewok/repos/qwen38-eval/harness/run.sh",
+  "/home/xanewok/repos/qwen38-eval/harness/experiments/stack6-duo-soak-j5q.toml",
+  "/home/xanewok/.claude/skills/local-qwen-server/bin/serve.sh",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-apps.csv",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-query.csv",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/xid-lines.txt",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/summary.md",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-server/serve-bench-tail.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1-input.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/cold-tool-1.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/warmup-0.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/server.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/fit.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-94000.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-94000.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/single-94000.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/errors.txt",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-32768.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/steps.txt",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-32768.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/serve.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/single-94000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack6-depth-j5q/full-a1/1-s6/depth-8192.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack6-depth-j5q/full-a1/1-s6/server.log",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-07-gdn-getter-gate-np2-busy-j5q/canary-a1/0-up/depth-8192.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-07-gdn-getter-gate-np1-j5q/canary-a1/0-patch/server.log",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-draft-chain-m1-depth-j5q/canary-a2/0-chain/server.log",
+]
