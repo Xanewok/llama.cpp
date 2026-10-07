@@ -54,7 +54,7 @@ int main(int argc, char ** argv) {
     }
     if (meta) {
         auto * cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
-        params.devices = {cpu, cpu};
+        params.devices = {cpu, cpu, nullptr}; // llama_model_params.devices is nullptr-terminated
         params.speculative.draft.devices = params.devices;
         params.split_mode = LLAMA_SPLIT_MODE_TENSOR;
         params.n_gpu_layers = -1;
