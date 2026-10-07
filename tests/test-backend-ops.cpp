@@ -10438,6 +10438,22 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_K, GGML_TYPE_F32, m, 2, 1024, { 1, 1 }, { 1, 1 }));
     }
 
+    // Few-column matmul on int8 tensor cores (CUDA mmvq-mma): 8-column tiles (n = 8, 9, 16), a 16-row tail,
+    // fewer src0 blocks per row than warps, broadcast channels/samples, a strided src0 view and permuted operands.
+    for (ggml_type type_a : { GGML_TYPE_Q6_K, GGML_TYPE_IQ4_XS }) {
+        for (int n = 1; n <= 16; ++n) {
+            test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 1000, n, 2304, { 1, 1 }, { 1, 1 }));
+            test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32,  136, n, 4096, { 1, 1 }, { 2, 1 }));
+            test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32,   72, n,  256, { 1, 1 }, { 1, 1 }));
+            test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32,   40, n,  768, { 1, 1 }, { 1, 1 }));
+        }
+        for (int n : { 5, 8, 12 }) {
+            test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 520, n, 1280, { 3, 2 }, { 2, 2 }));
+            test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 520, n, 1280, { 1, 1 }, { 1, 1 }, { 0, 1, 2, 3 }, 1536));
+            test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 520, n, 1280, { 2, 3 }, { 1, 1 }, { 0, 2, 1, 3 }));
+        }
+    }
+
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q4_0, GGML_TYPE_F32, 2880, 32, 2880, {1, 1}, {1, 1}));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q8_0, GGML_TYPE_F32, 2880, 32, 2880, {1, 1}, {1, 1}));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_MXFP4, GGML_TYPE_F32, 2880, 32, 2880, {1, 1}, {1, 1}));
