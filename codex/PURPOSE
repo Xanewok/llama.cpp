@@ -1,6 +1,6 @@
-purpose: Mac mini port of bw-stack7 CPU stages (spike)
-base: d98212aefb74dd518b6c744560a745a8e45586e8
+purpose: Opus spike: np2 gap - multi-seq getter + shape-gated MMQ small-J (L1)
+base: ddedffacb3dd84790292e2c660c1f585d8d08dee
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack7-mac
-created: 2026-10-07T15:48:57+02:00
+branch: topic/np2-kernels
+created: 2026-10-08T00:01:24+02:00
 creator: xanewok
