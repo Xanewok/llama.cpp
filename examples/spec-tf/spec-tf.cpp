@@ -68,6 +68,7 @@ static void decode(llama_context * ctx, common_batch & batch) {
     if (rc != 0) {
         throw std::runtime_error("decode failed: " + std::to_string(rc));
     }
+    llama_synchronize(ctx);
 }
 
 static std::vector<llama_token> top_ids(const float * logits, int32_t n_vocab, int width) {
@@ -243,7 +244,10 @@ static void stage_b(common_params params, const fs::path & target_dir, const fs:
     common_sampler_ptr sampler(common_sampler_init(model.get(), sampling));
     int32_t n_suppress = 0;
     const auto * suppress = llama_vocab_get_suppress_tokens(llama_model_get_vocab(model.get()), &n_suppress);
-    const std::vector<llama_token> suppress_ids(suppress, suppress + n_suppress);
+    std::vector<llama_token> suppress_ids;
+    for (int i = 0; i < n_suppress; ++i) {
+        suppress_ids.push_back(suppress[i]);
+    }
     json result {
         {"suppress_ids", suppress_ids}, {"format", "spec-tf-v1"}, {"stage", "B"}, {"target_header", header}, {"model", params.model.path},
         {"k", k}, {"q_width", 128}, {"temperature", sampling.temp}, {"draft_vocab", params.speculative.draft.vocab_ids},
@@ -269,6 +273,11 @@ static void stage_b(common_params params, const fs::path & target_dir, const fs:
         std::ifstream tok_in(in / "tokens.bin", std::ios::binary);
         tok_in.exceptions(std::ios::failbit | std::ios::badbit);
         tok_in.read(reinterpret_cast<char *>(tokens.data()), n * sizeof(llama_token));
+        for (const auto id : tokens) {
+            if (id < 0 || id >= n_vocab) {
+                throw std::runtime_error("saved token id outside vocabulary");
+            }
+        }
         if (permute) {
             std::reverse(tokens.begin() + prompt, tokens.end());
         }
@@ -300,6 +309,9 @@ static void stage_b(common_params params, const fs::path & target_dir, const fs:
                 batch.set_embd(idx, {catch_h.data() + (size_t) i * n_embd, 1, (size_t) n_embd});
             }
             for (int head = 0; head < heads; ++head) {
+                if (heads > 1 && !llama_memory_seq_rm(llama_get_memory(ctx.get()), 0, off, -1)) {
+                    throw std::runtime_error("MTP context cannot remove catch-up rows");
+                }
                 llama_set_nextn_layer_offset(ctx.get(), head);
                 decode(ctx.get(), batch);
             }
@@ -368,6 +380,7 @@ static void stage_b(common_params params, const fs::path & target_dir, const fs:
 int main(int argc, char ** argv) {
     try {
         std::string stage, streams, target, out;
+        std::vector<std::string> controls;
         int hidden_offset = -1;
         bool permute = false;
         std::vector<char *> args {argv[0]};
@@ -375,7 +388,7 @@ int main(int argc, char ** argv) {
             const std::string arg = argv[i];
             if (arg == "--tf-permute") {
                 permute = true;
-            } else if (arg == "--tf-stage" || arg == "--tf-streams" || arg == "--tf-target" || arg == "--tf-out" || arg == "--tf-hidden-offset") {
+            } else if (arg == "--tf-stage" || arg == "--tf-streams" || arg == "--tf-target" || arg == "--tf-out" || arg == "--tf-hidden-offset" || arg == "--tf-control-vocab") {
                 if (++i == argc) {
                     throw std::runtime_error("missing value for " + arg);
                 }
@@ -384,6 +397,7 @@ int main(int argc, char ** argv) {
                 if (arg == "--tf-target") { target = argv[i]; }
                 if (arg == "--tf-out") { out = argv[i]; }
                 if (arg == "--tf-hidden-offset") { hidden_offset = std::stoi(argv[i]); }
+                if (arg == "--tf-control-vocab") { controls.emplace_back(argv[i]); }
             } else {
                 args.push_back(argv[i]);
             }
@@ -395,8 +409,8 @@ int main(int argc, char ** argv) {
         }
         const uint32_t endian = 1;
         if (*reinterpret_cast<const uint8_t *>(&endian) != 1 || params.n_ctx <= 0 || params.n_parallel != 1 ||
-            out.empty() || (stage != "A" && stage != "B") || hidden_offset > -1 || hidden_offset < -2) {
-            throw std::runtime_error("use --tf-stage A|B --tf-out DIR, explicit -c and -np 1 (little-endian only)");
+            out.empty() || (stage != "A" && stage != "B" && stage != "AB") || hidden_offset > -1 || hidden_offset < -2) {
+            throw std::runtime_error("use --tf-stage A|B|AB --tf-out DIR, explicit -c and -np 1 (little-endian only)");
         }
         fs::create_directories(out);
         if (fs::exists(fs::path(out) / "header.json")) {
@@ -406,8 +420,17 @@ int main(int argc, char ** argv) {
         llama_numa_init(params.numa);
         if (stage == "A") {
             stage_a(params, streams, out);
-        } else {
+        } else if (stage == "B") {
             stage_b(params, target, out, hidden_offset, permute);
+        } else {
+            const fs::path dir(out);
+            stage_a(params, streams, dir / "target");
+            stage_b(params, dir / "target", dir / "full", hidden_offset, permute);
+            for (size_t i = 0; i < controls.size(); ++i) {
+                params.speculative.draft.vocab_ids = read_tokens(read_json(controls[i]),
+                        read_json(dir / "target/header.json").at("n_vocab").get<int>());
+                stage_b(params, dir / "target", dir / ("control-" + std::to_string(i)), hidden_offset, permute);
+            }
         }
         llama_backend_free();
         return 0;
