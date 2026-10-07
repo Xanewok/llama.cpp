@@ -1,0 +1,116 @@
+From 6ee58f8ffb1b8490c4b30b8e52a54128c6454bd2 Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Wed, 7 Oct 2026 00:08:26 +0200
+Subject: [PATCH] speculative : add a draft dump and a fold mutant for the MTP
+ fold test
+
+Test-only environment switches: LLAMA_MTP_DRAFT_DUMP writes the drafted id,
+candidates and probabilities of every MTP draft step, and
+LLAMA_MTP_FOLD_DEBUG_MUTANT pairs fold row i with nextn row i instead of i-1.
+---
+ common/speculative.cpp | 29 +++++++++++++++++++++++++++++
+ src/models/qwen35.cpp  |  7 ++++++-
+ 2 files changed, 35 insertions(+), 1 deletion(-)
+
+diff --git a/common/speculative.cpp b/common/speculative.cpp
+index 65fa6f34f..09eb0cd02 100644
+--- a/common/speculative.cpp
++++ b/common/speculative.cpp
+@@ -15,6 +15,7 @@
+ #include <algorithm>
+ #include <cassert>
+ #include <cmath>
++#include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
+ #include <iomanip>
+@@ -1413,6 +1414,25 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+     // pending_h must not be reallocated while armed: the target reads it during its next decode.
+     bool    fold          = false;
+ 
++    // test only, LLAMA_MTP_DRAFT_DUMP=path: one line per sampled draft token, "round step id cand_ids[10] probs[10]"
++    FILE * draft_dump  = nullptr;
++    int    draft_round = 0;
++
++    void draft_dump_step(int step, llama_token id, const llama_token_data_array * cur_p) {
++        if (!draft_dump) {
++            return;
++        }
++        std::fprintf(draft_dump, "%d %d %d", draft_round, step, id);
++        for (size_t i = 0; i < 10; ++i) {
++            std::fprintf(draft_dump, " %d", i < cur_p->size ? cur_p->data[i].id : -1);
++        }
++        for (size_t i = 0; i < 10; ++i) {
++            std::fprintf(draft_dump, " %.9g", i < cur_p->size ? cur_p->data[i].p : 0.0f);
++        }
++        std::fprintf(draft_dump, "\n");
++        std::fflush(draft_dump);
++    }
++
+     // Per-sequence cross-batch carryover: pair (h_p, x_{p+1}) at MTP pos p+1.
+     // The last h-row of one process() call needs the first token of the NEXT
+     // call to pair with, so it's stashed here until that next call fires.
+@@ -1508,6 +1528,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+             fold = llama_mtp_fold_init(ctx_tgt, ctx_dft);
+         }
+ 
++        if (const char * path = std::getenv("LLAMA_MTP_DRAFT_DUMP")) {
++            draft_dump = std::fopen(path, "w");
++        }
+     }
+ 
+     ~common_speculative_impl_draft_mtp() override {
+@@ -1525,6 +1548,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+             llama_sampler_free(backend_chains[seq_id]);
+         }
+         backend_chains.clear();
++        if (draft_dump) {
++            std::fclose(draft_dump);
++        }
+     }
+ 
+     void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
+@@ -1708,6 +1734,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+             }
+         }
+ 
++        ++draft_round;
+         int i = 0;
+ 
+         while (n_drafting > 0) {
+@@ -1759,6 +1786,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+                 // add drafted token for each sequence
+                 const llama_token id = dparams.at(seq_id).result_q ? id_sampled : cur_p->data[0].id;
+ 
++                draft_dump_step(i, id, cur_p);
++
+                 // only collect very high-confidence draft tokens
+                 if (cur_p->data[0].p < params.p_min) {
+                     drafting[seq_id] = false;
+diff --git a/src/models/qwen35.cpp b/src/models/qwen35.cpp
+index a0b91671e..c7cffc68b 100644
+--- a/src/models/qwen35.cpp
++++ b/src/models/qwen35.cpp
+@@ -3,6 +3,8 @@
+ #include "llama-kv-cache.h"
+ #include "llama-memory-recurrent.h"
+ 
++#include <cstdlib>
++
+ void llama_model_qwen35::load_arch_hparams(llama_model_loader & ml) {
+     ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS,       hparams.f_norm_rms_eps);
+     ml.get_key_or_arr(LLM_KV_ROPE_DIMENSION_SECTIONS,    hparams.rope_sections, 4, true);
+@@ -275,9 +277,12 @@ void llama_model_qwen35::graph::build_mtp_fold(
+     ggml_set_input(inp->h_prev);
+     ggml_set_name(inp->h_prev, "mtp_fold_h_prev");
+ 
++    // test only: LLAMA_MTP_FOLD_DEBUG_MUTANT=1 pairs row i with nextn row i, which identity tests must catch
++    static const size_t mutant_rows = getenv("LLAMA_MTP_FOLD_DEBUG_MUTANT") && atoi(getenv("LLAMA_MTP_FOLD_DEBUG_MUTANT")) ? 1 : 0;
++
+     ggml_tensor * h_embd = inp->h_prev;
+     if (n_tokens > 1) {
+-        ggml_tensor * h_shift = ggml_view_2d(ctx0, h_nextn, hparams.n_embd, n_tokens - 1, h_nextn->nb[1], 0);
++        ggml_tensor * h_shift = ggml_view_2d(ctx0, h_nextn, hparams.n_embd, n_tokens - 1, h_nextn->nb[1], mutant_rows * h_nextn->nb[1]);
+         h_embd = ggml_concat(ctx0, h_embd, h_shift, 1);
+     }
+     cb(h_embd, "mtp_fold_h", il);

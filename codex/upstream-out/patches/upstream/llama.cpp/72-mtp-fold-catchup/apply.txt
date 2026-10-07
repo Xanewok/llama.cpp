@@ -1,0 +1,10 @@
+Base: 7049ff0cbeb1f5ead231de4522af6b75d8d773c0
+Prerequisite count: 2 (apply prerequisites/*.patch in lexical order first; exclude them from a submission).
+Root series replay tip: 6083a293c90d54a43b16b90f97e0e55e3ddccd59
+Root parent: 215a709dfdbf120d953d5d545b4fd42ed07768ba
+Transport: local shallow base.bundle; mini-builder only, no network fetch.
+Mac: /Users/builder/qwen38-upstream-pack/20261008/72-mtp-fold-catchup
+CPU recipe: GGML_CUDA=OFF, GGML_METAL=OFF, GGML_BLAS=OFF, GGML_NATIVE=OFF, GGML_CPU_ARM_ARCH=armv8.2-a+dotprod, GGML_CCACHE=ON; Clang, nice 19, -j4, model threads <=4, explicit 4096 contexts; RAM >=4 GiB and one model through validation/model_gate.py.
+M: fresh git am of prerequisites + root onto 7049ff0cb and Clang builds of test-llama-archs/test-sampling/test-alloc passed (see collector REPORT-upstream-pack.md; Mac committer dates give different commit IDs).
+Local base: 6083a293c90d54a43b16b90f97e0e55e3ddccd59 (root-series tree; local/*.patch is optional control/diagnostic code, not submission code).
+Meaningful model/np2 tests pending behind the shared Mac model gate; no pass claimed.

@@ -1,0 +1,53 @@
+From a11a117bfd6359c4ff214a03d2e12a12dd34e1f7 Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Tue, 29 Sep 2026 19:18:48 +0200
+Subject: [PATCH 1/2] ggml-meta : do not pass views of meta buffers through as
+ host noops
+
+graph_compute passes a node through unsplit when its view_src lives in a
+host buffer (the s_copy_main workaround). With CPU devices under the meta
+device the meta buffer itself is host, so views of split tensors (the KV
+cache in SET_ROWS) reached the CPU backend as meta tensors and crashed.
+Exclude meta buffers. With GPU devices a meta buffer is never host, so
+nothing changes there.
+
+tests : test-llama-archs runs its Meta config on two CPU devices when no
+other device is present.
+---
+ ggml/src/ggml-backend-meta.cpp | 3 ++-
+ tests/test-llama-archs.cpp     | 8 ++++++++
+ 2 files changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/ggml/src/ggml-backend-meta.cpp b/ggml/src/ggml-backend-meta.cpp
+index 0394433c0..7c2d4bdf3 100644
+--- a/ggml/src/ggml-backend-meta.cpp
++++ b/ggml/src/ggml-backend-meta.cpp
+@@ -2021,7 +2021,8 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend,
+ 
+             for (int i = 0; i < cgraph->n_nodes; i++) {
+                 ggml_tensor * node = cgraph->nodes[i];
+-                if (node->view_src != nullptr && node->view_src->op == GGML_OP_NONE && ggml_backend_buffer_is_host(node->view_src->buffer)) {
++                if (node->view_src != nullptr && node->view_src->op == GGML_OP_NONE && ggml_backend_buffer_is_host(node->view_src->buffer) &&
++                        !ggml_backend_buffer_is_meta(node->view_src->buffer)) {
+                     // FIXME s_copy_main is on the CPU and its view seems to be incorrectly added to the graph nodes.
+                     // For regular usage this doesn't matter since it's a noop but trying to call ggml_backend_meta_buffer_simple_tensor results in a crash.
+                     bcj.nodes[i] = node;
+diff --git a/tests/test-llama-archs.cpp b/tests/test-llama-archs.cpp
+index 7a76efccc..fb4c703cf 100644
+--- a/tests/test-llama-archs.cpp
++++ b/tests/test-llama-archs.cpp
+@@ -867,6 +867,14 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
+             }
+         }
+ 
++        // without other devices, split over two instances of the CPU device
++        if (target_backend == nullptr && devices_meta.empty()) {
++            ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
++            if (cpu != nullptr) {
++                devices_meta = {cpu, cpu};
++            }
++        }
++
+         if (target_backend == nullptr) {
+             dev_configs.emplace_back(devices_meta, "Meta", LLAMA_SPLIT_MODE_TENSOR);
+         }
