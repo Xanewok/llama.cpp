@@ -383,7 +383,8 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
         { "seq 1 beside an idle slot", { 1 },    27, 28, 27 }, // n_seqs = 1, n_rs > n_seqs
     };
 
-    constexpr double nmse_eps = 1e-4;
+    // batch shape alone moves a real model by up to ~1e-3 (CPU, 4B Q4_K_XL); a wrong state row costs ~0.1
+    constexpr double nmse_eps = 3e-3;
 
     for (const auto & ph : phases) {
         common_batch batch(ctx_gate.get());
