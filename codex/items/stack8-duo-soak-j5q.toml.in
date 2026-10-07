@@ -83,9 +83,9 @@ min_p = 0.05
 
 [budget]
 canary_s = 600
-margin = 1.25
+margin = 1.5
 cleanup_s = 150
-est_s = 1800
+est_s = 3000
 startup_grace_s = 900
 preflight_s = 900
 

@@ -1,0 +1,72 @@
+# stack8 integration
+
+Labels: M = measured or directly observed; D = derived from source or arithmetic; G = estimate. GPU execution, local compilation/model execution, queue submission/cancellation and network posting were not performed.
+
+## Status
+
+Source integration and window preparation are complete. Mac validation is in progress; this document does not yet authorize queueing the window. The CUDA build, freeze and GPU item contract checks are deferred to the parent's window.
+
+## Commits and origins
+
+| Commit | Subject | Origin |
+|---|---|---|
+| `ad843282f` | common : restrict MTP draft chain to single-sequence slot sets | `da787bb40`, exact source cherry-pick |
+| `7c5551f6d` | common : sampling: keep the backend candidates under a -inf logit bias | `062667905`, `74e70bb95`, `935c302b9` source log; overflow correction and large-top-k regression |
+| `4e48127f2` | codex : integrate stack8 Mac identity checks and controls | strict checker from `374a465b8`; candidate driver/comparer from `topic/cand-neginf-mac`; stack integration |
+| `984a6a7d7` | codex : prepare stack8 CUDA window and GPU item templates | stack7 window/harness structure; stack8 templates and local snapshot destination |
+
+Starting HEAD was `ddedffacb`, with the stack7 snapshot migration and pinning commits after the requested stack7 source base `48b82b0d1`. The existing `codex/PROMPT.md` and `codex/PURPOSE` changes were preserved and committed. Neither component produced a merge conflict (M). Only `topic/stack8` was rewritten to fold the overflow correction into its candidate component; source branches were not modified.
+
+## Design and source changes
+
+Every production source change:
+
+1. `common/speculative.cpp`: require `n_seq == 1` for chain dispatch and `params.n_parallel == 1` for the chain output reservation. Multi-slot sets use the step loop throughout their lifetime, including idle peers and completion tails. Attached idle-slot samplers make active-drafting count an invalid chain gate (D).
+2. `common/speculative.cpp`: emit `MTP chain disabled: needs one sequence (n_seq=2)` when the chain is requested for a multi-slot set. This additional stack integration log lets the canary prove fallback positively.
+3. `common/sampling.cpp`: recognize an effective, unique list of `-inf` biases; request `k + 1 + n_ban` raw backend candidates; discard banned IDs before the existing finite/strict-order check; retain the full-row fallback for ties, nonfinite banned logits, finite biases, duplicates or excessive candidate width. Add the `banned()` lookup and the candidate `LOG_DBG` from `935c302b9`.
+4. `common/sampling.cpp`: replace the potentially overflowing `candidate_k + n_ban < 256` predicate with bounded operands and `n_ban < 256 - candidate_k`. This is an incidental correctness fix to the imported source; valid candidate widths are unchanged (D).
+
+Test and fixture source changes:
+
+- `tests/test-llama-archs.cpp`: import the Meta banned-ID and synthetic tie/cutoff/rejection tests from `062667905`; import the `std::mt19937 rng{uint32_t(seed)}` clang/GCC compile fix from `74e70bb95`; add the `INT32_MAX` top-k case, requiring the full sampler chain rather than a wrapped candidate width.
+- `codex/bw-np2-driver.cpp`: cap the plain CPU fixture at four threads under `BW_CPU_ONLY`.
+- `codex/bw-cand-driver.cpp`: import the candidate identity driver, including `json::array({p.tok, p.prob})`, the null-terminated Meta device list and four-thread Mac override. No other C++ fixture changed.
+- `codex/stack7-test/CMakeLists.txt`: add the candidate driver to the existing fixture targets. `codex/chain_cpu_identity.py` caps both plain and Meta Mac runs at four threads.
+
+Exactness argument: at most `n_ban` IDs among the raw best `k + 1 + n_ban` can be banned. Their survivors contain the best `k + 1` unbanned IDs. The existing strict finite ordering check makes the selected top-k and its order unique; ambiguous cases read the full row (D). Multi-slot chain off/on execute the same step loop and use the same output limits (D).
+
+## Validation
+
+All compilation and model execution use the Mac mini, CPU-only backends, `nice -n 19`, four build jobs, shared ccache, explicit small contexts and a four-GiB/no-other-model start gate. The Mac flags include `-DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod -DGGML_METAL=OFF -DGGML_BLAS=OFF`. i8mm is disabled for byte identity across CPU batch shapes.
+
+Primary command:
+
+`CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 BW_MAC_OUTPUT_BASE="$PWD/build-bw-mac-results" nice -n 19 ~/repos/qwen38-eval-worktrees/bin/bw-mac "$PWD" codex/bw-stack8-mac.sh stack8`
+
+The primary Mac source snapshot is `bdae9b6aa3f29c761b70e6a133a7a0a54bbc3c9a` (before the candidate-width overflow correction). The final bound and regression require a separate rebuilt unit pass. For ordinary bounded top-k settings the subtraction predicate is equivalent to the original sum predicate (D); model identity evidence is not claimed for unbounded top-k.
+
+The first unit stage was invalid: `test-recurrent-state-rollback` lacked `-m`, and the stage function's conditional invocation disabled Bash errexit inside the function. The committed runner executes stages in a subshell with errexit active and supplies `-m MODEL -c 4096 -t 4 -ngl 0`. The invalid result is excluded from the final evidence.
+
+Parser replay ran on the Mac against copies of actual GPU artifacts and `orchestration/gpuq/fixtures` (M). `codex/parser-inputs.json` records their source paths and hashes. SSE partial/null/repeated timing handling, size failure, native tokens, cross-arm token mutation, concurrent overlap, memory CSVs, kernel-fault regex boundaries, getter/chain logs and the recorded candidate proof pass. The first candidate replay used a full-run log with debug disabled and failed its engagement check; the corrected replay uses `canary-a1/1-cn/server.log` and passes.
+
+Pending: complete Mac stage results, both model controls, final-source unit rebuild, and consolidated evidence in `codex/mac-evidence/`.
+
+## Parent window and expected GPU outcomes
+
+Manifest: `codex/bw-stack8.toml`, priority 20, filler, `host_sensitive = false`, `preemptible = false`. Payload: `codex/bw-stack8.sh`. It refuses a dirty tracked tree or existing `frozen/stack8`. Set `S8_DUO_FOLD_C` in the manifest before queueing; the template defaults to 0, the stack7 duo serving value from the brief.
+
+Only stages 40-43 run locally: CUDA build with the stack6 CUDA 13.2/NCCL-off/120a/CCCL v3.4.3 recipe; require 25 `DeviceTopK` strings and the current ggml stamp; freeze through `bin/wt` as `frozen/stack8`; render items and run `gpuq submit --check`. Every compile uses `bin/buildgate` and `-j4`; no CUDA binary executes. Window estimate 1200 s (G), budget 2400 s (D, estimate x 2).
+
+Experiments are `codex/items/stack8-*.toml.in`. Stage 43 materializes their exact-SHA experiments and `.gpuq.toml` items under `codex/items/rendered/`; snapshots stay under `codex/snapshots/`. They are intentionally rendered only after the freeze exists, so all frozen binaries are pinned. No item pins `build-bw-mac-results`.
+
+| Item | Plan and expectation | Priority |
+|---|---|---:|
+| `stack8-depth-j5q` | `s7f s8f s8f s7f`; np1, chain/fold on, k5, 8k/32k/90k, `ignore_eos=true`. Cross-arm token/counter identity is expected and gated, based on the supplied prior candidate result. GPU speed remains unknown. The canary proves chain, folded decode and consumption of candidates with a nonempty ban list. | 30 |
+| `stack8-np2-chain-j5q` | `off on on off`; same stack8 bytes, chain 0/1, fold 0, real concurrent prompts. The step loop and output capacity are identical, so steady speed should be equal within run noise (D). The canary requires the positive np2 fallback message and rejects any chain announcement. Cross-boot identity is off because arrivals change concurrent ubatches; the deterministic CPU matrix gates exactness. | 30 |
+| `stack8-duo-soak-j5q` | One duo campaign using the serving flags, chain requested, parent-selected fold. Require np2 fallback, fit and campaign validity. | 20 |
+
+Every run/canary command starts with `bash ~/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh`; that wrapper is pinned and each item has `host_sensitive = false`. Canary caps are 600 s (G) with one boot. The existing harness owns frozen hashes, model/launch checks, request records, exact PID/group shutdown, steady size gates and boot-scoped kernel journal checks. `codex/gpu_ab.sh` routes through `gpu_stack8.py`, removing traces and enforcing the work budget with cleanup headroom. The parent submits the window and later the checked GPU items; this worker does neither.
+
+## Risks and open items
+
+CUDA compilation, the final freeze, contract validation against gpuq and GPU behavior remain unmeasured until the window and items run. The 4B model has a tied LM head and cannot prove target candidate engagement under vocab splitting; the Meta synthetic unit model and GPU canary provide that proof. GCC 13 compilation is deferred to the CUDA window; the Mac build uses clang. Multi-slot chain acceleration is deliberately unavailable, even while only one slot is busy. No upstream package, PR or external message was created.

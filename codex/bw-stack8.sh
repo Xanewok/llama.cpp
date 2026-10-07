@@ -14,8 +14,11 @@ preflight() {
     [[ $(git branch --show-current) == topic/stack8 ]] || return 1
     [[ -z $(git status --porcelain --untracked-files=no) ]] || return 1
     [[ ! -e $W/frozen/stack8 ]] || return 1
+    for tool in cmake git python3 nice gpuq ccache strings timeout patchelf flock; do
+        command -v "$tool" >/dev/null || return 1
+    done
     git merge-base --is-ancestor 48b82b0d1 HEAD || return 1
-    for p in "$CCCL" "$BUILDGATE" "$W/bin/wt" "$W/frozen/stack6/RECIPE.txt" "$W/work/aa-load/ccx01.sh" /usr/local/cuda-13.2/bin/nvcc codex/mac-evidence/summary.json; do
+    for p in "$CCCL" "$BUILDGATE" "$W/bin/wt" "$W/frozen/stack6/RECIPE.txt" "$W/frozen/stack7/SOURCE" "$W/frozen/stack7/build/bin/round-trace" "$W/work/aa-load/ccx01.sh" /usr/local/cuda-13.2/bin/nvcc codex/mac-evidence/summary.json; do
         [[ -e $p ]] || return 1
     done
     python3 - <<'PY' || return 1

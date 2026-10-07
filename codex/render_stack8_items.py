@@ -1,5 +1,6 @@
 """Render with the parent harness into this worktree; check only after freezing."""
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -15,7 +16,9 @@ from harness import lib, mkitem, snapshot
 
 def local_snapshot(x):
     files = {f'harness/{p.name}': p.read_bytes() for p in [*mkitem.H.glob('*.py'), *mkitem.H.glob('*.sh')]}
-    files['experiment.toml'] = x['file'].read_bytes()
+    experiment = x['file'].read_bytes()
+    assert hashlib.sha256(experiment).hexdigest() == x['_file_sha'], 'experiment changed during rendering'
+    files['experiment.toml'] = experiment
     files['source-root.txt'] = (str(EVAL) + '\n').encode()
     return snapshot.create(files, ROOT / 'codex/snapshots', 'harness')
 
