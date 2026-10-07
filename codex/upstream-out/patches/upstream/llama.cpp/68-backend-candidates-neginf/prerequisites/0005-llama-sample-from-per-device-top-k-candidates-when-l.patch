@@ -1,0 +1,342 @@
+From 0f477cd8e05e9e22a67eba547552bda1f3200bb3 Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Tue, 29 Sep 2026 19:18:27 +0200
+Subject: [PATCH 05/15] llama : sample from per-device top-k candidates when
+ logits are vocab-split
+
+Under SPLIT_MODE_TENSOR, output.weight and thus the logits are split by
+vocab. If every backend chain starts with top-k, build_sampling takes the
+top k of each device's slice, gathers the n_devices*k (logit, vocab id)
+pairs to every device with ggml_backend_meta_gather and runs the chains on
+those candidates. The union of the per-slice top-k contains the global
+top-k, so a chain samples as it would from the full row (up to ties at the
+k-th logit).
+
+Vocab ids come from a small F32 tensor "output_vocab_ids" per context,
+which the split-state callback splits exactly like output.weight. With
+several sequences, the candidates of all output rows are gathered at once
+and k is the largest leading top-k over the chains.
+
+Not used yet: set_sampler still refuses backend samplers under tensor split.
+---
+ src/llama-context.cpp | 45 +++++++++++++++++++++++++++++++++++++++++++
+ src/llama-context.h   |  8 ++++++++
+ src/llama-graph.cpp   | 45 +++++++++++++++++++++++++++++++++++++++++--
+ src/llama-graph.h     | 12 +++++++++++-
+ src/llama-model.cpp   | 24 +++++++++++++++++++++++
+ src/llama-model.h     |  6 ++++++
+ src/llama-sampler.cpp | 19 ++++++++++++++++++
+ src/llama-sampler.h   |  4 ++++
+ 8 files changed, 160 insertions(+), 3 deletions(-)
+
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 07b4c6148..56bde18e2 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -1338,6 +1338,45 @@ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
+     return true;
+ }
+ 
++bool llama_context::sampling_init_vocab_ids() {
++    if (sampling.vocab_ids) {
++        return true;
++    }
++
++    const int64_t n_vocab = model.vocab.n_tokens();
++    GGML_ASSERT(n_vocab <= (1 << 24) && "vocab ids are stored as F32");
++
++    ggml_init_params params = {
++        /*.mem_size   =*/ ggml_tensor_overhead(),
++        /*.mem_buffer =*/ nullptr,
++        /*.no_alloc   =*/ true,
++    };
++    ggml_context_ptr ctx { ggml_init(params) };
++    if (!ctx) {
++        return false;
++    }
++
++    ggml_tensor * t = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, n_vocab);
++    ggml_set_name(t, LLAMA_TENSOR_NAME_OUTPUT_VOCAB_IDS);
++
++    ggml_backend_buffer_ptr buf { ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), ggml_backend_dev_buffer_type(model.dev_output())) };
++    if (!buf) {
++        return false;
++    }
++
++    std::vector<float> ids(n_vocab);
++    for (int64_t i = 0; i < n_vocab; ++i) {
++        ids[i] = (float) i;
++    }
++    ggml_backend_tensor_set(t, ids.data(), 0, ggml_nbytes(t));
++
++    sampling.vocab_ids_ctx = std::move(ctx);
++    sampling.vocab_ids_buf = std::move(buf);
++    sampling.vocab_ids     = t;
++
++    return true;
++}
++
+ void llama_context::set_adapters_lora(llama_adapter_lora ** adapters, size_t n_adapters, float * scales) {
+     LLAMA_LOG_DEBUG("%s: adapters = %p\n", __func__, (void *) adapters);
+ 
+@@ -2446,6 +2485,10 @@ uint32_t llama_context::graph_max_nodes(uint32_t n_tokens) const {
+     if (n_sampling_outputs_max > 1) {
+         res += (n_sampling_outputs_max - 1) * n_sampling_nodes_max;
+     }
++    if (sampling.vocab_ids && !sampling.samplers.empty()) {
++        // candidate gather, plus a view and a cast per output row
++        res += 16 + 4*n_sampling_outputs_max;
++    }
+ 
+     if (cparams.training) {
+         res *= 4;
+@@ -2603,6 +2646,8 @@ llm_graph_params llama_context::graph_params(
+         /*.n_outputs   =*/ n_outputs,
+         /*.cb          =*/ graph_get_cb(),
+         /*.res         =*/ res,
++        /*.sampling_vocab_ids =*/ sampling.samplers.empty() ? nullptr : sampling.vocab_ids,
++        /*.sampling_n_shards  =*/ sampling.samplers.empty() || !sampling.vocab_ids ? 0 : (uint32_t) model.get_split_state_ud.n_devices,
+     };
+ }
+ 
+diff --git a/src/llama-context.h b/src/llama-context.h
+index 95b722628..f0873b0a7 100644
+--- a/src/llama-context.h
++++ b/src/llama-context.h
+@@ -260,6 +260,9 @@ public:
+ 
+     bool set_sampler(llama_seq_id seq_id, llama_sampler * sampler);
+ 
++    // tensor split: allocate sampling.vocab_ids once; false if that failed
++    bool sampling_init_vocab_ids();
++
+ private:
+     llm_graph_result * get_gf_res_prev();
+ 
+@@ -329,6 +332,11 @@ private:
+ 
+         // optimization
+         std::vector<llama_token> token_ids_full_vocab;
++
++        // tensor split: vocab ids split like the logits, created with the first backend sampler
++        ggml_context_ptr        vocab_ids_ctx;
++        ggml_backend_buffer_ptr vocab_ids_buf;
++        ggml_tensor *           vocab_ids = nullptr;
+     };
+ 
+     sampling_info sampling;
+diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
+index 1112ad885..ca62368cd 100644
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -1525,6 +1525,8 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
+     cross            (params.cross),
+     prec_policy      (params.prec_policy),
+     samplers         (params.samplers),
++    sampling_vocab_ids(params.sampling_vocab_ids),
++    sampling_n_shards(params.sampling_n_shards),
+     cb_func          (params.cb),
+     res              (params.res),
+     ctx0             (res->get_ctx()),
+@@ -3925,6 +3927,38 @@ void llm_graph_context::build_sampling() const {
+     // multi-output graphs can still vary with the number of output rows
+     ggml_tensor * logits_t = ggml_pad(ctx0, res->t_logits, 0, 1, 0, 0);
+ 
++    // Tensor split: each device holds a vocab slice of the logits. Every chain starts with top-k (enforced in
++    // llama_context::set_sampler), so the union of the per-device top-k is a superset of the global top-k and the
++    // chain picks exactly as it would from the full row. One gather brings the candidates to every device.
++    ggml_tensor * cand   = nullptr; // [n_cand, 2, n_cols]: candidate logits, then their vocab ids as F32
++    int64_t       n_cand = 0;
++    if (sampling_n_shards > 0) {
++        int32_t k = 0;
++        for (const auto & entry : samplers) {
++            const int32_t k_seq = llama_sampler_chain_leading_top_k(entry.second);
++            GGML_ASSERT(k_seq > 0);
++            k = std::max(k, k_seq);
++        }
++
++        const int64_t n_vocab = logits_t->ne[0];
++        const int64_t n_cols  = logits_t->ne[1];
++        GGML_ASSERT(sampling_vocab_ids != nullptr && sampling_vocab_ids->ne[0] == n_vocab);
++
++        n_cand = int64_t(k) * sampling_n_shards;
++
++        // slice-local indices, see the TOP_K/GET_ROWS rules in ggml-backend-meta
++        ggml_tensor * idx  = ggml_top_k(ctx0, logits_t, n_cand);
++        ggml_tensor * vals = ggml_get_rows(ctx0, ggml_reshape_3d(ctx0, logits_t, 1, n_vocab, n_cols), idx);
++        ggml_tensor * ids  = ggml_get_rows(ctx0,
++                ggml_repeat_4d(ctx0, ggml_reshape_3d(ctx0, sampling_vocab_ids, 1, n_vocab, 1), 1, n_vocab, n_cols, 1), idx);
++
++        vals = ggml_reshape_3d(ctx0, vals, n_cand, 1, n_cols);
++        ids  = ggml_reshape_3d(ctx0, ids,  n_cand, 1, n_cols);
++
++        cand = ggml_backend_meta_gather(ctx0, ggml_concat(ctx0, vals, ids, 1));
++        ggml_set_name(cand, "sampling_candidates");
++    }
++
+     for (const auto & entry : samplers) {
+         if (entry.second->iface->backend_reset) {
+             entry.second->iface->backend_reset(entry.second);
+@@ -3942,14 +3976,21 @@ void llm_graph_context::build_sampling() const {
+         const int i_out   = active ? 1          : 0;
+ 
+         for (uint32_t i = 0; i < rows.size(); ++i) {
+-            ggml_tensor * logits_seq = ggml_view_1d(ctx0, logits_t, logits_t->ne[0], rows[i] * logits_t->nb[1]);
++            ggml_tensor * logits_seq = nullptr;
++            ggml_tensor * cand_ids   = nullptr;
++            if (cand) {
++                logits_seq = ggml_view_1d(ctx0, cand, n_cand, rows[i] * cand->nb[2]);
++                cand_ids   = ggml_cast(ctx0, ggml_view_1d(ctx0, cand, n_cand, rows[i] * cand->nb[2] + cand->nb[1]), GGML_TYPE_I32);
++            } else {
++                logits_seq = ggml_view_1d(ctx0, logits_t, logits_t->ne[0], rows[i] * logits_t->nb[1]);
++            }
+             ggml_format_name(logits_seq, "logits_seq_%d_%u", seq_id, i);
+ 
+             struct llama_sampler_data data = {
+                 /*.logits       =*/ logits_seq,
+                 /*.probs        =*/ nullptr,
+                 /*.sampled      =*/ nullptr,
+-                /*.candidates   =*/ nullptr,
++                /*.candidates   =*/ cand_ids,
+             };
+ 
+             assert(sampler->iface->backend_apply);
+diff --git a/src/llama-graph.h b/src/llama-graph.h
+index 5cf74c997..ff9d6cbf1 100644
+--- a/src/llama-graph.h
++++ b/src/llama-graph.h
+@@ -890,8 +890,15 @@ struct llm_graph_params {
+             gtype == other.gtype &&
+             cvec  == other.cvec  &&
+             loras == other.loras &&
+-            cross == other.cross;
++            cross == other.cross &&
++            sampling_vocab_ids == other.sampling_vocab_ids &&
++            sampling_n_shards  == other.sampling_n_shards;
+     }
++
++    // tensor split: the logits are split across sampling_n_shards devices by vocab, and backend samplers start
++    // from the per-device top-k candidates (see build_sampling); nullptr/0 otherwise
++    ggml_tensor * sampling_vocab_ids = nullptr;
++    uint32_t      sampling_n_shards  = 0;
+ };
+ 
+ struct llm_graph_fused_node {
+@@ -1041,6 +1048,9 @@ struct llm_graph_context {
+ 
+     std::map<llama_seq_id, llama_sampler *> samplers;
+ 
++    ggml_tensor * sampling_vocab_ids;
++    uint32_t      sampling_n_shards;
++
+     const llm_graph_cb & cb_func;
+ 
+     llm_graph_result * res;
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index 97e0cee70..acb5b66bc 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -596,6 +596,13 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
+             }
+             return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_1);
+         }
++        if (tensor_name == LLAMA_TENSOR_NAME_OUTPUT_VOCAB_IDS) {
++            // must split exactly like the logits from output.weight: same axis length, rotation and granularity
++            if (is_dsv4) {
++                return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_MIRRORED);
++            }
++            return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_0);
++        }
+         if (std::regex_match(tensor_name, pattern_output_bias)) {
+             const ggml_tensor * output_weight = ud->model->get_tensor("output.weight");
+             GGML_ASSERT(output_weight != nullptr);
+@@ -2014,6 +2021,23 @@ llama_split_mode llama_model::split_mode() const {
+     return params.split_mode;
+ }
+ 
++bool llama_model::logits_vocab_split() const {
++    if (params.split_mode != LLAMA_SPLIT_MODE_TENSOR || output == nullptr) {
++        return false;
++    }
++    auto ud = get_split_state_ud; // the callback takes a non-const pointer
++    if (llama_meta_device_get_split_state(output, &ud).axis != GGML_BACKEND_SPLIT_AXIS_1) {
++        return false;
++    }
++    // an MTP head of its own is replicated, and its context could not be told apart from the target's here
++    for (const auto & layer : layers) {
++        if (layer.nextn.shared_head_head != nullptr) {
++            return false;
++        }
++    }
++    return true;
++}
++
+ std::map<ggml_backend_buffer_type_t, size_t> llama_model::memory_breakdown() const {
+     std::map<ggml_backend_buffer_type_t, size_t> ret;
+     for (const auto & [ctx, bufs] : pimpl->ctxs_bufs) {
+diff --git a/src/llama-model.h b/src/llama-model.h
+index 2243377cc..cc9c1d9ad 100644
+--- a/src/llama-model.h
++++ b/src/llama-model.h
+@@ -620,6 +620,9 @@ struct llama_meta_device_get_split_state_userdata {
+ 
+ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const struct ggml_tensor * tensor, void * userdata);
+ 
++// vocab ids 0..n_vocab-1 as F32, split across devices like the logits of output.weight
++#define LLAMA_TENSOR_NAME_OUTPUT_VOCAB_IDS "output_vocab_ids"
++
+ struct llama_prec_policy {
+     // the key is the weight tensor `res->src[0]`, stores the recommended accumulation type of the op (unused for now)
+     // TODO: migrate ad-hoc ggml_prec_set_acc() calls to this container + update apply() to use it
+@@ -767,6 +770,9 @@ struct llama_model {
+     uint32_t n_gpu_layers() const;
+     llama_split_mode split_mode() const;
+ 
++    // tensor split only: every LM head is output.weight split by vocab, so all logits are vocab-split
++    bool logits_vocab_split() const;
++
+     std::map<ggml_backend_buffer_type_t, size_t> memory_breakdown() const;
+ 
+     // total number of parameters in the model
+diff --git a/src/llama-sampler.cpp b/src/llama-sampler.cpp
+index d093d5f1c..4c51da23a 100644
+--- a/src/llama-sampler.cpp
++++ b/src/llama-sampler.cpp
+@@ -4393,3 +4393,22 @@ void llama_perf_sampler_reset(struct llama_sampler * chain) {
+     ctx->t_sample_us = 0;
+     ctx->n_sample    = 0;
+ }
++
++int32_t llama_sampler_chain_leading_top_k(const llama_sampler * sampler) {
++    if (sampler == nullptr || sampler->iface != &llama_sampler_chain_i) {
++        return -1;
++    }
++
++    const auto * chain = (const llama_sampler_chain *) sampler->ctx;
++    for (const auto & entry : chain->samplers) {
++        if (entry.ptr->iface == &llama_sampler_empty_i) {
++            continue;
++        }
++        if (entry.ptr->iface != &llama_sampler_top_k_i) {
++            return -1;
++        }
++        return ((const llama_sampler_top_k *) entry.ptr->ctx)->k;
++    }
++
++    return -1;
++}
+diff --git a/src/llama-sampler.h b/src/llama-sampler.h
+index e5db2982b..b1c34b038 100644
+--- a/src/llama-sampler.h
++++ b/src/llama-sampler.h
+@@ -38,6 +38,10 @@ struct llama_sampler_chain {
+ uint32_t llama_sampler_backend_n_nodes(const llama_sampler * sampler);
+ void llama_sampler_backend_begin(llama_sampler * sampler);
+ 
++// k of the chain's first non-empty sampler if that sampler is top-k, else -1.
++// When k > 0 the chain can only ever pick among the k highest logits, so it may start from any superset of them.
++int32_t llama_sampler_chain_leading_top_k(const llama_sampler * sampler);
++
+ struct llama_sampler * llama_sampler_init_dry_testing(
+         float   dry_multiplier,
+         float   dry_base,

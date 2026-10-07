@@ -1,0 +1,105 @@
+From c363f95e26de9975c40468ffc7a26058954a0c32 Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Tue, 29 Sep 2026 23:48:32 +0200
+Subject: [PATCH 10/15] llama : TP backend sampling only when every vocab slice
+ holds top-k rows
+
+Each device takes the top k of its own vocab slice; a slice with fewer
+rows (an uneven tensor split, or k * n_devices > n_vocab) aborted in the
+meta backend's TOP_K ('slice smaller than the per-device top-k') instead
+of falling back to host sampling. set_sampler now refuses such a chain,
+like the other unsupported cases.
+
+tests : test-llama-archs --tp-sampling loads the model again with a
+tensor split that leaves the second device fewer than k vocab rows and
+expects the sampler to be refused
+---
+ src/llama-context.cpp      |  3 +++
+ src/llama-model.cpp        | 16 ++++++++++++++++
+ src/llama-model.h          |  2 ++
+ tests/test-llama-archs.cpp | 18 ++++++++++++++++++
+ 4 files changed, 39 insertions(+)
+
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 05b4a5e84..d104b8638 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -1300,6 +1300,9 @@ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
+             reason = "logits split by vocab over output.weight (no replicated or tied LM head)";
+         } else if (k <= 0 || k > LLAMA_TP_SAMPLING_TOP_K_MAX) {
+             reason = "a sampler chain whose first active sampler is top-k with 1 <= k <= " LLAMA_TP_SAMPLING_TOP_K_MAX_STR;
++        } else if (model.logits_vocab_shard_min() < k) {
++            // each device takes the top k of its own vocab slice
++            reason = "every device's vocab slice (one plain segment) to hold at least top-k rows";
+         } else if (!sampling_init_vocab_ids()) {
+             reason = "the vocab id tensor, which failed to allocate";
+         }
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index acb5b66bc..cd42161b5 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -2038,6 +2038,22 @@ bool llama_model::logits_vocab_split() const {
+     return true;
+ }
+ 
++int64_t llama_model::logits_vocab_shard_min() const {
++    if (!logits_vocab_split()) {
++        return 0;
++    }
++    auto ud = get_split_state_ud;
++    const ggml_backend_meta_split_state ss = llama_meta_device_get_split_state(output, &ud);
++    if (ss.n_segments != 1 || ss.nr[0] != 1) {
++        return 0;
++    }
++    int64_t res = INT64_MAX;
++    for (size_t j = 0; j < ud.n_devices; j++) {
++        res = std::min(res, ss.ne[j]);
++    }
++    return res;
++}
++
+ std::map<ggml_backend_buffer_type_t, size_t> llama_model::memory_breakdown() const {
+     std::map<ggml_backend_buffer_type_t, size_t> ret;
+     for (const auto & [ctx, bufs] : pimpl->ctxs_bufs) {
+diff --git a/src/llama-model.h b/src/llama-model.h
+index cc9c1d9ad..7f4d28a74 100644
+--- a/src/llama-model.h
++++ b/src/llama-model.h
+@@ -772,6 +772,8 @@ struct llama_model {
+ 
+     // tensor split only: every LM head is output.weight split by vocab, so all logits are vocab-split
+     bool logits_vocab_split() const;
++    // the fewest vocab rows of the logits on one device when vocab-split in one plain segment, else 0
++    int64_t logits_vocab_shard_min() const;
+ 
+     std::map<ggml_backend_buffer_type_t, size_t> memory_breakdown() const;
+ 
+diff --git a/tests/test-llama-archs.cpp b/tests/test-llama-archs.cpp
+index bab11a936..2688c1e3d 100644
+--- a/tests/test-llama-archs.cpp
++++ b/tests/test-llama-archs.cpp
+@@ -1319,6 +1319,24 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
+         }
+     }
+ 
++    // a device whose vocab slice is smaller than top-k: the sampler is refused (host sampling), not an abort
++    if (ok) {
++        const float split[2] = { 1.0f, 0.0004f };
++        llama_model_params mp = model_params;
++        mp.tensor_split = split;
++        llama_model_ptr model_uneven(llama_model_init_from_user(gguf_ctx.get(), set_tensor_data, &tensor_params, mp));
++        GGML_ASSERT(model_uneven);
++        llama_context_params ctx_params = llama_context_default_params();
++        ctx_params.n_ctx = 256;
++        llama_context_ptr lctx(llama_init_from_model(model_uneven.get(), ctx_params));
++        GGML_ASSERT(lctx);
++        llama_sampler_ptr chain(llama_sampler_chain_init(llama_sampler_chain_default_params()));
++        llama_sampler_chain_add(chain.get(), llama_sampler_init_top_k(k));
++        const bool accepted = llama_set_sampler(lctx.get(), 0, chain.get());
++        LOG("%s: vocab slice smaller than top-k: sampler %s\n", __func__, accepted ? "accepted (FAIL)" : "refused, OK");
++        ok = !accepted;
++    }
++
+     LOG("%s: %s\n", __func__, ok ? "OK" : "FAIL");
+     return ok ? 0 : 1;
+ }

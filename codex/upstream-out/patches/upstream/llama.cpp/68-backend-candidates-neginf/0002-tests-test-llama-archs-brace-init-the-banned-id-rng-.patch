@@ -1,0 +1,23 @@
+From 9ba5529177dbb222c357cb141f9834d536c57ef6 Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Wed, 7 Oct 2026 19:35:32 +0200
+Subject: [PATCH 2/2] tests : test-llama-archs: brace-init the banned-id rng
+ (most vexing parse)
+
+---
+ tests/test-llama-archs.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tests/test-llama-archs.cpp b/tests/test-llama-archs.cpp
+index 72a474130..26939c97d 100644
+--- a/tests/test-llama-archs.cpp
++++ b/tests/test-llama-archs.cpp
+@@ -1501,7 +1501,7 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
+     // control: the same rows from a k + 1 wide chain (no extension) must make the host read the full row.
+     if (ok) {
+         std::vector<char> ban(n_vocab, 0);
+-        std::mt19937 rng(uint32_t(seed));
++        std::mt19937 rng{uint32_t(seed)};
+         for (int32_t r = 0; r < n_rows; ++r) {
+             const auto best = top_ids(ref[r], k + 1);
+             ban[best[0]] = ban[best[k - 1]] = ban[best[k]] = 1;

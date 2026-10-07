@@ -1,0 +1,9 @@
+Base: 7049ff0cbeb1f5ead231de4522af6b75d8d773c0
+Prerequisite count: 15 (apply prerequisites/*.patch in lexical order first; exclude them from a submission).
+Root series replay tip: 9ba5529177dbb222c357cb141f9834d536c57ef6
+Root parent: c67180a7e2e2734af0e30c33b9aca251bc07894a
+Transport: local shallow base.bundle; mini-builder only, no network fetch.
+Mac: /Users/builder/qwen38-upstream-pack/20261008/
+CPU recipe: GGML_CUDA=OFF, GGML_METAL=OFF, GGML_BLAS=OFF, GGML_NATIVE=OFF, GGML_CPU_ARM_ARCH=armv8.2-a+dotprod, GGML_CCACHE=ON; Clang, nice 19, -j4, model threads <=4, explicit 4096 contexts; RAM >=4 GiB and one model through validation/model_gate.py.
+M: fresh git am of prerequisites + root onto 7049ff0cb and Clang builds of test-llama-archs/test-sampling/test-alloc passed (see collector REPORT-upstream-pack.md; Mac committer dates give different commit IDs).
+M: test-sampling and test-llama-archs --tp-sampling -s 42 / -s 1729 pass. Removing +n_ban from backend top-k extension makes the regression fail with rc 1. Restored source builds and git diff --exit-code passes. Logs: codex/upstream-out/mac-evidence/final/68/.

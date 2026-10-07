@@ -1,0 +1,31 @@
+From 64a59a807d0691bfcf4fee0bdebc928c31e9cc2c Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Tue, 29 Sep 2026 19:18:27 +0200
+Subject: [PATCH 06/15] llama : no backend sampling nodes for vocab-split
+ ubatches without outputs
+
+Under SPLIT_MODE_TENSOR, a ubatch without output rows (a prompt split over
+several ubatches, an MTP draft catch-up decode) has logits with no elements.
+The meta backend gives those split axis UNKNOWN, and the dummy-row PAD in
+build_sampling consumes them, so graph allocation aborts in
+ggml_backend_meta_get_split_state (src_ss[i].axis != UNKNOWN). There is
+nothing to sample, so build no sampling nodes then.
+---
+ src/llama-graph.cpp | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
+index ca62368cd..be5076abc 100644
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -3900,6 +3900,10 @@ void llm_graph_context::build_sampling() const {
+     if (samplers.empty() || !res->t_logits) {
+         return;
+     }
++    // no output rows: the meta backend has no split state for empty logits, so nothing can consume them
++    if (sampling_n_shards > 0 && ggml_nelements(res->t_logits) == 0) {
++        return;
++    }
+ 
+     std::array<ggml_tensor *, 2> outs;
+     outs[0] = res->t_logits;
