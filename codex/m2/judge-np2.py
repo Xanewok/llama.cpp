@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 out = Path(sys.argv[1])
+QUICK = len(sys.argv) > 2 and sys.argv[2] == "quick"
 Q_TOL = 2e-7
 
 
@@ -72,15 +73,18 @@ def pair(name, off_tag, on_tag, k, greedy=False):
 
 
 for meta in (0, 1):
-    for k in (3, 5):
-        for seed in (1729, 2718):
+    for k in ((5,) if QUICK else (3, 5)):
+        for seed in ((1729,) if QUICK else (1729, 2718)):
             t = f"{meta}-k{k}-s{seed}"
             pair(t, f"{t}-off", f"{t}-on", k)
-pair("0-k3-s1729-unified", "0-k3-s1729-uni-off", "0-k3-s1729-uni-on", 3)
-for meta in (0, 1):
-    pair(f"{meta}-k3-s1729-greedy1", f"{meta}-k3-s1729-greedy1-off", f"{meta}-k3-s1729-greedy1-on", 3, greedy=True)
+KB = 5 if QUICK else 3  # k of the variant cells
+B = f"0-k{KB}-s1729"
+if not QUICK:
+    pair("0-k3-s1729-unified", "0-k3-s1729-uni-off", "0-k3-s1729-uni-on", 3)
+for meta in ((0,) if QUICK else (0, 1)):
+    pair(f"{meta}-k{KB}-s1729-greedy1", f"{meta}-k{KB}-s1729-greedy1-off", f"{meta}-k{KB}-s1729-greedy1-on", KB, greedy=True)
 
-base, rep = cell("0-k3-s1729-off"), cell("0-k3-s1729-off-repeat")
+base, rep = cell(f"{B}-off"), cell(f"{B}-off-repeat")
 if base and rep:
     floor = compare(base, rep)
     summary["floor_off_repeat"] = floor
@@ -89,10 +93,11 @@ if base and rep:
 else:
     fail(6, "floor cells missing")
 
-for mut, ref, marker in (("mut-swap", "0-k3-s1729-off", None), ("mut-swap-uni", "0-k3-s1729-uni-off", None),
-                         ("mut-revu", "0-k3-s1729-off", None), ("mut-shift", "0-k3-s1729-off", None),
-                         ("greedy1-mut-norng", "0-k3-s1729-greedy1-off", None)):
-    tag = f"0-k3-s1729-{mut}"
+MUTANTS = [("mut-swap", f"{B}-off"), ("greedy1-mut-norng", f"{B}-greedy1-off")]
+if not QUICK:
+    MUTANTS += [("mut-swap-uni", f"{B}-uni-off"), ("mut-revu", f"{B}-off"), ("mut-shift", f"{B}-off")]
+for mut, ref in MUTANTS:
+    tag = f"{B}-{mut}"
     m, r = cell(tag), cell(ref)
     rcf = out / f"{tag}.rc"
     if m is None:
@@ -103,7 +108,7 @@ for mut, ref, marker in (("mut-swap", "0-k3-s1729-off", None), ("mut-swap-uni", 
         fail(6, f"{mut}: missing")
         continue
     cmp = compare(r, m)
-    engaged = "MTP chain: k=3" in m["log"]
+    engaged = f"MTP chain: k={KB}" in m["log"]
     summary[mut] = dict(cmp=cmp, engaged=engaged)
     print(("ok  " if engaged and not cmp["identical"] else "FAIL"), mut, "differs" if not cmp["identical"] else "ESCAPED",
           json.dumps(cmp["units_differ"]), "dump_ids_equal", cmp["dump_ids_equal"])
