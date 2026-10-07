@@ -161,13 +161,32 @@ Not shown on the Mac: TP (`-sm tensor`) and multi-sequence. Both run in serving 
 same per-slot `llama_set_sampler(common_sampler_get_backend)`. Package 16 GPU seed identity was np1 (M); np2 has no
 separate identity check (D).
 
-## 6. GPU item / build window
+## 6. GPU item (owner asked for the proof; not submitted)
 
-None prepared. The prize is under the threshold. The engagement and exactness on the serving path are already covered by
-package 16's GPU seed-identity A/B and by the CPU check above. If a direct GPU confirmation is ever wanted, use the harness
-agent shape (`harness/agents.py`, real codex runs → lazy tool grammar). The existing `stack6-two-agent-iq4.toml` form,
-with arms that differ only in `--backend-sampling`, measures the same thing as package 16's "tool" row. Expected result:
-≤ 0.3 ms/round (G), inside the boot spread.
+`codex/items/bg-exact-j5q-ccx01.gpuq.toml` (id `bg-exact-j5q`, priority 27, measure, `host_sensitive = false`,
+budget 2400 s, CCX0+1-pinned through `work/aa-load/ccx01.sh`). `gpuq submit --check` → `valid` (rc 0). Driver:
+`codex/bg-gpu/bg_gpu_check.py`.
+- Arms (same `frozen/stack7` 48b82b0d1, SHA256SUMS checked at start): cand = the `serve.sh command` flags for
+  `swift15-j5q` (np1, CHAIN/FOLD_C 1) and `swift15-j5q-duo` (np2, CHAIN/FOLD_C 0). host = the same flags minus
+  `--backend-sampling`. Draft settings stay the same, so drafts, verify batches and the RNG streams are comparable.
+- Requests: chat completions with 2 tools, reasoning budget on, no `logit_bias`, no `ignore_eos`, `cache_prompt: false`.
+  Seeds 1/7/1729 × `tool_choice` auto/required. np2 runs as pairs with fixed offsets: A, then B 50 ms later, with B's
+  seed = seed+1000 and a different task.
+- **Identity rule:** per request, or per stream at np2, reasoning, content, tool calls, completion tokens and finish
+  reason must be equal across arms. Any difference → rc 8 `cross-arm identity failed`.
+  The np2 exception: a pair is decidable only if the schedule guard holds in both arms (B posted ≥ 30 ms after A, and
+  ≥ 50 ms before A's prefill ends, `timings.prompt_ms`). Then B always joins at the server iteration after A's prefill,
+  so the batch composition is fixed. A non-decidable pair is excluded and listed. With < 4 decidable np2 pairs → rc 5.
+- **Engagement** (stack7 has no candidate log line): the stack7 round-trace writer (`LLAMA_ROUND_TRACE`, already in
+  the binary; it is instrumentation, not a gate) records the "sampling" host time per verify round. Reference on real
+  stack7 traces (verify-path-j5q canary, M): candidate path median 36 µs/round, host scan median 630 µs/round.
+  Gate: cand median < 150 µs, host ≥ 4× cand. Also: cand boots log no `not compatible with` / `SPLIT_MODE_TENSOR needs`
+  warning. The gate logic is tested on those real traces (`codex/bg-gpu/test_bg_gpu_eval.py`, Mac): it passes, and 4
+  mutants are caught (a token differs, host arm on candidates, a blind comparator, a disable warning).
+- **Negative controls:** a `top_k: 0` request in the cand np1 boot must log the disable warning and have a sampling
+  median ≥ 4× the cand median. The comparator pair cand(seed 1) vs host(seed 7) must differ.
+- Expected (D/G): pass at np1 (package 16 GPU seed identity M, Mac CPU identity M). At np2 G: no batch-composition
+  effect is expected under the guard.
 
 ## 7. Next
 

@@ -1,0 +1,79 @@
+id = "bg-exact-j5q"
+priority = 27
+host_sensitive = false
+title = "package 16 candidate path vs host sampling, token identity under -sm tensor, tools + reasoning budget, J5q np1 + np2, frozen/stack7; ours pinned CCX0+1"
+# boots cand-np1, host-np1, cand-np2, host-np2 (~10 s load each from page cache); 6 np1 requests/arm + 1 neg, 6 np2 pairs/arm;
+# internal run deadline 1650 s, canary deadline 520 s (cand np1: 1 req + top_k 0 neg; cand np2: 1 pair).
+# cpu_evidence: Mac CPU server check (backend-grammar-mac-a2: 6/6 cand==host, engagement, neg + comparator controls);
+# gate logic on real stack7 traces (codex/bg-gpu/test_bg_gpu_eval.py: pass + 4 mutants caught)
+kind = "measure"
+ab = true
+retry = "fresh"
+budget_s = 2400
+est_s = 1800
+startup_grace_s = 300
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "integrity", regex = "frozen bytes changed|path-engaged proof failed|missing input" },
+  { class = "deterministic", regex = "cross-arm identity failed" },
+  { class = "insufficient_data", regex = "proof inconclusive|decidable pairs|grammar engaged in only" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/backend-grammar-spike/codex/bg-gpu/bg_gpu_check.py", "--run", "--out", "/home/xanewok/repos/qwen38-eval/results/2026-10-08-bg-exact-j5q/full-a{attempt}", "--port", "{port}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/backend-grammar-spike/codex/bg-gpu"
+env = { GPUQ_ACTIVE = "1", PYTHONDONTWRITEBYTECODE = "1" }
+ports = "dynamic"
+
+[preflight]
+cmd = ["python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/backend-grammar-spike/codex/bg-gpu/bg_gpu_check.py", "--preflight", "--out", "/home/xanewok/repos/qwen38-eval/results/2026-10-08-bg-exact-j5q/preflight-plan"]
+timeout_s = 600
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "python3", "/home/xanewok/repos/qwen38-eval-worktrees/wt/backend-grammar-spike/codex/bg-gpu/bg_gpu_check.py", "--canary", "--out", "/home/xanewok/repos/qwen38-eval/results/2026-10-08-bg-exact-j5q/canary-a{attempt}", "--port", "{port}"]
+env = { GPUQ_ACTIVE = "1", PYTHONDONTWRITEBYTECODE = "1" }
+timeout_s = 600
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval/results/2026-10-08-bg-exact-j5q/full-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["identity", "frozen", "budget", "arms"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/backend-grammar-spike/codex/bg-gpu/bg_gpu_check.py",
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf",
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json",
+  "/home/xanewok/repos/qwen38-eval/results/session2/pair-5060ti-2060s/campaign-swift-fullsuite-20260915/swift-iq4-xs/attempts/66ebeeaec6a7043b-01/chat-template.jinja",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack7/build/bin/round-trace",
+]
