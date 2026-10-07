@@ -1,6 +1,7 @@
 id = "cand-neginf-depth-j5q"
 kind = "depth"
 title = "cand-neginf (stack6 + backend candidates kept under -inf logit_bias, i.e. ignore_eos) vs frozen stack6, J5q TP2 np1 k=5, ABBA, cross-arm identity"
+priority = 25
 # Template: bw-cand-neginf.sh substitutes @COMMIT@, @DATE@ and @RESULTS@ and installs it as harness/experiments/cand-neginf-depth-j5q.toml.
 # The harness always sends ignore_eos, so stack6 takes the TP CPU-sampling fallback on every verify row (eager full-row D2H +
 # host top_k_select, ~90 us/row, 0.64/0.31/0.17 ms/round at 8k/32k/90k, verify-sampling REPORT). cn keeps the device candidate
