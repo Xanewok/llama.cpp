@@ -118,7 +118,7 @@ int main(int argc, char ** argv) {
                 inference = std::thread([&] { server.start_loop(); });
             }
             std::vector<llama_tokens> tokens(np);
-            json stats = json::array();
+            std::vector<json> stats;
             while (reader.has_next()) {
                 auto result = reader.next([] { return false; });
                 require(result && !result->is_error(), "completion failed");
@@ -134,7 +134,7 @@ int main(int argc, char ** argv) {
                 }
             }
             require(stats.size() == (size_t) np, "missing final results");
-            std::sort(stats.begin(), stats.end(), [](const json & a, const json & b) { return a["slot"] < b["slot"]; });
+            std::sort(stats.begin(), stats.end(), [](const json & a, const json & b) { return a["slot"].get<int>() < b["slot"].get<int>(); });
             json token_rows = json::array();
             for (int slot = 0; slot < np; ++slot) {
                 json row = json::array();
@@ -143,7 +143,7 @@ int main(int argc, char ** argv) {
                 }
                 token_rows.push_back(std::move(row));
             }
-            phases.push_back(json{{"phase", phase}, {"tokens", token_rows}, {"stats", stats}});
+            phases.push_back(json{{"phase", phase}, {"tokens", token_rows}, {"stats", json(stats)}});
         }
     } catch (...) {
         server.terminate();
