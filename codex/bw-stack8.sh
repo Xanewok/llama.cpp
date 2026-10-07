@@ -2,6 +2,7 @@
 # Parent queue only: CUDA compilation and freeze, then item render/check. No CUDA binary runs.
 set -euo pipefail
 export CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1
+export BUILDGATE_MIN_GIB=10 CPUGATE_MIN_GIB=10
 export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export PATH="$HOME/.local/bin:$PATH" CUDA_HOME=/usr/local/cuda-13.2
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

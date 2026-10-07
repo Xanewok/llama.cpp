@@ -60,8 +60,9 @@ def main():
         path.write_text(text)
         env = dict(os.environ, CUDA_VISIBLE_DEVICES='', GIT_NO_LAZY_FETCH='1', PYTHONDONTWRITEBYTECODE='1')
         result = subprocess.run(['gpuq', 'submit', '--check', str(path)], env=env, text=True, capture_output=True)
-        (args.out / f'{name}-contract.log').write_text(result.stdout + result.stderr)
-        assert result.returncode == 0, result.stdout + result.stderr
+        log = result.stdout + result.stderr
+        (args.out / f'{name}-contract.log').write_text(log)
+        assert result.returncode == 0 and 'contract violated' not in log.lower(), log
         print(f'checked, NOT submitted: {path}')
 
 
