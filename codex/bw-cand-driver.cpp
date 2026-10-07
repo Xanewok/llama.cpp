@@ -112,7 +112,7 @@ int main(int argc, char ** argv) {
                 for (const auto & o : partial->probs_output) {
                     json row = json::array();
                     for (const auto & p : o.probs) {
-                        row.push_back(json{p.tok, p.prob});
+                        row.push_back(json::array({p.tok, p.prob}));
                     }
                     probs.push_back(json{{"tok", o.tok}, {"prob", o.prob}, {"top", row}});
                 }
