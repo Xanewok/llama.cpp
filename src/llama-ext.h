@@ -100,11 +100,13 @@ LLAMA_API void llama_set_embeddings_nextn(struct llama_context * ctx, bool value
 // chain multiple trained NextN heads. Default 0 (first head).
 LLAMA_API void llama_set_nextn_layer_offset(struct llama_context * ctx, int32_t offset);
 
-// MTP draft chain (single-head qwen35 MTP with a reduced draft vocabulary): a batch of n_chain rows of one sequence,
-// every row an output, runs as n_chain serial draft steps in one graph. Row 0 carries the token and hidden state
-// of the first step; step s > 0 takes the token the sampler picked at step s-1 and its hidden state from the device,
-// so the token and embedding of rows > 0 are ignored. The sequence needs a backend sampler chain (top-k first),
-// which picks every step and fills the per-row sampled token, candidates and probabilities as usual.
+// MTP draft chain (single-head qwen35 MTP with a reduced draft vocabulary): a batch of n_chain rows for each of its
+// sequences, every row an output, runs as n_chain serial draft steps in one graph. The batch is step-major: row
+// s*n_seq + j is step s of the j-th sequence, positions consecutive per sequence. Step 0 carries each sequence's
+// token and hidden state; step s > 0 takes the token the sampler picked at step s-1 and its hidden state from the
+// device, so the token and embedding of later rows are ignored. Every sequence needs a backend sampler chain
+// (top-k first), which picks every step and fills the per-row sampled token, candidates and probabilities as usual.
+// While the chain is on, a decode whose batch does not have this shape fails (llama_decode returns -3).
 // Returns false, leaving the chain off, if the context cannot run it. n_chain = 0 turns it off.
 #define LLAMA_MTP_CHAIN_MAX 16
 LLAMA_API bool llama_set_mtp_chain(struct llama_context * ctx, int32_t n_chain);

@@ -599,6 +599,97 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_ffn(ggml_tensor * cur, cons
     return cur;
 }
 
+namespace {
+
+// A chain batch (llama_set_mtp_chain): n_seq sequences of n_chain rows. A unified cache keeps the batch order, which
+// is step-major (the step loop's cell order); a cache with one stream per sequence groups the rows by sequence.
+struct mtp_chain_layout {
+    int32_t n_seq     = 0; // 0: not a chain batch
+    int32_t n_chain   = 0;
+    bool    seq_major = false;
+
+    std::vector<llama_seq_id>    seqs;
+    std::vector<llama_sampler *> smpls;
+
+    int64_t row(int32_t j, int32_t s) const {
+        return seq_major ? (int64_t) j*n_chain + s : (int64_t) s*n_seq + j;
+    }
+};
+
+mtp_chain_layout mtp_chain_layout_of(
+        const llama_ubatch & ubatch,
+        int32_t n_chain,
+        bool kv_unified,
+        const std::map<llama_seq_id, llama_sampler *> & samplers) {
+    if (n_chain <= 0 || !ubatch.token || !ubatch.embd || ubatch.n_tokens % n_chain != 0 ||
+            ubatch.n_tokens / n_chain != ubatch.n_seqs_unq) {
+        return {};
+    }
+
+    mtp_chain_layout cl;
+    cl.n_seq     = (int32_t) ubatch.n_seqs_unq;
+    cl.n_chain   = n_chain;
+    cl.seq_major = !kv_unified && cl.n_seq > 1;
+
+    for (int32_t j = 0; j < cl.n_seq; ++j) {
+        const llama_seq_id seq = ubatch.seq_id[cl.row(j, 0)][0];
+        const auto it = samplers.find(seq);
+        if (it == samplers.end() || llama_sampler_chain_leading_top_k(it->second) <= 0) {
+            return {};
+        }
+        cl.seqs.push_back(seq);
+        cl.smpls.push_back(it->second);
+    }
+    // n_seq distinct ids over n_seq groups: every group is one whole sequence
+    for (int32_t j = 0; j < cl.n_seq; ++j) {
+        for (int32_t s = 0; s < n_chain; ++s) {
+            const int64_t i = cl.row(j, s);
+            if (!ubatch.output[i] || ubatch.n_seq_id[i] != 1 || ubatch.seq_id[i][0] != cl.seqs[j]) {
+                return {};
+            }
+        }
+    }
+
+    return cl;
+}
+
+// The cache fills the K/V destination cells in ubatch order; a seq-major chain needs them step-major so that each
+// step stores its rows with one set_rows.
+class llm_graph_input_mtp_chain_idxs : public llm_graph_input_i {
+public:
+    llm_graph_input_mtp_chain_idxs(const llama_kv_cache_context * mctx, int32_t n_seq, int32_t n_chain) :
+        mctx(mctx), n_seq(n_seq), n_chain(n_chain) {}
+
+    void set_input(const llama_ubatch * ubatch) override {
+        mctx->set_input_k_idxs(idxs, ubatch);
+
+        auto * data = (int64_t *) idxs->data;
+        tmp.assign(data, data + ggml_nelements(idxs));
+        for (int32_t j = 0; j < n_seq; ++j) {
+            for (int32_t s = 0; s < n_chain; ++s) {
+                data[(int64_t) s*n_seq + j] = tmp[(int64_t) j*n_chain + s];
+            }
+        }
+    }
+
+    bool can_reuse(const llm_graph_params & params) override {
+        mctx = static_cast<const llama_kv_cache_context *>(params.mctx);
+        return idxs->ne[0] == params.ubatch.n_tokens && params.ubatch.n_seqs_unq == (uint32_t) n_seq;
+    }
+
+    ggml_tensor * idxs = nullptr; // I64 [n_seq*n_chain], row s*n_seq + j
+
+private:
+    const llama_kv_cache_context * mctx;
+
+    const int32_t n_seq;
+    const int32_t n_chain;
+
+    std::vector<int64_t> tmp;
+};
+
+} // namespace
+
 // LLM_GRAPH_TYPE_DECODER_MTP draft head for Qwen3.5/3.6 dense series
 llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_graph_params & params)
     : llm_graph_context(params) {
@@ -629,11 +720,11 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
     inp->embd = ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, hparams.n_embd_inp(), n_tokens);
     ggml_set_input(inp->embd);
 
-    // The chain runs the k rows of one decode as k serial draft steps, see llama_set_mtp_chain. Other shapes
-    // (a graph reserve, the catch-up decode) take the plain path.
-    const int32_t n_chain = cparams.mtp_chain;
-    const bool    chain   = n_chain > 0 && (int64_t) n_tokens == n_chain && (int64_t) n_outputs == n_chain &&
-                            ubatch.token && ubatch.embd && samplers.size() == 1;
+    // The chain runs the k rows of each sequence as k serial draft steps, see llama_set_mtp_chain. Other shapes
+    // (a graph reserve, the catch-up decode) take the plain path; llama_context refuses a chain request that does.
+    const mtp_chain_layout cl = (int64_t) n_outputs == n_tokens
+        ? mtp_chain_layout_of(ubatch, cparams.mtp_chain, cparams.kv_unified, samplers) : mtp_chain_layout{};
+    const bool chain = cl.n_seq > 0;
 
     // TODO: make static using `ggml_build_forward_select()`
     //       see llm_graph_context::build_inp_embd() for reference
@@ -774,66 +865,115 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
         GGML_ASSERT(model.draft_output && model.draft_token_embd && model.draft_vocab_map);
         GGML_ASSERT(ggml_nelements(inp_attn->self_v_idxs) == n_tokens && "MTP chain needs flash attention (untransposed V)");
 
-        ggml_tensor * mask = inp_attn->self_kq_mask_cnv;
-        GGML_ASSERT(mask->ne[1] == n_tokens && mask->ne[2] == 1 && mask->ne[3] == 1);
+        const int32_t n_chain = cl.n_chain;
+        const int32_t n_seq   = cl.n_seq;
 
-        const llama_seq_id seq_id  = samplers.begin()->first;
-        llama_sampler *    sampler = samplers.begin()->second;
-        const int32_t      k_top   = llama_sampler_chain_leading_top_k(sampler);
-        GGML_ASSERT(k_top > 0);
+        // a step attends with one mask row per sequence: n_seq rows of one stream, or row s of each stream
+        ggml_tensor * mask = inp_attn->self_kq_mask_cnv;
+        const int64_t n_stream = mask->ne[3];
+        GGML_ASSERT(mask->ne[2] == 1 && mask->ne[1]*n_stream == n_tokens && n_stream == (cl.seq_major ? n_seq : 1));
+
+        int32_t k_top = 0;
+        for (auto * smpl : cl.smpls) {
+            k_top = std::max(k_top, llama_sampler_chain_leading_top_k(smpl));
+        }
+
+        // with FA, V takes the same destination cells as K
+        ggml_tensor * idxs = inp_attn->self_k_idxs;
+        if (cl.seq_major) {
+            auto inp_idxs = std::make_unique<llm_graph_input_mtp_chain_idxs>(inp_attn->mctx, n_seq, n_chain);
+            inp_idxs->idxs = ggml_new_tensor_1d(ctx0, GGML_TYPE_I64, n_tokens);
+            ggml_set_input(inp_idxs->idxs);
+            idxs = inp_idxs->idxs;
+            res->add_input(std::move(inp_idxs));
+        }
 
         ggml_tensor * tok_embd_w = layer.nextn.embed_tokens ? layer.nextn.embed_tokens : model.tok_embd;
         ggml_tensor * vocab_map  = ggml_reshape_2d(ctx0, model.draft_vocab_map, 1, model.draft_vocab_map->ne[0]);
 
         const int64_t n_pp = hparams.n_pos_per_embd();
+        const size_t  esz  = ggml_element_size(inp_pos);
 
-        build_sampling_begin(n_chain);
+        build_sampling_begin(n_tokens);
 
-        ggml_tensor * sampled = nullptr; // I32, the token the previous step picked
-        ggml_tensor * h       = nullptr; // its h_nextn
-        ggml_tensor * h_all   = nullptr; // h_nextn of every step, one column each
+        ggml_tensor * h = nullptr;              // h_nextn of the previous step, one column per sequence
+        std::vector<ggml_tensor *> h_steps;
 
         for (int32_t s = 0; s < n_chain; ++s) {
-            ggml_tensor * e_in;
+            ggml_tensor * e_in = nullptr;
             ggml_tensor * h_in;
             if (s == 0) {
-                e_in = ggml_get_rows(ctx0, tok_embd_w, ggml_view_1d(ctx0, inp_tokens, 1, 0));
-                h_in = ggml_view_2d(ctx0, h_embd, h_embd->ne[0], 1, h_embd->nb[1], 0);
+                if (cl.seq_major) {
+                    ggml_tensor * ids = ggml_cont(ctx0, ggml_view_2d(ctx0, inp_tokens, 1, n_seq, n_chain*inp_tokens->nb[0], 0));
+                    e_in = ggml_get_rows(ctx0, tok_embd_w, ggml_reshape_1d(ctx0, ids, n_seq));
+                    h_in = ggml_cont(ctx0, ggml_view_2d(ctx0, h_embd, h_embd->ne[0], n_seq, n_chain*h_embd->nb[1], 0));
+                } else {
+                    e_in = ggml_get_rows(ctx0, tok_embd_w, ggml_view_1d(ctx0, inp_tokens, n_seq, 0));
+                    h_in = ggml_view_2d(ctx0, h_embd, h_embd->ne[0], n_seq, h_embd->nb[1], 0);
+                }
             } else {
-                ggml_tensor * row = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, vocab_map, ggml_reshape_1d(ctx0, sampled, 1)), 1);
-                e_in = ggml_get_rows(ctx0, model.draft_token_embd, row);
+                for (int32_t j = 0; j < n_seq; ++j) {
+                    ggml_tensor * sampled = res->t_sampled[cl.row(j, s - 1)];
+                    ggml_tensor * row = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, vocab_map, ggml_reshape_1d(ctx0, sampled, 1)), 1);
+                    ggml_tensor * e_j = ggml_get_rows(ctx0, model.draft_token_embd, row);
+                    e_in = e_in ? ggml_concat(ctx0, e_in, e_j, 1) : e_j;
+                }
                 h_in = h;
             }
             cb(e_in, "mtp_tok_embd", il);
 
-            // positions are laid out [n_pp][n_tokens], rope reads a single row's n_pp values contiguously
-            ggml_tensor * pos = n_pp == 1
-                ? ggml_view_1d(ctx0, inp_pos, 1, s*ggml_element_size(inp_pos))
-                : ggml_reshape_1d(ctx0, ggml_cont(ctx0, ggml_view_2d(ctx0, inp_pos, 1, n_pp,
-                        n_tokens*ggml_element_size(inp_pos), s*ggml_element_size(inp_pos))), n_pp);
+            // positions are laid out [n_pp][n_tokens], rope reads them as [n_pp][n_seq]
+            ggml_tensor * pos;
+            if (cl.seq_major) {
+                pos = ggml_reshape_1d(ctx0, ggml_cont(ctx0, ggml_view_3d(ctx0, inp_pos, 1, n_seq, n_pp,
+                        n_chain*esz, n_tokens*esz, s*esz)), n_seq*n_pp);
+            } else if (n_pp == 1) {
+                pos = ggml_view_1d(ctx0, inp_pos, n_seq, s*n_seq*esz);
+            } else {
+                pos = ggml_reshape_1d(ctx0, ggml_cont(ctx0, ggml_view_2d(ctx0, inp_pos, n_seq, n_pp,
+                        n_tokens*esz, s*n_seq*esz)), n_seq*n_pp);
+            }
 
             llm_graph_input_attn_kv attn(hparams, cparams, inp_attn->mctx);
             attn.self_k_rot       = inp_attn->self_k_rot;
             attn.self_v_rot       = inp_attn->self_v_rot;
-            attn.self_k_idxs      = ggml_view_1d(ctx0, inp_attn->self_k_idxs, 1, s*inp_attn->self_k_idxs->nb[0]);
-            attn.self_v_idxs      = ggml_view_1d(ctx0, inp_attn->self_v_idxs, 1, s*inp_attn->self_v_idxs->nb[0]);
-            attn.self_kq_mask_cnv = ggml_view_4d(ctx0, mask, mask->ne[0], 1, 1, 1, mask->nb[1], mask->nb[2], mask->nb[3], s*mask->nb[1]);
+            attn.self_k_idxs      = ggml_view_1d(ctx0, idxs, n_seq, s*n_seq*idxs->nb[0]);
+            attn.self_v_idxs      = cl.seq_major ? attn.self_k_idxs
+                                  : ggml_view_1d(ctx0, inp_attn->self_v_idxs, n_seq, s*n_seq*inp_attn->self_v_idxs->nb[0]);
+            attn.self_kq_mask_cnv = n_stream == 1
+                ? ggml_view_4d(ctx0, mask, mask->ne[0], n_seq, 1, 1, mask->nb[1], mask->nb[2], mask->nb[3], s*n_seq*mask->nb[1])
+                : ggml_view_4d(ctx0, mask, mask->ne[0], 1, 1, n_stream, mask->nb[1], mask->nb[2], mask->nb[3], s*mask->nb[1]);
 
-            h     = mtp_block(e_in, h_in, pos, &attn);
-            h_all = h_all ? ggml_concat(ctx0, h_all, h, 1) : h;
+            h = mtp_block(e_in, h_in, pos, &attn);
+            h_steps.push_back(h);
 
             ggml_tensor * logits = build_lora_mm(model.draft_output, h, head_s);
             cb(logits, "result_output", -1);
 
             ggml_tensor * cand = build_sampling_cand(logits, k_top);
-            build_sampling_row(seq_id, sampler, logits, cand, 0, s, logits);
-
-            sampled = res->t_sampled[s];
-            GGML_ASSERT(sampled && "MTP chain: the sampler chain does not pick a token");
+            for (int32_t j = 0; j < n_seq; ++j) {
+                build_sampling_row(cl.seqs[j], cl.smpls[j], logits, cand, j, (int32_t) cl.row(j, s), logits);
+                GGML_ASSERT(res->t_sampled[cl.row(j, s)] && "MTP chain: the sampler chain does not pick a token");
+            }
         }
 
         build_sampling_end();
 
+        // h_nextn rows in ubatch order
+        ggml_tensor * h_all = nullptr;
+        if (!cl.seq_major) {
+            for (auto * hs : h_steps) {
+                h_all = h_all ? ggml_concat(ctx0, h_all, hs, 1) : hs;
+            }
+        } else {
+            for (auto * hs : h_steps) {
+                hs    = ggml_reshape_3d(ctx0, hs, hs->ne[0], n_seq, 1);
+                h_all = h_all ? ggml_concat(ctx0, h_all, hs, 2) : hs;
+            }
+            h_all = ggml_reshape_2d(ctx0, ggml_cont(ctx0, ggml_permute(ctx0, h_all, 0, 2, 1, 3)), h_all->ne[0], n_tokens);
+        }
+
+        res->n_mtp_chain_seqs = n_seq;
         res->t_h_nextn = h_all;
         ggml_build_forward_expand(gf, h_all);
         return;

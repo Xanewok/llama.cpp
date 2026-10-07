@@ -1415,6 +1415,8 @@ void llm_graph_result::reset() {
     t_sampled_logits.clear();
     t_candidates.clear();
 
+    n_mtp_chain_seqs = 0;
+
     params = {};
 
     inputs.clear();
