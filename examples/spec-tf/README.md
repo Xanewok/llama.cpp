@@ -16,6 +16,7 @@ For example, with an MTP-enabled GGUF:
 llama-spec-tf -m model.gguf -c 4096 -np 1 -t 8 -tb 8 -fa on -ctk q8_0 -ctv q8_0 \
   --spec-type draft-mtp --spec-draft-n-max 5 --spec-draft-type-k f16 --spec-draft-type-v f16 \
   --temp 1 --top-k 20 --top-p 0.95 --min-p 0.05 --ignore-eos \
+  --backend-sampling --spec-draft-backend-sampling \
   --tf-stage A --tf-streams streams.json --tf-out target
 llama-spec-tf -m model.gguf -c 4096 -np 1 -t 8 -tb 8 -fa on \
   --spec-type draft-mtp --spec-draft-n-max 5 --spec-draft-type-k f16 --spec-draft-type-v f16 --temp 1 \
@@ -39,3 +40,5 @@ Each output directory has a small `header.json` written only after successful co
 A target row at position `p` predicts token `p+1`. A draft start `t` feeds token `t` and target hidden row `t-1`; later steps feed the true stream tokens and the draft's own hidden rows. The saved draft top-128 supports offline vocabulary variants only when their top ten unsuppressed ids are covered. `q_sample_ids` and `q_probs` preserve the actual `common_sampler` row for real sliced-head runs. Padding uses id `-1` and probability zero. The estimator excludes starts without a complete draft horizon; their partial rows remain available for checking final server rounds.
 
 `--tf-hidden-offset -2` and `--tf-permute` are negative controls. They intentionally break the draft conditioning. Independent MTP contexts and chained MTP heads use the existing draft driver conventions; assistants that require a live target context are unsupported. Quantized inference can depend on batch shape. A row comparison against `LLAMA_SPEC_TRACE` must pass before treating the result as a paired estimate of a served configuration.
+
+Use the served backend-sampling flags: a CPU backend can run the full target chain, while a tensor-split backend can offload only a prefix. `--tf-chunk N` sets the continuation decode width for batch-shape diagnostics without changing `-ub` or the prompt pass. Its default is the physical batch width.
