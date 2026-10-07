@@ -1,6 +1,7 @@
 #include "ggml-round-trace.h"
 
 #include <algorithm>
+#include <chrono>
 #include <condition_variable>
 #include <cstdio>
 #include <deque>
@@ -8,6 +9,7 @@
 #include <iterator>
 #include <map>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -114,20 +116,54 @@ static int emit() {
 }
 
 static int ownership() {
-    ggml_round_trace_begin("V", 4);
-    std::string kind(96, 'a');
+    static const char kind[] = "static_event_kind_longer_than_sso";
+    std::string phase = "V" + std::string(96, 'a');
+#ifdef GGML_ROUND_TRACE_TEST_HOOKS
+    auto & writer = trace_get_writer();
+    {
+        std::lock_guard<std::mutex> lock(writer.mutex);
+        writer.test_pause = !writer.sync;
+    }
+#endif
+    ggml_round_trace_begin(phase.c_str(), 7);
     const auto now = ggml_round_trace_now();
-    ggml_round_trace_event(kind.c_str(), now, now + 1);
-    kind.assign(96, 'b');
+    ggml_round_trace_event(kind, now, now + 1, 2, 23, 456);
+    ggml_round_trace_end(91);
+    const auto original = phase;
+    ggml_round_trace_begin("V", 4);
+    phase.assign(97, 'b');
+    state.phases.back().name = "mutated_phase";
+    state.phases.back().n_tokens = 42;
+    ggml_round_trace_event("mutated_event", now + 10, now + 20, 3, 99, 999);
+    ggml_round_trace_end(-7);
+#ifdef GGML_ROUND_TRACE_TEST_HOOKS
+    {
+        std::lock_guard<std::mutex> lock(writer.mutex);
+        writer.test_pause = false;
+    }
+    writer.changed.notify_all();
+#endif
     ggml_round_trace_flush();
-    if (contents().find(std::string(96, 'a')) == std::string::npos) {
-        std::fprintf(stderr, "kind ownership failed\n");
+    const auto data = contents();
+    const auto first_end = data.find('\n');
+    const auto first = data.substr(0, first_end);
+    if (first.find("\"phase\":\"" + original + "\",\"n_tokens\":7,\"result\":91") == std::string::npos ||
+        first.find("\"kind\":\"" + std::string(kind) + "\",\"phase\":0,\"device\":2,\"count\":23,\"bytes\":456") == std::string::npos ||
+        first.find("mutated_") != std::string::npos) {
+        std::fprintf(stderr, "record ownership failed after producer state mutation\n");
         return 16;
     }
     return 0;
 }
 
 static int stress() {
+#ifdef GGML_ROUND_TRACE_TEST_HOOKS
+    auto & writer = trace_get_writer();
+    {
+        std::lock_guard<std::mutex> lock(writer.mutex);
+        writer.test_pause = !writer.sync;
+    }
+#endif
     std::vector<std::thread> producers;
     for (int t = 0; t < 4; ++t) {
         producers.emplace_back([t] {
@@ -138,16 +174,50 @@ static int stress() {
             ggml_round_trace_flush();
         });
     }
+    bool reached = true;
+#ifdef GGML_ROUND_TRACE_TEST_HOOKS
+    if (!writer.sync) {
+        std::unique_lock<std::mutex> lock(writer.mutex);
+        reached = writer.changed.wait_for(lock, std::chrono::seconds(30), [&writer] { return writer.test_full_queue_waits > 0; });
+        writer.test_pause = false;
+        lock.unlock();
+        writer.changed.notify_all();
+    }
+#endif
     for (auto & t : producers) { t.join(); }
     ggml_round_trace_flush();
-    return visible(768);
+    if (!reached) {
+        std::fprintf(stderr, "stress did not reach 64 pending rounds and block a producer\n");
+        return 20;
+    }
+    if (visible(768)) { return 15; }
+    uint64_t next[4] = {1, 1, 1, 1};
+    std::istringstream lines(contents());
+    std::string line;
+    while (std::getline(lines, line)) {
+        const auto tid = std::stol(line.substr(line.find("\"tid\":") + 6));
+        const auto round = std::stoull(line.substr(line.find("\"round\":") + 8));
+        if (tid < 300 || tid >= 304 || round != next[tid - 300]++) {
+            std::fprintf(stderr, "stress producer order failed: tid=%ld round=%llu\n", tid, round);
+            return 19;
+        }
+    }
+    for (auto n : next) {
+        if (n != 193) { return 19; }
+    }
+#ifdef GGML_ROUND_TRACE_TEST_HOOKS
+    std::printf("{\"records_D\":768,\"full_queue_waits_M\":%llu}\n", (unsigned long long) writer.test_full_queue_waits);
+#endif
+    return 0;
 }
 
 static int timing() {
     deterministic = false;
     std::vector<int64_t> elapsed;
+    ggml_round_trace_begin("V", 4);
+    ggml_round_trace_end(0);
+    ggml_round_trace_begin("V", 4);
     for (int r = 0; r < 16; ++r) {
-        ggml_round_trace_begin("V", 4);
         for (int i = 0; i < 1800; ++i) {
             ggml_round_trace_event("input", 1000000000000000 + i, 1000000000000001 + i, i % 2, 1, 4096);
         }
@@ -156,9 +226,9 @@ static int timing() {
         ggml_round_trace_begin("V", 4);
         elapsed.push_back(wall_now() - start);
         ggml_round_trace_end(0);
-        // Drain outside the timed span so the test measures enqueue rather than a growing backlog.
-        ggml_round_trace_flush();
     }
+    // The warm worker stays alive throughout the loop; these records fit below the queue bound.
+    ggml_round_trace_flush();
     std::sort(elapsed.begin(), elapsed.end());
     std::printf("{\"begin_v_median_ns_M\":%lld,\"rounds\":16,\"events_per_record\":1800}\n", (long long) elapsed[elapsed.size() / 2]);
     return 0;

@@ -45,10 +45,14 @@ def main():
     _, mutant = run("mutant", "--emit", "mutant", expect=15)
     if "flush visibility: expected 5 records, got 4" not in mutant.stderr:
         raise RuntimeError("negative control did not fail the final-round visibility check")
+    stress = {}
     for sync_mode in (True, False):
         label = "sync" if sync_mode else "async"
         run("patched", "--ownership", f"{label}-ownership", sync=sync_mode)
-        run("patched", "--stress", f"{label}-stress", sync=sync_mode)
+        _, r = run("patched", "--stress", f"{label}-stress", sync=sync_mode)
+        stress[label] = json.loads(r.stdout)
+        if not sync_mode and stress[label]["full_queue_waits_M"] < 1:
+            raise RuntimeError("async stress did not reach backpressure")
         run("patched", "--exit-tail", f"{label}-exit", sync=sync_mode)
     if (a.out / "sync-exit.jsonl").read_bytes() != (a.out / "async-exit.jsonl").read_bytes():
         raise RuntimeError("exit drain byte identity failed")
@@ -74,6 +78,7 @@ def main():
                 "test_sha256": hashlib.sha256((root / "codex/test-round-trace.cpp").read_bytes()).hexdigest(),
                 "byte_identity": "old == sync == async", "negative_control": "missing final enqueue fails rc 15",
                 "exit_drain": "main and joined producer TLS tails retained", "stress_records_per_arm": 768,
+                "stress": stress, "timing_scope": "warm worker; no loop joins; backlog below 64",
                 "record_sha256": hashlib.sha256(old.read_bytes()).hexdigest(), "timing_ns_M": timing,
                 "async_over_sync_D": ratio, "record_bytes_median_M": statistics.median(sizes)}
     (a.out / "cpu-evidence.json").write_text(json.dumps(evidence, indent=2) + "\n")
