@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import time
 import urllib.error
@@ -54,11 +55,18 @@ def main():
     available = int(next(line.split()[1] for line in Path("/proc/meminfo").read_text().splitlines() if line.startswith("MemAvailable:")))
     if available < 10 * 1024 ** 2:
         raise RuntimeError("MemAvailable below 10 GiB")
+    if args.out.exists() and any(args.out.iterdir()):
+        raise FileExistsError("validation output already exists: " + str(args.out))
     args.out.mkdir(parents=True, exist_ok=True)
     port = 18157
     env = dict(os.environ, OMP_NUM_THREADS="8")
+    env.pop("LLAMA_SPEC_TRACE", None)
     if not args.trace_off:
         env["LLAMA_SPEC_TRACE"] = str(args.out / "trace.jsonl")
+    def stopped(signum, frame):
+        raise InterruptedError("CPU validation stopped")
+    signal.signal(signal.SIGTERM, stopped)
+    signal.signal(signal.SIGINT, stopped)
     flags = ["-m", MODEL, "-c", "4096", "-np", "1", "-ngl", "0", "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0",
              "--spec-type", "draft-mtp", "--spec-draft-n-max", "5", "--spec-draft-n-min", "0", "--spec-draft-p-min", "0",
              "--spec-draft-sampling", "probabilistic", "--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16",

@@ -118,6 +118,10 @@ static void stage_a(common_params params, const fs::path & streams_path, const f
         throw std::runtime_error("stateful stochastic samplers and grammars are not supported");
     }
     llama_set_embeddings_nextn(ctx, true, false);
+    const auto rm_type = common_context_can_seq_rm(ctx);
+    const bool checkpoint = params.n_ctx_checkpoints > 0 &&
+        (rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL || rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS ||
+         (!params.swa_full && llama_model_n_swa(model) > 0));
     const auto streams = read_json(streams_path);
     if (!streams.is_array() || streams.empty()) {
         throw std::runtime_error("streams file must be a nonempty JSON list of {prompt, continuation}");
@@ -154,12 +158,24 @@ static void stage_a(common_params params, const fs::path & streams_path, const f
         auto raw_logits = output(dir / "p_raw_logits.bin");
         auto lse = output(dir / "p_logsumexp.bin");
         common_batch batch(ctx);
+        std::vector<int> prompt_chunks;
         const int chunk = std::min(llama_n_batch(ctx), llama_n_ubatch(ctx));
         for (int off = 0; off < (int) tokens.size();) {
             batch.clear();
-            const int end = off < prompt ? prompt : tokens.size();
+            int end = off < prompt ? prompt : tokens.size();
+            if (off < prompt && checkpoint) {
+                for (const int offset : {4 + (int) llama_n_ubatch(ctx), 4}) {
+                    const int cut = prompt - std::min((int) llama_n_batch(ctx), offset);
+                    if (off < cut) {
+                        end = std::min(end, cut);
+                    }
+                }
+            }
             const int width = off < prompt || continuation_chunk == 0 ? chunk : std::min(chunk, continuation_chunk);
             const int count = std::min(width, end - off);
+            if (off < prompt) {
+                prompt_chunks.push_back(count);
+            }
             for (int i = 0; i < count; ++i) {
                 batch.add(tokens[off + i], off + i, 0, off + i >= prompt - 1);
             }
@@ -200,7 +216,7 @@ static void stage_a(common_params params, const fs::path & streams_path, const f
         }
         header["streams"].push_back(json {
             {"id", stream.value("id", std::to_string(s))}, {"n_tokens", tokens.size()},
-            {"n_prompt", prompt}, {"n_continuation", continuation.size()},
+            {"n_prompt", prompt}, {"n_continuation", continuation.size()}, {"prompt_chunks", prompt_chunks},
         });
         LOG_INF("stage A stream %zu complete\n", s);
     }
@@ -208,7 +224,7 @@ static void stage_a(common_params params, const fs::path & streams_path, const f
     write_json(out_dir / "header.json", header);
 }
 
-static void stage_b(common_params params, const fs::path & target_dir, const fs::path & out_dir, int hidden_offset, bool permute) {
+static void stage_b(common_params params, const fs::path & target_dir, const fs::path & out_dir, int hidden_offset, bool permute, bool carry_streams) {
     const auto header = read_json(target_dir / "header.json");
     if (header.at("format").get<std::string>() != "spec-tf-v1" || header.at("hidden_dtype").get<std::string>() != "f32") {
         throw std::runtime_error("unsupported target format");
@@ -268,7 +284,9 @@ static void stage_b(common_params params, const fs::path & target_dir, const fs:
         {"suppress_ids", suppress_ids}, {"format", "spec-tf-v1"}, {"stage", "B"}, {"target_header", header}, {"model", params.model.path},
         {"k", k}, {"q_width", 128}, {"temperature", sampling.temp}, {"draft_vocab", params.speculative.draft.vocab_ids},
         {"hidden_offset", hidden_offset}, {"permuted", permute}, {"backend_sampling", backend_chain != nullptr},
+        {"carry_streams", carry_streams},
     };
+    std::vector<float> carry_h(n_embd, 0);
     for (size_t s = 0; s < header.at("streams").size(); ++s) {
         const auto & info = header.at("streams").at(s);
         const int64_t n64 = info.at("n_tokens").get<int64_t>();
@@ -302,7 +320,11 @@ static void stage_b(common_params params, const fs::path & target_dir, const fs:
         auto h_at = [&](int pos, float * dst) {
             const int row = pos + hidden_offset;
             if (row < 0) {
-                std::fill_n(dst, n_embd, 0);
+                if (carry_streams && pos == 0) {
+                    std::copy(carry_h.begin(), carry_h.end(), dst);
+                } else {
+                    std::fill_n(dst, n_embd, 0);
+                }
             } else {
                 hidden.seekg((size_t) row * n_embd * sizeof(float));
                 hidden.read(reinterpret_cast<char *>(dst), n_embd * sizeof(float));
@@ -333,8 +355,23 @@ static void stage_b(common_params params, const fs::path & target_dir, const fs:
             }
             llama_set_nextn_layer_offset(ctx.get(), 0);
         };
-        for (int off = 0; off < prompt; off += chunk) {
-            catch_up(off, std::min(chunk, prompt - off));
+        int off = 0;
+        const auto prompt_chunks = info.value("prompt_chunks", std::vector<int>{});
+        if (prompt_chunks.empty()) {
+            for (; off < prompt; off += chunk) {
+                catch_up(off, std::min(chunk, prompt - off));
+            }
+        } else {
+            for (const int count : prompt_chunks) {
+                if (count <= 0 || count > chunk || off + count > prompt) {
+                    throw std::runtime_error("invalid prompt chunk");
+                }
+                catch_up(off, count);
+                off += count;
+            }
+            if (off != prompt) {
+                throw std::runtime_error("incomplete prompt chunks");
+            }
         }
         std::vector<float> chain_h((size_t) (k + 1) * n_embd);
         for (int t = prompt; t < n - 1; ++t) {
@@ -388,6 +425,9 @@ static void stage_b(common_params params, const fs::path & target_dir, const fs:
                 catch_up(t, 1);
             }
         }
+        // The server keeps pending_h across uncached requests; the final emitted token is not decoded.
+        hidden.seekg((size_t) (n - 1 + hidden_offset) * n_embd * sizeof(float));
+        hidden.read(reinterpret_cast<char *>(carry_h.data()), n_embd * sizeof(float));
         LOG_INF("stage B stream %zu complete\n", s);
     }
     if (backend_chain) {
@@ -403,11 +443,14 @@ int main(int argc, char ** argv) {
         int hidden_offset = -1;
         int continuation_chunk = 0;
         bool permute = false;
+        bool carry_streams = false;
         std::vector<char *> args {argv[0]};
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--tf-permute") {
                 permute = true;
+            } else if (arg == "--tf-carry-streams") {
+                carry_streams = true;
             } else if (arg == "--tf-stage" || arg == "--tf-streams" || arg == "--tf-target" || arg == "--tf-out" || arg == "--tf-hidden-offset" || arg == "--tf-control-vocab" || arg == "--tf-chunk") {
                 if (++i == argc) {
                     throw std::runtime_error("missing value for " + arg);
@@ -442,15 +485,15 @@ int main(int argc, char ** argv) {
         if (stage == "A") {
             stage_a(params, streams, out, continuation_chunk);
         } else if (stage == "B") {
-            stage_b(params, target, out, hidden_offset, permute);
+            stage_b(params, target, out, hidden_offset, permute, carry_streams);
         } else {
             const fs::path dir(out);
             stage_a(params, streams, dir / "target", continuation_chunk);
-            stage_b(params, dir / "target", dir / "full", hidden_offset, permute);
+            stage_b(params, dir / "target", dir / "full", hidden_offset, permute, carry_streams);
             for (size_t i = 0; i < controls.size(); ++i) {
                 params.speculative.draft.vocab_ids = read_tokens(read_json(controls[i]),
                         read_json(dir / "target/header.json").at("n_vocab").get<int>());
-                stage_b(params, dir / "target", dir / ("control-" + std::to_string(i)), hidden_offset, permute);
+                stage_b(params, dir / "target", dir / ("control-" + std::to_string(i)), hidden_offset, permute, carry_streams);
             }
         }
         llama_backend_free();

@@ -101,7 +101,8 @@ def run(args):
              '--spec-type', 'draft-mtp', '--spec-draft-n-max', '5', '--spec-draft-n-min', '0', '--spec-draft-p-min', '0',
              '--spec-draft-sampling', 'probabilistic', '--spec-draft-backend-sampling', '--backend-sampling',
              '--spec-draft-type-k', 'f16', '--spec-draft-type-v', 'f16', '-t', '8', '-tb', '8',
-             '--temp', '1', '--top-k', '20', '--top-p', '0.95', '--min-p', '0.05', '--ignore-eos']
+             '--temp', '1', '--top-k', '20', '--top-p', '0.95', '--min-p', '0.05', '--ignore-eos',
+             '--tf-chunk', '6', '--tf-carry-streams']
     events = os.environ.get('GPUQ_EVENTS')
     if events:
         with open(events, 'a') as f:
