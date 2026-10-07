@@ -2,6 +2,8 @@
 
 Labels: M measured, D derived, G guess. Worktree `nh1-fold-c`, branch `topic/nh1-fold-c`, starting commit `cd4a9d49a`.
 
+Conclusion: the generic CPU Meta planner defect is fixed and independently tested. NH1 model identity and engagement remain unverified because no model test window was available; do not treat this report as a serving validation.
+
 ## Cause and design
 
 The fold ends with draft K/V writes at `src/models/qwen35.cpp:340`. `llama_kv_cache::cpy_v` (`src/llama-kv-cache.cpp:1396`, FA path) returns `ggml_set_rows`, which aliases the persistent cache through `view_src` (`ggml/src/ggml.c:4027`). The cache has `op == GGML_OP_NONE`.
@@ -14,7 +16,7 @@ The node-mapping loop at `:2289` already excludes Meta buffers from its host-vie
 
 M: the new terminal-view regression aborts with exit 134 against the original library at `ggml-backend-meta.cpp:2500`, matching the parent's folded-graph failure. M: all 40 allocator tests pass after the fix, including the six new Meta cases. Logs: `codex/nh1-meta-results/test-alloc-original.log`, `test-alloc-fixed.log`. The CPU server target and `fold-cpu` were rebuilt using the exact CPU recipe from `codex/bw-nh1.sh`, without executing that payload's CUDA/freeze/item stages; build log: `codex/nh1-meta-results/build-cpu.log`.
 
-NH1 model identity is pending a CPU window. The initial GPU measurements finished and the CPU rebuild/tests ran, but further GPU measurements (`host-trims-v2-np2-iq4-same`, followed by `host-trims-v2-np2-iq4-stack6`) were queued before model verification could start. A separate queued CPU model fixture also occupied the one-model slot during the earlier gap. Builds and tests passed through `cpugate`; every compile additionally passed through `buildgate`, with `nice -n 19`, at most eight CPU threads, and `-j4` for CMake builds.
+NH1 model identity is pending a CPU window. The initial GPU measurements finished and the CPU rebuild/tests ran, but further GPU measurements (`host-trims-v2-np2-iq4-same`, `host-trims-v2-np2-iq4-stack6`, then `host-trims-v2-np2-iq4-same-real`) followed before model verification could start. Separate queued CPU model fixtures occupied the one-model slot during the gaps. At the final check, `bw-spec-tf` was running and `trace-writer-depth-j5q` was queued next. Builds and tests passed through `cpugate`; every compile additionally passed through `buildgate`, with `nice -n 19`, at most eight CPU threads, and `-j4` for CMake builds. No NH1 model boot was started.
 
 Executed build recipe: `cpugate buildgate cmake -B build-cpu -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_CCACHE=ON -DGGML_OPENMP_FETCH=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF`, then `cpugate buildgate cmake --build build-cpu --target llama-server -j4`, then the `g++` fixture command from `codex/bw-nh1.sh:50` through both gates. Gate executables: `/home/xanewok/repos/qwen38-eval-worktrees/bin/{cpugate,buildgate}`. Allocator test: `cpugate build-cpu/bin/test-alloc`.
 
@@ -30,6 +32,6 @@ Next required verification (not yet executed): `CUDA_VISIBLE_DEVICES="" GIT_NO_L
 
 GPU execution and speed are unverified. CUDA Meta device buffers report as non-host buffers, so these additional checks do not change their planner branches (source inference). The parent still needs the CUDA build and the existing frozen depth experiment after reviewing these changes.
 
-The fold adds live consumers and draft cache writes to the target graph. CUDA fusion/capture, per-device hidden-state equality, draft-cache visibility across the target/draft backends, and AllReduce placement require GPU cross-arm identity and engagement checks. CPU Meta exercises split-state derivation and generic AllReduce, but does not establish CUDA graph behavior or internal CUDA AllReduce numerics. The fold remains restricted to its existing single-sequence, single-ubatch eligibility contract.
+The fold adds live consumers and draft cache writes to the target graph. CUDA fusion/capture, per-device hidden-state equality, draft-cache visibility across the target/draft backends, and AllReduce placement require GPU cross-arm identity and engagement checks. The planned CPU model matrix exercises split-state derivation and generic AllReduce; the completed row-write unit tests do not exercise AllReduce. The recorded 4B Meta baseline also falls back to CPU target sampling because its target head is tied, so native vocab-split target sampling needs GPU verification. The fold remains restricted to its existing single-sequence, single-ubatch eligibility contract.
 
 No GPU binary, whole build-window payload, freeze, gpuq submission or network operation was run. Project file edits stay in this worktree.
