@@ -1,0 +1,56 @@
+id = "bw-stack8"
+title = "stack8 CUDA build, CCCL343 check, freeze, and render/check GPU items; Mac CPU gates already passed"
+kind = "filler"
+priority = 20
+host_sensitive = false
+preemptible = false
+# G: 1200 s; D: budget = estimate x 2. No GPU binary runs.
+est_s = 1200
+budget_s = 2400
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-run: FAIL" }]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/codex/bw-stack8.sh", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/stack8-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8"
+# Parent chooses S8_DUO_FOLD_C before queueing; 0 retains the stack7 duo serving setting.
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0", S7_ONLY = "40 41 42 43", S8_DUO_FOLD_C = "0" }
+ports = []
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/codex/bw-stack8.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/stack8-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/stack8-a{attempt}/payload.log"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "stages", "controls"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/codex/bw-stack8.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/codex/bw-stack8.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/codex/render_stack8_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/codex/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/codex/gpu_stack8.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/codex/mac-evidence/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/codex/REPORT-stack8.md",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/common/speculative.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/common/sampling.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/tests/test-llama-archs.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/mmq.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-index.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/codex/items/stack8-depth-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/codex/items/stack8-np2-chain-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/codex/items/stack8-duo-soak-j5q.toml.in",
+]

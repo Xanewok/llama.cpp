@@ -1,0 +1,602 @@
+[
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-kv-pad-depth-iq4-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack4-two-agent-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/mkitem.py",
+    "sha256": "42b7ca8501f5dfbdc5999d3401d5947acd98660c2fb0761e0ff8d2067fc7e87b"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-kv-pad-prefill-ub512-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-np2-draftvocab-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-staging-default-layer-split-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-ub1024-prefill-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-mmvq-w2r4-depth-iq4-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-fa-kvmax-decode-v5-depth-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-draft-chain-m1-depth-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-draft-chain-m1-depth-j5q-a2-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-q8-1row-draft-depth-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/notes.py",
+    "sha256": "8a14e7a1c0d6e3cc1484b6ec2e127a30134a7d803a1507b279fb9813b3e90444"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-host-trims-np1-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-graph-capture-depth-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-kv-mask-general-vs-local-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack4-depth-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/campaign.py",
+    "sha256": "5ea636318d224e1d8b820ecc33190d44fdea227d60a51dfbf979832ff22f335a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/__init__.py",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack6-soak-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-host-trims-v2-np2-iq4-same-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-ar-dual-stream-ub512-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-ar-dual-stream-ub128-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-gdn-getter-np2-busy-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-gdn-getter-np1-cccl-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/bw_item.py",
+    "sha256": "71f4118bd1b2355f46285fd34f767fedb3b28a2c368dcac600e861a65f3d0855"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-q8-1row-draft-depth-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-mmvq-pertype-depth-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-mmq-route-depth-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-ar-chunk-prefill-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/snapshot.py",
+    "sha256": "7d2bf45cccca07172e257a931a1532f0a3a076f5af6a8e5250affe143f4670bf"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack5-depth-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/stub_server.py",
+    "sha256": "583fc6f4c2e7856a726d8cb266619a605065dd432937ac21c86506bb41c6e2a4"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack4-soak-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-duo-np2-depth-a3-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-draft-chain-samebin-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-host-trims-np2-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-host-trims-v2-np2-iq4-stack6-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-gdn-gather-inplace-depth-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-host-bundle-depth-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-kv-pad-prefill-ub512-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-ar-pool-depth-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack4-depth-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-host-trims-np2-iq4-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-host-trims-np2-fullvocab-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack6-duo-soak-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/depth.py",
+    "sha256": "5553c9999a6725bc325f635a7add4a4bd4805c8604377cfe91c7b33249bdca41"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-gdn-getter-np2-busy-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-mmvq-pertype-depth-iq4-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-gdn-state-movers-depth-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-q8-dedupe-depth-j5q-v3-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-draftvocab-cov99-np1-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-host-trims-np2-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack5-kvpad-long-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-duo-np2-depth-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack5-prefill-ub512-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-gdn-getter-gate-np2-busy-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/report.py",
+    "sha256": "27fc9d1b59c6492c3f8bd7f8092916d2b235f48ec8a87564a1b05eeb8a8a4d89"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-gdn-state-movers-depth-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-graph-capture-depth-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-duo-np2-depth-a3.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-ar-pool-depth-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-np2-draftvocab-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-mask-np2-depth-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-graph-capture-fix-notrace-depth-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/lib.py",
+    "sha256": "db156d893933a0ce101fe59ea58b62f0e286bba1a7fce4b26dc2683c7160ae12"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack6-depth-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-mmvq-pertype-depth-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-staging-default-layer-split-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack6-depth-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-draftvocab-cov99-np1-j5q-a2-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-kv-mask-general-vs-local-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-getter-gate-np2-real-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-host-trims-np2-fullvocab-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-graph-capture-fix-depth-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/__main__.py",
+    "sha256": "0df368293ef8f4cd0c9c8b737877b1de88ac9a9dcbecd2627785e6accdac8bc0"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack5-kvpad-long-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-gdn-getter-gate-np2-busy-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-gdn-getter-gate-np1-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-mmvq-w2r4-depth-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-ar-chunk-prefill-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-ar-dual-stream-ub128-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-host-trims-v2-np2-iq4-stack6-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack6-duo-soak-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-q8-dedupe-depth-j5q-v3-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-leading-bias-depth-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack4-soak-iq4-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-graph-capture-fix-depth-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-gdn-getter-np1-cccl-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/bw-run.sh",
+    "sha256": "6d33f84c953425c3fcf38bc81d7a54805f4b08126bf7e1fef3c7742bb40b2f28"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-mmvq-w2r4-depth-iq4-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-draft-chain-m1-depth-j5q-a2.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-gdn-getter-np2-idle-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-mask-np2-depth-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack5-depth-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-host-bundle-depth-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/agents.py",
+    "sha256": "f1083ff0069f82bc1d98a6b918007278f6b8ac6efefa54150ee7e30aa7eea4d3"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-fa-kvmax-decode-v5-depth-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-host-trims-v2-np2-iq4-same-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-mmvq-w2r4-depth-j5q-a2.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-mmvq-pertype-depth-iq4-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/run.sh",
+    "sha256": "b71b0cd76eff6c09c163205bef1f1fb4b2ea46c6a906b7eba31d353381e62203"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/probe.py",
+    "sha256": "35ce519f7f9fc0aecf69f28c10abc085a37d91153d5fd9442e2f97353b19099e"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-leading-bias-depth-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-host-trims-np2-iq4-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-getter-gate-np2-real-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-draft-chain-samebin-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-gdn-getter-gate-np1-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-graph-capture-fix-notrace-depth-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack5-prefill-ub512-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-mmvq-w2r4-depth-j5q-a2-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-stack4-two-agent-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-ub1024-prefill-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-duo-np2-depth-a2-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-kv-pad-depth-iq4-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-gdn-getter-np2-idle-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-gdn-gather-inplace-depth-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-draftvocab-cov99-np1-j5q-a2.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-host-trims-np1-j5q-a1.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-mmq-route-depth-j5q-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/harness/.gpuq-ar-dual-stream-ub512-a1-canary.sh",
+    "sha256": "8fbea32bd9e77bf2932e7e7f2c8c214442434d1d6ce78f1edf2ef9f11ff5791a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-apps.csv",
+    "sha256": "cae79969ce448872401f5d9bcd1d52bbefa1a5450cf3a5658f62f068ab59294b"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-query.csv",
+    "sha256": "4638e03caf32a282947dcd08010ff5f7b4bdf4677e000710d8a701ac8ef85f55"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/xid-lines.txt",
+    "sha256": "4ff53d79472344acf0567b46d782c83f244754c5a429112ffd252b8b0ab2b52f"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/build-window/README.md",
+    "sha256": "01b3722a0f22115b724c7c1a95dba5079b54ea7de05a848e9892ba418939c371"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/build-window/payload.log",
+    "sha256": "d1c711091806fad4d4c4bcaffc73025b39af3c60fe3960ae884e1152d74db616"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/summary.md",
+    "sha256": "7ee15488f178e89feba1f0ad19152a575e3ebebae539ecbb214b2b93bf650807"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-server/serve-bench-tail.log",
+    "sha256": "deced5eff7e56f55af31b9a1d65ead201be0588bf17f2a551ec5a807e87bd253"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1-input.json",
+    "sha256": "1904d1d576681ea2c1bf089e9325907b8091c5467120e088d4296dcc3706ef23"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/cold-tool-1.json",
+    "sha256": "0caaa095ff63f3ea6912448427ffa585a29feb76e562568eba08d7c5e8672d97"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/warmup-0.json",
+    "sha256": "3b04f91fc67cd2131229c4fcd042d72eb39351b02b339da100de33ff66d60b08"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1.json",
+    "sha256": "c4a19485290072a014c7ee1742cbbe76b53170f021c2476cd5d4977e9c044cab"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/server.log",
+    "sha256": "76ef7f45ac82b463d322c2a06265e44982b32b389a063cd691a9079f05b844fd"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/fit.json",
+    "sha256": "bf6ad15a1b4460708f42e8524cd4b6a86c7b41033ba1d65bddf1c5d9a9f56d29"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-94000.log",
+    "sha256": "ba051e0a7cfb92a3ff74742da226bfd1db44b7bfbbfc5229fd08c0434d25ed5f"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-94000.json",
+    "sha256": "b9f7f9ab46e9ce5f46944d471a243cacc53ac0b61f33e37f6661e8363955e2b8"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/single-94000.log",
+    "sha256": "63e94c5a8ce5e14cdbff75e4884893162833b88d77356fe0f6643f1def74aa2a"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/errors.txt",
+    "sha256": "5776c5d037776075896c42eb13857ef6da9209f142081c0b054bff28ea6205aa"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-32768.json",
+    "sha256": "0c35f8c0161dfdd88d2e146eba6440c59345489cae9fef915e154fbe224bd4c8"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/steps.txt",
+    "sha256": "185662c39eb7126f4703824ae46e957a61ed21d8e043ddd01eb2cd3ff41f91fd"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-32768.log",
+    "sha256": "ed5f7445f58a80fe64f969ba5db662cf87f28e2a52f6ee9e55556cb0c5b07cd4"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/serve.log",
+    "sha256": "f7708d2e7bcb15a356b08218d9be0dd64e05b406c65a872c172e256df4c37896"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/single-94000.json",
+    "sha256": "e1d2facf0a21d260d83ebfa59a14667da0bd7a1ac0701b9d45e57e054096a4ec"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack6-depth-j5q/full-a1/1-s6/depth-8192.json",
+    "sha256": "6d88f512e24dbdcfe853a1481d6256136167b50c8474a06cc922d7a83a36ecd0"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack6-depth-j5q/full-a1/1-s6/server.log",
+    "sha256": "d21de52d9e49268867f44756abce7321debe7ce6eb3657cde5747f2ca8ee7c1d"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/results/2026-10-07-gdn-getter-gate-np2-busy-j5q/canary-a1/0-up/depth-8192.json",
+    "sha256": "107e43357652cade0c5654ff937aebe397972bbb476591ca334bb7eecc7d201f"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/results/2026-10-07-gdn-getter-gate-np1-j5q/canary-a1/0-patch/server.log",
+    "sha256": "9b234f28b9c265fd9df92f31fe320b9772d5cffd981888e837462046b5f00333"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/results/2026-10-06-draft-chain-m1-depth-j5q/canary-a2/0-chain/server.log",
+    "sha256": "4c17bd5507bfca13ca5f877734ad324db1caa375f33ee4b456d3d08776649995"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/results/2026-10-07-cand-neginf-depth-j5q/full-a1/1-cn/server.log",
+    "sha256": "4aa9821b72fa516a52517fd438b6ac54f11dd7b05ad5a703db1f6d8a3698c32c"
+  },
+  {
+    "path": "/home/xanewok/repos/qwen38-eval/results/2026-10-07-cand-neginf-depth-j5q/canary-a1/1-cn/server.log",
+    "sha256": "643ae201d34f342443c5c40317190580fdad3041f173816abbc6fb26ec864201"
+  }
+]

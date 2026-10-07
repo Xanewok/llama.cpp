@@ -14,7 +14,10 @@ stage() {
     local code=$1 name=$2 rc=0 t0=$SECONDS
     shift 2
     [[ " $S7_ONLY " == *" $code "* ]] || return 0
-    "$@" > "$OUT/$name.log" 2>&1 || rc=$?
+    set +e
+    (set -e; "$@") > "$OUT/$name.log" 2>&1
+    rc=$?
+    set -e
     printf '%s\t%s\t%s\t%s\n' "$code" "$name" "$rc" "$((SECONDS-t0))" >> "$OUT/stages.tsv"
     echo "bw-stack8: $name rc=$rc wall_s_M=$((SECONDS-t0))"
     [[ $rc == 0 ]] || exit "$code"
@@ -33,7 +36,7 @@ build() {
 units() {
     "$S7_GATE" build-cpu/bin/test-sampling
     "$S7_GATE" build-cpu/bin/test-alloc
-    "$S7_GATE" build-cpu/bin/test-recurrent-state-rollback
+    "$S7_GATE" build-cpu/bin/test-recurrent-state-rollback -m "$S7_MODEL" -c 4096 -t 4 -ngl 0
     for seed in 42 1729; do
         "$S7_GATE" build-cpu/bin/test-llama-archs --tp-sampling -s "$seed" > "$OUT/tp-sampling-$seed.log" 2>&1
         grep -q 'test_banned_candidates: .*: OK' "$OUT/tp-sampling-$seed.log"
