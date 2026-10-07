@@ -1,6 +1,6 @@
-purpose: Mac mini port of bw-stack7 CPU stages (spike)
-base: d98212aefb74dd518b6c744560a745a8e45586e8
+purpose: M2 multi-slot MTP draft chain (np2): one chain graph drafting D1..Dk for every drafting slot; Opus spike 10-08
+base: 374a465b89630252d7a3bbf9f36117cfd26e274d
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack7-mac
-created: 2026-10-07T15:48:57+02:00
+branch: topic/chain-m2
+created: 2026-10-08T00:53:40+02:00
 creator: xanewok

@@ -55,9 +55,12 @@ int main(int argc, char ** argv) {
     if (std::getenv("HOST_KV_Q8")) {
         params.cache_type_k = params.cache_type_v = GGML_TYPE_Q8_0;
     }
-    params.cpuparams.n_threads = params.cpuparams_batch.n_threads = meta ? 4 : 8;
+    params.cpuparams.n_threads = params.cpuparams_batch.n_threads = std::getenv("NP2_THREADS") ? std::atoi(std::getenv("NP2_THREADS")) : meta ? 4 : 8;
     params.speculative.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
-    params.speculative.draft.n_max = 3;
+    // NP2_N_MAX, NP2_SLOT1_TEMP (0 makes slot 1 greedy, which drafts without the chain) and NP2_KV_UNIFIED default
+    // to the original fixture
+    params.speculative.draft.n_max = std::getenv("NP2_N_MAX") ? std::atoi(std::getenv("NP2_N_MAX")) : 3;
+    params.kv_unified = std::getenv("NP2_KV_UNIFIED") && std::atoi(std::getenv("NP2_KV_UNIFIED"));
     params.speculative.draft.n_min = 0;
     params.speculative.draft.p_min = 0;
     params.speculative.draft.probabilistic = true;
@@ -112,7 +115,7 @@ int main(int argc, char ** argv) {
                 task.params.cache_prompt = true;
                 task.params.stream = true;
                 task.params.sampling.seed = std::strtoul(argv[5], nullptr, 10) + slot;
-                task.params.sampling.temp = 1;
+                task.params.sampling.temp = slot == 1 && std::getenv("NP2_SLOT1_TEMP") ? std::atof(std::getenv("NP2_SLOT1_TEMP")) : 1;
                 task.params.sampling.top_k = 20;
                 task.params.sampling.top_p = 0.95f;
                 task.params.sampling.min_p = 0.05f;

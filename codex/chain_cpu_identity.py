@@ -45,7 +45,7 @@ def boot(tag, k, meta, chain, case_list, extra_env=None):
         return load(d)
     d.mkdir(parents=True, exist_ok=True)
     (d / "cases.json").write_text(json.dumps(case_list))
-    threads = "4" if meta else "8"
+    threads = os.environ.get("CHAIN_THREADS") or ("4" if meta else "8")
     cmd = [str(BIN / "chain-cpu"), "-m", MODEL, "-c", "4096", "-np", "1", "-ngl", "0", "-fa", "on", "-b", "256", "-ub", "256",
            "--spec-type", "draft-mtp", "--spec-draft-n-max", str(k), "--spec-draft-n-min", "0", "--spec-draft-p-min", "0",
            "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--backend-sampling",

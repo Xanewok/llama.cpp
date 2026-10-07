@@ -1876,7 +1876,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             return;
         }
         c.rng_chain = chain;
-        if (!c.smpl) {
+        // negative control of the path-switch identity test: skip the hand-over
+        static const bool no_sync = std::getenv("LLAMA_MTP_CHAIN_DEBUG_NO_RNG_SYNC") != nullptr;
+        if (no_sync || !c.smpl) {
             return;
         }
         llama_sampler * host = mtp_dist_of(common_sampler_get(smpls[seq_id].get()));
