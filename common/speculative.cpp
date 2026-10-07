@@ -1426,6 +1426,19 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     std::vector<int>                i_last;
     std::vector<std::vector<float>> chain_h;
 
+    // --spec-mtp-chain: while a sequence drafts through the device chain, ctx_dft samples it with its own top-k, temp
+    // and dist chain instead of backend_chains[seq_id]; the step loop expects the latter, so it is restored on a fallback
+    struct mtp_chain_seq {
+        llama_sampler * smpl = nullptr;
+        float           temp = NAN;
+        uint32_t        seed = 0;
+        bool            attached = false;
+    };
+    std::vector<mtp_chain_seq> mtp_chain_seqs;
+
+    std::vector<float>         mtp_chain_zeros; // h of the rows past step 0, which the chain replaces
+    bool mtp_chain_announced = false;
+
     common_speculative_impl_draft_mtp(const common_params_speculative & params, uint32_t n_seq)
         : common_speculative_impl(COMMON_SPECULATIVE_TYPE_DRAFT_MTP, n_seq, params.draft.n_max)
         , params(params.draft)
@@ -1494,6 +1507,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         pending_h.assign(n_seq, std::vector<float>(n_embd, 0.0f));
 
+        mtp_chain_seqs.resize(n_seq);
+        mtp_chain_zeros.assign(n_embd, 0.0f);
+
         i_last.assign(n_seq, -1);
         i_batch_beg.assign(n_seq, -1);
         i_batch_end.assign(n_seq, -1);
@@ -1514,11 +1530,18 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             llama_sampler_free(backend_chains[seq_id]);
         }
         backend_chains.clear();
+
+        for (auto & c : mtp_chain_seqs) {
+            llama_sampler_free(c.smpl);
+        }
     }
 
     void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
         // reset here rather than per round, or two identical requests differ
         common_sampler_reset(smpls[seq_id].get());
+        if (mtp_chain_seqs[seq_id].smpl) {
+            llama_sampler_reset(mtp_chain_seqs[seq_id].smpl);
+        }
 
         const int32_t N = (int32_t) prompt.size();
         if (N <= 0) {
@@ -1651,7 +1674,138 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         return true;
     }
 
+    // Puts the original backend chain back on a sequence that drafted through the device chain.
+    void mtp_chain_release(llama_seq_id seq_id) {
+        auto & c = mtp_chain_seqs[seq_id];
+        if (!c.attached) {
+            return;
+        }
+        c.attached = false;
+        if (!llama_set_sampler(params.ctx_dft, seq_id, backend_chains[seq_id])) {
+            SPC_WRN("backend offload failed for seq_id=%d; using CPU sampler\n", (int) seq_id);
+            llama_sampler_free(backend_chains[seq_id]);
+            backend_chains[seq_id] = nullptr;
+        }
+    }
+
+    // Gives seq_id the chain top-k -> temp -> dist that the step loop's host sampler (spec_retune) implements:
+    // the same temperature and seed, so it draws the same uniforms. Rebuilt only when either changes.
+    bool mtp_chain_attach(llama_seq_id seq_id, float temp, uint32_t seed) {
+        auto * ctx_dft = params.ctx_dft;
+        auto & c = mtp_chain_seqs[seq_id];
+
+        if (c.smpl && c.temp == temp && c.seed == seed) {
+            if (!c.attached) {
+                c.attached = llama_set_sampler(ctx_dft, seq_id, c.smpl);
+            }
+            return c.attached;
+        }
+
+        llama_sampler * smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
+        llama_sampler_chain_add(smpl, llama_sampler_init_top_k_sorted(10));
+        llama_sampler_chain_add(smpl, llama_sampler_init_temp_ext(temp, 0.0f, 1.0f));
+        llama_sampler_chain_add(smpl, llama_sampler_init_dist(seed == LLAMA_DEFAULT_SEED ? seed : seed ^ 0x85ebca6bu));
+
+        if (!llama_set_sampler(ctx_dft, seq_id, smpl)) {
+            llama_sampler_free(smpl);
+            // the failed call dropped whatever was attached
+            c.attached = true;
+            mtp_chain_release(seq_id);
+            return false;
+        }
+
+        llama_sampler_free(c.smpl);
+        c.smpl     = smpl;
+        c.temp     = temp;
+        c.seed     = seed;
+        c.attached = true;
+        return true;
+    }
+
+    // Drafts one sequence's n_max tokens in a single decode, see llama_set_mtp_chain. p_min = 0 stops no step early,
+    // so it samples the tokens and candidates the step loop would. Returns false to leave the drafting to the loop.
+    bool draft_chain(common_speculative_draft_params_vec & dparams) {
+        auto * ctx_dft = params.ctx_dft;
+        const int32_t k = params.n_max;
+
+        llama_seq_id seq_id = -1;
+        bool eligible = params.mtp_chain && !chain_heads && !is_mem_shared && params.p_min <= 0.0f &&
+                params.probabilistic && params.backend_sampling && k >= 2 && k <= LLAMA_MTP_CHAIN_MAX;
+        for (llama_seq_id s = 0; eligible && s < (llama_seq_id) n_seq; ++s) {
+            if (dparams[s].drafting) {
+                eligible = seq_id < 0;
+                seq_id = s;
+            }
+        }
+        eligible = eligible && seq_id >= 0 && dparams[seq_id].result_q && backend_chains[seq_id];
+
+        if (eligible && !mtp_chain_attach(seq_id, dparams[seq_id].temp, dparams[seq_id].seed)) {
+            SPC_WRN("%s", "the draft context does not take the MTP chain's sampler; drafting step by step\n");
+            params.mtp_chain = false;
+            eligible = false;
+        }
+        for (llama_seq_id s = 0; s < (llama_seq_id) n_seq; ++s) {
+            if (!eligible || s != seq_id) {
+                mtp_chain_release(s);
+            }
+        }
+        if (!eligible) {
+            return false;
+        }
+
+        auto & dp   = dparams[seq_id];
+        auto * smpl = smpls[seq_id].get();
+
+        batch.clear();
+        for (int32_t s = 0; s < k; ++s) {
+            const int32_t idx = batch.add(dp.id_last, dp.pos0 + s, seq_id, true);
+            batch.set_embd(idx, { s == 0 ? pending_h[seq_id].data() : mtp_chain_zeros.data(), 1, (size_t) n_embd });
+        }
+
+        if (!llama_set_mtp_chain(ctx_dft, k)) {
+            SPC_WRN("%s", "the draft context cannot run the MTP chain; drafting step by step\n");
+            params.mtp_chain = false;
+            mtp_chain_release(seq_id);
+            batch.clear();
+            return false;
+        }
+        if (!mtp_chain_announced) {
+            mtp_chain_announced = true;
+            SPC_INF("MTP chain: k=%d\n", k);
+        }
+
+        ggml_round_trace_begin("DC", batch.size());
+        ggml_round_trace_count("mtp_chain");
+        const int ret = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
+        ggml_round_trace_end(ret);
+        llama_set_mtp_chain(ctx_dft, 0);
+        if (ret != 0) {
+            SPC_ERR("llama_process[chain] returned %d\n", ret);
+            return true;
+        }
+
+        for (int32_t s = 0; s < k; ++s) {
+            const llama_token id = common_sampler_sample(smpl, ctx_dft, s, true);
+            GGML_ASSERT(id != LLAMA_TOKEN_NULL && llama_get_sampled_token_ith(ctx_dft, s) == id);
+
+            const auto * cur_p = common_sampler_get_candidates(smpl, true);
+
+            common_sampler_accept(smpl, id, true);
+            // commits the uniform behind this token, or the next round draws it again
+            llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
+
+            dp.result->push_back(id);
+            dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
+        }
+
+        return true;
+    }
+
     void draft(common_speculative_draft_params_vec & dparams) override {
+        if (draft_chain(dparams)) {
+            return;
+        }
+
         auto & ctx_dft = params.ctx_dft;
 
         batch.clear();
@@ -2572,6 +2726,12 @@ common_params common_base_params_to_speculative(const common_params & params) {
 
     // the MoE cache is only used by the target context
     result.moe_cache_size = 0;
+
+    // the MTP chain samples every step of a round in one decode
+    if (params_spec.mtp_chain && params_spec.backend_sampling && params_spec.n_max > 1) {
+        result.n_outputs_max = std::max(result.n_outputs_max, params_spec.n_max);
+        result.n_outputs_max_per_seq = params_spec.n_max;
+    }
 
     // dflash/dspark decode the whole noise block in a single pass and sample every block position on the backend
     // TODO: refactor such properties to be announced by the speculative types
