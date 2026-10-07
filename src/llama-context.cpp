@@ -1297,6 +1297,20 @@ void llama_context::set_embeddings_layer_inp(uint32_t lid, bool enable) {
     sched_need_reserve = true;
 }
 
+bool llama_context::set_mtp_chain(int32_t n_chain) {
+    if (n_chain == 0) {
+        cparams.mtp_chain = 0;
+        return true;
+    }
+    if (n_chain < 2 || n_chain > LLAMA_MTP_CHAIN_MAX || cparams.ctx_type != LLAMA_CONTEXT_TYPE_MTP ||
+            model.arch != LLM_ARCH_QWEN35 || !has_draft_vocab() || !model.draft_token_embd || !model.draft_vocab_map ||
+            !cparams.flash_attn || cparams.n_outputs_max_per_seq < (uint32_t) n_chain) {
+        return false;
+    }
+    cparams.mtp_chain = n_chain;
+    return true;
+}
+
 void llama_context::set_nextn_layer_offset(int32_t offset) {
     cparams.nextn_layer_offset = offset;
 }
@@ -4303,6 +4317,10 @@ void llama_set_embeddings_nextn(llama_context * ctx, bool value, bool masked) {
 
 void llama_set_embeddings_layer_inp(llama_context * ctx, uint32_t lid, bool value) {
     ctx->set_embeddings_layer_inp(lid, value);
+}
+
+bool llama_set_mtp_chain(llama_context * ctx, int32_t n_chain) {
+    return ctx->set_mtp_chain(n_chain);
 }
 
 void llama_set_nextn_layer_offset(llama_context * ctx, int32_t offset) {
