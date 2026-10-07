@@ -1,0 +1,10 @@
+b45039a49aedefc6843c5249081a04d21d56ba28 ggml/include/ggml-backend.h
+65169c7c2f704974d07b5511cbd8ec76b8bcebbb ggml/src/ggml-backend-meta.cpp
+a912f63436191810725f9402069ddf723eb00df1 ggml/src/ggml-cuda/allreduce.cu
+76205d323aa098ebff9571d8af997b04f1f689f0 ggml/src/ggml-cuda/allreduce.cuh
+4811d20d7163ff9ba69743e45c2dfafb0a3018af ggml/src/ggml-cuda/common.cuh
+b9cd5f58b7c1c5c3f7ca613a1ec0be5aaea99194 ggml/src/ggml-cuda/ggml-cuda.cu
+ae26e0c23b461b716ed5f91977a419e10556087b ggml/src/ggml-impl.h
+absent ggml/src/ggml-meta-ar-plan.h
+15771107205168b74e2143705a35b982b41d7852 tests/CMakeLists.txt
+absent tests/test-meta-plan-arena.cpp
