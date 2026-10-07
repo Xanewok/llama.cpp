@@ -1654,12 +1654,15 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                     return true;
                 }();
                 (void) proof;
-                // test hooks (never set in production): MUTANT=bulk_off reads sequence 1 one row late (negative
-                // control); VERIFY compares the bulk rows with the per-row accessor
+                // test hooks (never set in production): MUTANT=bulk_off reads sequence 1 one row off, in whichever
+                // direction stays inside the batch (its rows are usually last); VERIFY compares the bulk rows with
+                // the per-row accessor
                 static const char * mutant = std::getenv("LLAMA_HOST_TRIMS_MUTANT");
                 int32_t beg = i_batch_beg[seq_id];
-                if (mutant != nullptr && std::strcmp(mutant, "bulk_off") == 0 && seq_id == 1 && beg + n_rows < n_tokens) {
-                    beg += 1;
+                if (mutant != nullptr && std::strcmp(mutant, "bulk_off") == 0 && seq_id == 1 && (beg > 0 || beg + n_rows < n_tokens)) {
+                    beg += beg + n_rows < n_tokens ? 1 : -1;
+                    static const bool engaged = [] { LOG_INF("host_trims_mutant: bulk_off engaged\n"); return true; }();
+                    (void) engaged;
                 }
                 std::memcpy(verify_h[seq_id].data(), h_all + (size_t) beg * n_embd, (size_t) n_rows * row_bytes);
 

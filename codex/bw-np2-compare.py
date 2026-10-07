@@ -89,13 +89,17 @@ for meta in metas:
     for name in MUTANTS:
         rcf = out / f"{meta}-{name}.rc"
         if rcf.exists() and not (out / f"{meta}-{name}.json").exists():
-            err = re.findall(r"^.*(?:failed|error|GGML_ASSERT).*$", (out / f"{meta}-{name}.log").read_text(errors="replace"), re.M)
+            pat = r"^.*(?:failed|error|GGML_ASSERT).*$"
+            ref_lines = {re.sub(r"^[\d.]+ ", "", l) for l in re.findall(pat, (out / f"{meta}-ref.log").read_text(errors="replace"), re.M)}
+            err = [l for l in re.findall(pat, (out / f"{meta}-{name}.log").read_text(errors="replace"), re.M)
+                   if re.sub(r"^[\d.]+ ", "", l) not in ref_lines]
             row[name] = f"caught: exit {rcf.read_text().strip()}, first error: {err[0].strip() if err else '?'}"
             print(f"ok   meta={meta} negative control {name}: {row[name]}")
             continue
         bad = differs(ref, units(load(meta, name)))
-        row[name] = f"caught in {bad}" if bad else "ESCAPED"
-        print(f"{'ok  ' if bad else 'FAIL'} meta={meta} negative control {name}: {'caught in ' + str(bad) if bad else 'ESCAPED'}")
+        engaged = name != "mut-bulk" or "host_trims_mutant: bulk_off engaged" in (out / f"{meta}-{name}.log").read_text(errors="replace")
+        row[name] = f"caught in {bad}" if bad else "ESCAPED" if engaged else "NOT ENGAGED (the mutant never ran)"
+        print(f"{'ok  ' if bad else 'FAIL'} meta={meta} negative control {name}: {'caught in ' + str(bad) if bad else row[name]}")
         if not bad:
             rc = rc or 4
 
