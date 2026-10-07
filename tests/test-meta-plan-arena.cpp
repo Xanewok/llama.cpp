@@ -123,7 +123,7 @@ static void run_sequence(bool ar_node) {
     ggml_backend_free(backend);
 }
 
-static void run_in_child(const char * name, bool ar_node) {
+static bool run_in_child(const char * name, bool ar_node) {
     printf("%s ", name);
     fflush(stdout);
     const pid_t pid = fork();
@@ -140,15 +140,21 @@ static void run_in_child(const char * name, bool ar_node) {
     GGML_ASSERT(waitpid(pid, &status, 0) == pid);
     if (WIFSIGNALED(status)) {
         printf("FAILED: killed by signal %d\n", WTERMSIG(status));
+        return false;
     }
-    GGML_ASSERT(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        printf("FAILED: exit status %d\n", status);
+        return false;
+    }
     printf("PASSED\n");
+    return true;
 }
 
 int main() {
-    run_in_child("test_meta_plan_arena(split)", false);
-    run_in_child("test_meta_plan_arena(ar_node)", true);
-    return 0;
+    // Both always run, so that a failing build reports both modes.
+    const bool split   = run_in_child("test_meta_plan_arena(split)", false);
+    const bool ar_node = run_in_child("test_meta_plan_arena(ar_node)", true);
+    return split && ar_node ? 0 : 1;
 }
 #else
 int main() { return 0; }
