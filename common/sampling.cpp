@@ -153,6 +153,7 @@ struct common_sampler {
                 cur[i] = llama_token_data{sampled_ids[i], sampled_logits[i], 0.0f};
             }
             if (backend_candidates) {
+                LOG_DBG("%s: candidate row, n = %u\n", __func__, row.n_cand);
                 std::sort(cur.begin(), cur.end(), [](const llama_token_data & a, const llama_token_data & b) { return a.logit > b.logit; });
                 bool exact = cur.size() > (size_t) prefilter_k;
                 for (int32_t i = 0; exact && i <= prefilter_k; ++i) {
@@ -865,6 +866,7 @@ llama_token common_sampler_sample_row(struct common_sampler * gsmpl, const commo
 
     // resampling:
     // if the token is not valid, sample again, but first apply the grammar sampler and then the sampling chain
+    LOG_DBG("%s: grammar rejected token %d, resampling over the full row (candidates: %d)\n", __func__, id, gsmpl->backend_candidates != nullptr);
     gsmpl->set_logits(row, false, gsmpl->backend_candidates != nullptr);
 
     llama_sampler_apply(rbudget,  &cur_p);
