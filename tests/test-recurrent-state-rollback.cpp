@@ -400,16 +400,15 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
             { "prefill both seqs",         { 0, 1 }, 0, 12, 11, form::BY_ID },
             { "decode, both seqs",         { 0, 1 }, 12, 13, 12, form::BY_ID },
         } },
-        // seqs 0 and 2 leave seq 1 inside their cell range: its state is an extra state the gather must move
+        // seq 2 takes the cell between seqs 0 and 1, so their joint batch holds its state as an extra state the gather
+        // must move (without a unified KV cache a ubatch joins only consecutive sequence ids)
         { "extra state", 3, {
             { "prefill seq 0",              { 0 },    0, 19, 18, form::BY_ID },
-            { "prefill seq 1",              { 1 },    0, 19, 18, form::BY_ID },
             { "prefill seq 2",              { 2 },    0, 19, 18, form::BY_ID },
-            { "verify batch, seqs 0 and 2", { 0, 2 }, 19, 25, 19, form::GATHERED },
-            { "seq 1 after the move",       { 1 },    19, 25, 19, form::BY_ID },
-            { "decode, seqs 0 and 1",       { 0, 1 }, 25, 26, 25, form::GATHERED }, // seq 2 now sits between them
-            { "decode, seqs 0 and 1 again", { 0, 1 }, 26, 27, 26, form::BY_ID },
-            { "seq 2 after the move",       { 2 },    25, 26, 25, form::BY_ID },
+            { "prefill seq 1",              { 1 },    0, 19, 18, form::BY_ID },
+            { "verify batch, seqs 0 and 1", { 0, 1 }, 19, 25, 19, form::GATHERED },
+            { "seq 2 after the move",       { 2 },    19, 25, 19, form::BY_ID },
+            { "decode, seqs 0 and 1",       { 0, 1 }, 25, 26, 25, form::BY_ID },
         } },
     };
 
