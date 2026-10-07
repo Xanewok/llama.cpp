@@ -3,7 +3,6 @@
 import argparse
 import json
 from pathlib import Path
-import warnings
 
 import numpy as np
 
@@ -22,16 +21,23 @@ def estimate_rows(p_ids, p, q_ids, q, tokens):
 
 def draft_probs(ids, logits, subset=None, temp=1.0, top_k=10, suppress=()):
     logits = np.array(logits, dtype=np.float64, copy=True)
-    valid = (ids >= 0) & ~np.isin(ids, suppress)
+    valid = (ids >= 0) & np.isfinite(logits) & ~np.isin(ids, suppress)
     if subset is not None:
         valid &= np.isin(ids, subset)
     count = valid.sum(axis=-1)
     if np.any(count < top_k):
         raise ValueError("top-128 coverage insufficient: fewer than top_k subset ids; use a real sliced-head run")
-    if subset is not None:
-        warnings.warn("Offline subsets are exact only if their top_k is covered by the recorded full-head top-128", stacklevel=2)
+    floor = np.min(np.where((ids >= 0) & np.isfinite(logits), logits, np.inf), axis=-1)
+    complete = np.any(ids < 0, axis=-1)
     logits[~valid] = -np.inf
-    order = np.argsort(-logits, axis=-1, kind="stable")[..., :top_k]
+    order_all = np.argsort(-logits, axis=-1, kind="stable")
+    sorted_logits = np.take_along_axis(logits, order_all, axis=-1)
+    if subset is not None:
+        if np.any(~complete & (sorted_logits[..., top_k - 1] <= floor)):
+            raise ValueError("top-128 boundary does not prove subset top_k coverage; use a real sliced-head run")
+        if logits.shape[-1] > top_k and np.any(sorted_logits[..., top_k - 1] == sorted_logits[..., top_k]):
+            raise ValueError("top_k boundary tie: offline subset ordering is not proven equivalent")
+    order = order_all[..., :top_k]
     ids = np.take_along_axis(ids, order, axis=-1)
     logits = np.take_along_axis(logits, order, axis=-1) / temp
     q = np.exp(logits - logits.max(axis=-1, keepdims=True))
@@ -45,6 +51,18 @@ def array(root, name, dtype, shape):
     if path.stat().st_size != expected:
         raise ValueError(f"{path}: expected {expected} bytes, got {path.stat().st_size}")
     return np.memmap(path, dtype=dtype, mode="r", shape=tuple(shape))
+
+
+def validate_rows(ids, probs, n_vocab):
+    if not np.isfinite(probs).all() or np.any((probs < 0) | (probs > 1)):
+        raise ValueError("probability row has nonfinite or out-of-range mass")
+    if np.any((ids < -1) | (ids >= n_vocab)) or np.any((ids == -1) & (probs != 0)):
+        raise ValueError("probability row has invalid ids or padding mass")
+    if not np.allclose(probs.sum(axis=-1), 1, rtol=0, atol=1e-5):
+        raise ValueError("probability row is not normalized")
+    ordered = np.sort(np.where(probs > 0, ids, n_vocab), axis=-1)
+    if np.any((ordered[..., :-1] == ordered[..., 1:]) & (ordered[..., :-1] < n_vocab)):
+        raise ValueError("probability row has duplicate positive-mass ids")
 
 
 def load_stream(target, arm, stream, subset=None):
@@ -73,6 +91,8 @@ def load_stream(target, arm, stream, subset=None):
     idx = starts[:, None] + np.arange(k)[None, :]
     p_ids = array(root_a, "p_ids", "<i4", [n, pk])[idx]
     p = array(root_a, "p_probs", "<f4", [n, pk])[idx].astype(np.float64)
+    validate_rows(p_ids, p, a["n_vocab"])
+    validate_rows(q_ids, q, a["n_vocab"])
     beta, r, t = estimate_rows(p_ids, p, q_ids, q, tokens[idx + 1])
     return starts, beta, r, t
 
