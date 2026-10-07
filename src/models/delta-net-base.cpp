@@ -545,8 +545,11 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
     const bool keep = cparams.n_rs_seq > 0;
 
     const int64_t K = cparams.n_rs_seq + 1;
+    // The getter reads states in place while the CUDA snapshot fusion writes the cache from the same kernel, so the fusion
+    // only covers one sequence: with more, one can overwrite a row another still reads. Several sequences keep the gather
+    // and the fusion; the getter only pays where the fusion stays.
     llm_graph_get_rows_fn get_state_rows;
-    if (keep && cparams.offload_kqv) {
+    if (keep && cparams.offload_kqv && n_seqs == 1) {
         auto get_gdn_rows = [&](ggml_context * ctx, ggml_tensor * states, ggml_tensor * ids) {
             states = ggml_reshape_4d(ctx, states, S_v, S_v, H_v, states->ne[1]);
             return ggml_gated_delta_net(ctx, q, k, v, g, b, states, ids, K);
