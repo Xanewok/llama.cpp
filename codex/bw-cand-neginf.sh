@@ -105,7 +105,7 @@ EOF
     link=$(sed "s| -o [^ ]*test-llama-archs | -o $m/test-llama-archs-mutant $m/sampling.o |" build-cpu/tests/CMakeFiles/test-llama-archs.dir/link.txt)
     [[ $link == *"$m/sampling.o"* ]] || { echo "could not rewrite the link line"; return 1; }
     (cd build-cpu/tests && "$BUILDGATE" bash -c "$link") || return 1
-    nm -C "$m/test-llama-archs-mutant" | grep -q " T common_sampler_init" || { echo "mutant common_sampler_init not in the executable"; return 1; }
+    nm -C "$m/test-llama-archs-mutant" | grep " T common_sampler_init" >/dev/null || { echo "mutant common_sampler_init not in the executable"; return 1; }
 }
 mutant_stage > "$OUT/mutant-build.log" 2>&1 || die 8 "mutant build (see $OUT/mutant-build.log)"
 "$CPUGATE" "$OUT/mutant/test-llama-archs-mutant" --tp-sampling -s 42 > "$OUT/mutant-run.log" 2>&1
@@ -163,7 +163,7 @@ cuda_stage() {
     echo "CCCL DeviceTopK strings: $n"
     [[ $n == 25 ]] || { echo "expected 25 DeviceTopK strings (CCCL v3.4.3)"; return 1; }
     local short; short=$(git rev-parse --short HEAD)
-    strings build-cuda/bin/libggml-base.so | grep -qx "$short" || { echo "ggml stamp $short not in libggml-base.so"; return 1; }
+    strings build-cuda/bin/libggml-base.so | grep -x "$short" >/dev/null || { echo "ggml stamp $short not in libggml-base.so"; return 1; }
     "$W/bin/wt" freeze "$ROOT" "$NAME" --build build-cuda \
         --desc "stack6 ac7465885 + backend candidates kept under -inf logit_bias (ignore_eos); CUDA 13.2, CCCL343, NCCL OFF; round-trace = cp of llama-server" || return 1
     {
