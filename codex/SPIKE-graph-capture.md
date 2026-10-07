@@ -79,6 +79,41 @@ to its stack7 blob (`stack7-blobs.txt`). Results: `work/build-window-1007/graph-
   0 ± 0.2 (G), fixed/request at least as large as np1 (G). A per-round gain above 0.3 ms would contradict finding 1 and need
   a trace.
 
+## Upstream form (owner rule: default-on where correct, automatic fallback elsewhere)
+
+This branch is still the spike, not the final form. `GGML_META_AR_NODE` gates the whole feature in `bf96cbebf`. The target
+layering is:
+
+1. **upstream commit(s), no env:** the meta backend asks the comm backend for a node descriptor at every qualifying boundary
+   (as now). It uses node mode whenever the backend answers and the per-device graph will be captured. Fallback is
+   automatic: no backend support (CPU, NCCL, more than 2 GPUs, graphs disabled), a non-qualifying AR (gather, ≥ 1 MiB,
+   misaligned) or a non-capturable graph all keep the split plan.
+2. **local commit on top:** `GGML_META_AR_NODE=0/1` as the A/B switch, plus the CPU dry-run log and
+   `GGML_META_AR_NODE_FORCE_TEST` (test hooks).
+
+What must be true before (1) can be default-on upstream:
+
+- **No per-request regression.** Today the first sighting of every graph shape is captured with the GPU idle: +30…120 ms per
+  512-token request (M stack6). The fix must be general: a warm-up analogue in the meta backend that runs the split plan
+  on a graph's first use and the node plan only once the same graph (uid) repeats. This mirrors the CUDA backend's own
+  2-call warm-up. One-off shapes (prefill tails, first verify of a request, np2 mixed batches) then never pay a capture.
+  Not implemented.
+- **A fallback instead of an abort for non-capturable graphs.** Today `ggml-cuda.cu` aborts when a graph with AR nodes
+  cannot be captured (`MUL_MAT_ID` needing a sync, `GGML_CUDA_DISABLE_GRAPHS` set after planning, unsupported arch).
+  Upstream needs the backend to refuse the descriptor for such graphs, or a capturability query at plan time, so the meta
+  backend keeps the split plan. Not implemented. (MoE models hit this.)
+- **A spin-wait contract upstream will accept.** The node kernel spins on the peer's flag in device memory, bounded by
+  `GGML_CUDA_AR_NODE_SPIN_MS` and ending in `__trap()`. Cross-device spin kernels inside graphs need both graphs resident at
+  once. Today that holds with two devices launched back to back by one host thread. A reviewer will ask about MPS/MIG,
+  preemption and graph-launch ordering. It is also not memcheck-clean by construction.
+- **A measured gain at np1 and np2** with identity held. On stack7 the expected per-round gain is about 0 (findings 1–3).
+  Without a gain, the feature adds a second AR path for nothing. The upstream case would then rest on setups where the
+  host is the limiter inside a forward (slow host, many small forwards). That is not ours, so we cannot show it.
+
+What blocks it now: the first two are missing code (meta warm-up, capturability fallback). The fourth is the deciding one:
+on our hardware the lever has no measured gain. Recommendation: do not build the upstream form unless the np1 item shows
+≥ 0.2 ms/round steady gain. In that case, implement the meta warm-up first; it should also remove the fixed/request loss.
+
 ## Risks
 
 - A capture failure in an AR-node graph aborts the server (`ggml-cuda.cu`: "a graph with AllReduce nodes cannot run
