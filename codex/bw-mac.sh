@@ -2,7 +2,7 @@
 # Usage: bw-mac.sh TREE PAYLOAD [OUT_NAME]. PAYLOAD is a committed, tree-relative Bash script taking OUT as its only argument.
 # Payloads honor BW_CPU_ONLY=1, BW_MODEL, BW_GATE/BW_BUILDGATE (nice -n 10), BW_JOBS=5, BW_CCACHE=OFF and CMAKE_GENERATOR=Ninja.
 # BW_CPU_EXTRA is a whitespace-separated cmake argument list: native/i8mm, Metal and BLAS off on the Mac; PATH includes ~/qwen38-tools/bin.
-# Linux payload defaults stay unchanged. Model runs use <=4 threads, explicit small contexts, and wait for >=10 GiB and no other model.
+# Linux payload defaults stay unchanged. Model runs use <=4 threads, explicit small contexts, and wait for >=4 GiB free (the 4B Q4 fixture needs ~3 GiB) and no other model.
 # Bundles contain the exact HEAD snapshot, with history cut at HEAD; payloads cannot assume older revisions are present.
 # Copies OUT to work/build-window-1007/<name>-mac-a<N>; payload rc is preserved. Runner/setup/transport failures return 125.
 set -euo pipefail
