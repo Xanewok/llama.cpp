@@ -119,7 +119,8 @@ int main(int argc, char ** argv) {
                 inference = std::thread([&] { server.start_loop(); });
             }
             std::vector<llama_tokens> tokens(np);
-            json stats = json::array();
+            std::vector<json> by_slot(np);
+            std::vector<bool> seen(np, false);
             while (reader.has_next()) {
                 auto result = reader.next([] { return false; });
                 require(result && !result->is_error(), "completion failed");
@@ -129,13 +130,19 @@ int main(int argc, char ** argv) {
                 }
                 if (auto * final = dynamic_cast<server_task_result_cmpl_final *>(result.get())) {
                     require(final->stats.n_draft_tokens > 0 && final->stats.n_draft_verif_steps > 0, "MTP did not engage");
-                    stats.push_back(json{{"slot", final->index}, {"draft", final->stats.n_draft_tokens},
+                    require(final->index >= 0 && final->index < np && !seen[final->index], "bad or duplicate result index");
+                    seen[final->index] = true;
+                    by_slot[final->index] = json{{"slot", final->index}, {"draft", final->stats.n_draft_tokens},
                                          {"accepted", final->stats.n_draft_accepted}, {"rounds", final->stats.n_draft_verif_steps},
-                                         {"prompt", final->n_prompt_tokens}, {"cached", final->n_prompt_tokens_cache}});
+                                         {"prompt", final->n_prompt_tokens}, {"cached", final->n_prompt_tokens_cache}};
                 }
             }
-            require(stats.size() == (size_t) np, "missing final results");
-            std::sort(stats.begin(), stats.end(), [](const json & a, const json & b) { return a["slot"] < b["slot"]; });
+            // common_json has no ordering and no random-access iterators, so results are placed by slot instead of sorted.
+            json stats = json::array();
+            for (int slot = 0; slot < np; ++slot) {
+                require(seen[slot], "missing final results");
+                stats.push_back(by_slot[slot]);
+            }
             json token_rows = json::array();
             for (int slot = 0; slot < np; ++slot) {
                 require(tokens[slot].size() == (size_t) (std::atoi(argv[6]) + 16 * slot), "short completion");
