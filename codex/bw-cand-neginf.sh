@@ -8,13 +8,14 @@
 #             libllama-common; it must fail with a full-row read on a row whose top k is unique;
 #          c. server_context driver on the 4B fixture, -c 4096, ignore_eos: Meta(CPU,CPU) MTP and plain x temp 0/1 x arms
 #             cand/host/refused, and plain CPU MTP x temp 0/1 x cand/host; bw-cand-compare.py: tokens, draft counters and
-#             post-sampling top-20 sets identical, cand never logs a set_sampler CPU fallback, refused (stack6 path) does.
+#             post-sampling top-20 sets identical. The tied-head fixture cannot prove TP backend engagement; the CUDA
+#             item's canary_log requires consumed banned-token candidates and a frozen-stack6 top-k refusal.
 # Stage 2  CUDA build (stack6 RECIPE flags) + CCCL check + round-trace copy + wt freeze cand-neginf + RECIPE.txt.
 # Stage 3  Render the depth item (stack6 vs cand-neginf, ABBA, cross-arm identity) and run gpuq submit --check only.
 #
 # Exit codes: 0 all pass | 2 unit test failure | 3 mutant escaped (passed, or failed for another reason) | 4 e2e identity
-# failure | 5 e2e path proof failure | 8 CPU build/run error or preflight | 9 CUDA build/freeze/CCCL | 10 item render/check.
-# 2 3 4 5 8 stop before stage 2 (no freeze, no item).
+# failure | 8 CPU build/run error or preflight | 9 CUDA build/freeze/CCCL | 10 item render/check.
+# 2 3 4 8 stop before stage 2 (no freeze, no item).
 set -uo pipefail
 export CUDA_VISIBLE_DEVICES="" GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1
 if [[ ${BW_CPU_ONLY:-0} != 1 ]]; then
@@ -176,8 +177,8 @@ fraction = int(re.search(r'free percentage: (\d+)%', memory)[1]) / 100
 total = int(subprocess.check_output(['sysctl', '-n', 'hw.memsize'], text=True))
 models = {'bw-cand-driver', 'bw-np2-driver', 'chain-cpu', 'fold-cpu', 'outproj-cpu'}
 busy = any(p.rsplit('/', 1)[-1] in models for p in subprocess.check_output(['ps', '-axo', 'comm'], text=True).splitlines())
-if busy or total * fraction < 4 * 1024**3:
-    print('WAIT: another model process or less than 4 GiB available:', memory.strip(), flush=True)
+if busy or total * fraction < 10 * 1024**3:
+    print('WAIT: another model process or less than 10 GiB available:', memory.strip(), flush=True)
     sys.exit(1)
 EOF
         do
@@ -211,9 +212,10 @@ tee -a "$RESULTS" < "$OUT/e2e-compare.log"
 case $crc in
     0) ;;
     2) die 4 "e2e identity (see $OUT/e2e-compare.log)" ;;
-    5) die 5 "e2e path proof (see $OUT/e2e-compare.log)" ;;
     *) die 8 "e2e compare rc=$crc (see $OUT/e2e-compare.log)" ;;
 esac
+python3 codex/check-cand-proof.py "$OUT/e2e" > "$OUT/proof-controls.log" 2>&1 || die 8 "proof controls (see $OUT/proof-controls.log)"
+tee -a "$RESULTS" < "$OUT/proof-controls.log"
 note "stage 1 PASS"
 log "stage 1 pass"
 stage_time driver-and-compare

@@ -1,0 +1,10 @@
+# Recorded GPU stack6 log excerpt. Source: /home/xanewok/repos/qwen38-eval/results/2026-10-07-verify-path-j5q/canary-a1/0-fallback/server.log
+# Full source SHA256: d6f097dcdadb1bf79a117fcf2eef4bd9b723f879339b246e83674da1551546f6
+# Source line 486
+0.07.579.751 W set_sampler: seq_id = 0: backend sampling with SPLIT_MODE_TENSOR needs a sampler chain whose first active sampler is top-k with 1 <= k <= 256; using CPU
+# Source line 487
+0.07.579.764 I slot launch_slot_: id  0 | task -1 | sampler chain: logits -> logit-bias -> ?penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> min-p -> ?xtc -> ?temp-ext -> dist 
+# Source line 5323
+0.25.511.301 W set_sampler: seq_id = 0: backend sampling with SPLIT_MODE_TENSOR needs a sampler chain whose first active sampler is top-k with 1 <= k <= 256; using CPU
+# Source line 5324
+0.25.511.307 I slot launch_slot_: id  0 | task -1 | sampler chain: logits -> logit-bias -> ?penalties -> ?dry -> ?top-n-sigma -> top-k -> ?typical -> top-p -> min-p -> ?xtc -> ?temp-ext -> dist 

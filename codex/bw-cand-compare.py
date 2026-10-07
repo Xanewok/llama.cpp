@@ -2,11 +2,10 @@
 """Compare the bw-cand-driver runs in OUT: usage bw-cand-compare.py OUT
 
 Runs are OUT/<meta>-<spec>-<temp>-<arm>.{json,log}. Per (meta, spec, temp) every arm present must give the same tokens,
-draft counters and (spec 0) post-sampling candidate sets with probabilities, bitwise. Path proofs from the logs, as
-counts of set_sampler CPU-fallback lines: the host arm never hands the target a backend chain, so its count is the
-draft context's alone; cand must log no more than host, and refused (Meta(CPU,CPU)) must log the tensor-split refusal
-more often than host (positive control).
-Exit: 0 pass | 2 identity failure | 5 path proof failure | 8 missing or unreadable run.
+draft counters and (spec 0) post-sampling candidate sets with probabilities, bitwise. Fallback counts are diagnostic:
+the 4B fixture has a tied LM head, so its Meta contexts refuse backend sampling before testing the sampler chain.
+The CUDA depth item's canary_log proves candidate engagement and the stack6 refusal.
+Exit: 0 pass | 2 identity failure | 8 missing or unreadable run.
 """
 import json
 import re
@@ -32,8 +31,11 @@ def main(out):
         except (OSError, ValueError) as error:
             print(f"FAIL unreadable run {path}: {error}")
             return 8
-    if not groups:
-        print(f"FAIL no runs in {out}")
+    expected = {(str(meta), str(spec), str(temp)): set(arms)
+                for meta, spec, arms in ((1, 1, ('cand', 'host', 'refused')), (1, 0, ('cand', 'host', 'refused')), (0, 1, ('cand', 'host')))
+                for temp in (0, 1)}
+    if {key: set(arms) for key, arms in groups.items()} != expected:
+        print(f"FAIL incomplete run matrix in {out}: { {key: sorted(arms) for key, arms in groups.items()} }")
         return 8
 
     for (meta, spec, temp), arms in sorted(groups.items()):
@@ -43,16 +45,10 @@ def main(out):
             return 8
         ref, _ = arms["cand"]
         if "host" not in arms:
-            print(f"FAIL {tag}: the host arm is the baseline of the path proof")
+            print(f"FAIL {tag}: missing host baseline")
             return 8
         n_fallback = {arm: len(REFUSAL.findall(log)) for arm, (_, log) in arms.items()}
         n_tp = {arm: len(TP_REFUSAL.findall(log)) for arm, (_, log) in arms.items()}
-        if n_fallback["cand"] > n_fallback["host"]:
-            print(f"FAIL {tag}: cand logs {n_fallback['cand']} set_sampler CPU fallbacks, host (draft only) {n_fallback['host']}")
-            rc = rc or 5
-        if meta == "1" and "refused" in arms and not n_tp["refused"] > n_tp["host"]:
-            print(f"FAIL {tag}: refused logs {n_tp['refused']} tensor-split refusals, host {n_tp['host']} (positive control)")
-            rc = rc or 5
         for arm, (run, log) in sorted(arms.items()):
             if arm == "cand":
                 continue
@@ -64,9 +60,9 @@ def main(out):
         if spec == "0" and not all(p["top"] for p in ref["probs"]):
             print(f"FAIL {tag}: an empty candidate set in the cand arm")
             rc = rc or 2
-        print(f"{tag}: arms {sorted(arms)}, set_sampler CPU fallbacks {n_fallback}, {len(ref['tokens'])} tokens, stats {ref['stats']}, "
+        print(f"{tag}: arms {sorted(arms)}, set_sampler CPU fallbacks {n_fallback}, top-k refusals {n_tp}, {len(ref['tokens'])} tokens, stats {ref['stats']}, "
               f"{sum(len(p['top']) for p in ref['probs'])} candidate entries: {'OK' if rc == 0 else 'see above'}")
-    print("PASS" if rc == 0 else f"FAIL rc={rc}")
+    print("PASS CPU identity; backend path proof belongs to the CUDA canary" if rc == 0 else f"FAIL rc={rc}")
     return rc
 
 

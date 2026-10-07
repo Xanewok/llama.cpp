@@ -4,7 +4,8 @@
 //   cand     ignore_eos only: the -inf EOG biases keep the backend candidate chain
 //   host     ignore_eos, backend sampling off: host sampling of the full row
 //   refused  ignore_eos plus a 0.0 bias on one token: a finite bias, so the backend chain starts with the logit bias
-//            and a tensor-split context refuses it ("set_sampler ... using CPU"), which is the stack6 path
+//            and a vocab-split LM head would refuse it, which is the stack6 path. The 4B fixture has a tied head and
+//            refuses both target chains before that check; path engagement is proved by the CUDA canary.
 // usage: bw-cand-driver MODEL OUTPUT META SPEC TEMP ARM SEED TOKENS
 #include "server-context.h"
 #include "llama.h"

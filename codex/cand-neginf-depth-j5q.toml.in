@@ -25,7 +25,7 @@ path = "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swif
 sha = "e30af79520ade5b7ddb851d75cf271f07d407dc768bf646e4517607d562a65a6"
 
 # Both arms: stack6 env and flags (stack6-depth-j5q). Proofs: the slot launch line (log captured), then s6 logs the TP refusal
-# of the logit-bias-led chain and cn never logs a set_sampler CPU fallback.
+# of the logit-bias-led chain; cn must consume backend candidates with a nonempty ban list and never log a CPU fallback.
 [arms.s6]
 label = "stack6 ac7465885, --kv-pad 4096, CCCL343, staging (TP CPU-sampling fallback under ignore_eos)"
 commit = "ac7465885dc9f13de396ccd91b4be5eaffde3730"
@@ -56,6 +56,7 @@ canary_log = ["(?s)n_kv_pad += 4096\\b.*n_kv_pad += 4096\\b", "copy-engine H2D s
   "ssm_conv_state_fusion: graph device=1 graph=\\d+ tokens=6 conv=([1-9]\\d*) fused=\\1\\b",
   "(?s)\\A(?!.*ssm_conv_state_fusion: graph device=\\d+ graph=\\d+ tokens=[1-8] conv=(\\d+) fused=(?!\\1\\b))",
   "sampler chain: logits -> logit-bias -> ",
+  "set_logits: using backend candidates: n_cand = [1-9]\\d*, n_ban = [1-9]\\d*, top_k = 20\\b",
   "(?s)\\A(?!.*set_sampler: [^\\n]*using CPU)"]
 
 [server]
@@ -78,7 +79,7 @@ distinct_builds = true
 min_steady_intervals = 40
 min_predicted = 256
 fixtures = "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures"
-request = { seed = 1729, n_predict = 512, temperature = 1, top_k = 20, top_p = 0.95, min_p = 0.05 }
+request = { seed = 1729, n_predict = 512, ignore_eos = true, temperature = 1, top_k = 20, top_p = 0.95, min_p = 0.05 }
 counters = ["graph_hit", "graph_miss"]
 wall_s = 420
 

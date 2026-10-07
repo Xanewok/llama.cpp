@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Usage: bw-mac.sh TREE PAYLOAD [OUT_NAME]. PAYLOAD is a committed, tree-relative Bash script taking OUT as its only argument.
-# Payloads honor BW_CPU_ONLY=1, BW_MODEL, BW_GATE/BW_BUILDGATE (nice -n 10), BW_JOBS=5, BW_CCACHE=OFF and CMAKE_GENERATOR=Ninja.
+# Payloads honor BW_CPU_ONLY=1, BW_MODEL, BW_GATE/BW_BUILDGATE (nice -n 19), BW_JOBS=4, BW_CCACHE=ON and CMAKE_GENERATOR=Ninja.
 # BW_CPU_EXTRA is a whitespace-separated cmake argument list: native/i8mm, Metal and BLAS off on the Mac; PATH includes ~/qwen38-tools/bin.
-# Linux payload defaults stay unchanged. Model runs use <=4 threads, explicit small contexts, and wait for >=4 GiB free (the 4B Q4 fixture needs ~3 GiB) and no other model.
+# Linux payload defaults stay unchanged. Model runs use <=4 threads, explicit small contexts, and wait for >=10 GiB free and no other model.
 # Bundles contain the exact HEAD snapshot, with history cut at HEAD; payloads cannot assume older revisions are present.
-# Copies OUT to work/build-window-1007/<name>-mac-a<N>; payload rc is preserved. Runner/setup/transport failures return 125.
+# Copies OUT inside TREE/build-bw-mac-results/<name>-mac-a<N> (BW_MAC_OUTPUT_BASE overrides); payload rc is preserved. Runner/setup/transport failures return 125.
 set -euo pipefail
 export CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1
 trap 'exit 125' ERR
@@ -30,10 +30,10 @@ if [[ ${1:-} == --remote ]]; then
     git -C "$run/src" checkout --detach "$sha"
     [[ $(git -C "$run/src" rev-parse HEAD) == "$sha" ]]
     mkdir "$run/out"
-    printf '#!/usr/bin/env bash\nexec nice -n 10 "$@"\n' > "$run/gate.sh"
+    printf '#!/usr/bin/env bash\nexec nice -n 19 "$@"\n' > "$run/gate.sh"
     chmod +x "$run/gate.sh"
     export BW_CPU_ONLY=1 BW_MODEL="$HOME/qwen38-stack7/models/Qwen3.5-4B-UD-Q4_K_XL.gguf"
-    export BW_GATE="$run/gate.sh" BW_BUILDGATE="$run/gate.sh" BW_JOBS=5 BW_CCACHE=OFF
+    export BW_GATE="$run/gate.sh" BW_BUILDGATE="$run/gate.sh" BW_JOBS=4 BW_CCACHE=ON
     # i8mm changes 2-row accumulation order and breaks np2 byte identity.
     export BW_CPU_EXTRA='-DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod -DGGML_METAL=OFF -DGGML_BLAS=OFF -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DFETCHCONTENT_UPDATES_DISCONNECTED=ON'
     export CMAKE_GENERATOR=Ninja OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4 VECLIB_MAXIMUM_THREADS=4
@@ -80,7 +80,7 @@ if [[ $previous =~ ^[0-9a-f]{40}$ && $previous != "$sha" ]] && git -C "$tree" ca
 fi
 nice -n 19 git -C "$scratch/export.git" -c pack.threads=1 bundle create "$scratch/source.bundle" refs/heads/source "${exclude[@]}"
 [[ $(git -C "$tree" rev-parse HEAD) == "$sha" && -z $(git -C "$tree" status --porcelain --untracked-files=no) ]] || exit 125
-output_base=$HOME/repos/qwen38-eval-worktrees/work/build-window-1007
+output_base=${BW_MAC_OUTPUT_BASE:-$tree/build-bw-mac-results}
 mkdir -p "$output_base"
 n=1
 while ! mkdir "$output_base/$name-mac-a$n" 2>/dev/null; do

@@ -176,6 +176,7 @@ struct common_sampler {
                     return;
                 }
                 cur.resize(prefilter_k);
+                LOG_DBG("%s: using backend candidates: n_cand = %u, n_ban = %zu, top_k = %d\n", __func__, sampled_logits_count, prefilter_bias.size(), prefilter_k);
             }
         } else {
             const auto * logits = row.logits();
