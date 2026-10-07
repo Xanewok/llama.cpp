@@ -1927,7 +1927,7 @@ private:
             if (!shifts.empty()) {
                 SLT_INF(slot, "prompt tokenization differs from the cache only in spelling, common prefix %zu -> %zu\n", n_plain, n_sync);
 
-                const auto remap = [&](size_t pos) {
+                const auto remap = [&](size_t pos) -> size_t {
                     for (auto it = shifts.rbegin(); it != shifts.rend(); ++it) {
                         if (pos >= it->first) {
                             return pos + it->second;
