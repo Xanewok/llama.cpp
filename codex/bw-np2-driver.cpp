@@ -64,7 +64,12 @@ int main(int argc, char ** argv) {
     params.speculative.draft.backend_sampling = true;
     params.speculative.draft.cpuparams = params.cpuparams;
     params.speculative.draft.cpuparams_batch = params.cpuparams_batch;
-    for (int id = 248319; id >= 0; id -= 17) {
+    // sparse high ids keep the reduced-head path; the dense low block holds the byte tokens and common merges the
+    // prompts produce, so drafts get accepted and the bulk verify rows are exercised (stride-only gave ~2 % acceptance)
+    for (int id = 248319; id >= 12288; id -= 17) {
+        params.speculative.draft.vocab_ids.push_back(id);
+    }
+    for (int id = 12287; id >= 0; --id) {
         params.speculative.draft.vocab_ids.push_back(id);
     }
     if (meta) {

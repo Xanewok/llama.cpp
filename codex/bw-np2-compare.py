@@ -87,6 +87,12 @@ for meta in metas:
         rc = rc or 7
 
     for name in MUTANTS:
+        rcf = out / f"{meta}-{name}.rc"
+        if rcf.exists() and not (out / f"{meta}-{name}.json").exists():
+            err = re.findall(r"^.*(?:failed|error|GGML_ASSERT).*$", (out / f"{meta}-{name}.log").read_text(errors="replace"), re.M)
+            row[name] = f"caught: exit {rcf.read_text().strip()}, first error: {err[0].strip() if err else '?'}"
+            print(f"ok   meta={meta} negative control {name}: {row[name]}")
+            continue
         bad = differs(ref, units(load(meta, name)))
         row[name] = f"caught in {bad}" if bad else "ESCAPED"
         print(f"{'ok  ' if bad else 'FAIL'} meta={meta} negative control {name}: {'caught in ' + str(bad) if bad else 'ESCAPED'}")

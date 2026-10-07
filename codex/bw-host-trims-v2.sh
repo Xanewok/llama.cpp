@@ -72,8 +72,13 @@ for meta in 0 1; do
             -u LLAMA_HOST_TRIMS_PROOF $assigns \
             LD_LIBRARY_PATH="$ROOT/build-cpu/bin" GGML_SCHED_INPUT_STAGING=1 HOST_KV_Q8=1 \
             "$CPUGATE" build-cpu/bin/bw-np2-driver "$MODEL" "$OUT/$meta-$name.json" "$meta" 2 1729 64 \
-            > "$OUT/$meta-$name.log" 2>&1 || die 8 "run meta=$meta $name failed (see $OUT/$meta-$name.log)"
-        log "ran meta=$meta $name"
+            > "$OUT/$meta-$name.log" 2>&1 && rc=0 || rc=$?
+        # a mutant may be caught by a crash (seqrm_skip: stale KV positions fail the draft batch); the compare step judges it
+        if [[ $rc != 0 ]]; then
+            [[ $name == mut-* ]] || die 8 "run meta=$meta $name failed (see $OUT/$meta-$name.log)"
+            echo "$rc" > "$OUT/$meta-$name.rc"
+        fi
+        log "ran meta=$meta $name rc=$rc"
     done
 done
 
