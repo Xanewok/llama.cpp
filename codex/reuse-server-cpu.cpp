@@ -40,10 +40,10 @@ int main(int argc, char ** argv) {
     const bool meta = std::atoi(argv[3]) != 0;
     if (meta) {
         auto * cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
-        params.devices = {cpu, cpu};
+        params.devices = {cpu, cpu, nullptr}; // llama_model_params.devices is nullptr-terminated
         params.split_mode = LLAMA_SPLIT_MODE_TENSOR;
         params.n_gpu_layers = -1;
-        params.speculative.draft.devices = {cpu, cpu};
+        params.speculative.draft.devices = {cpu, cpu, nullptr};
         params.cpuparams.n_threads = params.cpuparams_batch.n_threads = 4;
         params.speculative.draft.cpuparams.n_threads = params.speculative.draft.cpuparams_batch.n_threads = 4;
     }
