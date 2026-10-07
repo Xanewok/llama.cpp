@@ -1443,7 +1443,7 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
     // control: the same rows from a k + 1 wide chain (no extension) must make the host read the full row.
     if (ok) {
         std::vector<char> ban(n_vocab, 0);
-        std::mt19937 rng(uint32_t(seed));
+        std::mt19937 rng{uint32_t(seed)};
         for (int32_t r = 0; r < n_rows; ++r) {
             const auto best = top_ids(ref[r], k + 1);
             ban[best[0]] = ban[best[k - 1]] = ban[best[k]] = 1;
