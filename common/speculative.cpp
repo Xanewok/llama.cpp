@@ -1410,6 +1410,10 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     bool    is_mem_shared = false;   // gemma4
     bool    chain_heads   = false;   // derived in the ctor: n_mtp_layers > 1 && !is_mem_shared
 
+    // env LLAMA_MTP_FOLD_C=1: the target's decode stores the catch-up K/V itself (llama_mtp_fold_init), one sequence only.
+    // pending_h must not be reallocated while armed: the target reads it during its next decode.
+    bool    fold          = false;
+
     // Per-sequence cross-batch carryover: pair (h_p, x_{p+1}) at MTP pos p+1.
     // The last h-row of one process() call needs the first token of the NEXT
     // call to pair with, so it's stashed here until that next call fires.
@@ -1516,9 +1520,22 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         verify_h.assign(n_seq, {});
         verify_h_rows.assign(n_seq, 0);
+
+        if (const char * e = getenv("LLAMA_MTP_FOLD_C"); e && atoi(e) != 0) {
+            if (n_seq != 1 || is_mem_shared || chain_heads) {
+                SPC_WRN("LLAMA_MTP_FOLD_C ignored: needs one sequence, a separate MTP KV cache and one MTP head "
+                        "(n_seq = %d, mem_shared = %d, chain_heads = %d)\n", (int) n_seq, (int) is_mem_shared, (int) chain_heads);
+            } else {
+                fold = llama_mtp_fold_init(ctx_tgt, ctx_dft);
+            }
+            LOG_INF("MTP fold: %s\n", fold ? "on" : "off");
+        }
     }
 
     ~common_speculative_impl_draft_mtp() override {
+        if (fold) {
+            llama_mtp_fold_init(this->params.ctx_tgt, nullptr);
+        }
         auto * ctx_dft = this->params.ctx_dft;
         for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) backend_chains.size(); ++seq_id) {
             if (backend_chains[seq_id] == nullptr) {
@@ -1591,8 +1608,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         const size_t row_bytes = (size_t) n_embd * sizeof(float);
 
+        // a folding target decode already stored this batch's catch-up K/V
+        const bool folded = fold && llama_mtp_fold_n_last(ctx_tgt) == n_tokens;
+
         // if kv is shared with target (e.g Gemma4), then we can skip this catch-up decode
-        if (!is_mem_shared) {
+        if (!is_mem_shared && !folded) {
             batch.clear();
 
             // pair each token with the tgt embedding shifted right by one position, and
@@ -1669,6 +1689,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
             std::memcpy(pending_h[seq_id].data(),
                     verify_h[seq_id].data() + (size_t) (n_rows - 1) * n_embd, row_bytes);
+        }
+
+        // read at the next target decode, after accept() has updated pending_h in place
+        if (fold) {
+            llama_mtp_fold_arm(ctx_tgt, pending_h[0].data());
         }
 
         return true;
