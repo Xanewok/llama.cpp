@@ -1,0 +1,9 @@
+Base: 7049ff0cbeb1f5ead231de4522af6b75d8d773c0
+Prerequisite count: 1 (apply prerequisites/*.patch in lexical order first; exclude them from a submission).
+Root series replay tip: 215a709dfdbf120d953d5d545b4fd42ed07768ba
+Root parent: a11a117bfd6359c4ff214a03d2e12a12dd34e1f7
+Transport: local shallow base.bundle; mini-builder only, no network fetch.
+Mac: /Users/builder/qwen38-upstream-pack/20261008/73-meta-host-view-plan
+CPU recipe: GGML_CUDA=OFF, GGML_METAL=OFF, GGML_BLAS=OFF, GGML_NATIVE=OFF, GGML_CPU_ARM_ARCH=armv8.2-a+dotprod, GGML_CCACHE=ON; Clang, nice 19, -j4, model threads <=4, explicit 4096 contexts; RAM >=4 GiB and one model through validation/model_gate.py.
+M: fresh git am of prerequisites + root onto 7049ff0cb and Clang builds of test-llama-archs/test-sampling/test-alloc passed (see collector REPORT-upstream-pack.md; Mac committer dates give different commit IDs).
+M: test-alloc passed all 38 cases including six Meta cases; removing the two planner exclusions returned 134; restored suite passed.

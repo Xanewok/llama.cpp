@@ -1,0 +1,132 @@
+From 215a709dfdbf120d953d5d545b4fd42ed07768ba Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Wed, 7 Oct 2026 12:23:30 +0200
+Subject: [PATCH] ggml : include host-backed Meta views in graph planning
+
+---
+ ggml/src/ggml-backend-meta.cpp |  6 ++-
+ tests/test-alloc.cpp           | 74 ++++++++++++++++++++++++++++++++++
+ 2 files changed, 78 insertions(+), 2 deletions(-)
+
+diff --git a/ggml/src/ggml-backend-meta.cpp b/ggml/src/ggml-backend-meta.cpp
+index 7c2d4bdf3..164468ab8 100644
+--- a/ggml/src/ggml-backend-meta.cpp
++++ b/ggml/src/ggml-backend-meta.cpp
+@@ -2155,7 +2155,8 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend,
+                         }
+                     }
+ 
+-                    if (next->view_src != nullptr && next->view_src->op == GGML_OP_NONE && ggml_backend_buffer_is_host(next->view_src->buffer)) {
++                    if (next->view_src != nullptr && next->view_src->op == GGML_OP_NONE && ggml_backend_buffer_is_host(next->view_src->buffer) &&
++                            !ggml_backend_buffer_is_meta(next->view_src->buffer)) {
+                         continue;
+                     }
+                     if (ggml_backend_meta_get_split_state(next, false).axis != GGML_BACKEND_SPLIT_AXIS_PARTIAL) {
+@@ -2194,7 +2195,8 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend,
+             int i_start = 0;
+             for (int i = 0; i < cgraph->n_nodes; i++) {
+                 ggml_tensor * node = cgraph->nodes[i];
+-                if (node->view_src != nullptr && node->view_src->op == GGML_OP_NONE && ggml_backend_buffer_is_host(node->view_src->buffer)) {
++                if (node->view_src != nullptr && node->view_src->op == GGML_OP_NONE && ggml_backend_buffer_is_host(node->view_src->buffer) &&
++                        !ggml_backend_buffer_is_meta(node->view_src->buffer)) {
+                     continue;
+                 }
+                 const ggml_backend_meta_split_state split_state = ggml_backend_meta_get_split_state(node, /*assume_sync =*/ false);
+diff --git a/tests/test-alloc.cpp b/tests/test-alloc.cpp
+index 45d9a3eda..5617a41a4 100644
+--- a/tests/test-alloc.cpp
++++ b/tests/test-alloc.cpp
+@@ -5,6 +5,7 @@
+ #include "ggml.h"
+ 
+ #include <algorithm>
++#include <cstring>
+ #include <memory>
+ #include <vector>
+ 
+@@ -1099,6 +1100,73 @@ static void test_buft_get_alloc_size_n_does_not_allocate() {
+     GGML_ASSERT(x[1]->data == nullptr);
+ }
+ 
++static ggml_backend_meta_split_state test_meta_split_state_mirrored(const ggml_tensor * tensor, void * userdata) {
++    GGML_UNUSED(tensor);
++    GGML_UNUSED(userdata);
++    return {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
++}
++
++static ggml_backend_meta_split_state test_meta_split_state_rows(const ggml_tensor * tensor, void * userdata) {
++    if (strcmp(tensor->name, "cache") == 0 || strcmp(tensor->name, "rows") == 0) {
++        return {GGML_BACKEND_SPLIT_AXIS_0, {tensor->ne[0]/2, tensor->ne[0]/2}, {1}, 1};
++    }
++    return test_meta_split_state_mirrored(tensor, userdata);
++}
++
++static void test_meta_host_view(ggml_op op, bool split) {
++    ggml_backend_load_all();
++    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
++    GGML_ASSERT(cpu != nullptr);
++    ggml_backend_dev_t devs[2] = {cpu, cpu};
++    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2,
++            split ? test_meta_split_state_rows : test_meta_split_state_mirrored, nullptr);
++    ggml_backend_ptr backend(ggml_backend_dev_init(meta, nullptr));
++    GGML_ASSERT(backend);
++
++    ggml_init_params params = {ggml_tensor_overhead()*8 + ggml_graph_overhead(), nullptr, true};
++    ggml_context_ptr ctx(ggml_init(params));
++    ggml_tensor * cache = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, 8, 4);
++    ggml_set_name(cache, "cache");
++    ggml_tensor * rows = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, 8, 2);
++    ggml_set_name(rows, "rows");
++    ggml_tensor * idxs = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I64, 2);
++    ggml_tensor * view = ggml_view_2d(ctx.get(), cache, 8, 2, cache->nb[1], 0);
++    ggml_tensor * out = view;
++    if (op == GGML_OP_CPY) {
++        out = ggml_cpy(ctx.get(), rows, view);
++    } else if (op == GGML_OP_SET_ROWS) {
++        out = ggml_set_rows(ctx.get(), cache, rows, idxs);
++    }
++    ggml_cgraph * gf = ggml_new_graph(ctx.get());
++    ggml_build_forward_expand(gf, out);
++    gf->uid = ggml_graph_next_uid();
++    ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors(ctx.get(), backend.get()));
++    GGML_ASSERT(buffer && ggml_backend_buffer_is_host(buffer.get()));
++
++    // CPU Meta buffers are host buffers, but their views and writes still belong to the Meta plan.
++    GGML_ASSERT(out->view_src == cache && cache->op == GGML_OP_NONE);
++    const int64_t indices[2] = {1, 3};
++    ggml_backend_tensor_set(idxs, indices, 0, sizeof(indices));
++    for (int pass = 0; pass < 3; ++pass) {
++        float data[16], expected[32] = {}, result[32];
++        for (int i = 0; i < 16; ++i) {
++            data[i] = float(i + 1 + pass*16);
++        }
++        ggml_backend_tensor_set(cache, expected, 0, sizeof(expected));
++        ggml_backend_tensor_set(rows, data, 0, sizeof(data));
++        if (op == GGML_OP_CPY) {
++            memcpy(expected, data, sizeof(data));
++        } else if (op == GGML_OP_SET_ROWS) {
++            memcpy(expected + 8, data, 8*sizeof(float));
++            memcpy(expected + 24, data + 8, 8*sizeof(float));
++        }
++        const ggml_status status = ggml_backend_graph_compute(backend.get(), gf);
++        GGML_ASSERT(status == GGML_STATUS_SUCCESS);
++        ggml_backend_tensor_get(cache, result, 0, sizeof(result));
++        GGML_ASSERT(memcmp(expected, result, sizeof(result)) == 0);
++    }
++}
++
+ static void run(const char * name, void (*f)()) {
+     printf("%s ", name);
+     fflush(stdout);
+@@ -1139,5 +1207,11 @@ int main() {
+     run("test_buft_get_alloc_size_n_custom_override", test_buft_get_alloc_size_n_custom_override);
+     run("test_buft_get_alloc_size_n_custom_override_ctx_size", test_buft_get_alloc_size_n_custom_override_ctx_size);
+     run("test_buft_get_alloc_size_n_does_not_allocate", test_buft_get_alloc_size_n_does_not_allocate);
++    run("test_meta_host_view(mirrored)", []() { test_meta_host_view(GGML_OP_VIEW, false); });
++    run("test_meta_host_view(split)", []() { test_meta_host_view(GGML_OP_VIEW, true); });
++    run("test_meta_host_cpy(mirrored)", []() { test_meta_host_view(GGML_OP_CPY, false); });
++    run("test_meta_host_cpy(split)", []() { test_meta_host_view(GGML_OP_CPY, true); });
++    run("test_meta_host_set_rows(mirrored)", []() { test_meta_host_view(GGML_OP_SET_ROWS, false); });
++    run("test_meta_host_set_rows(split)", []() { test_meta_host_view(GGML_OP_SET_ROWS, true); });
+     return 0;
+ }
