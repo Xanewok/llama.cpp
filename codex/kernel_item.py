@@ -290,7 +290,7 @@ def run(kind, out, canary, budget):
     began = time.time()
     deadline = time.monotonic() + budget
     modes = [('patch', False), ('negative', False)] if kind == 'memcheck' else [
-        (name, cold) for name in ('base', 'patch', 'patch', 'base') for cold in (False, True)]
+        (name, False) for name in ('base', 'patch', 'patch', 'base')] + [('base', True), ('patch', True)]
     if kind == 'perf' and canary:
         modes = [('patch', False), ('patch', True)]
     records = []
@@ -338,7 +338,7 @@ def run(kind, out, canary, budget):
             try:
                 if kind == 'perf':
                     library_gate(process, root, out / (stem + '.libraries.txt'))
-                rc = process.wait(timeout=remaining if kind == 'memcheck' else min(600, remaining))
+                rc = process.wait(timeout=remaining if kind == 'memcheck' else min(3600 if cold else 900, remaining))  # cold: ~10.5 s/case x 254 (M)
             except subprocess.TimeoutExpired:
                 raise lib.Fail('probe: budget stage cap', 'timeout')
             finally:
