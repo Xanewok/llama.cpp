@@ -115,7 +115,7 @@ restore
 # 3. mutants on the new build
 mutate "$GATE_SRC" 's/mctx_cur->get_n_rs() == (uint32_t) n_seqs) {/true) {/' mut-extras
 gate_test mut-extras
-expect_fail mut-extras 'ubatches with extra states must keep the gathered state' 'extra state: verify batch, seqs 0 and 2: gdn nodes [1-9][0-9]* by id'
+expect_fail mut-extras 'ubatches with extra states must keep the gathered state' 'extra state: verify batch, seqs 0 and 1: gdn nodes [1-9][0-9]* by id'
 restore
 
 mutate "$RS_SRC" 's/? inp->s_copy_none : inp->s_copy_tail;/? inp->s_copy_tail : inp->s_copy_tail;/' mut-tail
