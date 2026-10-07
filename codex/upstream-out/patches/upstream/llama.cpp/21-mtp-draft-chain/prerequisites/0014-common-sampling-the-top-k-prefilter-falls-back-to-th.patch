@@ -1,0 +1,153 @@
+From fc7498d17734083b7585c7d22b202286b8d55c38 Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Tue, 29 Sep 2026 23:45:39 +0200
+Subject: [PATCH 14/18] common : sampling: the top-k prefilter falls back to
+ the full row on ties
+
+std::partial_sort leaves tied logits in an unspecified order, and the
+prefilter's heap left them in another one: with a tie inside the top k,
+the chain drew with the same law but a different per-seed token, and a
+top-p that cuts inside a tie group kept different tokens. The prefilter
+now selects the top k + 1 and, if any two of them tie, refills the full
+row for the chain; without ties the top k and their order are unique.
+Every logit left out is <= the (k + 1)-th kept, so a tie at the k-th
+place shows up among the k + 1.
+
+tests : test-sampling-prefilter compares candidates and order with the
+full-row chain on tied rows (a pair cut by top-p, tie groups inside the
+top k and at the k-th place)
+---
+ common/sampling.cpp               | 34 +++++++++++++--------
+ tests/test-sampling-prefilter.cpp | 51 +++++++++++++++++++++++++++++++
+ 2 files changed, 73 insertions(+), 12 deletions(-)
+
+diff --git a/common/sampling.cpp b/common/sampling.cpp
+index 463571f91..26d36c93a 100644
+--- a/common/sampling.cpp
++++ b/common/sampling.cpp
+@@ -155,16 +155,14 @@ struct common_sampler {
+             for (uint32_t i = 0; i < sampled_logits_count; i++) {
+                 cur[i] = llama_token_data{sampled_ids[i], sampled_logits[i], 0.0f};
+             }
+-        } else if (prefilter && prefilter_k > 0 && prefilter_k < n_vocab) {
+-            const auto * logits = llama_get_logits_ith(ctx, idx);
+-            GGML_ASSERT(logits != nullptr);
+-            top_k_select(logits, n_vocab);
+         } else {
+             const auto * logits = llama_get_logits_ith(ctx, idx);
+             GGML_ASSERT(logits != nullptr);
+-            cur.resize(n_vocab);
+-            for (llama_token token_id = 0; token_id < n_vocab; token_id++) {
+-                cur[token_id] = llama_token_data{token_id, logits[token_id], 0.0f};
++            if (!(prefilter && prefilter_k > 0 && prefilter_k < n_vocab && top_k_select(logits, n_vocab))) {
++                cur.resize(n_vocab);
++                for (llama_token token_id = 0; token_id < n_vocab; token_id++) {
++                    cur[token_id] = llama_token_data{token_id, logits[token_id], 0.0f};
++                }
+             }
+         }
+ 
+@@ -179,14 +177,17 @@ struct common_sampler {
+ 
+     // > 0: set_logits keeps only the top prefilter_k logits of the full vocab, in one pass. Valid only while every
+     // sampler ahead of top-k in the chain is a no-op or the logit bias (see common_sampler_prefilter_k), and the
+-    // reasoning budget and grammar leave the row alone: the chain then gets the candidate set its own top-k would
+-    // keep (up to exact ties at the k-th logit), without filling and sorting an n_vocab-entry array.
++    // reasoning budget and grammar leave the row alone: the chain then gets the candidates its own top-k would keep,
++    // in the same order, without filling and sorting an n_vocab-entry array.
+     int32_t prefilter_k = 0;
+     std::vector<llama_logit_bias> prefilter_bias; // the chain's logit bias, by token
+ 
+-    // raw logits go into cur, as the chain's logit bias adds the bias itself; selection is on the biased logit
+-    void top_k_select(const float * logits, const int n_vocab) {
+-        const size_t k = prefilter_k;
++    // raw logits go into cur, as the chain's logit bias adds the bias itself; selection is on the biased logit.
++    // Returns false, leaving cur to be refilled, when a tie among the k + 1 best could make the chain's own
++    // partial sort keep or order tied tokens differently: without ties the top k and their order are unique.
++    // Every logit left out is <= the (k + 1)-th kept, so a tie at the k-th place shows up among the k + 1.
++    bool top_k_select(const float * logits, const int n_vocab) {
++        const size_t k = (size_t) prefilter_k + 1;
+         cur.clear();
+         cur.reserve(k);
+ 
+@@ -241,9 +242,18 @@ struct common_sampler {
+             }
+         }
+ 
++        std::sort(cur.begin(), cur.end(), greater); // best first
++        for (size_t i = 1; i < cur.size(); ++i) {
++            if (!(cur[i - 1].p > cur[i].p)) {
++                return false;
++            }
++        }
++        cur.pop_back();
++
+         for (auto & c : cur) {
+             c.p = 0.0f;
+         }
++        return true;
+     }
+ };
+ 
+diff --git a/tests/test-sampling-prefilter.cpp b/tests/test-sampling-prefilter.cpp
+index d57197d27..d0378246f 100644
+--- a/tests/test-sampling-prefilter.cpp
++++ b/tests/test-sampling-prefilter.cpp
+@@ -616,6 +616,57 @@ int main(int argc, char ** argv) {
+         }
+     }
+ 
++    // ties: the chain must get the candidates, in the order, that its own partial sort of the full row gives, also
++    // with ties inside the top k or at the k-th place (the prefilter then falls back to the full row). Not part of
++    // the per-seed streams, which stay comparable with builds before the tie fallback.
++    {
++        std::uniform_int_distribution<llama_token> ud(1000, E.n_vocab - 1000);
++        std::vector<llama_token> t;
++        while (t.size() < 24) {
++            const llama_token id = ud(rng_logits);
++            if (std::find(t.begin(), t.end(), id) == t.end()) {
++                t.push_back(id);
++            }
++        }
++        struct tie_case {
++            const char * name;
++            std::vector<std::pair<llama_token, float>> lifts;
++        };
++        std::vector<tie_case> tcases;
++        // p ~ 0.9 for the top token and ~0.05 for each of a tied pair: top-p 0.95 cuts inside the pair
++        tcases.push_back({ "tied pair cut by top-p", { { t[0], 30.0f }, { t[1], 27.11f }, { t[2], 27.11f } } });
++        {
++            // six groups of three equal logits, then three more equal at places 19..21 (k = 20)
++            std::vector<std::pair<llama_token, float>> l;
++            for (int i = 0; i < 18; ++i) {
++                l.push_back({ t[i], 12.0f - 0.25f*(i/3) });
++            }
++            for (int i = 18; i < 21; ++i) {
++                l.push_back({ t[i], 10.0f });
++            }
++            tcases.push_back({ "tie groups inside the top k and at the k-th place", l });
++        }
++        for (const auto & tc : tcases) {
++            const auto logits = make_logits(E.n_vocab, rng_logits, tc.lifts);
++            E.set_row(0, logits);
++            int n_diff = 0;
++            for (uint32_t seed = 1; seed <= 20; ++seed) {
++                common_sampler * gs = E.sampler(seed, TEXT_THINK);
++                const auto ref = chain_dist(common_sampler_get(gs), full_array(logits));
++                common_sampler_sample(gs, E.ctx, 0);
++                const auto * cp = common_sampler_get_candidates(gs, true);
++                bool same = cp->size == ref.size();
++                for (size_t i = 0; same && i < ref.size(); ++i) {
++                    same = cp->data[i].id == ref[i].id && std::fabs(cp->data[i].p - ref[i].p) < 1e-6f;
++                }
++                n_diff += !same;
++                common_sampler_free(gs);
++            }
++            printf("\n[ties: %s] candidates differ from the full-row chain in %d of 20 draws\n", tc.name, n_diff);
++            CHECK(n_diff == 0, "tied candidates differ from the full-row chain (%s)", tc.name);
++        }
++    }
++
+     const std::string seeds = seeds_out.str();
+     uint64_t h = 1469598103934665603ull;
+     for (unsigned char ch : seeds) {

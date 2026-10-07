@@ -1,0 +1,1016 @@
+From 485f25ca0e0bb583551487685401a67ea6455f7d Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Wed, 7 Oct 2026 14:54:00 +0200
+Subject: [PATCH] speculative : draft the MTP steps of a round in one decode
+
+---
+ common/speculative.cpp | 176 ++++++++++++++++++++++++++++
+ src/llama-context.cpp  |  18 +++
+ src/llama-context.h    |   1 +
+ src/llama-cparams.h    |   1 +
+ src/llama-ext.h        |  13 +++
+ src/llama-graph.cpp    | 215 +++++++++++++++++++---------------
+ src/llama-graph.h      |  13 ++-
+ src/llama-sampler.cpp  |  31 ++++-
+ src/models/qwen35.cpp  | 255 ++++++++++++++++++++++++++++-------------
+ 9 files changed, 547 insertions(+), 176 deletions(-)
+
+diff --git a/common/speculative.cpp b/common/speculative.cpp
+index f7ee3c0c9..aac8724f9 100644
+--- a/common/speculative.cpp
++++ b/common/speculative.cpp
+@@ -1425,6 +1425,20 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+     std::vector<int>                i_last;
+     std::vector<std::vector<float>> chain_h;
+ 
++    // while a sequence drafts through the device chain, ctx_dft samples it with its own top-k, temp
++    // and dist chain instead of backend_chains[seq_id]; the step loop expects the latter, so it is restored on a fallback
++    struct mtp_chain_seq {
++        llama_sampler * smpl = nullptr;
++        float           temp = NAN;
++        uint32_t        seed = 0;
++        bool            attached = false;
++    };
++    std::vector<mtp_chain_seq> mtp_chain_seqs;
++
++    std::vector<float>         mtp_chain_zeros; // h of the rows past step 0, which the chain replaces
++    bool mtp_chain = true;
++    bool mtp_chain_announced = false;
++
+     common_speculative_impl_draft_mtp(const common_params_speculative & params, uint32_t n_seq)
+         : common_speculative_impl(COMMON_SPECULATIVE_TYPE_DRAFT_MTP, n_seq, params.draft.n_max)
+         , params(params.draft)
+@@ -1493,6 +1507,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+ 
+         pending_h.assign(n_seq, std::vector<float>(n_embd, 0.0f));
+ 
++        mtp_chain_seqs.resize(n_seq);
++        mtp_chain_zeros.assign(n_embd, 0.0f);
++
+         i_last.assign(n_seq, -1);
+         i_batch_beg.assign(n_seq, -1);
+         i_batch_end.assign(n_seq, -1);
+@@ -1513,11 +1530,18 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+             llama_sampler_free(backend_chains[seq_id]);
+         }
+         backend_chains.clear();
++
++        for (auto & c : mtp_chain_seqs) {
++            llama_sampler_free(c.smpl);
++        }
+     }
+ 
+     void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
+         // reset here rather than per round, or two identical requests differ
+         common_sampler_reset(smpls[seq_id].get());
++        if (mtp_chain_seqs[seq_id].smpl) {
++            llama_sampler_reset(mtp_chain_seqs[seq_id].smpl);
++        }
+ 
+         const int32_t N = (int32_t) prompt.size();
+         if (N <= 0) {
+@@ -1645,7 +1669,151 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+         return true;
+     }
+ 
++    // Puts the original backend chain back on a sequence that drafted through the device chain.
++    void mtp_chain_release(llama_seq_id seq_id) {
++        auto & c = mtp_chain_seqs[seq_id];
++        if (!c.attached) {
++            return;
++        }
++        c.attached = false;
++        // a sampler can be set only once: its backend side stays initialised after it is replaced
++        llama_sampler * fresh = llama_sampler_clone(backend_chains[seq_id]);
++        const bool ok = llama_set_sampler(params.ctx_dft, seq_id, fresh);
++        llama_sampler_free(backend_chains[seq_id]);
++        if (!ok) {
++            SPC_WRN("backend offload failed for seq_id=%d; using CPU sampler\n", (int) seq_id);
++            llama_sampler_free(fresh);
++            fresh = nullptr;
++        }
++        backend_chains[seq_id] = fresh;
++    }
++
++    // Gives seq_id the chain top-k -> temp -> dist that the step loop's host sampler (spec_retune) implements:
++    // the same temperature and seed, so it draws the same uniforms. Rebuilt only when either changes.
++    bool mtp_chain_attach(llama_seq_id seq_id, float temp, uint32_t seed) {
++        auto * ctx_dft = params.ctx_dft;
++        auto & c = mtp_chain_seqs[seq_id];
++
++        if (c.smpl && c.temp == temp && c.seed == seed) {
++            if (!c.attached) {
++                llama_sampler * fresh = llama_sampler_clone(c.smpl);
++                if (llama_set_sampler(ctx_dft, seq_id, fresh)) {
++                    llama_sampler_free(c.smpl);
++                    c.smpl     = fresh;
++                    c.attached = true;
++                } else {
++                    llama_sampler_free(fresh);
++                    // the failed call dropped whatever was attached
++                    c.attached = true;
++                    mtp_chain_release(seq_id);
++                }
++            }
++            return c.attached;
++        }
++
++        llama_sampler * smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
++        llama_sampler_chain_add(smpl, llama_sampler_init_top_k_sorted(10));
++        llama_sampler_chain_add(smpl, llama_sampler_init_temp_ext(temp, 0.0f, 1.0f));
++        llama_sampler_chain_add(smpl, llama_sampler_init_dist(seed == LLAMA_DEFAULT_SEED ? seed : seed ^ 0x85ebca6bu));
++
++        if (!llama_set_sampler(ctx_dft, seq_id, smpl)) {
++            llama_sampler_free(smpl);
++            // the failed call dropped whatever was attached
++            c.attached = true;
++            mtp_chain_release(seq_id);
++            return false;
++        }
++
++        llama_sampler_free(c.smpl);
++        c.smpl     = smpl;
++        c.temp     = temp;
++        c.seed     = seed;
++        c.attached = true;
++        return true;
++    }
++
++    // Drafts one sequence's n_max tokens in a single decode, see llama_set_mtp_chain. p_min = 0 stops no step early,
++    // so it samples the tokens and candidates the step loop would. Returns false to leave the drafting to the loop.
++    bool draft_chain(common_speculative_draft_params_vec & dparams) {
++        auto * ctx_dft = params.ctx_dft;
++        const int32_t k = params.n_max;
++
++        llama_seq_id seq_id = -1;
++        // The chain graph requires one attached sampler; idle slots keep their samplers.
++        bool eligible = mtp_chain && n_seq == 1 && !chain_heads && !is_mem_shared && params.p_min <= 0.0f &&
++                params.probabilistic && params.backend_sampling && k >= 2 && k <= LLAMA_MTP_CHAIN_MAX;
++        for (llama_seq_id s = 0; eligible && s < (llama_seq_id) n_seq; ++s) {
++            if (dparams[s].drafting) {
++                eligible = seq_id < 0;
++                seq_id = s;
++            }
++        }
++        eligible = eligible && seq_id >= 0 && dparams[seq_id].result_q && backend_chains[seq_id];
++
++        if (eligible && !mtp_chain_attach(seq_id, dparams[seq_id].temp, dparams[seq_id].seed)) {
++            SPC_WRN("%s", "the draft context does not take the MTP chain's sampler; drafting step by step\n");
++            mtp_chain = false;
++            eligible = false;
++        }
++        for (llama_seq_id s = 0; s < (llama_seq_id) n_seq; ++s) {
++            if (!eligible || s != seq_id) {
++                mtp_chain_release(s);
++            }
++        }
++        if (!eligible) {
++            return false;
++        }
++
++        auto & dp   = dparams[seq_id];
++        auto * smpl = smpls[seq_id].get();
++
++        batch.clear();
++        for (int32_t s = 0; s < k; ++s) {
++            const int32_t idx = batch.add(dp.id_last, dp.pos0 + s, seq_id, true);
++            batch.set_embd(idx, { s == 0 ? pending_h[seq_id].data() : mtp_chain_zeros.data(), 1, (size_t) n_embd });
++        }
++
++        if (!llama_set_mtp_chain(ctx_dft, k)) {
++            SPC_WRN("%s", "the draft context cannot run the MTP chain; drafting step by step\n");
++            mtp_chain = false;
++            mtp_chain_release(seq_id);
++            batch.clear();
++            return false;
++        }
++        if (!mtp_chain_announced) {
++            mtp_chain_announced = true;
++            SPC_INF("MTP chain: k=%d\n", k);
++        }
++
++        const int ret = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
++        llama_set_mtp_chain(ctx_dft, 0);
++        if (ret != 0) {
++            SPC_ERR("llama_process[chain] returned %d\n", ret);
++            return true;
++        }
++
++        for (int32_t s = 0; s < k; ++s) {
++            const llama_token id = common_sampler_sample(smpl, ctx_dft, s, true);
++            GGML_ASSERT(id != LLAMA_TOKEN_NULL && llama_get_sampled_token_ith(ctx_dft, s) == id);
++
++            const auto * cur_p = common_sampler_get_candidates(smpl, true);
++
++            common_sampler_accept(smpl, id, true);
++            // commits the uniform behind this token, or the next round draws it again
++            llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
++
++            dp.result->push_back(id);
++            dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
++        }
++
++        return true;
++    }
++
+     void draft(common_speculative_draft_params_vec & dparams) override {
++        if (draft_chain(dparams)) {
++            return;
++        }
++
+         auto & ctx_dft = params.ctx_dft;
+ 
+         batch.clear();
+@@ -2561,6 +2729,14 @@ common_params common_base_params_to_speculative(const common_params & params) {
+     result.n_outputs_max = params.n_parallel;
+     result.n_outputs_max_per_seq = 1;
+ 
++    // the MTP chain samples every step of a round in one decode
++    if (std::find(params.speculative.types.begin(), params.speculative.types.end(), COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != params.speculative.types.end() &&
++            params.n_parallel == 1 && params_spec.probabilistic && params_spec.backend_sampling && params_spec.p_min <= 0.0f &&
++            params_spec.n_max >= 2 && params_spec.n_max <= LLAMA_MTP_CHAIN_MAX) {
++        result.n_outputs_max = std::max(result.n_outputs_max, params_spec.n_max);
++        result.n_outputs_max_per_seq = params_spec.n_max;
++    }
++
+     // dflash/dspark decode the whole noise block in a single pass and sample every block position on the backend
+     // TODO: refactor such properties to be announced by the speculative types
+     //       something like `struct common_speculative_type_props common_speculative_type_get_props(...);`
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index e8a97c966..d4b273e74 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -1278,6 +1278,20 @@ void llama_context::set_embeddings_layer_inp(uint32_t lid, bool enable) {
+     sched_need_reserve = true;
+ }
+ 
++bool llama_context::set_mtp_chain(int32_t n_chain) {
++    if (n_chain == 0) {
++        cparams.mtp_chain = 0;
++        return true;
++    }
++    if (n_chain < 2 || n_chain > LLAMA_MTP_CHAIN_MAX || cparams.ctx_type != LLAMA_CONTEXT_TYPE_MTP ||
++            model.arch != LLM_ARCH_QWEN35 || !has_draft_vocab() || !model.draft_token_embd || !model.draft_vocab_map ||
++            !cparams.flash_attn || cparams.n_outputs_max_per_seq < (uint32_t) n_chain) {
++        return false;
++    }
++    cparams.mtp_chain = n_chain;
++    return true;
++}
++
+ void llama_context::set_nextn_layer_offset(int32_t offset) {
+     cparams.nextn_layer_offset = offset;
+ }
+@@ -4178,6 +4192,10 @@ void llama_set_embeddings_layer_inp(llama_context * ctx, uint32_t lid, bool valu
+     ctx->set_embeddings_layer_inp(lid, value);
+ }
+ 
++bool llama_set_mtp_chain(llama_context * ctx, int32_t n_chain) {
++    return ctx->set_mtp_chain(n_chain);
++}
++
+ void llama_set_nextn_layer_offset(llama_context * ctx, int32_t offset) {
+     ctx->set_nextn_layer_offset(offset);
+ }
+diff --git a/src/llama-context.h b/src/llama-context.h
+index 5d36127d4..d45df550b 100644
+--- a/src/llama-context.h
++++ b/src/llama-context.h
+@@ -119,6 +119,7 @@ struct llama_context {
+     void set_embeddings_nextn(bool value, bool masked);
+     void set_embeddings_layer_inp(uint32_t lid, bool enable);
+     void set_nextn_layer_offset(int32_t offset);
++    bool set_mtp_chain(int32_t n_chain);
+     void set_causal_attn(bool value);
+     void set_warmup(bool value);
+ 
+diff --git a/src/llama-cparams.h b/src/llama-cparams.h
+index 004fec5a6..cd53639a5 100644
+--- a/src/llama-cparams.h
++++ b/src/llama-cparams.h
+@@ -20,6 +20,7 @@ struct llama_cparams {
+     int32_t  n_threads_batch; // number of threads to use for batch processing
+ 
+     int32_t  nextn_layer_offset = 0;
++    int32_t  mtp_chain          = 0; // see llama_set_mtp_chain
+ 
+     float rope_freq_base;
+     float rope_freq_scale;
+diff --git a/src/llama-ext.h b/src/llama-ext.h
+index fcc78f47e..7f5115ae9 100644
+--- a/src/llama-ext.h
++++ b/src/llama-ext.h
+@@ -100,6 +100,19 @@ LLAMA_API void llama_set_embeddings_nextn(struct llama_context * ctx, bool value
+ // chain multiple trained NextN heads. Default 0 (first head).
+ LLAMA_API void llama_set_nextn_layer_offset(struct llama_context * ctx, int32_t offset);
+ 
++// MTP draft chain (single-head qwen35 MTP with a reduced draft vocabulary): a batch of n_chain rows of one sequence,
++// every row an output, runs as n_chain serial draft steps in one graph. Row 0 carries the token and hidden state
++// of the first step; step s > 0 takes the token the sampler picked at step s-1 and its hidden state from the device,
++// so the token and embedding of rows > 0 are ignored. The sequence needs a backend sampler chain (top-k first),
++// which picks every step and fills the per-row sampled token, candidates and probabilities as usual.
++// Returns false, leaving the chain off, if the context cannot run it. n_chain = 0 turns it off.
++#define LLAMA_MTP_CHAIN_MAX 16
++LLAMA_API bool llama_set_mtp_chain(struct llama_context * ctx, int32_t n_chain);
++
++// top-k whose backend candidates come out in descending logit order, as the host top-k leaves them, so that a dist
++// sampler after it picks the token the host chain would for the same uniform. Host behaviour is the same as llama_sampler_init_top_k.
++LLAMA_API struct llama_sampler * llama_sampler_init_top_k_sorted(int32_t k);
++
+ // Marks the entries that a joint decision head (clef) reads, the default is 0
+ // See https://github.com/ggml-org/llama.cpp/pull/29831 for details
+ // A run of entries with the same value is one span, spans must be separated by entries with value 0
+diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
+index 95ef4b763..3ceb2285b 100644
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -3896,21 +3896,133 @@ void llm_graph_context::build_pooling(
+     ggml_build_forward_expand(gf, cur);
+ }
+ 
++void llm_graph_context::build_sampling_begin(uint32_t n_rows) const {
++    res->t_sampled.resize(n_rows, nullptr);
++    res->t_sampled_probs.resize(n_rows, nullptr);
++    res->t_sampled_logits.resize(n_rows, nullptr);
++    res->t_candidates.resize(n_rows, nullptr);
++
++    for (const auto & entry : samplers) {
++        if (entry.second->iface->backend_reset) {
++            entry.second->iface->backend_reset(entry.second);
++        }
++    }
++}
++
++void llm_graph_context::build_sampling_end() const {
++    res->add_input(std::make_unique<llm_graph_input_sampling>(samplers));
++}
++
++ggml_tensor * llm_graph_context::build_sampling_cand(ggml_tensor * logits_t, int32_t k) const {
++    if (sampling_n_shards == 0) {
++        return nullptr;
++    }
++
++    const int64_t n_vocab = logits_t->ne[0];
++    const int64_t n_cols  = logits_t->ne[1];
++    GGML_ASSERT(sampling_vocab_ids != nullptr && sampling_vocab_ids->ne[0] == n_vocab);
++
++    const int64_t n_cand = int64_t(k) * sampling_n_shards;
++
++    // slice-local indices, see the TOP_K/GET_ROWS rules in ggml-backend-meta
++    ggml_tensor * idx  = ggml_top_k(ctx0, logits_t, n_cand);
++    ggml_tensor * vals = ggml_get_rows(ctx0, ggml_reshape_3d(ctx0, logits_t, 1, n_vocab, n_cols), idx);
++    ggml_tensor * ids  = ggml_get_rows(ctx0,
++            ggml_repeat_4d(ctx0, ggml_reshape_3d(ctx0, sampling_vocab_ids, 1, n_vocab, 1), 1, n_vocab, n_cols, 1), idx);
++
++    vals = ggml_reshape_3d(ctx0, vals, n_cand, 1, n_cols);
++    ids  = ggml_reshape_3d(ctx0, ids,  n_cand, 1, n_cols);
++
++    ggml_tensor * cand = ggml_backend_meta_gather(ctx0, ggml_concat(ctx0, vals, ids, 1));
++    ggml_set_name(cand, "sampling_candidates");
++    return cand;
++}
++
++void llm_graph_context::build_sampling_row(
++        llama_seq_id   seq_id,
++        llama_sampler * sampler,
++        ggml_tensor  * logits_t,
++        ggml_tensor  * cand,
++        uint32_t       col,
++        int32_t        row,
++        ggml_tensor  * anchor) const {
++    // inactive samplers are built but not computed
++    const bool    active = row >= 0;
++    const int     i_out  = active ? 1 : 0;
++
++    ggml_tensor * logits_seq = nullptr;
++    ggml_tensor * cand_ids   = nullptr;
++    if (cand) {
++        const int64_t n_cand = cand->ne[0];
++        logits_seq = ggml_view_1d(ctx0, cand, n_cand, col * cand->nb[2]);
++        cand_ids   = ggml_cast(ctx0, ggml_view_1d(ctx0, cand, n_cand, col * cand->nb[2] + cand->nb[1]), GGML_TYPE_I32);
++    } else {
++        logits_seq = ggml_view_1d(ctx0, logits_t, logits_t->ne[0], col * logits_t->nb[1]);
++        if (sampling_vocab_ids) {
++            cand_ids = ggml_cast(ctx0, sampling_vocab_ids, GGML_TYPE_I32);
++        }
++    }
++    ggml_format_name(logits_seq, "logits_seq_%d_%u", seq_id, col);
++
++    struct llama_sampler_data data = {
++        /*.logits       =*/ logits_seq,
++        /*.probs        =*/ nullptr,
++        /*.sampled      =*/ nullptr,
++        /*.candidates   =*/ cand_ids,
++    };
++
++    assert(sampler->iface->backend_apply);
++    sampler->iface->backend_apply(sampler, ctx0, gf, &data);
++
++    std::array<ggml_tensor *, 2> outs;
++    outs[0] = anchor;
++
++    if (data.sampled != nullptr) {
++        if (active) {
++            res->t_sampled[row] = data.sampled;
++        }
++        outs[1] = data.sampled;
++        ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
++    }
++
++    if (data.probs != nullptr) {
++        if (active) {
++            res->t_sampled_probs[row] = data.probs;
++        }
++        outs[1] = data.probs;
++        ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
++    }
++
++    if (data.logits != nullptr) {
++        if (active) {
++            res->t_sampled_logits[row] = data.logits;
++        }
++        outs[1] = data.logits;
++        ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
++    }
++
++    if (data.candidates != nullptr) {
++        if (active) {
++            res->t_candidates[row] = data.candidates;
++        }
++        outs[1] = data.candidates;
++        ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
++    }
++}
++
+ void llm_graph_context::build_sampling() const {
+     if (samplers.empty() || !res->t_logits) {
+         return;
+     }
++    // a model builder that applied the samplers itself has recorded its rows
++    if (!res->t_sampled.empty()) {
++        return;
++    }
+     // no output rows: the meta backend has no split state for empty logits, so nothing can consume them
+     if (sampling_n_shards > 0 && ggml_nelements(res->t_logits) == 0) {
+         return;
+     }
+ 
+-    std::array<ggml_tensor *, 2> outs;
+-    outs[0] = res->t_logits;
+-
+-    auto inp_sampling = std::make_unique<llm_graph_input_sampling>(samplers);
+-    res->add_input(std::move(inp_sampling));
+-
+     std::map<llama_seq_id, std::vector<uint32_t>> sampling_rows;
+     uint32_t n_rows = 0;
+     for (uint32_t i = 0; i < ubatch.n_tokens; ++i) {
+@@ -3919,11 +4031,6 @@ void llm_graph_context::build_sampling() const {
+         }
+     }
+ 
+-    res->t_sampled.resize(n_rows, nullptr);
+-    res->t_sampled_probs.resize(n_rows, nullptr);
+-    res->t_sampled_logits.resize(n_rows, nullptr);
+-    res->t_candidates.resize(n_rows, nullptr);
+-
+     // res->t_logits will contain logits for all tokens that want the logits calculated (logits=1 or output=1)
+     GGML_ASSERT(res->t_logits != nullptr && "missing t_logits tensor");
+ 
+@@ -3934,8 +4041,8 @@ void llm_graph_context::build_sampling() const {
+     // Tensor split: each device holds a vocab slice of the logits. Every chain starts with top-k (enforced in
+     // llama_context::set_sampler), so the union of the per-device top-k is a superset of the global top-k and the
+     // chain picks exactly as it would from the full row. One gather brings the candidates to every device.
+-    ggml_tensor * cand   = nullptr; // [n_cand, 2, n_cols]: candidate logits, then their vocab ids as F32
+-    int64_t       n_cand = 0;
++    // cand: [n_cand, 2, n_cols]: candidate logits, then their vocab ids as F32
++    ggml_tensor * cand = nullptr;
+     if (sampling_n_shards > 0) {
+         int32_t k = 0;
+         for (const auto & entry : samplers) {
+@@ -3944,30 +4051,10 @@ void llm_graph_context::build_sampling() const {
+             k = std::max(k, k_seq);
+         }
+ 
+-        const int64_t n_vocab = logits_t->ne[0];
+-        const int64_t n_cols  = logits_t->ne[1];
+-        GGML_ASSERT(sampling_vocab_ids != nullptr && sampling_vocab_ids->ne[0] == n_vocab);
+-
+-        n_cand = int64_t(k) * sampling_n_shards;
+-
+-        // slice-local indices, see the TOP_K/GET_ROWS rules in ggml-backend-meta
+-        ggml_tensor * idx  = ggml_top_k(ctx0, logits_t, n_cand);
+-        ggml_tensor * vals = ggml_get_rows(ctx0, ggml_reshape_3d(ctx0, logits_t, 1, n_vocab, n_cols), idx);
+-        ggml_tensor * ids  = ggml_get_rows(ctx0,
+-                ggml_repeat_4d(ctx0, ggml_reshape_3d(ctx0, sampling_vocab_ids, 1, n_vocab, 1), 1, n_vocab, n_cols, 1), idx);
+-
+-        vals = ggml_reshape_3d(ctx0, vals, n_cand, 1, n_cols);
+-        ids  = ggml_reshape_3d(ctx0, ids,  n_cand, 1, n_cols);
+-
+-        cand = ggml_backend_meta_gather(ctx0, ggml_concat(ctx0, vals, ids, 1));
+-        ggml_set_name(cand, "sampling_candidates");
++        cand = build_sampling_cand(logits_t, k);
+     }
+ 
+-    for (const auto & entry : samplers) {
+-        if (entry.second->iface->backend_reset) {
+-            entry.second->iface->backend_reset(entry.second);
+-        }
+-    }
++    build_sampling_begin(n_rows);
+ 
+     static const std::vector<uint32_t> dummy_row = { 0 };
+ 
+@@ -3977,66 +4064,14 @@ void llm_graph_context::build_sampling() const {
+         // inactive samplers always work on the first row
+         const bool active = it != sampling_rows.end();
+         const auto & rows = active ? it->second : dummy_row;
+-        const int i_out   = active ? 1          : 0;
+ 
+         for (uint32_t i = 0; i < rows.size(); ++i) {
+-            ggml_tensor * logits_seq = nullptr;
+-            ggml_tensor * cand_ids   = nullptr;
+-            if (cand) {
+-                logits_seq = ggml_view_1d(ctx0, cand, n_cand, rows[i] * cand->nb[2]);
+-                cand_ids   = ggml_cast(ctx0, ggml_view_1d(ctx0, cand, n_cand, rows[i] * cand->nb[2] + cand->nb[1]), GGML_TYPE_I32);
+-            } else {
+-                logits_seq = ggml_view_1d(ctx0, logits_t, logits_t->ne[0], rows[i] * logits_t->nb[1]);
+-                if (sampling_vocab_ids) {
+-                    cand_ids = ggml_cast(ctx0, sampling_vocab_ids, GGML_TYPE_I32);
+-                }
+-            }
+-            ggml_format_name(logits_seq, "logits_seq_%d_%u", seq_id, i);
+-
+-            struct llama_sampler_data data = {
+-                /*.logits       =*/ logits_seq,
+-                /*.probs        =*/ nullptr,
+-                /*.sampled      =*/ nullptr,
+-                /*.candidates   =*/ cand_ids,
+-            };
+-
+-            assert(sampler->iface->backend_apply);
+-            sampler->iface->backend_apply(sampler, ctx0, gf, &data);
+-
+-            if (data.sampled != nullptr) {
+-                if (active) {
+-                    res->t_sampled[rows[i]] = data.sampled;
+-                }
+-                outs[1] = data.sampled;
+-                ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
+-            }
+-
+-            if (data.probs != nullptr) {
+-                if (active) {
+-                    res->t_sampled_probs[rows[i]] = data.probs;
+-                }
+-                outs[1] = data.probs;
+-                ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
+-            }
+-
+-            if (data.logits != nullptr) {
+-                if (active) {
+-                    res->t_sampled_logits[rows[i]] = data.logits;
+-                }
+-                outs[1] = data.logits;
+-                ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
+-            }
+-
+-            if (data.candidates != nullptr) {
+-                if (active) {
+-                    res->t_candidates[rows[i]] = data.candidates;
+-                }
+-                outs[1] = data.candidates;
+-                ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
+-            }
++            build_sampling_row(seq_id, sampler, logits_t, cand, rows[i], active ? (int32_t) rows[i] : -1, res->t_logits);
+         }
+     }
+ 
++    build_sampling_end();
++
+     // TODO: Call backend_accept after all samplers have been applied.
+     /*
+     for (const auto & [seq_id, sampler] : samplers) {
+diff --git a/src/llama-graph.h b/src/llama-graph.h
+index ff9d6cbf1..e3c50c04a 100644
+--- a/src/llama-graph.h
++++ b/src/llama-graph.h
+@@ -877,7 +877,8 @@ struct llm_graph_params {
+         }
+ 
+         // TODO: https://github.com/ggml-org/llama.cpp/pull/24340#discussion_r3448035248
+-        if (cparams.nextn_layer_offset != other.cparams.nextn_layer_offset) {
++        if (cparams.nextn_layer_offset != other.cparams.nextn_layer_offset ||
++            cparams.mtp_chain          != other.cparams.mtp_chain) {
+             return false;
+         }
+ 
+@@ -1399,6 +1400,16 @@ struct llm_graph_context {
+ 
+     void build_sampling() const;
+ 
++    // Building blocks of build_sampling() for a model builder that samples inside its graph (e.g. a draft chain):
++    // begin(n_rows) sizes the res->t_sampled* rows, row() applies a sampler to one logits column and records the
++    // result in output row `row` (row < 0: built but not computed), end() adds the sampler inputs. The builder
++    // owns res->t_logits and the row order, and build_sampling() then leaves the graph alone.
++    void          build_sampling_begin(uint32_t n_rows) const;
++    ggml_tensor * build_sampling_cand(ggml_tensor * logits_t, int32_t k) const;
++    void          build_sampling_row(llama_seq_id seq_id, llama_sampler * sampler, ggml_tensor * logits_t,
++                                     ggml_tensor * cand, uint32_t col, int32_t row, ggml_tensor * anchor) const;
++    void          build_sampling_end() const;
++
+     //
+     // dense (out)
+     //
+diff --git a/src/llama-sampler.cpp b/src/llama-sampler.cpp
+index 4c51da23a..0786f3eaa 100644
+--- a/src/llama-sampler.cpp
++++ b/src/llama-sampler.cpp
+@@ -1446,8 +1446,14 @@ void llama_sampler_backend_begin(llama_sampler * sampler) {
+ 
+ struct llama_sampler_top_k : public llama_sampler_backend {
+     const int32_t k;
++
++    // backend only: leave the candidates in descending logit order like the host top-k does. The device top-k order is
++    // unspecified (the CPU swaps its first two, CUB's is unsorted), and dist walks the cumulative sum in candidate order.
++    const bool sorted;
+ };
+ 
++static struct llama_sampler * llama_sampler_top_k_make(int32_t k, bool sorted);
++
+ static const char * llama_sampler_top_k_name(const struct llama_sampler * smpl) {
+     auto * sctx = (llama_sampler_top_k *) smpl->ctx;
+     return sctx->get_name();
+@@ -1460,7 +1466,7 @@ static void llama_sampler_top_k_apply(struct llama_sampler * smpl, llama_token_d
+ 
+ static struct llama_sampler * llama_sampler_top_k_clone(const struct llama_sampler * smpl) {
+     const auto * ctx = (const llama_sampler_top_k *) smpl->ctx;
+-    return llama_sampler_init_top_k(ctx->k);
++    return llama_sampler_top_k_make(ctx->k, ctx->sorted);
+ }
+ 
+ static void llama_sampler_top_k_free(struct llama_sampler * smpl) {
+@@ -1506,6 +1512,16 @@ static void llama_sampler_top_k_backend_apply(
+     data->logits = ggml_get_rows(ctx, logits_rows, top_k);
+     ggml_set_name(data->logits, "top_k_rows");
+ 
++    if (sctx->sorted) {
++        struct ggml_tensor * order = ggml_argsort(ctx, ggml_reshape_1d(ctx, data->logits, sctx->k), GGML_SORT_ORDER_DESC);
++        ggml_set_name(order, "top_k_order");
++
++        data->logits = ggml_get_rows(ctx, data->logits, order);
++
++        struct ggml_tensor * cand_rows = ggml_reshape_2d(ctx, data->candidates, 1, sctx->k);
++        data->candidates = ggml_reshape_1d(ctx, ggml_get_rows(ctx, cand_rows, order), sctx->k);
++    }
++
+     GGML_UNUSED(gf);
+ }
+ 
+@@ -1524,7 +1540,7 @@ static struct llama_sampler_i llama_sampler_top_k_i = {
+     /* .copy_state        = */ llama_sampler_backend_copy_state<llama_sampler_top_k>,
+ };
+ 
+-struct llama_sampler * llama_sampler_init_top_k(int32_t k) {
++static struct llama_sampler * llama_sampler_top_k_make(int32_t k, bool sorted) {
+     const bool is_empty = (k <= 0);
+ 
+     if (is_empty) {
+@@ -1535,11 +1551,20 @@ struct llama_sampler * llama_sampler_init_top_k(int32_t k) {
+         /* .iface = */ &llama_sampler_top_k_i,
+         /* .ctx   = */ new llama_sampler_top_k {
+             ("top-k"),
+-            /* .k = */ k,
++            /* .k      = */ k,
++            /* .sorted = */ sorted,
+         }
+     );
+ }
+ 
++struct llama_sampler * llama_sampler_init_top_k(int32_t k) {
++    return llama_sampler_top_k_make(k, false);
++}
++
++struct llama_sampler * llama_sampler_init_top_k_sorted(int32_t k) {
++    return llama_sampler_top_k_make(k, true);
++}
++
+ // top-p
+ 
+ struct llama_sampler_top_p : public llama_sampler_backend {
+diff --git a/src/models/qwen35.cpp b/src/models/qwen35.cpp
+index d86e5ef3d..219553393 100644
+--- a/src/models/qwen35.cpp
++++ b/src/models/qwen35.cpp
+@@ -1,5 +1,6 @@
+ #include "models.h"
+ #include "llama-memory-recurrent.h"
++#include "llama-sampler.h"
+ 
+ void llama_model_qwen35::load_arch_hparams(llama_model_loader & ml) {
+     ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS,       hparams.f_norm_rms_eps);
+@@ -526,18 +527,27 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
+     inp->embd = ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, hparams.n_embd_inp(), n_tokens);
+     ggml_set_input(inp->embd);
+ 
++    // The chain runs the k rows of one decode as k serial draft steps, see llama_set_mtp_chain. Other shapes
++    // (a graph reserve, the catch-up decode) take the plain path.
++    const int32_t n_chain = cparams.mtp_chain;
++    const bool    chain   = n_chain > 0 && (int64_t) n_tokens == n_chain && (int64_t) n_outputs == n_chain &&
++                            ubatch.token && ubatch.embd && samplers.size() == 1;
++
+     // TODO: make static using `ggml_build_forward_select()`
+     //       see llm_graph_context::build_inp_embd() for reference
+-    ggml_tensor * tok_embd;
+-    ASSERT_EMBD_OR_TOKEN(ubatch);
+-    if (ubatch.token) {
++    ggml_tensor * tok_embd = nullptr;
++    if (chain) {
++        // only step 0 embeds a host token
++    } else if (ubatch.token) {
+         ggml_tensor * tok_embd_w = layer.nextn.embed_tokens ? layer.nextn.embed_tokens : model.tok_embd;
+ 
+         tok_embd = ggml_get_rows(ctx0, tok_embd_w, inp->tokens);
+     } else {
+         tok_embd = inp->embd;
+     }
+-    cb(tok_embd, "mtp_tok_embd", il);
++    if (tok_embd) {
++        cb(tok_embd, "mtp_tok_embd", il);
++    }
+ 
+     inp->h = ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, hparams.n_embd, n_tokens);
+     ggml_set_input(inp->h);
+@@ -545,114 +555,195 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
+ 
+     ggml_tensor * h_embd = inp->h;
+ 
++    ggml_tensor * inp_tokens = inp->tokens;
++
+     res->add_input(std::move(inp));
+ 
+     ggml_tensor * inp_pos     = build_inp_pos();
+-    ggml_tensor * inp_out_ids = build_inp_out_ids();
++    ggml_tensor * inp_out_ids = chain ? nullptr : build_inp_out_ids();
+ 
+     auto * inp_attn = build_attn_inp_kv();
+ 
+-    ggml_tensor * h_norm = build_norm(h_embd, layer.nextn.hnorm, nullptr, LLM_NORM_RMS, il);
+-    cb(h_norm, "mtp_hnorm", il);
++    // one MTP block over the rows of e_in and h_in, returns h_nextn
++    auto mtp_block = [&](ggml_tensor * e_in, ggml_tensor * h_in, ggml_tensor * pos, llm_graph_input_attn_kv * attn) {
++        const int64_t n_rows = e_in->ne[1];
+ 
+-    ggml_tensor * e_norm = build_norm(tok_embd, layer.nextn.enorm, nullptr, LLM_NORM_RMS, il);
+-    cb(e_norm, "mtp_enorm", il);
++        ggml_tensor * h_norm = build_norm(h_in, layer.nextn.hnorm, nullptr, LLM_NORM_RMS, il);
++        cb(h_norm, "mtp_hnorm", il);
+ 
+-    ggml_tensor * concat = ggml_concat(ctx0, e_norm, h_norm, /*dim=*/ 0);
+-    cb(concat, "mtp_concat", il);
++        ggml_tensor * e_norm = build_norm(e_in, layer.nextn.enorm, nullptr, LLM_NORM_RMS, il);
++        cb(e_norm, "mtp_enorm", il);
+ 
+-    ggml_tensor * cur = build_lora_mm(layer.nextn.eh_proj, concat, layer.nextn.eh_proj_s);
+-    cb(cur, "mtp_eh_proj", il);
++        ggml_tensor * concat = ggml_concat(ctx0, e_norm, h_norm, /*dim=*/ 0);
++        cb(concat, "mtp_concat", il);
+ 
+-    ggml_tensor * inpSA = cur;
++        ggml_tensor * cur = build_lora_mm(layer.nextn.eh_proj, concat, layer.nextn.eh_proj_s);
++        cb(cur, "mtp_eh_proj", il);
+ 
+-    cur = build_norm(cur, layer.attn_norm, nullptr, LLM_NORM_RMS, il);
+-    cb(cur, "mtp_attn_norm", il);
++        ggml_tensor * inpSA = cur;
+ 
+-    auto [Qcur_full, Kcur, Vcur] = build_qkv(layer, cur,
+-            n_embd_head * 2, n_head,
+-            n_embd_head,     n_head_kv,
+-            n_embd_head,     n_head_kv,
+-            il, false);
+-    cb(Qcur_full, "mtp_Qcur_full", il);
++        cur = build_norm(cur, layer.attn_norm, nullptr, LLM_NORM_RMS, il);
++        cb(cur, "mtp_attn_norm", il);
+ 
+-    ggml_tensor * Qcur = ggml_view_3d(ctx0, Qcur_full,
+-            n_embd_head, n_head, n_tokens,
+-            ggml_element_size(Qcur_full) * n_embd_head * 2,
+-            ggml_element_size(Qcur_full) * n_embd_head * 2 * n_head,
+-            0);
+-    Qcur = build_norm(Qcur, layer.attn_q_norm, nullptr, LLM_NORM_RMS, il);
+-    cb(Qcur, "mtp_Qcur_normed", il);
+-
+-    ggml_tensor * gate = ggml_view_3d(ctx0, Qcur_full,
+-            n_embd_head, n_head, n_tokens,
+-            ggml_element_size(Qcur_full) * n_embd_head * 2,
+-            ggml_element_size(Qcur_full) * n_embd_head * 2 * n_head,
+-            ggml_element_size(Qcur_full) * n_embd_head);
+-    gate = ggml_cont_2d(ctx0, gate, n_embd_head * n_head, n_tokens);
+-    cb(gate, "mtp_gate", il);
++        auto [Qcur_full, Kcur, Vcur] = build_qkv(layer, cur,
++                n_embd_head * 2, n_head,
++                n_embd_head,     n_head_kv,
++                n_embd_head,     n_head_kv,
++                il, false);
++        cb(Qcur_full, "mtp_Qcur_full", il);
+ 
+-    Kcur = ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
+-    Kcur = build_norm(Kcur, layer.attn_k_norm, nullptr, LLM_NORM_RMS, il);
+-    cb(Kcur, "mtp_Kcur_normed", il);
++        ggml_tensor * Qcur = ggml_view_3d(ctx0, Qcur_full,
++                n_embd_head, n_head, n_rows,
++                ggml_element_size(Qcur_full) * n_embd_head * 2,
++                ggml_element_size(Qcur_full) * n_embd_head * 2 * n_head,
++                0);
++        Qcur = build_norm(Qcur, layer.attn_q_norm, nullptr, LLM_NORM_RMS, il);
++        cb(Qcur, "mtp_Qcur_normed", il);
+ 
+-    Vcur = ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens);
+-    cb(Vcur, "mtp_Vcur", il);
++        ggml_tensor * gate = ggml_view_3d(ctx0, Qcur_full,
++                n_embd_head, n_head, n_rows,
++                ggml_element_size(Qcur_full) * n_embd_head * 2,
++                ggml_element_size(Qcur_full) * n_embd_head * 2 * n_head,
++                ggml_element_size(Qcur_full) * n_embd_head);
++        gate = ggml_cont_2d(ctx0, gate, n_embd_head * n_head, n_rows);
++        cb(gate, "mtp_gate", il);
+ 
+-    Qcur = ggml_rope_multi(ctx0, Qcur, inp_pos, nullptr,
+-            n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
+-            ext_factor, attn_factor, beta_fast, beta_slow);
+-    Kcur = ggml_rope_multi(ctx0, Kcur, inp_pos, nullptr,
+-            n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
+-            ext_factor, attn_factor, beta_fast, beta_slow);
++        Kcur = ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_rows);
++        Kcur = build_norm(Kcur, layer.attn_k_norm, nullptr, LLM_NORM_RMS, il);
++        cb(Kcur, "mtp_Kcur_normed", il);
+ 
+-    const float kq_scale = hparams.f_attention_scale == 0.0f
+-            ? 1.0f / sqrtf(float(n_embd_head)) : hparams.f_attention_scale;
++        Vcur = ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_rows);
++        cb(Vcur, "mtp_Vcur", il);
+ 
+-    cur = build_attn(inp_attn,
+-            nullptr, nullptr, nullptr,
+-            Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, kq_scale, il);
+-    cb(cur, "mtp_attn_pregate", il);
++        Qcur = ggml_rope_multi(ctx0, Qcur, pos, nullptr,
++                n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
++                ext_factor, attn_factor, beta_fast, beta_slow);
++        Kcur = ggml_rope_multi(ctx0, Kcur, pos, nullptr,
++                n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
++                ext_factor, attn_factor, beta_fast, beta_slow);
+ 
+-    cur = ggml_mul(ctx0, cur, ggml_sigmoid(ctx0, gate));
+-    cur = build_lora_mm(layer.wo, cur, layer.wo_s);
+-    cb(cur, "mtp_attn_out", il);
++        const float kq_scale = hparams.f_attention_scale == 0.0f
++                ? 1.0f / sqrtf(float(n_embd_head)) : hparams.f_attention_scale;
+ 
+-    cur = ggml_add(ctx0, cur, inpSA);
+-    cb(cur, "mtp_attn_residual", il);
++        cur = build_attn(attn,
++                nullptr, nullptr, nullptr,
++                Qcur, Kcur, Vcur, nullptr, nullptr, nullptr, kq_scale, il);
++        cb(cur, "mtp_attn_pregate", il);
+ 
+-    ggml_tensor * ffn_residual = cur;
+-    cur = build_norm(cur, layer.attn_post_norm, nullptr, LLM_NORM_RMS, il);
+-    cb(cur, "mtp_attn_post_norm", il);
++        cur = ggml_mul(ctx0, cur, ggml_sigmoid(ctx0, gate));
++        cur = build_lora_mm(layer.wo, cur, layer.wo_s);
++        cb(cur, "mtp_attn_out", il);
+ 
+-    cur = build_ffn(cur,
+-            layer.ffn_up,   nullptr, layer.ffn_up_s,
+-            layer.ffn_gate, nullptr, layer.ffn_gate_s,
+-            layer.ffn_down, nullptr, layer.ffn_down_s,
+-            nullptr,
+-            LLM_FFN_SILU, LLM_FFN_PAR, il);
+-    cb(cur, "mtp_ffn_out", il);
+-
+-    cur = ggml_add(ctx0, cur, ffn_residual);
+-    cb(cur, "mtp_post_ffn", il);
+-
+-    ggml_tensor * head_norm_w = layer.nextn.shared_head_norm
+-            ? layer.nextn.shared_head_norm
+-            : model.output_norm;
+-    GGML_ASSERT(head_norm_w && "QWEN35 MTP: missing both nextn.shared_head_norm and output_norm");
+-    cur = build_norm(cur, head_norm_w, nullptr, LLM_NORM_RMS, -1);
++        cur = ggml_add(ctx0, cur, inpSA);
++        cb(cur, "mtp_attn_residual", il);
+ 
+-    cb(cur, "h_nextn", -1);
+-    res->t_h_nextn = cur;
++        ggml_tensor * ffn_residual = cur;
++        cur = build_norm(cur, layer.attn_post_norm, nullptr, LLM_NORM_RMS, il);
++        cb(cur, "mtp_attn_post_norm", il);
+ 
+-    cur = ggml_get_rows(ctx0, cur, inp_out_ids);
+-    cb(cur, "mtp_shared_head_norm", -1);
++        cur = build_ffn(cur,
++                layer.ffn_up,   nullptr, layer.ffn_up_s,
++                layer.ffn_gate, nullptr, layer.ffn_gate_s,
++                layer.ffn_down, nullptr, layer.ffn_down_s,
++                nullptr,
++                LLM_FFN_SILU, LLM_FFN_PAR, il);
++        cb(cur, "mtp_ffn_out", il);
++
++        cur = ggml_add(ctx0, cur, ffn_residual);
++        cb(cur, "mtp_post_ffn", il);
++
++        ggml_tensor * head_norm_w = layer.nextn.shared_head_norm
++                ? layer.nextn.shared_head_norm
++                : model.output_norm;
++        GGML_ASSERT(head_norm_w && "QWEN35 MTP: missing both nextn.shared_head_norm and output_norm");
++        cur = build_norm(cur, head_norm_w, nullptr, LLM_NORM_RMS, -1);
++
++        cb(cur, "h_nextn", -1);
++        return cur;
++    };
+ 
+     ggml_tensor * head_w = layer.nextn.shared_head_head ? layer.nextn.shared_head_head : model.output;
+     ggml_tensor * head_s = layer.nextn.shared_head_head ? layer.nextn.shared_head_head_s : model.output_s;
+     GGML_ASSERT(head_w && "QWEN35 MTP: missing LM head (nextn.shared_head_head or model.output)");
+     // A reduced head has no matching LoRA rows.
+     GGML_ASSERT(!model.draft_output || !loras || loras->empty());
++
++    if (chain) {
++        GGML_ASSERT(model.draft_output && model.draft_token_embd && model.draft_vocab_map);
++        GGML_ASSERT(ggml_nelements(inp_attn->self_v_idxs) == n_tokens && "MTP chain needs flash attention (untransposed V)");
++
++        ggml_tensor * mask = inp_attn->self_kq_mask_cnv;
++        GGML_ASSERT(mask->ne[1] == n_tokens && mask->ne[2] == 1 && mask->ne[3] == 1);
++
++        const llama_seq_id seq_id  = samplers.begin()->first;
++        llama_sampler *    sampler = samplers.begin()->second;
++        const int32_t      k_top   = llama_sampler_chain_leading_top_k(sampler);
++        GGML_ASSERT(k_top > 0);
++
++        ggml_tensor * tok_embd_w = layer.nextn.embed_tokens ? layer.nextn.embed_tokens : model.tok_embd;
++        ggml_tensor * vocab_map  = ggml_reshape_2d(ctx0, model.draft_vocab_map, 1, model.draft_vocab_map->ne[0]);
++
++        const int64_t n_pp = hparams.n_pos_per_embd();
++
++        build_sampling_begin(n_chain);
++
++        ggml_tensor * sampled = nullptr; // I32, the token the previous step picked
++        ggml_tensor * h       = nullptr; // its h_nextn
++        ggml_tensor * h_all   = nullptr; // h_nextn of every step, one column each
++
++        for (int32_t s = 0; s < n_chain; ++s) {
++            ggml_tensor * e_in;
++            ggml_tensor * h_in;
++            if (s == 0) {
++                e_in = ggml_get_rows(ctx0, tok_embd_w, ggml_view_1d(ctx0, inp_tokens, 1, 0));
++                h_in = ggml_view_2d(ctx0, h_embd, h_embd->ne[0], 1, h_embd->nb[1], 0);
++            } else {
++                ggml_tensor * row = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, vocab_map, ggml_reshape_1d(ctx0, sampled, 1)), 1);
++                e_in = ggml_get_rows(ctx0, model.draft_token_embd, row);
++                h_in = h;
++            }
++            cb(e_in, "mtp_tok_embd", il);
++
++            // positions are laid out [n_pp][n_tokens], rope reads a single row's n_pp values contiguously
++            ggml_tensor * pos = n_pp == 1
++                ? ggml_view_1d(ctx0, inp_pos, 1, s*ggml_element_size(inp_pos))
++                : ggml_reshape_1d(ctx0, ggml_cont(ctx0, ggml_view_2d(ctx0, inp_pos, 1, n_pp,
++                        n_tokens*ggml_element_size(inp_pos), s*ggml_element_size(inp_pos))), n_pp);
++
++            llm_graph_input_attn_kv attn(hparams, cparams, inp_attn->mctx);
++            attn.self_k_rot       = inp_attn->self_k_rot;
++            attn.self_v_rot       = inp_attn->self_v_rot;
++            attn.self_k_idxs      = ggml_view_1d(ctx0, inp_attn->self_k_idxs, 1, s*inp_attn->self_k_idxs->nb[0]);
++            attn.self_v_idxs      = ggml_view_1d(ctx0, inp_attn->self_v_idxs, 1, s*inp_attn->self_v_idxs->nb[0]);
++            attn.self_kq_mask_cnv = ggml_view_4d(ctx0, mask, mask->ne[0], 1, 1, 1, mask->nb[1], mask->nb[2], mask->nb[3], s*mask->nb[1]);
++
++            h     = mtp_block(e_in, h_in, pos, &attn);
++            h_all = h_all ? ggml_concat(ctx0, h_all, h, 1) : h;
++
++            ggml_tensor * logits = build_lora_mm(model.draft_output, h, head_s);
++            cb(logits, "result_output", -1);
++
++            ggml_tensor * cand = build_sampling_cand(logits, k_top);
++            build_sampling_row(seq_id, sampler, logits, cand, 0, s, logits);
++
++            sampled = res->t_sampled[s];
++            GGML_ASSERT(sampled && "MTP chain: the sampler chain does not pick a token");
++        }
++
++        build_sampling_end();
++
++        res->t_h_nextn = h_all;
++        ggml_build_forward_expand(gf, h_all);
++        return;
++    }
++
++    ggml_tensor * cur = mtp_block(tok_embd, h_embd, inp_pos, inp_attn);
++
++    res->t_h_nextn = cur;
++
++    cur = ggml_get_rows(ctx0, cur, inp_out_ids);
++    cb(cur, "mtp_shared_head_norm", -1);
++
+     cur = build_lora_mm(model.draft_output ? model.draft_output : head_w, cur, head_s);
+     cb(cur, "result_output", -1);
+ 

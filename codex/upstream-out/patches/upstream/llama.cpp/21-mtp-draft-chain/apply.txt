@@ -1,0 +1,10 @@
+Base: 7049ff0cbeb1f5ead231de4522af6b75d8d773c0
+Prerequisite count: 18 (apply prerequisites/*.patch in lexical order first; exclude them from a submission).
+Root series replay tip: 485f25ca0e0bb583551487685401a67ea6455f7d
+Root parent: 60800db63bdd7250be95ca7a2bc172245a868b77
+Transport: local shallow base.bundle; mini-builder only, no network fetch.
+Mac: /Users/builder/qwen38-upstream-pack/20261008/21-mtp-draft-chain
+CPU recipe: GGML_CUDA=OFF, GGML_METAL=OFF, GGML_BLAS=OFF, GGML_NATIVE=OFF, GGML_CPU_ARM_ARCH=armv8.2-a+dotprod, GGML_CCACHE=ON; Clang, nice 19, -j4, model threads <=4, explicit 4096 contexts; RAM >=4 GiB and one model through validation/model_gate.py.
+M: fresh git am of prerequisites + root onto 7049ff0cb and Clang builds of test-llama-archs/test-sampling/test-alloc passed (see collector REPORT-upstream-pack.md; Mac committer dates give different commit IDs).
+Local base: 485f25ca0e0bb583551487685401a67ea6455f7d (root-series tree; local/*.patch is optional control/diagnostic code, not submission code).
+M: chain-capacity contract passed seven configurations. Real-model np1/np2 identity and original mutation controls pending behind the shared Mac model gate.

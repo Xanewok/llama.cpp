@@ -1,0 +1,628 @@
+From 4419b466248fc9e207fcd2c1050e60e2c28c90fa Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Wed, 30 Sep 2026 17:33:48 +0200
+Subject: [PATCH 16/18] llama : add reduced vocabulary for Qwen3.5 MTP drafts
+
+(cherry picked from commit faee46be93e3deea324904ce2efe0c60090e5906)
+---
+ common/arg.cpp                    | 23 +++++++++
+ common/common.cpp                 |  2 +
+ common/common.h                   |  2 +
+ common/speculative.cpp            |  4 ++
+ include/llama.h                   |  4 ++
+ src/llama-context.cpp             | 69 +++++++++++++++++++++----
+ src/llama-context.h               |  4 ++
+ src/llama-graph.cpp               |  3 ++
+ src/llama-model.cpp               | 85 ++++++++++++++++++++++++++++---
+ src/llama-model.h                 |  8 ++-
+ src/models/qwen35.cpp             |  4 +-
+ tests/test-sampling-prefilter.cpp | 84 ++++++++++++++++++++++++++++++
+ 12 files changed, 271 insertions(+), 21 deletions(-)
+
+diff --git a/common/arg.cpp b/common/arg.cpp
+index 14d82f695..bd7d57327 100644
+--- a/common/arg.cpp
++++ b/common/arg.cpp
+@@ -4219,6 +4219,29 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
+             params.speculative.draft.backend_sampling = value;
+         }
+     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_DRAFT_BACKEND_SAMPLING"));
++    add_opt(common_arg(
++        {"--spec-draft-vocab"}, "FILE",
++        "JSON array of token ids for a reduced Qwen3.5 MTP draft head (default: full vocabulary)",
++        [](common_params & params, const std::string & value) {
++            std::ifstream file(value);
++            if (!file) {
++                throw std::invalid_argument("cannot open draft vocabulary: " + value);
++            }
++            const auto ids = json::parse(std::string(std::istreambuf_iterator<char>(file), {}));
++            if (!ids.is_array() || ids.empty()) {
++                throw std::invalid_argument("draft vocabulary must be a nonempty JSON array");
++            }
++            std::set<llama_token> unique;
++            std::vector<llama_token> parsed;
++            for (const auto & id : ids) {
++                if (!id.is_number_integer() || id.get<double>() < 0 || id.get<double>() > INT32_MAX || !unique.insert(id.get<llama_token>()).second) {
++                    throw std::invalid_argument("draft vocabulary must contain unique nonnegative int32 token ids");
++                }
++                parsed.push_back(id.get<llama_token>());
++            }
++            params.speculative.draft.vocab_ids = std::move(parsed);
++        }
++    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+     add_opt(common_arg(
+         {"--spec-draft-sampling"}, "{greedy,probabilistic}",
+         string_format("how the draft is sampled: greedy takes its argmax, probabilistic samples it and has "
+diff --git a/common/common.cpp b/common/common.cpp
+index 671b0ce71..92530593f 100644
+--- a/common/common.cpp
++++ b/common/common.cpp
+@@ -1680,6 +1680,8 @@ struct llama_model_params common_model_params_to_llama(common_params & params) {
+     mparams.progress_callback           = params.load_progress_callback;
+     mparams.progress_callback_user_data = params.load_progress_callback_user_data;
+     mparams.no_alloc                    = params.no_alloc;
++    mparams.draft_vocab_ids             = params.speculative.draft.vocab_ids.data();
++    mparams.n_draft_vocab               = params.speculative.has_dft() ? 0 : params.speculative.draft.vocab_ids.size();
+     mparams.load_mtp                    = params.load_mtp || std::find(params.speculative.types.begin(), params.speculative.types.end(), COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != params.speculative.types.end();
+ 
+     return mparams;
+diff --git a/common/common.h b/common/common.h
+index 2f50d90c6..7b5ec1715 100644
+--- a/common/common.h
++++ b/common/common.h
+@@ -334,6 +334,8 @@ struct common_params_speculative_draft {
+ 
+     bool backend_sampling = true; // offload draft sampling to the backend (default: on)
+ 
++    std::vector<llama_token> vocab_ids;
++
+     bool probabilistic = false; // sample the draft and verify by rejection, instead of argmax and match
+ 
+     common_params_model mparams;
+diff --git a/common/speculative.cpp b/common/speculative.cpp
+index a7f095a12..f7ee3c0c9 100644
+--- a/common/speculative.cpp
++++ b/common/speculative.cpp
+@@ -2602,6 +2602,10 @@ common_speculative_init_result::common_speculative_init_result(
+ 
+     auto mparams = common_model_params_to_llama(params);
+     auto cparams = common_context_params_to_llama(params);
++    if (has_draft) {
++        mparams.draft_vocab_ids = params.speculative.draft.vocab_ids.data();
++        mparams.n_draft_vocab = params.speculative.draft.vocab_ids.size();
++    }
+ 
+     if (spec_mtp) {
+         cparams.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
+diff --git a/include/llama.h b/include/llama.h
+index 9bca8ee10..4ae2e2cc2 100644
+--- a/include/llama.h
++++ b/include/llama.h
+@@ -346,6 +346,10 @@ extern "C" {
+         // override key-value pairs of the model meta data
+         const struct llama_model_kv_override * kv_overrides;
+ 
++        // Optional MTP head rows, copied during model loading. Token embeddings and target logits keep the full vocabulary.
++        const llama_token * draft_vocab_ids;
++        size_t n_draft_vocab;
++
+         // Keep the booleans together to avoid misalignment during copy-by-value.
+         bool vocab_only;      // only load the vocabulary, no weights
+         bool check_tensors;   // validate model tensor data
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index a3747feff..22383f948 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -926,8 +926,15 @@ void llama_context::logits_deferred_fetch() {
+     GGML_ASSERT(logits.data && (logits_deferred.row0 + logits_deferred.n)*n_vocab <= (int64_t) logits.size);
+     auto * backend = ggml_backend_sched_get_tensor_backend(sched.get(), logits_deferred.t);
+     GGML_ASSERT(backend != nullptr);
+-    ggml_backend_tensor_get_async(backend, logits_deferred.t, logits.data + logits_deferred.row0*n_vocab,
+-            0, logits_deferred.n*n_vocab*sizeof(float));
++    if (has_draft_vocab()) {
++        const size_t n_draft = model.draft_vocab_ids.size();
++        ggml_backend_tensor_get_async(backend, logits_deferred.t, draft_logits.data + logits_deferred.row0*n_draft,
++                0, logits_deferred.n*n_draft*sizeof(float));
++        std::fill_n(draft_logits_pending.data() + logits_deferred.row0, logits_deferred.n, true);
++    } else {
++        ggml_backend_tensor_get_async(backend, logits_deferred.t, logits.data + logits_deferred.row0*n_vocab,
++                0, logits_deferred.n*n_vocab*sizeof(float));
++    }
+     synchronize();
+     logits_deferred = {};
+ }
+@@ -1305,6 +1312,29 @@ void llama_context::set_warmup(bool value) {
+     //sched_need_reserve = true;
+ }
+ 
++bool llama_context::has_draft_vocab() const {
++    return cparams.ctx_type == LLAMA_CONTEXT_TYPE_MTP && model.draft_output;
++}
++
++void llama_context::expand_draft_logits() {
++    if (!has_draft_vocab()) {
++        return;
++    }
++    const auto & ids = model.draft_vocab_ids;
++    for (uint32_t i = 0; i < n_outputs; ++i) {
++        if (!draft_logits_pending[i]) {
++            continue;
++        }
++        float * dst = logits.data + size_t(i) * model.vocab.n_tokens();
++        const float * row = draft_logits.data + size_t(i) * ids.size();
++        std::fill_n(dst, model.vocab.n_tokens(), -INFINITY);
++        for (size_t j = 0; j < ids.size(); ++j) {
++            dst[ids[j]] = row[j];
++        }
++        draft_logits_pending[i] = false;
++    }
++}
++
+ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
+     if (!sampler && sampling.samplers.count(seq_id) == 0) {
+         return true;
+@@ -1312,15 +1342,19 @@ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
+ 
+     LLAMA_LOG_DEBUG("%s: seq_id = %d, sampler = %p\n", __func__, (int) seq_id, (void *) sampler);
+ 
++    if (sampler && has_draft_vocab() && !sampling_init_vocab_ids()) {
++        return false;
++    }
++
+     if (sampler && model.split_mode() == LLAMA_SPLIT_MODE_TENSOR) {
+         // must be decided before backend_init: once initialized, the chain skips its backend prefix on the CPU
+         const char * reason = nullptr;
+         const int32_t k = llama_sampler_chain_leading_top_k(sampler);
+-        if (!model.logits_vocab_split()) {
++        if (!model.logits_vocab_split(has_draft_vocab())) {
+             reason = "logits split by vocab over output.weight (no replicated or tied LM head)";
+         } else if (k <= 0 || k > LLAMA_TP_SAMPLING_TOP_K_MAX) {
+             reason = "a sampler chain whose first active sampler is top-k with 1 <= k <= " LLAMA_TP_SAMPLING_TOP_K_MAX_STR;
+-        } else if (model.logits_vocab_shard_min() < k) {
++        } else if (model.logits_vocab_shard_min(has_draft_vocab()) < k) {
+             // each device takes the top k of its own vocab slice
+             reason = "every device's vocab slice (one plain segment) to hold at least top-k rows";
+         } else if (!sampling_init_vocab_ids()) {
+@@ -1379,8 +1413,8 @@ bool llama_context::sampling_init_vocab_ids() {
+         return true;
+     }
+ 
+-    const int64_t n_vocab = model.vocab.n_tokens();
+-    GGML_ASSERT(n_vocab <= (1 << 24) && "vocab ids are stored as F32");
++    const int64_t n_vocab = has_draft_vocab() ? model.draft_vocab_ids.size() : model.vocab.n_tokens();
++    GGML_ASSERT(model.vocab.n_tokens() <= (1 << 24) && "vocab ids are stored as F32");
+ 
+     ggml_init_params params = {
+         /*.mem_size   =*/ ggml_tensor_overhead(),
+@@ -1393,7 +1427,7 @@ bool llama_context::sampling_init_vocab_ids() {
+     }
+ 
+     ggml_tensor * t = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, n_vocab);
+-    ggml_set_name(t, LLAMA_TENSOR_NAME_OUTPUT_VOCAB_IDS);
++    ggml_set_name(t, has_draft_vocab() ? LLAMA_TENSOR_NAME_DRAFT_VOCAB_IDS : LLAMA_TENSOR_NAME_OUTPUT_VOCAB_IDS);
+ 
+     ggml_backend_buffer_ptr buf { ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), ggml_backend_dev_buffer_type(model.dev_output())) };
+     if (!buf) {
+@@ -1402,7 +1436,7 @@ bool llama_context::sampling_init_vocab_ids() {
+ 
+     std::vector<float> ids(n_vocab);
+     for (int64_t i = 0; i < n_vocab; ++i) {
+-        ids[i] = (float) i;
++        ids[i] = (float) (has_draft_vocab() ? model.draft_vocab_ids[i] : i);
+     }
+     ggml_backend_tensor_set(t, ids.data(), 0, ggml_nbytes(t));
+ 
+@@ -2025,7 +2059,14 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
+             if (n_outputs) {
+                 GGML_ASSERT( n_outputs_prev + n_outputs <= n_outputs_all);
+                 GGML_ASSERT((n_outputs_prev + n_outputs)*n_vocab <= (int64_t) logits.size);
+-                ggml_backend_tensor_get_async(backend_res, t_logits, logits_out, 0, n_outputs*n_vocab*sizeof(float));
++                if (has_draft_vocab()) {
++                    const size_t n_draft = model.draft_vocab_ids.size();
++                    ggml_backend_tensor_get_async(backend_res, t_logits, draft_logits.data + n_outputs_prev*n_draft,
++                            0, n_outputs*n_draft*sizeof(float));
++                    std::fill_n(draft_logits_pending.data() + n_outputs_prev, n_outputs, true);
++                } else {
++                    ggml_backend_tensor_get_async(backend_res, t_logits, logits_out, 0, n_outputs*n_vocab*sizeof(float));
++                }
+             }
+         } else if (logits.data && t_logits && n_outputs > 0) {
+             logits_deferred = { t_logits, n_outputs_prev, n_outputs };
+@@ -2221,6 +2262,7 @@ uint32_t llama_context::output_reserve(int32_t n_outputs) {
+     size_t embd_layer_inp_float_count = 0;
+ 
+     logits.size     = has_logits     ? n_vocab*n_outputs_max     : 0;
++    draft_logits.size = has_draft_vocab() ? model.draft_vocab_ids.size()*n_outputs_max : 0;
+     embd.size       = has_embd       ? n_embd_out*n_outputs_max  : 0;
+     embd_nextn.size = has_embd_nextn ? n_embd_out*n_outputs_max  : 0;
+ 
+@@ -2250,7 +2292,7 @@ uint32_t llama_context::output_reserve(int32_t n_outputs) {
+ 
+     const size_t prev_size = buf_output ? ggml_backend_buffer_get_size(buf_output.get()) : 0;
+     const size_t new_size  =
+-        (logits.size + embd.size + embd_nextn.size + embd_layer_inp_float_count + backend_float_count) * sizeof(float) +
++        (logits.size + draft_logits.size + embd.size + embd_nextn.size + embd_layer_inp_float_count + backend_float_count) * sizeof(float) +
+         (                                                                         backend_token_count) * sizeof(llama_token);
+ 
+     // alloc only when more than the current capacity is required
+@@ -2295,6 +2337,8 @@ uint32_t llama_context::output_reserve(int32_t n_outputs) {
+ 
+     logits = has_logits ? buffer_view<float>{output_base, logits.size} : buffer_view<float>{nullptr, 0};
+     offset += logits.size * sizeof(float);
++    draft_logits.data = has_draft_vocab() ? (float *) (base + offset) : nullptr;
++    offset += draft_logits.size * sizeof(float);
+ 
+     embd = has_embd ? buffer_view<float>{(float *) (base + offset), embd.size} : buffer_view<float>{nullptr, 0};
+     offset += embd.size * sizeof(float);
+@@ -2347,6 +2391,8 @@ uint32_t llama_context::output_reserve(int32_t n_outputs) {
+         sampling.candidates_count.clear();
+     }
+ 
++    draft_logits_pending.assign(has_draft_vocab() ? n_outputs_max : 0, false);
++
+     // set all ids as invalid (negative)
+     std::fill(output_ids.begin(), output_ids.end(), -1);
+ 
+@@ -2394,6 +2440,7 @@ void llama_context::output_reorder() {
+     if (!output_swaps.empty()) {
+         logits_deferred_fetch();
+     }
++    expand_draft_logits();
+     const uint64_t n_vocab     = model.vocab.n_tokens();
+     const uint64_t n_embd      = model.hparams.n_embd;
+     const uint64_t n_embd_out  = model.hparams.n_embd_out();
+@@ -2692,7 +2739,7 @@ llm_graph_params llama_context::graph_params(
+         /*.cb          =*/ graph_get_cb(),
+         /*.res         =*/ res,
+         /*.sampling_vocab_ids =*/ sampling.samplers.empty() ? nullptr : sampling.vocab_ids,
+-        /*.sampling_n_shards  =*/ sampling.samplers.empty() || !sampling.vocab_ids ? 0 : (uint32_t) model.get_split_state_ud.n_devices,
++        /*.sampling_n_shards  =*/ sampling.samplers.empty() || !sampling.vocab_ids || model.split_mode() != LLAMA_SPLIT_MODE_TENSOR ? 0 : (uint32_t) model.get_split_state_ud.n_devices,
+     };
+ }
+ 
+diff --git a/src/llama-context.h b/src/llama-context.h
+index bad9717f5..5d36127d4 100644
+--- a/src/llama-context.h
++++ b/src/llama-context.h
+@@ -233,6 +233,8 @@ private:
+     uint32_t output_reserve(int32_t n_outputs);
+ 
+     void output_reorder();
++    void expand_draft_logits();
++    bool has_draft_vocab() const;
+ 
+     // map the output row index `i` to batch index
+     int64_t output_resolve_row(int32_t i) const;
+@@ -302,6 +304,8 @@ private:
+ 
+     // decode output (2-dimensional array: [n_outputs][n_vocab])
+     buffer_view<float> logits = {nullptr, 0};
++    buffer_view<float> draft_logits = {nullptr, 0};
++    std::vector<uint8_t> draft_logits_pending;
+ 
+     // embeddings output (2-dimensional array: [n_outputs][n_embd])
+     // populated only when pooling_type == LLAMA_POOLING_TYPE_NONE
+diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
+index be5076abc..95ef4b763 100644
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -3987,6 +3987,9 @@ void llm_graph_context::build_sampling() const {
+                 cand_ids   = ggml_cast(ctx0, ggml_view_1d(ctx0, cand, n_cand, rows[i] * cand->nb[2] + cand->nb[1]), GGML_TYPE_I32);
+             } else {
+                 logits_seq = ggml_view_1d(ctx0, logits_t, logits_t->ne[0], rows[i] * logits_t->nb[1]);
++                if (sampling_vocab_ids) {
++                    cand_ids = ggml_cast(ctx0, sampling_vocab_ids, GGML_TYPE_I32);
++                }
+             }
+             ggml_format_name(logits_seq, "logits_seq_%d_%u", seq_id, i);
+ 
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index cd42161b5..389eb067d 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -590,6 +590,12 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
+         }
+ 
+         // output
++        if (tensor_name == LLAMA_TENSOR_NAME_DRAFT_OUTPUT) {
++            return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_1);
++        }
++        if (tensor_name == LLAMA_TENSOR_NAME_DRAFT_VOCAB_IDS) {
++            return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_0);
++        }
+         if (std::regex_match(tensor_name, pattern_output_weight)) {
+             if (is_dsv4) {
+                 return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_MIRRORED);
+@@ -1290,6 +1296,12 @@ llama_model::llama_model(const llama_model_params & params) : params(params), pi
+         pimpl->tensor_split_owned.assign(params.tensor_split, params.tensor_split + llama_max_devices());
+         this->params.tensor_split = pimpl->tensor_split_owned.data();
+     }
++    if (params.n_draft_vocab) {
++        if (!params.draft_vocab_ids) {
++            throw std::invalid_argument("missing draft vocabulary ids");
++        }
++        draft_vocab_ids.assign(params.draft_vocab_ids, params.draft_vocab_ids + params.n_draft_vocab);
++    }
+     pimpl->has_tensor_overrides = params.tensor_buft_overrides && params.tensor_buft_overrides[0].pattern;
+ }
+ 
+@@ -1507,6 +1519,20 @@ void llama_model_base::load_vocab(llama_model_loader & ml) {
+ }
+ 
+ bool llama_model_base::load_tensors(llama_model_loader & ml) {
++    if (!draft_vocab_ids.empty()) {
++        if (arch != LLM_ARCH_QWEN35 || hparams.n_layer_nextn != 1 || !params.load_mtp) {
++            throw std::invalid_argument("reduced draft vocabulary requires a Qwen3.5 model with one loaded MTP layer");
++        }
++        if (ml.files.empty()) {
++            throw std::invalid_argument("reduced draft vocabulary requires GGUF weight data");
++        }
++        std::unordered_set<llama_token> unique;
++        for (llama_token id : draft_vocab_ids) {
++            if (id < 0 || (uint32_t) id >= vocab.n_tokens() || !unique.insert(id).second) {
++                throw std::invalid_argument("invalid or duplicate draft vocabulary id");
++            }
++        }
++    }
+     const auto & split_mode   = params.split_mode;
+     const bool use_mlock      = params.load_mode == LLAMA_LOAD_MODE_MLOCK || params.load_mode == LLAMA_LOAD_MODE_MMAP_MLOCK;
+     const auto & tensor_split = params.tensor_split;
+@@ -1933,6 +1959,48 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
+         LLAMA_LOG_INFO("%s: offloaded %d/%d layers to GPU\n", __func__, std::min(n_gpu_layers, max_offloadable_layers), max_backend_supported_layers);
+     }
+ 
++    if (!draft_vocab_ids.empty()) {
++        const auto & layer = layers.back();
++        ggml_tensor * head = layer.nextn.shared_head_head ? layer.nextn.shared_head_head : output;
++        if (!head) {
++            throw std::invalid_argument("missing MTP output head");
++        }
++        ggml_context_ptr ctx { ggml_init({ggml_tensor_overhead(), nullptr, true}) };
++        if (!ctx) {
++            throw std::runtime_error("failed to allocate draft head context");
++        }
++        draft_output = ggml_new_tensor_2d(ctx.get(), head->type, head->ne[0], draft_vocab_ids.size());
++        ggml_set_name(draft_output, LLAMA_TENSOR_NAME_DRAFT_OUTPUT);
++        auto * buft = ggml_backend_dev_buffer_type(dev_output());
++        ggml_backend_buffer_ptr buf { ml.no_alloc ? ggml_backend_buft_alloc_buffer(buft, 0) :
++                ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), buft) };
++        if (!buf) {
++            throw std::runtime_error("failed to allocate reduced draft head");
++        }
++        if (ml.no_alloc) {
++            draft_output->buffer = buf.get();
++        } else {
++            // Read GGUF rows before backend repacking; preserve the quantized blocks exactly.
++            const auto & weight = ml.require_weight(head->name);
++            const size_t row_bytes = ggml_row_size(head->type, head->ne[0]);
++            std::vector<uint8_t> rows(ggml_nbytes(draft_output));
++            for (size_t i = 0; i < draft_vocab_ids.size(); ++i) {
++                void * dst = rows.data() + i * row_bytes;
++                const void * src = ml.load_data_range(weight, size_t(draft_vocab_ids[i]) * row_bytes, row_bytes, dst);
++                if (src != dst) {
++                    std::memcpy(dst, src, row_bytes);
++                }
++            }
++            ggml_backend_tensor_set(draft_output, rows.data(), 0, rows.size());
++        }
++        ggml_backend_buffer_set_usage(buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
++        std::vector<ggml_backend_buffer_ptr> bufs;
++        bufs.push_back(std::move(buf));
++        pimpl->ctxs_bufs.emplace_back(std::move(ctx), std::move(bufs));
++        LLAMA_LOG_INFO("%s: reduced draft head: %zu tokens, %zu bytes (%s)\n", __func__, draft_vocab_ids.size(),
++                ggml_nbytes(draft_output), ggml_type_name(draft_output->type));
++    }
++
+     // print memory requirements per buffer type
+     for (auto & [_, bufs] : pimpl->ctxs_bufs) {
+         for (auto & buf: bufs) {
+@@ -2021,29 +2089,30 @@ llama_split_mode llama_model::split_mode() const {
+     return params.split_mode;
+ }
+ 
+-bool llama_model::logits_vocab_split() const {
+-    if (params.split_mode != LLAMA_SPLIT_MODE_TENSOR || output == nullptr) {
++bool llama_model::logits_vocab_split(bool draft) const {
++    const ggml_tensor * head = draft && draft_output ? draft_output : output;
++    if (params.split_mode != LLAMA_SPLIT_MODE_TENSOR || head == nullptr) {
+         return false;
+     }
+     auto ud = get_split_state_ud; // the callback takes a non-const pointer
+-    if (llama_meta_device_get_split_state(output, &ud).axis != GGML_BACKEND_SPLIT_AXIS_1) {
++    if (llama_meta_device_get_split_state(head, &ud).axis != GGML_BACKEND_SPLIT_AXIS_1) {
+         return false;
+     }
+     // an MTP head of its own is replicated, and its context could not be told apart from the target's here
+     for (const auto & layer : layers) {
+-        if (layer.nextn.shared_head_head != nullptr) {
++        if (!(draft && draft_output) && layer.nextn.shared_head_head != nullptr) {
+             return false;
+         }
+     }
+     return true;
+ }
+ 
+-int64_t llama_model::logits_vocab_shard_min() const {
+-    if (!logits_vocab_split()) {
++int64_t llama_model::logits_vocab_shard_min(bool draft) const {
++    if (!logits_vocab_split(draft)) {
+         return 0;
+     }
+     auto ud = get_split_state_ud;
+-    const ggml_backend_meta_split_state ss = llama_meta_device_get_split_state(output, &ud);
++    const ggml_backend_meta_split_state ss = llama_meta_device_get_split_state(draft && draft_output ? draft_output : output, &ud);
+     if (ss.n_segments != 1 || ss.nr[0] != 1) {
+         return 0;
+     }
+@@ -2975,6 +3044,8 @@ llama_model_params llama_model_default_params() {
+         /*.progress_callback           =*/ nullptr,
+         /*.progress_callback_user_data =*/ nullptr,
+         /*.kv_overrides                =*/ nullptr,
++        /*.draft_vocab_ids             =*/ nullptr,
++        /*.n_draft_vocab               =*/ 0,
+         /*.vocab_only                  =*/ false,
+         /*.check_tensors               =*/ false,
+         /*.use_extra_bufts             =*/ true,
+diff --git a/src/llama-model.h b/src/llama-model.h
+index 7f4d28a74..2526f7f59 100644
+--- a/src/llama-model.h
++++ b/src/llama-model.h
+@@ -622,6 +622,8 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
+ 
+ // vocab ids 0..n_vocab-1 as F32, split across devices like the logits of output.weight
+ #define LLAMA_TENSOR_NAME_OUTPUT_VOCAB_IDS "output_vocab_ids"
++#define LLAMA_TENSOR_NAME_DRAFT_OUTPUT "draft_output.weight"
++#define LLAMA_TENSOR_NAME_DRAFT_VOCAB_IDS "draft_output_vocab_ids"
+ 
+ struct llama_prec_policy {
+     // the key is the weight tensor `res->src[0]`, stores the recommended accumulation type of the op (unused for now)
+@@ -661,6 +663,8 @@ struct llama_model {
+     struct ggml_tensor * output_res_score = nullptr; // kimi-k3: final cross-layer residual mix
+     struct ggml_tensor * output_norm_b   = nullptr;
+     struct ggml_tensor * output          = nullptr;
++    struct ggml_tensor * draft_output    = nullptr;
++    std::vector<llama_token> draft_vocab_ids;
+     struct ggml_tensor * output_b        = nullptr;
+     struct ggml_tensor * output_norm_enc = nullptr;
+ 
+@@ -771,9 +775,9 @@ struct llama_model {
+     llama_split_mode split_mode() const;
+ 
+     // tensor split only: every LM head is output.weight split by vocab, so all logits are vocab-split
+-    bool logits_vocab_split() const;
++    bool logits_vocab_split(bool draft = false) const;
+     // the fewest vocab rows of the logits on one device when vocab-split in one plain segment, else 0
+-    int64_t logits_vocab_shard_min() const;
++    int64_t logits_vocab_shard_min(bool draft = false) const;
+ 
+     std::map<ggml_backend_buffer_type_t, size_t> memory_breakdown() const;
+ 
+diff --git a/src/models/qwen35.cpp b/src/models/qwen35.cpp
+index ab98744a5..d86e5ef3d 100644
+--- a/src/models/qwen35.cpp
++++ b/src/models/qwen35.cpp
+@@ -651,7 +651,9 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
+     ggml_tensor * head_w = layer.nextn.shared_head_head ? layer.nextn.shared_head_head : model.output;
+     ggml_tensor * head_s = layer.nextn.shared_head_head ? layer.nextn.shared_head_head_s : model.output_s;
+     GGML_ASSERT(head_w && "QWEN35 MTP: missing LM head (nextn.shared_head_head or model.output)");
+-    cur = build_lora_mm(head_w, cur, head_s);
++    // A reduced head has no matching LoRA rows.
++    GGML_ASSERT(!model.draft_output || !loras || loras->empty());
++    cur = build_lora_mm(model.draft_output ? model.draft_output : head_w, cur, head_s);
+     cb(cur, "result_output", -1);
+ 
+     res->t_logits = cur;
+diff --git a/tests/test-sampling-prefilter.cpp b/tests/test-sampling-prefilter.cpp
+index d0378246f..9864b7485 100644
+--- a/tests/test-sampling-prefilter.cpp
++++ b/tests/test-sampling-prefilter.cpp
+@@ -328,18 +328,85 @@ static const char * TEXT_PROSE   = "I will inspect the tree.\n</think>\n\nLet me
+ static const char * TEXT_FNAME   = "Checking.\n</think>\n\n<tool_call>\n<function=";
+ static const char * TEXT_PVALUE  = "Checking.\n</think>\n\n<tool_call>\n<function=exec_command>\n<parameter=cmd>\nls -la";
+ 
++static std::string test_draft_vocab_rejection(env & E) {
++    const llama_token a = 17, b = 40037, c = 200001;
++    GGML_ASSERT(c < E.n_vocab);
++    common_params_sampling params;
++    params.top_k = 20;
++    params.top_p = 0.95f;
++    params.min_p = 0.05f;
++    params.temp = 1.0f;
++    params.no_perf = true;
++    common_sampler_ptr base(common_sampler_init(E.model, params));
++    std::vector<llama_token_data> subset = {{a, std::log(0.8f), 0}, {b, std::log(0.2f), 0}};
++    const auto q = chain_dist(common_sampler_get(base.get()), subset);
++    double sum = 0;
++    for (const auto & e : q) {
++        CHECK(e.id == a || e.id == b, "draft escaped subset");
++        sum += e.p;
++    }
++    CHECK(std::fabs(sum - 1.0) < 1e-6, "draft q is not normalized: %.9f", sum);
++    std::vector<float> row(E.n_vocab, -INFINITY);
++    row[a] = std::log(0.2f);
++    row[b] = std::log(0.3f);
++    row[c] = std::log(0.5f);
++    E.set_row(0, row);
++    E.set_row(1, row);
++    const std::map<llama_token, double> want = {{a, 0.2}, {b, 0.3}, {c, 0.5}};
++    std::map<llama_token, int> observed, broken;
++    std::mt19937 proposal_rng(91);
++    std::vector<double> weights;
++    for (const auto & e : q) {
++        weights.push_back(e.p);
++    }
++    std::discrete_distribution<size_t> draw(weights.begin(), weights.end());
++    std::ostringstream seeds;
++    const int n = 20000;
++    for (int i = 0; i < n; ++i) {
++        const llama_tokens draft = {q[draw(proposal_rng)].id};
++        for (bool bad : {false, true}) {
++            params.seed = 1000 + i;
++            common_sampler_ptr target(common_sampler_init(E.model, params));
++            auto recorded = q;
++            if (bad) {
++                // The proposal is normalized on the subset; recording full-vocab mass breaks verification.
++                for (auto & e : recorded) {
++                    e.p *= 0.1f;
++                }
++            }
++            const auto result = common_sampler_sample_and_accept_n_rejection(target.get(), E.ctx, {0, 1}, draft, {recorded});
++            (bad ? broken : observed)[result[0]]++;
++            if (!bad && i < 300) {
++                for (llama_token id : result) {
++                    seeds << id << ' ';
++                }
++                seeds << '|';
++            }
++        }
++    }
++    const double good_p = chi2_p(observed, want, n);
++    const double bad_p = chi2_p(broken, want, n);
++    printf("M: subset q sum=%.9f; verify chi2 p=%.6g; negative-control p=%.6g, %d draws\n", sum, good_p, bad_p, n);
++    CHECK(good_p > 1e-4, "subset verify law differs from target");
++    CHECK(bad_p < 1e-6, "wrong recorded q escaped the negative control");
++    return seeds.str();
++}
++
+ int main(int argc, char ** argv) {
+     if (argc < 2) {
+         fprintf(stderr, "usage: %s <model.gguf> [--write F | --check F] [n_draws]\n", argv[0]);
+         return 1;
+     }
+     std::string write_path, check_path;
++    bool draft_vocab_only = false;
+     int n_draws = 4000;
+     for (int i = 2; i < argc; ++i) {
+         if (!strcmp(argv[i], "--write") && i + 1 < argc) {
+             write_path = argv[++i];
+         } else if (!strcmp(argv[i], "--check") && i + 1 < argc) {
+             check_path = argv[++i];
++        } else if (!strcmp(argv[i], "--draft-vocab-only")) {
++            draft_vocab_only = true;
+         } else {
+             n_draws = atoi(argv[i]);
+         }
+@@ -386,6 +453,23 @@ int main(int argc, char ** argv) {
+         llama_synchronize(E.ctx);
+     }
+ 
++    if (draft_vocab_only) {
++        const std::string seeds = test_draft_vocab_rejection(E);
++        if (!write_path.empty()) {
++            std::ofstream(write_path) << seeds;
++        }
++        if (!check_path.empty()) {
++            std::ifstream ref(check_path);
++            std::ostringstream contents;
++            contents << ref.rdbuf();
++            CHECK(ref && contents.str() == seeds, "subset verify seed identity failed");
++        }
++        llama_free(E.ctx);
++        llama_model_free(E.model);
++        llama_backend_free();
++        return n_fail ? 1 : 0;
++    }
++
+     auto tok1 = [&](const char * s) {
+         const auto ids = common_tokenize(E.vocab, s, false, true);
+         GGML_ASSERT(ids.size() == 1);

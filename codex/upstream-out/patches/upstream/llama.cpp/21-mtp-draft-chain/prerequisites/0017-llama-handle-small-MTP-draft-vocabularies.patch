@@ -1,0 +1,48 @@
+From 326ff001e063be48fdd2b3e8e74a288ad93f484e Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Wed, 30 Sep 2026 18:02:46 +0200
+Subject: [PATCH 17/18] llama : handle small MTP draft vocabularies
+
+(cherry picked from commit b8668a92e5188c8294e4e133f4426a3506fac50c)
+---
+ src/llama-context.cpp | 7 +++++++
+ src/llama-model.cpp   | 8 ++++++++
+ 2 files changed, 15 insertions(+)
+
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 22383f948..e8a97c966 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -1342,6 +1342,13 @@ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
+ 
+     LLAMA_LOG_DEBUG("%s: seq_id = %d, sampler = %p\n", __func__, (int) seq_id, (void *) sampler);
+ 
++    if (sampler && has_draft_vocab() && llama_sampler_chain_leading_top_k(sampler) > (int64_t) model.draft_vocab_ids.size()) {
++        LLAMA_LOG_WARN("%s: reduced draft vocabulary is smaller than top-k; using CPU\n", __func__);
++        sampling.samplers.erase(seq_id);
++        sched_need_reserve = true;
++        return false;
++    }
++
+     if (sampler && has_draft_vocab() && !sampling_init_vocab_ids()) {
+         return false;
+     }
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index 389eb067d..552b9d973 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -1971,6 +1971,14 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
+         }
+         draft_output = ggml_new_tensor_2d(ctx.get(), head->type, head->ne[0], draft_vocab_ids.size());
+         ggml_set_name(draft_output, LLAMA_TENSOR_NAME_DRAFT_OUTPUT);
++        if (params.split_mode == LLAMA_SPLIT_MODE_TENSOR) {
++            const auto ss = llama_meta_device_get_split_state(draft_output, &get_split_state_ud);
++            for (size_t j = 0; j < get_split_state_ud.n_devices; ++j) {
++                if (ss.ne[j] == 0) {
++                    throw std::invalid_argument("reduced draft vocabulary leaves an empty tensor-parallel shard");
++                }
++            }
++        }
+         auto * buft = ggml_backend_dev_buffer_type(dev_output());
+         ggml_backend_buffer_ptr buf { ml.no_alloc ? ggml_backend_buft_alloc_buffer(buft, 0) :
+                 ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), buft) };
