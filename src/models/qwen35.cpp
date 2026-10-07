@@ -916,8 +916,10 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
                     h_in = ggml_view_2d(ctx0, h_embd, h_embd->ne[0], n_seq, h_embd->nb[1], 0);
                 }
             } else {
+                // negative control of the multi-sequence chain identity test: feed each sequence its neighbour's token
+                static const int32_t swap = std::getenv("LLAMA_MTP_CHAIN_DEBUG_SWAP_SEQ") ? 1 : 0;
                 for (int32_t j = 0; j < n_seq; ++j) {
-                    ggml_tensor * sampled = res->t_sampled[cl.row(j, s - 1)];
+                    ggml_tensor * sampled = res->t_sampled[cl.row((j + swap) % n_seq, s - 1)];
                     ggml_tensor * row = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, vocab_map, ggml_reshape_1d(ctx0, sampled, 1)), 1);
                     ggml_tensor * e_j = ggml_get_rows(ctx0, model.draft_token_embd, row);
                     e_in = e_in ? ggml_concat(ctx0, e_in, e_j, 1) : e_j;
