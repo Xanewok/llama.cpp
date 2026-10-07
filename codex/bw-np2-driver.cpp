@@ -225,7 +225,8 @@ int main(int argc, char ** argv) {
             }
             json token_rows = json::array();
             for (int slot = 0; slot < np; ++slot) {
-                require(tokens[slot].size() == (size_t) (slot == 1 && std::getenv("NP2_MIXED") ? 2 : std::atoi(argv[6]) + 16 * slot), "short completion");
+                // NP2_ALLOW_SHORT: an end of generation is a result like any other; the arms' token lists are compared
+                require(std::getenv("NP2_ALLOW_SHORT") || tokens[slot].size() == (size_t) (slot == 1 && std::getenv("NP2_MIXED") ? 2 : std::atoi(argv[6]) + 16 * slot), "short completion");
                 json row = json::array();
                 for (llama_token token : tokens[slot]) {
                     row.push_back(token);
