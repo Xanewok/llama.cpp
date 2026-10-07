@@ -2,9 +2,9 @@
 # Usage: bw-mac.sh TREE PAYLOAD [OUT_NAME]. PAYLOAD is a committed, tree-relative Bash script taking OUT as its only argument.
 # Payloads honor BW_CPU_ONLY=1, BW_MODEL, BW_GATE/BW_BUILDGATE (nice -n 19), BW_JOBS=4, BW_CCACHE=ON and CMAKE_GENERATOR=Ninja.
 # BW_CPU_EXTRA is a whitespace-separated cmake argument list: native/i8mm, Metal and BLAS off on the Mac; PATH includes ~/qwen38-tools/bin.
-# Linux payload defaults stay unchanged. Model runs use <=4 threads, explicit small contexts, and wait for >=10 GiB free and no other model.
+# Linux payload defaults stay unchanged. Model runs use <=4 threads, explicit small contexts, and wait for >=4 GiB free and no other model.
 # Bundles contain the exact HEAD snapshot, with history cut at HEAD; payloads cannot assume older revisions are present.
-# Copies OUT inside TREE/build-bw-mac-results/<name>-mac-a<N> (BW_MAC_OUTPUT_BASE overrides); payload rc is preserved. Runner/setup/transport failures return 125.
+# Copies OUT to ~/repos/qwen38-eval-worktrees/work/build-window-1007/<name>-mac-a<N> (BW_MAC_OUTPUT_BASE overrides); payload rc is preserved. Runner/setup/transport failures return 125.
 set -euo pipefail
 export CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1
 trap 'exit 125' ERR
@@ -80,7 +80,7 @@ if [[ $previous =~ ^[0-9a-f]{40}$ && $previous != "$sha" ]] && git -C "$tree" ca
 fi
 nice -n 19 git -C "$scratch/export.git" -c pack.threads=1 bundle create "$scratch/source.bundle" refs/heads/source "${exclude[@]}"
 [[ $(git -C "$tree" rev-parse HEAD) == "$sha" && -z $(git -C "$tree" status --porcelain --untracked-files=no) ]] || exit 125
-output_base=${BW_MAC_OUTPUT_BASE:-$tree/build-bw-mac-results}
+output_base=${BW_MAC_OUTPUT_BASE:-$HOME/repos/qwen38-eval-worktrees/work/build-window-1007}
 mkdir -p "$output_base"
 n=1
 while ! mkdir "$output_base/$name-mac-a$n" 2>/dev/null; do
