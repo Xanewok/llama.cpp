@@ -3076,6 +3076,10 @@ static int ggml_cuda_try_gdn_cache_fusion(
     const int64_t       H         = src_v->ne[1];
     const int64_t       n_tokens  = src_v->ne[2];
     const int64_t       n_seqs    = src_v->ne[3];
+    // Indexed sequences can read rows that another sequence overwrites.
+    if (gdn->src[6] && n_seqs > 1) {
+        return 0;
+    }
     const int64_t       D         = S_v * S_v * H;
     const int64_t       K         = ggml_get_op_params_i32(gdn, 0); // snapshot slot count
     const int64_t       n_written = std::min<int64_t>(n_tokens, K); // newest n_written slots are written
