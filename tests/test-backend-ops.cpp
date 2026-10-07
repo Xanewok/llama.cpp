@@ -12222,6 +12222,13 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 4, 128, 256, 1));  // 4h PP-256
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 4, 128, 512, 1));  // 4h PP-512
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 4, 128, 1024, 1)); // 4h PP-1024
+
+    // MTP verify of a 48-head model split over two devices: one block per sequence (gathered state) vs one per head slice (indexed)
+    for (int64_t n_seqs : {1, 2}) {
+        for (bool indexed : {false, true}) {
+            test_cases.emplace_back(new test_gated_delta_net_cache_fusion(GGML_TYPE_F32, 24, 128, 6, n_seqs, 6, indexed));
+        }
+    }
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 128, 64, 1, 1, false, true)); // KDA PP-64
 
     // lightning_indexer
