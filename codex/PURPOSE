@@ -1,6 +1,6 @@
-purpose: stack7 = stack6 + gated getter + host trims v2 + draft chain M1 + trace writer + NH1 (Meta fix) + GDN out-proj 2D; one window, one A/B
-base: ac7465885dc9f13de396ccd91b4be5eaffde3730
+purpose: Mac mini port of bw-stack7 CPU stages (spike)
+base: d98212aefb74dd518b6c744560a745a8e45586e8
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack7
-created: 2026-10-07T14:51:17+02:00
+branch: topic/stack7-mac
+created: 2026-10-07T15:48:57+02:00
 creator: xanewok

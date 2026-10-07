@@ -5,8 +5,8 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 OUT=${1:?output}
 mkdir -p "$OUT"
-CPUGATE=$HOME/repos/qwen38-eval-worktrees/bin/cpugate
-MODEL=/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf
+CPUGATE=${S7_GATE:-$HOME/repos/qwen38-eval-worktrees/bin/cpugate}
+MODEL=${S7_MODEL:-/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf}
 for meta in 0 1; do
     for chain in 0 1; do
         env LLAMA_MTP_CHAIN="$chain" LLAMA_MTP_FOLD_C=1 GGML_SCHED_INPUT_STAGING=1 HOST_KV_Q8=1 \

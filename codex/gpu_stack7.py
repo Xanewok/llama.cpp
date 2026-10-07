@@ -7,7 +7,7 @@ import re
 import signal
 import sys
 
-EVAL = Path('/home/xanewok/repos/qwen38-eval')
+EVAL = Path(os.environ.get('S7_EVAL', '/home/xanewok/repos/qwen38-eval'))
 FIXTURES = EVAL / 'orchestration/gpuq/fixtures'
 REAL = EVAL / 'results/2026-10-05-stack6-depth-j5q/full-a1/1-s6'
 REAL_NP2 = EVAL / 'results/2026-10-07-gdn-getter-gate-np2-busy-j5q/canary-a1/0-up'

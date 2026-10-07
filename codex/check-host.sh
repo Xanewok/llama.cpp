@@ -5,8 +5,8 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 OUT=${1:?output}
 mkdir -p "$OUT"
-CPUGATE=$HOME/repos/qwen38-eval-worktrees/bin/cpugate
-MODEL=/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf
+CPUGATE=${S7_GATE:-$HOME/repos/qwen38-eval-worktrees/bin/cpugate}
+MODEL=${S7_MODEL:-/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf}
 VARIANTS=(
     'ref:LLAMA_HOST_TRIMS_SEQRM=0 LLAMA_HOST_TRIMS_BULKH=0'
     'ref2:LLAMA_HOST_TRIMS_SEQRM=0 LLAMA_HOST_TRIMS_BULKH=0'
@@ -23,7 +23,7 @@ for meta in 0 1; do
         read -r -a assigns <<< "${spec#*:}"
         rc=0
         env -u LLAMA_HOST_TRIMS_SEQRM -u LLAMA_HOST_TRIMS_BULKH -u LLAMA_HOST_TRIMS_VERIFY -u LLAMA_HOST_TRIMS_MUTANT \
-            "${assigns[@]}" LD_LIBRARY_PATH="$ROOT/build-cpu/bin" GGML_SCHED_INPUT_STAGING=1 HOST_KV_Q8=1 \
+            ${assigns[@]+"${assigns[@]}"} LD_LIBRARY_PATH="$ROOT/build-cpu/bin" GGML_SCHED_INPUT_STAGING=1 HOST_KV_Q8=1 \
             "$CPUGATE" build-cpu/bin/bw-np2-driver "$MODEL" "$OUT/$meta-$name.json" "$meta" 2 1729 64 \
             > "$OUT/$meta-$name.log" 2>&1 || rc=$?
         if [[ $rc != 0 ]]; then

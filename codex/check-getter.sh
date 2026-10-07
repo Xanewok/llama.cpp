@@ -5,10 +5,11 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 OUT=${1:?output}
 mkdir -p "$OUT"
-W=$HOME/repos/qwen38-eval-worktrees
+W=${S7_W:-$HOME/repos/qwen38-eval-worktrees}
 BUILDGATE=$ROOT/codex/build.sh
-CPUGATE=$W/bin/cpugate
-MODEL=/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf
+CPUGATE=${S7_GATE:-$W/bin/cpugate}
+MODEL=${S7_MODEL:-/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf}
+JOBS=${S7_JOBS:-4}
 GATE_SRC=src/models/delta-net-base.cpp
 SHA=$(git rev-parse HEAD)
 log() { echo "getter: $*"; }
@@ -16,11 +17,17 @@ die() { local rc=$1; shift; log "$*"; exit "$rc"; }
 restore() { git restore --source=HEAD -- "$GATE_SRC"; }
 trap restore EXIT
 TEST=build-cpu/bin/test-recurrent-state-rollback
-# run_test NAME ARGS...: log in $OUT/NAME.log, rc in $RC; PRELOAD=lib.so preloads a shim into the test only
+SHIM_EXT=so; [[ $(uname) != Darwin ]] || SHIM_EXT=dylib
+# run_test NAME ARGS...: log in $OUT/NAME.log, rc in $RC; PRELOAD=lib preloads a shim into the test only (flat namespace on Darwin)
 run_test() {
     local name=$1; shift
     RC=0
-    "$CPUGATE" env LD_PRELOAD="${PRELOAD:-}" LD_LIBRARY_PATH="$ROOT/build-cpu/bin" "$TEST" "$@" -m "$MODEL" -c 4096 -t 8 > "$OUT/$name.log" 2>&1 || RC=$?
+    local PRELOAD_ENV=(LD_PRELOAD="${PRELOAD:-}")
+    if [[ $(uname) == Darwin ]]; then
+        PRELOAD_ENV=()
+        [[ -z ${PRELOAD:-} ]] || PRELOAD_ENV=(DYLD_INSERT_LIBRARIES="$PRELOAD" DYLD_FORCE_FLAT_NAMESPACE=1)
+    fi
+    "$CPUGATE" env ${PRELOAD_ENV[@]+"${PRELOAD_ENV[@]}"} LD_LIBRARY_PATH="$ROOT/build-cpu/bin" "$TEST" "$@" -m "$MODEL" -c 4096 -t 8 > "$OUT/$name.log" 2>&1 || RC=$?
 }
 ENGAGED='test_getter_gate: gdn nodes, one sequence: [1-9][0-9]* by id, 0 gathered; several: 0 by id, [1-9][0-9]* gathered'
 
@@ -43,14 +50,14 @@ expect_fail() {
     fi
 }
 
-PRELOAD="$ROOT/build-cpu/bin/row0-mutant.so" run_test mut-row0 --getter-gate
+PRELOAD="$ROOT/build-cpu/bin/row0-mutant.$SHIM_EXT" run_test mut-row0 --getter-gate
 grep "ROW0_MUTANT active" "$OUT/mut-row0.log" >/dev/null || die 22 "row0 shim was not loaded (see $OUT/mut-row0.log)"
 expect_fail mut-row0 "logits differ from the single-sequence context"
 
 source_mutant() { # NAME SED_REPLACEMENT REASON
-    sed -i "s/n_seqs == 1) {/$2) {/" "$GATE_SRC"
+    sed "s/n_seqs == 1) {/$2) {/" "$GATE_SRC" > "$GATE_SRC.s7tmp" && cat "$GATE_SRC.s7tmp" > "$GATE_SRC" && rm -f "$GATE_SRC.s7tmp"
     git diff --quiet -- "$GATE_SRC" && die 8 "source mutant $1 did not change $GATE_SRC"
-    "$BUILDGATE" cmake --build build-cpu --target test-recurrent-state-rollback -j4 > "$OUT/build-$1.log" 2>&1 || die 8 "mutant $1 build (see $OUT/build-$1.log)"
+    "$BUILDGATE" cmake --build build-cpu --target test-recurrent-state-rollback -j"$JOBS" > "$OUT/build-$1.log" 2>&1 || die 8 "mutant $1 build (see $OUT/build-$1.log)"
     run_test "$1" --getter-gate
     printf "getter_mutant: %s engaged\n" "$1" >> "$OUT/$1.log"
     restore
@@ -59,7 +66,7 @@ source_mutant() { # NAME SED_REPLACEMENT REASON
 source_mutant mut-nogate 'true' "multi-sequence ubatches must keep the gathered state"
 source_mutant mut-invert 'n_seqs != 1' "single-sequence ubatches must read the state by id"
 
-"$BUILDGATE" cmake --build build-cpu --target test-recurrent-state-rollback -j4 > "$OUT/build-restore.log" 2>&1 || die 23 "restore build (see $OUT/build-restore.log)"
+"$BUILDGATE" cmake --build build-cpu --target test-recurrent-state-rollback -j"$JOBS" > "$OUT/build-restore.log" 2>&1 || die 23 "restore build (see $OUT/build-restore.log)"
 [[ -z $(git status --porcelain --untracked-files=no) && $(git rev-parse HEAD) == "$SHA" ]] || die 23 "tree not clean or HEAD moved after the mutants"
 run_test gate-restored --getter-gate
 [[ $RC == 0 ]] && grep "$ENGAGED" "$OUT/gate-restored.log" >/dev/null || die 23 "gate test failed after the undo (see $OUT/gate-restored.log)"

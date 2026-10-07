@@ -11,9 +11,9 @@ assert os.environ.get("CUDA_VISIBLE_DEVICES") == "", "export CUDA_VISIBLE_DEVICE
 ROOT = Path(__file__).resolve().parent.parent
 RES = ROOT / "codex/cpu-results"
 BIN = ROOT / "build-cpu/bin"
-MODEL = "/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf"
-VOCAB = "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json"
-CPUGATE = "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate"
+MODEL = os.environ.get("S7_MODEL", "/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf")
+VOCAB = os.environ.get("S7_VOCAB", "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json")
+CPUGATE = os.environ.get("S7_GATE", "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate")
 
 SHORT = "The sequence of positive integers begins with 1, 2, 3, 4, 5. Continue the sequence:"
 MID = " ".join(f"Item {i}: the quick brown fox number {i} jumps over lazy dog {i * 7}." for i in range(25)) + "\nSummarize the list above in one sentence."

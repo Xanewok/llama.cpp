@@ -13,9 +13,9 @@ from pathlib import Path
 assert os.environ.get("CUDA_VISIBLE_DEVICES") == "", "export CUDA_VISIBLE_DEVICES="
 ROOT = Path(__file__).resolve().parent.parent
 BIN = ROOT / "build-cpu/bin"
-MODEL = "/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf"
-VOCAB = "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json"
-CPUGATE = "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate"
+MODEL = os.environ.get("S7_MODEL", "/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf")
+VOCAB = os.environ.get("S7_VOCAB", "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json")
+CPUGATE = os.environ.get("S7_GATE", "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate")
 FOLD_ENVS = ("LLAMA_MTP_FOLD_C", "LLAMA_MTP_FOLD_DEBUG_MUTANT")
 
 # short (< 64 tokens) also exercises the folded prompt decode from the second case on; mid/long prefill in 256-token ubatches

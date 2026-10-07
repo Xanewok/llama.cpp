@@ -5,36 +5,47 @@ export CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1
 export CPUGATE_MIN_GIB=10 BUILDGATE_MIN_GIB=10
 export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=8
 export PATH="$HOME/.local/bin:$PATH" CUDA_HOME=/usr/local/cuda-13.2
+# Host overrides (defaults = the Linux GPU box). Another host sets S7_CPU_ONLY=1 and the paths it has; see codex/hostgate.sh.
+# S7_ONLY="20 24 ..." runs just those stage codes (stage 20 builds what the others need); S7_CPU_ONLY=1 stops after stage 31.
+export S7_W=${S7_W:-$HOME/repos/qwen38-eval-worktrees} S7_EVAL=${S7_EVAL:-$HOME/repos/qwen38-eval}
+export S7_MODEL=${S7_MODEL:-/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf}
+export S7_VOCAB=${S7_VOCAB:-/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json}
+export S7_GATE=${S7_GATE:-$S7_W/bin/cpugate} S7_BUILDGATE=${S7_BUILDGATE:-$S7_W/bin/buildgate}
+export S7_JOBS=${S7_JOBS:-4} S7_CCACHE=${S7_CCACHE:-ON} S7_BRANCH=${S7_BRANCH:-topic/stack7}
+S7_CPU_ONLY=${S7_CPU_ONLY:-0} S7_ONLY=${S7_ONLY:-}
 unset LLAMA_MTP_CHAIN LLAMA_MTP_FOLD_C LLAMA_MTP_FOLD_DEBUG_MUTANT LLAMA_MTP_DRAFT_DUMP LLAMA_MTP_CHAIN_DUMP
 unset LLAMA_MTP_CHAIN_DEBUG_REVERSE_U LLAMA_MTP_CHAIN_DEBUG_SHIFT_EMBD LLAMA_ROUND_TRACE GGML_ROUND_TRACE_SYNC
 unset LLAMA_HOST_TRIMS_SEQRM LLAMA_HOST_TRIMS_BULKH LLAMA_HOST_TRIMS_VERIFY LLAMA_HOST_TRIMS_MUTANT LLAMA_HOST_TRIMS_PROOF LLAMA_STACK7_PROOF
 ROOT=$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)
 cd "$ROOT"
-W=$HOME/repos/qwen38-eval-worktrees
-EVAL=$HOME/repos/qwen38-eval
+W=$S7_W
+EVAL=$S7_EVAL
 BUILDGATE=$ROOT/codex/build.sh
-CPUGATE=$W/bin/cpugate
+CPUGATE=$S7_GATE
 CCCL=/home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3
-MODEL=/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf
+MODEL=$S7_MODEL
 STACK6=ac7465885dc9f13de396ccd91b4be5eaffde3730
 trap 'echo "bw-stack7: FAIL setup rc=8"; exit 8' ERR
 trap 'echo "bw-stack7: FAIL interrupted rc=9"; exit 9' INT TERM
 preflight() {
-    for path in "$MODEL" "$CCCL" "$W/bin/buildgate" "$CPUGATE" "$W/bin/wt" \
-                "$W/work/build-window-1007/bw-run.sh" "$W/frozen/stack6/RECIPE.txt" \
-                "$EVAL/harness/mkitem.py" "$EVAL/orchestration/gpuq/HARNESS-CONTRACT.md" \
-                /usr/local/cuda-13.2/bin/nvcc \
-                /home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json \
-                "$EVAL/recipes/_common/kld/tokens64k.bin"; do
+    local paths=("$MODEL" "$S7_VOCAB" "$S7_BUILDGATE" "$CPUGATE") tools=(cmake g++ git python3 nice)
+    if [[ $S7_CPU_ONLY != 1 ]]; then
+        paths+=("$CCCL" "$W/bin/wt" "$W/work/build-window-1007/bw-run.sh" "$W/frozen/stack6/RECIPE.txt"
+                "$EVAL/harness/mkitem.py" "$EVAL/orchestration/gpuq/HARNESS-CONTRACT.md" /usr/local/cuda-13.2/bin/nvcc
+                "$EVAL/recipes/_common/kld/tokens64k.bin")
+        tools+=(gpuq ccache strings timeout patchelf flock)
+    fi
+    for path in "${paths[@]}"; do
         [[ -e $path ]] || return 1
     done
-    for tool in gpuq cmake ccache g++ git strings python3 nice timeout patchelf flock; do
+    for tool in "${tools[@]}"; do
         command -v "$tool" >/dev/null || return 1
     done
-    [[ $(git branch --show-current) == topic/stack7 && ! -e $W/frozen/stack7 ]] || return 1
+    [[ $(git branch --show-current) == "$S7_BRANCH" ]] || return 1
+    [[ $S7_CPU_ONLY == 1 || ! -e $W/frozen/stack7 ]] || return 1
     git merge-base --is-ancestor "$STACK6" HEAD || return 1
     [[ -z $(git status --porcelain --untracked-files=no) ]] || return 1
-    for script in codex/{build,bw-stack7,check-getter,check-host,check-np2-interactions,gpu_ab}.sh; do bash -n "$script" || return 1; done
+    for script in codex/{build,bw-stack7,check-getter,check-host,check-np2-interactions,gpu_ab,hostgate}.sh; do bash -n "$script" || return 1; done
     python3 - <<'PY' || return 1
 from pathlib import Path
 import tomllib
@@ -50,12 +61,14 @@ if [[ ${1:-} == --preflight ]]; then
     echo 'bw-stack7: FAIL preflight rc=10'; exit 10
 fi
 [[ ${GPUQ_BUILD_WINDOW:-0} == 1 && $# == 1 ]] || exit 8
-OUT=$(readlink -m "$1")
+OUT=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1")
 case $OUT in "$W"/work/build-window-1007/stack7-a[0-9]*) ;; *) echo 'wrong wrapper output path'; exit 10 ;; esac
 mkdir -p "$OUT"
 run_stage() {
     local name=$1 code=$2 rc
     shift 2
+    if [[ -n $S7_ONLY && " $S7_ONLY " != *" $code "* ]]; then echo "bw-stack7: SKIP $name"; return 0; fi
+    local t0=$SECONDS
     trap - ERR
     set +e
     (trap - ERR; set -e; "$@") > "$OUT/$name.log" 2>&1
@@ -67,7 +80,7 @@ run_stage() {
         echo "bw-stack7: FAIL $name rc=$code command_rc=$rc log=$OUT/$name.log"
         exit "$code"
     fi
-    echo "bw-stack7: PASS $name log=$OUT/$name.log"
+    echo "bw-stack7: PASS $name wall=$((SECONDS - t0))s log=$OUT/$name.log"
 }
 run_stage preflight 10 preflight
 SHA=$(git rev-parse HEAD)
@@ -75,19 +88,21 @@ SHORT=$(git rev-parse --short HEAD)
 printf '%s\n' "$SHA" > "$OUT/source-commit.txt"
 mkdir -p build-cpu
 exec 9> build-cpu/.stack7-model.lock
-flock -n 9 || exit 10
-cpu_flags=(-DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_CCACHE=ON -DGGML_OPENMP_FETCH=OFF
+if command -v flock >/dev/null; then flock -n 9 || exit 10; fi
+cpu_flags=(-DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_CCACHE="$S7_CCACHE" -DGGML_OPENMP_FETCH=OFF
     -DGGML_LLAMAFILE=OFF -DGGML_CPU_REPACK=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF
     -DLLAMA_BUILD_COMMON=ON -DLLAMA_BUILD_TOOLS=ON -DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_APP=OFF
     -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_EXAMPLES=OFF
     -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DFETCHCONTENT_UPDATES_DISCONNECTED=ON)
+# Darwin: Metal/Accelerate would add non-CPU paths to a CPU identity gate.
+[[ $(uname) != Darwin ]] || cpu_flags+=(-DGGML_METAL=OFF -DGGML_BLAS=OFF -DGGML_ACCELERATE=OFF)
 cpu_build() {
     "$BUILDGATE" cmake -S codex/stack7-test -B build-cpu "${cpu_flags[@]}"
-    "$BUILDGATE" cmake --build build-cpu --target test-recurrent-state-rollback test-alloc bw-np2-driver chain-cpu fold-cpu outproj-cpu row0-mutant -j4
+    "$BUILDGATE" cmake --build build-cpu --target test-recurrent-state-rollback test-alloc bw-np2-driver chain-cpu fold-cpu outproj-cpu row0-mutant -j"$S7_JOBS"
     mkdir -p build-stack6-source
     git archive "$STACK6" | tar -x -C build-stack6-source
     "$BUILDGATE" cmake -S codex/stack7-test -B build-stack6-cpu -DLLAMA_SOURCE="$ROOT/build-stack6-source" "${cpu_flags[@]}"
-    "$BUILDGATE" cmake --build build-stack6-cpu --target outproj-cpu -j4
+    "$BUILDGATE" cmake --build build-stack6-cpu --target outproj-cpu -j"$S7_JOBS"
     mkdir -p build-trace
     git show "$STACK6:ggml/src/ggml-round-trace.cpp" > build-trace/old-round-trace.cpp
     python3 - <<'PY'
@@ -98,8 +113,8 @@ new = 'void ggml_round_trace_flush() {\n    if (ggml_round_trace_enabled()) {'
 assert s.count(old) == 1
 Path('build-trace/mutant-round-trace.cpp').write_text(s.replace(old, new))
 PY
-    "$BUILDGATE" cmake -S codex/trace-test -B build-trace -DGGML_CUDA=OFF -DGGML_CCACHE=ON -DCMAKE_BUILD_TYPE=Release
-    "$BUILDGATE" cmake --build build-trace -j4
+    "$BUILDGATE" cmake -S codex/trace-test -B build-trace -DGGML_CUDA=OFF -DGGML_CCACHE="$S7_CCACHE" -DCMAKE_BUILD_TYPE=Release
+    "$BUILDGATE" cmake --build build-trace -j"$S7_JOBS"
 }
 run_stage cpu-build 20 cpu_build
 run_stage getter-gate-and-mutants 21 "$CPUGATE" bash codex/check-getter.sh "$OUT/getter"
@@ -127,6 +142,7 @@ outproj_check() {
 }
 run_stage outproj-np2-logits-tokens-and-rank-control 30 outproj_check
 run_stage recorded-gpu-parser-controls 31 "$CPUGATE" python3 codex/gpu_stack7.py --fixtures
+if [[ $S7_CPU_ONLY == 1 ]]; then echo 'bw-stack7: PASS cpu stages (S7_CPU_ONLY); no CUDA build, freeze or items'; exit 0; fi
 cuda_flags=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER_FORCED=ON -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.2/bin/nvcc
     -DGGML_CUDA=ON -DCUDAToolkit_ROOT=/usr/local/cuda-13.2 -DGGML_CUDA_NCCL=OFF -DCMAKE_CUDA_ARCHITECTURES=120a
     -DGGML_OPENMP_FETCH=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF
