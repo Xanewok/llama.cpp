@@ -1,0 +1,43 @@
+id = "bw-np2-getter"
+title = "Build window (no GPU use): np2 GDN getter (state by id at n_seqs > 1) + joint fused GDN kernel; CPU gate + mutants, CUDA freeze np2-getter, three GPU items checked not submitted"
+# Payload rc 0 = pass; others -> 8 (2 CPU gate failed, 75 CPU gate skipped for RAM, 9 CUDA build/freeze, 10 items). Retry never.
+# Wall (G): CPU gate ~40 min (4B model, ~12 runs), CUDA build ~25 min (ccache warm from stack7), items ~2 min.
+priority = 18
+kind = "filler"
+host_sensitive = false
+budget_s = 14400
+est_s = 5400
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "deterministic", regex = "bw-run: FAIL" },
+]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/np2-kernels/codex/np2/bw-np2-getter.sh", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/np2-getter-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", OK_RCS = "0" }  # gpuq requires it; the wrapper hides the GPUs
+ports = []
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/np2-kernels/codex/np2/bw-np2-getter.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/np2-getter-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["budget"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/np2-kernels/codex/np2/bw-np2-getter.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/np2-kernels/codex/np2/cpu-gate.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/np2-kernels/codex/np2/make_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/np2-kernels/codex/np2/items/np2-getter-real-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/np2-kernels/codex/np2/items/np2-getter-np1-depth-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/np2-kernels/codex/np2/items/np2-getter-cuda-checks.toml.in",
+]

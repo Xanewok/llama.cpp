@@ -1,0 +1,51 @@
+id = "np2-getter-cuda-checks"
+title = "np2-getter joint fused GDN kernel on one RTX 5060 Ti: test-backend-ops vs CPU (2..4 indexed sequences, refusal at 5, unchanged one-sequence paths), per-sequence-block mutant must race, perf at the split 48-head verify shape"
+# Canary (G ~60 s): the two-sequence indexed cases pass and log seqs=2 indexed=1 gdn=1 fused=1. Run (G ~6 min): 3 correctness sets, up to 5 mutant tries, 6 perf runs.
+# Expected: PASS; mutant caught on try 1 (G); joint kernel perf within +-10 % of two per-sequence blocks (G).
+priority = 30
+kind = "measure"
+host_sensitive = false
+budget_s = 1800
+est_s = 600
+ab = false
+retry = "fresh"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "integrity", regex = "frozen bytes changed|unresolved libraries|resolve outside the frozen dir|lacks the joint kernel|is not an RTX 5060 Ti|engagement: " },
+  { class = "insufficient_data", regex = "mutant \\(per-sequence blocks\\) passed" },
+  { class = "timeout", regex = "budget expired|hung" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "@ROOT@/codex/np2/cuda-checks.sh", "--run"]
+cwd = "@ROOT@"
+env = { COMMIT = "@COMMIT@", BUDGET_S = "1500", OUT = "/home/xanewok/repos/qwen38-eval/results/@DATE@-np2-getter-cuda-checks/a{attempt}" }
+ports = []
+
+[preflight]
+cmd = ["bash", "@ROOT@/codex/np2/cuda-checks.sh", "--preflight"]
+env = { COMMIT = "@COMMIT@", OUT = "/home/xanewok/repos/qwen38-eval/results/@DATE@-np2-getter-cuda-checks/preflight" }
+timeout_s = 120
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "@ROOT@/codex/np2/cuda-checks.sh", "--canary"]
+env = { COMMIT = "@COMMIT@", BUDGET_S = "500", OUT = "/home/xanewok/repos/qwen38-eval/results/@DATE@-np2-getter-cuda-checks/canary-a{attempt}" }
+timeout_s = 600
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval/results/@DATE@-np2-getter-cuda-checks/a{attempt}"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "@ROOT@/codex/np2/cuda-checks.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/np2-getter/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/np2-getter/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/np2-getter/build/bin/test-backend-ops",
+@LIB_PINS@
+]
