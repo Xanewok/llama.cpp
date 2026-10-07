@@ -21,6 +21,7 @@ struct llama_cparams {
     int32_t  n_threads_batch; // number of threads to use for batch processing
 
     int32_t  nextn_layer_offset = 0;
+    int32_t  mtp_chain          = 0; // see llama_set_mtp_chain
 
     float rope_freq_base;
     float rope_freq_scale;
