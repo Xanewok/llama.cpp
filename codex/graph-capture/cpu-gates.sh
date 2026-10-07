@@ -9,7 +9,8 @@
 #    arena is unmapped (glibc builds use the test's own mallopt).
 # 4  cpu_identity.py: base vs HEAD env unset / GGML_META_AR_NODE=1, Meta(CPU,CPU) np1 (plain, chain+fold) and np2,
 #    plain CPU; forced-node stub abort; perturbation control.
-# Exit: 0 pass | 2 a gate failed | 3 a negative control did not fail | 8 build or setup.
+# Exit: 0 pass | 2 a gate failed | 3 a negative control did not fail | 4 identity skipped: RAM (< 4 GiB for 10 min)
+# | 5 identity skipped: another model process for 10 min | 8 build or setup. 4 and 5 are skips, never passes.
 set -uo pipefail
 export CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1
 OUT=${1:?OUT}
@@ -95,7 +96,13 @@ log "test-alloc, test-sampling pass; arena: HEAD passes 0/1, base dies on a sign
 
 # ---- 4: end-to-end identity
 "$CPUGATE" python3 "$D/cpu_identity.py" "$BASE/build-cpu/bin/ar-node-server-cpu" "$ROOT/build-cpu/bin/ar-node-server-cpu" \
-    "$MODEL" "$OUT/identity" > "$OUT/identity-console.log" 2>&1 || die 2 "identity (see $OUT/identity/identity.log)"
+    "$MODEL" "$OUT/identity" > "$OUT/identity-console.log" 2>&1
+case $? in
+    0) ;;
+    4) log "skipped: RAM (identity stage; earlier stages passed)"; exit 4 ;;
+    5) log "skipped: busy (identity stage; another model process held the Mac; earlier stages passed)"; exit 5 ;;
+    *) die 2 "identity (see $OUT/identity/identity.log)" ;;
+esac
 grep -E '^(PASS|SUMMARY|  rows=)' "$OUT/identity/identity.log" >> "$OUT/RESULTS.txt"
 log "PASS all CPU gates"
 exit 0

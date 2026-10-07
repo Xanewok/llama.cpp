@@ -1,0 +1,105 @@
+id = "graph-capture-s7-np2-real-j5q"
+kind = "depth"
+priority = 26
+title = "AllReduce as CUDA graph nodes on stack7, np2 duo env (chain/fold off): same binary GGML_META_AR_NODE 0 vs 1, J5q real prompts, two streams, untraced, k5, 3+3 boots; verdict = steady ms/round AND fixed/request (fixed_ms_D; np2 mixed batches below ~100 rows also take node mode, so more one-off captures than np1)"
+# Template: bw-graph-capture-s7.sh substitutes @COMMIT@, @DATE@, @CPU_EVIDENCE@ and installs it as harness/experiments/graph-capture-s7-np2-real-j5q.toml.
+# Same binary both arms, so the off arm is stack7 itself (CPU byte identity of env-unset vs stack7, @CPU_EVIDENCE@). Cross-arm token
+# identity is off at np2 (arrival-dependent ubatches); the CPU np2 byte identity in @CPU_EVIDENCE@ gates exactness.
+plan = ["off", "node", "node", "off", "node", "off"]
+protected = ["identity", "steady_minimum", "SHA256SUMS", "frozen", "DEPTHS", "ARM_ENV", "engaged", "min_p", "arms", "budget"]
+devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
+out = "/home/xanewok/repos/qwen38-eval/results/@DATE@-graph-capture-s7-np2-real-j5q"
+
+[model]
+id = "swift15-j5q"
+path = "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf"
+bytes = 19996051744
+sha = "f2c850ea3cd818b9d669fbd1e18767ef669ce012e614d819cce5ab6809e3a774"
+
+[draft_vocab]
+path = "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json"
+sha = "e30af79520ade5b7ddb851d75cf271f07d407dc768bf646e4517607d562a65a6"
+
+[arms.off]
+label = "graph-capture-s7 @COMMIT@, GGML_META_AR_NODE=0 (= stack7 swift15-j5q-duo)"
+commit = "@COMMIT@"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/frozen/graph-capture-s7"
+repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-s7"
+bin = "build/bin"
+exe = "build/bin/round-trace"
+flags = []
+canary_log = ["copy-engine H2D streams per GPU: 2\\b", "(?s)n_kv_pad += 4096\\b.*n_kv_pad += 4096\\b", "ssm_out_2d: seqs=2 rows=[1-9]\\d* matrices=1\\b",
+  "(?s)\\A(?!.*meta_ar_node)"]
+env = { GGML_SCHED_INPUT_STAGING = "1", LLAMA_ARG_KV_PAD = "4096", LD_LIBRARY_PATH = "{root}/build/bin", LLAMA_MTP_CHAIN = "0", LLAMA_MTP_FOLD_C = "0", GGML_META_AR_NODE = "0" }
+
+[arms.node]
+label = "graph-capture-s7 @COMMIT@, GGML_META_AR_NODE=1"
+commit = "@COMMIT@"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/frozen/graph-capture-s7"
+repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/graph-capture-s7"
+bin = "build/bin"
+exe = "build/bin/round-trace"
+flags = []
+# engaged: some boundaries of a k=5 verify graph (rows=6 one slot, 12 both) fused, at least one site, never the CPU fallback
+canary_log = ["copy-engine H2D streams per GPU: 2\\b", "(?s)n_kv_pad += 4096\\b.*n_kv_pad += 4096\\b", "ssm_out_2d: seqs=2 rows=[1-9]\\d* matrices=1\\b",
+  "meta_ar_node: uid=\\d+ sites=[1-9]\\d* split=(\\d+)->(?!\\1\\b)\\d+ nodes=\\d+ rows=(?:6|12)\\b", "(?s)\\A(?!.*meta_ar_node: unavailable)"]
+env = { GGML_SCHED_INPUT_STAGING = "1", LLAMA_ARG_KV_PAD = "4096", LD_LIBRARY_PATH = "{root}/build/bin", LLAMA_MTP_CHAIN = "0", LLAMA_MTP_FOLD_C = "0", GGML_META_AR_NODE = "1" }
+
+[server]
+args = ["-m", "{model}", "-c", "{ctx}", "-np", "{np}", "-ctk", "q8_0", "-ctv", "q8_0", "-ngl", "99", "-fa", "on", "--spec-type", "draft-mtp", "--spec-draft-n-max", "5", "--spec-draft-n-min", "0", "--spec-draft-p-min", "0", "--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16", "-sm", "tensor", "--tensor-split", "50,50", "-b", "2048", "-ub", "128", "--jinja", "--chat-template-file", "/home/xanewok/repos/qwen38-eval/corpora/templates/swift-leading-instructions-v1.jinja", "--temp", "1", "--top-k", "20", "--top-p", "0.95", "--min-p", "0.05", "--host", "127.0.0.1", "--port", "{port}", "--metrics", "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--backend-sampling", "-t", "8", "-tb", "8", "--spec-draft-vocab", "{draft_vocab}"]
+knobs = ["GGML_META_AR_NODE", "GGML_CUDA_AR_NODE_SPIN_MS", "GGML_META_PLAN_REUSE", "GGML_SCHED_INPUT_STAGING", "LLAMA_ARG_KV_PAD", "LLAMA_ARG_LOG_VERBOSITY", "GGML_CUDA_AR_COPY_STREAMS", "LLAMA_ROUND_TRACE", "GGML_SCHED_DEBUG", "LLAMA_MTP_CHAIN", "LLAMA_MTP_FOLD_C", "LLAMA_STACK7_PROOF", "LLAMA_HOST_TRIMS_PROOF", "GGML_CUDA_DEBUG_GDN_STATE"]
+boot_cap_s = 300
+request_cap_s = 600
+
+[depth]
+depths = [8192, 32768, 90112]
+k = 5
+streams = 2
+identity = "off"
+identity_off_reason = "Arrival-dependent np2 ubatches do not repeat tokens across GPU boots; the CPU np2 byte identity (cpu_evidence) gates exactness."
+distinct_builds = false
+min_steady_intervals = 40
+min_predicted = 256
+slot_ctx = 102400
+min_overlap = 0.8
+fixtures = "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures"
+wall_s = 900
+
+[depth.prompt]
+path = "/home/xanewok/repos/qwen38-eval/recipes/_common/kld/tokens64k.bin"
+sha = "753920ad0a0dbfc135aece41284c74e96d70d856df0351100a5305511aabf412"
+
+[depth.request]
+seed = 1729
+n_predict = 512
+temperature = 1
+top_k = 20
+top_p = 0.95
+min_p = 0.05
+ignore_eos = true
+
+[canary]
+plan = ["off", "node"]
+depths = [8192]
+proofs = []
+
+[canary.env]
+LLAMA_ARG_LOG_VERBOSITY = "4"
+LLAMA_STACK7_PROOF = "1"
+
+[budget]
+canary_s = 900
+margin = 1.5
+cleanup_s = 150
+est_s = 2700
+startup_grace_s = 300
+preflight_s = 600
+
+[outputs]
+run = "full-a{attempt}"
+canary = "canary-a{attempt}"
+preflight = "preflight-plan"
+
+[cpu_evidence]
+path = "@CPU_EVIDENCE@"
+command = "codex/graph-capture/cpu-gates.sh on the Mac mini (bin/bw-mac): base = stack7 rebuilt from the diff; planner test + wrong-expectation control; test-alloc, test-sampling; arena test HEAD pass / stack7 base dies on a signal (libgmalloc); Meta(CPU,CPU) np1 plain + chain/fold, np2, plain CPU: stack7 == env unset == GGML_META_AR_NODE=1 byte for byte; forced-node stub abort"

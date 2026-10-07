@@ -1,7 +1,7 @@
 """CPU identity for GGML_META_AR_NODE on stack7: base (stack7) vs HEAD with the env unset and set, Meta(CPU,CPU) and plain CPU.
 
 usage: cpu_identity.py BASE_FIXTURE HEAD_FIXTURE MODEL OUT_DIR
-Gates (exit 2 on any failure):
+Gates (exit 2 on any failure; 4/5 = skipped for RAM / another model process, not a pass):
   (a) HEAD env unset == base, byte for byte (tokens of every slot + final target logits); base == base2 is the control.
   (b) HEAD GGML_META_AR_NODE=1 == base. On CPU node mode is unavailable: the log must say so and print would-be plans.
   (c) negative control: a one-bit perturbed stream is rejected by the comparison; the base fixture never logs meta_ar_node.
@@ -46,18 +46,24 @@ def fail(msg):
     sys.exit(2)
 
 
-def wait_for_room():
-    """Shared Mac: one model process at a time and >= 4 GiB available."""
+def wait_for_room(cap_s=600):
+    """Shared Mac (a VM holds 8 of 16 GiB): one model process at a time and >= 4 GiB available, waiting at most cap_s.
+    Gives up with rc 4 (RAM) or 5 (another model process): a skipped gate, never a pass."""
     if platform.system() != "Darwin":
         return
+    t0 = time.monotonic()
     while True:
         memory = subprocess.check_output(["memory_pressure", "-Q"], text=True)
         free = int(re.search(r"free percentage: (\d+)%", memory)[1]) / 100
         total = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"], text=True))
         comms = subprocess.check_output(["ps", "-axo", "comm"], text=True).splitlines()
         busy = any(c.rsplit("/", 1)[-1] in MODEL_PROCS for c in comms)
-        if not busy and total * free >= 4 * 1024**3:
+        low = total * free < 4 * 1024**3
+        if not busy and not low:
             return
+        if time.monotonic() - t0 > cap_s:
+            say(f"skipped: {'RAM' if low else 'busy'} (free {total * free / 1024**3:.1f} GiB, other model process {busy}) after {cap_s}s")
+            sys.exit(4 if low else 5)
         say(f"WAIT busy={busy} free={total * free / 1024**3:.1f} GiB")
         time.sleep(20)
 
