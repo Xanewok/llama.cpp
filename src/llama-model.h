@@ -628,6 +628,8 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
 #define LLAMA_TENSOR_NAME_OUTPUT_VOCAB_IDS "output_vocab_ids"
 #define LLAMA_TENSOR_NAME_DRAFT_OUTPUT "draft_output.weight"
 #define LLAMA_TENSOR_NAME_DRAFT_VOCAB_IDS "draft_output_vocab_ids"
+#define LLAMA_TENSOR_NAME_DRAFT_TOKEN_EMBD "draft_token_embd.weight"
+#define LLAMA_TENSOR_NAME_DRAFT_VOCAB_MAP "draft_vocab_map"
 
 struct llama_prec_policy {
     // the key is the weight tensor `res->src[0]`, stores the recommended accumulation type of the op (unused for now)
@@ -669,6 +671,8 @@ struct llama_model {
     struct ggml_tensor * output          = nullptr;
     struct ggml_tensor * draft_output    = nullptr;
     std::vector<llama_token> draft_vocab_ids;
+    struct ggml_tensor * draft_token_embd = nullptr; // [n_embd, n_draft]: token embedding rows of draft_vocab_ids
+    struct ggml_tensor * draft_vocab_map  = nullptr; // [n_vocab] I32: token id -> row of draft_token_embd, or -1
     struct ggml_tensor * output_b        = nullptr;
     struct ggml_tensor * output_norm_enc = nullptr;
 
