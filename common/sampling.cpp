@@ -958,7 +958,7 @@ struct spec_trace_top3 {
 struct spec_trace_pos {
     spec_trace_top3 top;
     float           p_x;
-    std::vector<std::pair<llama_token, float>> all; // position 0 only: NH5 needs the whole row, not a renormalised top-3
+    std::vector<std::pair<llama_token, float>> all;
 };
 
 struct spec_trace_state {
@@ -1004,7 +1004,7 @@ void spec_trace_all_json(std::string & out, const T & row) {
     out += '[';
     bool first = true;
     for (const auto & e : row) {
-        std::snprintf(tmp, sizeof(tmp), "%s[%d,%.6g]", first ? "" : ",", (int) e.first, e.second);
+        std::snprintf(tmp, sizeof(tmp), "%s[%d,%.9g]", first ? "" : ",", (int) e.first, e.second);
         out += tmp;
         first = false;
     }
@@ -1015,7 +1015,7 @@ void spec_trace_top3_json(std::string & out, const spec_trace_top3 & t) {
     char tmp[64];
     out += '[';
     for (int j = 0; j < t.n; ++j) {
-        std::snprintf(tmp, sizeof(tmp), "%s[%d,%.6g]", j ? "," : "", (int) t.id[j], t.p[j]);
+        std::snprintf(tmp, sizeof(tmp), "%s[%d,%.9g]", j ? "," : "", (int) t.id[j], t.p[j]);
         out += tmp;
     }
     out += ']';
@@ -1049,7 +1049,7 @@ void spec_trace_round(spec_trace_state * st, const llama_tokens & draft,
             qx += ',';
         }
         spec_trace_top3_json(row, t);
-        std::snprintf(tmp, sizeof(tmp), "%.6g", prob_of(draft_q[i].data(), draft_q[i].size(), draft[i]));
+        std::snprintf(tmp, sizeof(tmp), "%.9g", prob_of(draft_q[i].data(), draft_q[i].size(), draft[i]));
         qx += tmp;
     }
 
@@ -1066,7 +1066,7 @@ void spec_trace_round(spec_trace_state * st, const llama_tokens & draft,
             px += ',';
         }
         spec_trace_top3_json(row, pos[i].top);
-        std::snprintf(tmp, sizeof(tmp), "%.6g", pos[i].p_x);
+        std::snprintf(tmp, sizeof(tmp), "%.9g", pos[i].p_x);
         px += tmp;
     }
 
@@ -1083,7 +1083,25 @@ void spec_trace_round(spec_trace_state * st, const llama_tokens & draft,
     spec_trace_all_json(row, q0);
     row += ",\"p0all\":";
     spec_trace_all_json(row, pos[0].all);
-    row += "}\n";
+    row += ",\"qall\":[";
+    for (size_t i = 0; i < draft_q.size(); ++i) {
+        std::vector<std::pair<llama_token, float>> q;
+        for (const auto & e : draft_q[i]) {
+            q.emplace_back(e.id, e.p);
+        }
+        if (i) {
+            row += ',';
+        }
+        spec_trace_all_json(row, q);
+    }
+    row += "],\"pall\":[";
+    for (size_t i = 0; i < pos.size(); ++i) {
+        if (i) {
+            row += ',';
+        }
+        spec_trace_all_json(row, pos[i].all);
+    }
+    row += "]}\n";
 
     std::lock_guard<std::mutex> lock(st->mtx);
     st->buf += "{\"r\":" + std::to_string(st->req) + "," + row;
@@ -1180,10 +1198,8 @@ std::vector<llama_token> common_sampler_sample_and_accept_n_rejection_rows(struc
                 tp.top.add(cur_p->data[k].id, p_of(k));
             }
             tp.p_x = p_x;
-            if (i == 0) {
-                for (size_t k = 0; k < cur_p->size; ++k) {
-                    tp.all.emplace_back(cur_p->data[k].id, p_of(k));
-                }
+            for (size_t k = 0; k < cur_p->size; ++k) {
+                tp.all.emplace_back(cur_p->data[k].id, p_of(k));
             }
             trace_pos.push_back(std::move(tp));
         }
@@ -1226,6 +1242,17 @@ std::vector<llama_token> common_sampler_sample_and_accept_n_rejection_rows(struc
 
     if (i == draft.size()) {
         const llama_token id = common_sampler_sample_row(gsmpl, row_at(i), grammar_first);
+
+        if (trace) {
+            spec_trace_pos tp;
+            const auto * cur_p = common_sampler_get_candidates(gsmpl, false);
+            tp.p_x = prob_of(cur_p->data, cur_p->size, id);
+            for (size_t k = 0; k < cur_p->size; ++k) {
+                tp.top.add(cur_p->data[k].id, cur_p->data[k].p);
+                tp.all.emplace_back(cur_p->data[k].id, cur_p->data[k].p);
+            }
+            trace_pos.push_back(std::move(tp));
+        }
 
         common_sampler_accept(gsmpl, id, true);
 
