@@ -78,13 +78,13 @@ class SpecTFTest(unittest.TestCase):
         lengths, _ = rejection(rng, p, q)
         se = np.sqrt((estimate.var(ddof=1) + lengths.var(ddof=1)) / N)
         error = abs(estimate.mean() - lengths.mean())
-        print(f"seed={seed} biased={biased} estimator={estimate.mean():.8f} MC={lengths.mean():.8f} combined_SE={se:.8f} z={error / se:.3f}")
+        print(f"seed={seed} biased={biased} estimator_D={estimate.mean():.8f} MC_M={lengths.mean():.8f} combined_SE_D={se:.8f} z_D={error / se:.3f}")
         self.assertLess(error, 3 * se)
         if biased:
             broken = 1 + np.cumprod(beta, axis=1).sum(axis=1)
             broken_se = np.sqrt((broken.var(ddof=1) + lengths.var(ddof=1)) / N)
             z = abs(broken.mean() - lengths.mean()) / broken_se
-            print(f"negative control plain_product={broken.mean():.8f} z={z:.3f}")
+            print(f"negative control plain_product_D={broken.mean():.8f} z_D={z:.3f}")
             self.assertGreater(z, 3)
 
     def test_random_rejection_trees(self):

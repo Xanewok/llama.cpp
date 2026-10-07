@@ -14,7 +14,7 @@ from import_streams import recorded_stream
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FROZEN = Path('/home/xanewok/repos/qwen38-eval-worktrees/frozen/spec-tf')
+FROZEN = Path('/home/xanewok/repos/qwen38-eval-worktrees/frozen/spec-tf-v2')
 DATA = Path('/home/xanewok/repos/qwen38-eval/results/2026-10-06-nh6-nextn-lowbit-j5q/a2/0-base')
 BASE = Path('/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf')
 MODELS = [BASE, Path('/mnt/scratch/work/models/nh6/c/J5q-nh6-c-00001-of-00002.gguf'),
