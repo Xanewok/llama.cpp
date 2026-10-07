@@ -1568,8 +1568,14 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         auto * ctx_dft = this->params.ctx_dft;
 
         const size_t row_bytes = (size_t) n_embd * sizeof(float);
+        // LLAMA_HOST_TRIMS_BULKH=0 restores the stack6 per-row verify copy (same-binary bisect)
+        static const bool bulk_h = [] {
+            const char * v = std::getenv("LLAMA_HOST_TRIMS_BULKH");
+            return v == nullptr || std::atoi(v) != 0;
+        }();
+
         // Target nextn rows are unmasked and remain unchanged during draft catch-up.
-        const float * h_tgt = llama_get_embeddings_nextn(ctx_tgt);
+        const float * h_tgt = bulk_h ? llama_get_embeddings_nextn(ctx_tgt) : nullptr;
 
         // if kv is shared with target (e.g Gemma4), then we can skip this catch-up decode
         if (!is_mem_shared) {
@@ -1581,6 +1587,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             // i.e. we cannot have seq_id like this: [0, 0, 0, 1, 1, 0, 1, 1]
             //                                                       ^--- this is a problem
             // TODO:this is generally true, but would be nice to assert it
+            if (!bulk_h) {
+                h_tgt = llama_get_embeddings_nextn(ctx_tgt);
+            }
             for (int k = 0; k < n_tokens; ++k) {
                 const llama_seq_id seq_id = batch_in.tokens[k].seq_id;
 
@@ -1636,14 +1645,21 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             verify_h_rows[seq_id] = n_rows;
             verify_h[seq_id].resize((size_t) n_rows * n_embd);
 
-            static const bool proof = [n_rows] {
-                if (std::getenv("LLAMA_HOST_TRIMS_PROOF")) {
-                    LOG_INF("host_trims: mtp_verify_bulk rows=%d\n", n_rows);
+            if (bulk_h) {
+                static const bool proof = [n_rows] {
+                    if (std::getenv("LLAMA_HOST_TRIMS_PROOF")) {
+                        LOG_INF("host_trims: mtp_verify_bulk rows=%d\n", n_rows);
+                    }
+                    return true;
+                }();
+                (void) proof;
+                std::memcpy(verify_h[seq_id].data(), h_tgt + (size_t) i_batch_beg[seq_id] * n_embd, (size_t) n_rows * row_bytes);
+            } else {
+                for (int32_t i = 0; i < n_rows; ++i) {
+                    const float * h = llama_get_embeddings_nextn_ith(ctx_tgt, i_batch_beg[seq_id] + i);
+                    std::memcpy(verify_h[seq_id].data() + (size_t) i * n_embd, h, row_bytes);
                 }
-                return true;
-            }();
-            (void) proof;
-            std::memcpy(verify_h[seq_id].data(), h_tgt + (size_t) i_batch_beg[seq_id] * n_embd, (size_t) n_rows * row_bytes);
+            }
 
             std::memcpy(pending_h[seq_id].data(),
                     verify_h[seq_id].data() + (size_t) (n_rows - 1) * n_embd, row_bytes);
