@@ -359,6 +359,26 @@ public:
     const llama_kv_cache_context * mctx;
 };
 
+// MTP fold (llama_mtp_fold_init): the target graph also stores the draft block's K/V for its rows.
+// Pairing contract of the catch-up decode it replaces: row 0 takes h_prev, row i > 0 the target's nextn row i-1.
+class llm_graph_input_mtp_fold : public llm_graph_input_i {
+public:
+    llm_graph_input_mtp_fold(std::unique_ptr<llm_graph_input_attn_kv> kv, const float * h_prev_src) :
+        kv(std::move(kv)), h_prev_src(h_prev_src) {}
+    virtual ~llm_graph_input_mtp_fold() = default;
+
+    void set_input(const llama_ubatch * ubatch) override;
+
+    bool can_reuse(const llm_graph_params & params) override;
+
+    ggml_tensor * h_prev = nullptr; // F32 [n_embd, 1]
+
+    // over the draft cache; only the store indices are built, never a mask
+    std::unique_ptr<llm_graph_input_attn_kv> kv;
+
+    const float * h_prev_src; // read in set_input, re-bound on reuse
+};
+
 // V-less input for the KV cache
 // ref: https://github.com/ggml-org/llama.cpp/pull/19067
 class llm_graph_input_attn_k : public llm_graph_input_i {
@@ -886,6 +906,7 @@ struct llm_graph_params {
             cvec  == other.cvec  &&
             loras == other.loras &&
             cross == other.cross &&
+            (mctx_fold != nullptr) == (other.mctx_fold != nullptr) &&
             sampling_vocab_ids == other.sampling_vocab_ids &&
             sampling_n_shards  == other.sampling_n_shards;
     }
@@ -894,6 +915,11 @@ struct llm_graph_params {
     // from the per-device top-k candidates (see build_sampling); nullptr/0 otherwise
     ggml_tensor * sampling_vocab_ids = nullptr;
     uint32_t      sampling_n_shards  = 0;
+
+    // MTP fold (llama_mtp_fold_init): the draft context's memory for this ubatch, already applied, and the hidden row
+    // paired with its first token; nullptr = no fold nodes in the graph
+    const llama_memory_context_i * mctx_fold   = nullptr;
+    const float                  * fold_h_prev = nullptr;
 };
 
 struct llm_graph_fused_node {
@@ -1037,6 +1063,8 @@ struct llm_graph_context {
     const llama_adapter_cvec     * cvec;
     const llama_adapter_loras    * loras;
     const llama_memory_context_i * mctx;
+    const llama_memory_context_i * mctx_fold; // see llm_graph_params::mctx_fold
+    const float                  * fold_h_prev;
     const llama_cross            * cross;
 
     const llama_prec_policy * prec_policy;
