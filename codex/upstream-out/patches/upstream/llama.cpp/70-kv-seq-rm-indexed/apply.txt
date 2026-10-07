@@ -1,0 +1,9 @@
+Base: 7049ff0cbeb1f5ead231de4522af6b75d8d773c0
+Prerequisite count: 0 (apply prerequisites/*.patch in lexical order first; exclude them from a submission).
+Root series replay tip: b6bcd43c76a4bbfd1730b72dafd66680f210740e
+Root parent: 7049ff0cbeb1f5ead231de4522af6b75d8d773c0
+Transport: local shallow base.bundle; mini-builder only, no network fetch.
+Mac: /Users/builder/qwen38-upstream-pack/20261008/70-kv-seq-rm-indexed
+CPU recipe: GGML_CUDA=OFF, GGML_METAL=OFF, GGML_BLAS=OFF, GGML_NATIVE=OFF, GGML_CPU_ARM_ARCH=armv8.2-a+dotprod, GGML_CCACHE=ON; Clang, nice 19, -j4, model threads <=4, explicit 4096 contexts; RAM >=4 GiB and one model through validation/model_gate.py.
+M: fresh git am of prerequisites + root onto 7049ff0cb and Clang builds of test-llama-archs/test-sampling/test-alloc passed (see collector REPORT-upstream-pack.md; Mac committer dates give different commit IDs).
+M: test-llama-archs --seq-rm passed; inclusive-upper-bound and wrong-physical-head mutants returned nonzero; restored test passed.
