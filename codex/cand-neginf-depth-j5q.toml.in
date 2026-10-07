@@ -87,9 +87,10 @@ wall_s = 420
 plan = ["s6", "cn"]
 depths = [8192]
 proofs = []
+env = { LLAMA_ARG_LOG_VERBOSITY = "5" }
 
 [budget]
-canary_s = 900
+canary_s = 600
 margin = 1.5
 cleanup_s = 150
 est_s = 2300

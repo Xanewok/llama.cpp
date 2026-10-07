@@ -18,6 +18,7 @@ def main(out):
     compare = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(compare)
     config = tomllib.loads((root / "cand-neginf-depth-j5q.toml.in").read_text())
+    assert config["canary"]["env"]["LLAMA_ARG_LOG_VERBOSITY"] == "5", "candidate message needs debug verbosity"
     patterns = {arm: [p for p in config["arms"][arm]["canary_log"] if "sampler" in p or "set_logits" in p]
                 for arm in ("s6", "cn")}
     def engaged(arm, log):
@@ -46,17 +47,22 @@ def main(out):
                 shutil.copyfile(path, dest / path.name)
         path = dest / "1-1-1-host.json"
         run = json.loads(path.read_text())
-        for key in ("tokens", "stats", "probs"):
+        for key in ("tokens", "stats"):
             changed = json.loads(json.dumps(run))
             if key == "tokens":
                 changed[key][0] += 1
             elif key == "stats":
                 changed[key]["draft"] += 1
-            else:
-                changed[key] = [{"tok": -1, "prob": 0, "top": []}]
             path.write_text(json.dumps(changed))
             assert verdict(dest) == 2, f"{key} mutation escaped"
         path.write_text(json.dumps(run))
+        probs_path = dest / "1-0-1-host.json"
+        probs_run = json.loads(probs_path.read_text())
+        changed = json.loads(json.dumps(probs_run))
+        changed["probs"][0]["top"][0][1] += 0.001
+        probs_path.write_text(json.dumps(changed))
+        assert verdict(dest) == 2, "probability mutation escaped"
+        probs_path.write_text(json.dumps(probs_run))
         assert verdict(dest) == 0, "restored CPU identity"
         path.unlink()
         assert verdict(dest) == 8, "missing run escaped"
