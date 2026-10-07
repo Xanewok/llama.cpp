@@ -17,13 +17,15 @@
 # 2 3 4 5 8 stop before stage 2 (no freeze, no item).
 set -uo pipefail
 export CUDA_VISIBLE_DEVICES="" GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1
-export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8
+if [[ ${BW_CPU_ONLY:-0} != 1 ]]; then
+    export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8
+fi
 export PATH="$HOME/.local/bin:$PATH"
 W=$HOME/repos/qwen38-eval-worktrees
 EVAL=$HOME/repos/qwen38-eval
 cd "$(dirname "$(readlink -f "$0")")/.." || exit 8
 ROOT=$PWD
-MODEL=/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf
+MODEL=${BW_MODEL:-/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf}
 CCCL=/home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3
 NAME=cand-neginf
 ITEM_ID=cand-neginf-depth-j5q
@@ -31,23 +33,41 @@ log() { echo "bw-$NAME: $(date '+%H:%M:%S') $*"; }
 die() { local rc=$1; shift; log "FAIL rc=$rc $*"; exit "$rc"; }
 
 if [[ ${1:-} == --preflight ]]; then
-    for p in "$W/bin/buildgate" "$W/bin/cpugate" "$W/bin/wt" "$MODEL" "$CCCL" "$ROOT/codex/bw-cand-driver.cpp" \
-             "$ROOT/codex/bw-cand-compare.py" "$ROOT/codex/$ITEM_ID.toml.in" "$W/frozen/stack6/build/bin/round-trace" \
-             "$EVAL/harness/mkitem.py" "$EVAL/orchestration/gpuq/items/drafts"; do
+    paths=("${BW_BUILDGATE:-$W/bin/buildgate}" "${BW_GATE:-$W/bin/cpugate}" "$MODEL" "$ROOT/codex/bw-cand-driver.cpp" "$ROOT/codex/bw-cand-compare.py")
+    if [[ ${BW_CPU_ONLY:-0} != 1 ]]; then
+        paths+=("$W/bin/wt" "$CCCL" "$ROOT/codex/$ITEM_ID.toml.in" "$W/frozen/stack6/build/bin/round-trace"
+                "$EVAL/harness/mkitem.py" "$EVAL/orchestration/gpuq/items/drafts")
+    fi
+    for p in "${paths[@]}"; do
         [[ -e $p ]] || die 8 "preflight missing $p"
     done
+    [[ ${BW_CPU_ONLY:-0} != 1 ]] || exit 0
     command -v gpuq >/dev/null || die 8 "preflight: gpuq not on PATH"
     [[ ! -e $W/frozen/$NAME ]] || die 8 "preflight: $W/frozen/$NAME exists already"
     exit 0
 fi
-OUT=$(readlink -m "${1:-$ROOT/codex/bw-results}")
+if [[ $(uname) == Darwin ]]; then
+    OUT=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${1:-$ROOT/codex/bw-results}")
+else
+    OUT=$(readlink -m "${1:-$ROOT/codex/bw-results}")
+fi
 mkdir -p "$OUT"
 
 [[ -z $(git status --porcelain --untracked-files=no) ]] || die 8 "tracked changes present; commit before the build window (wt freeze needs a clean tree)"
 SHA=$(git rev-parse HEAD)
 log "start HEAD=$SHA out=$OUT"
-BUILDGATE=$W/bin/buildgate
-CPUGATE=$W/bin/cpugate
+BUILDGATE=${BW_BUILDGATE:-$W/bin/buildgate}
+CPUGATE=${BW_GATE:-$W/bin/cpugate}
+cpu_extra=()
+# BW_CPU_EXTRA is a whitespace-separated list of cmake arguments; no shell expansion.
+read -r -a cpu_extra <<< "${BW_CPU_EXTRA:-}"
+stage_start=$SECONDS
+stage_time() {
+    if [[ ${BW_CPU_ONLY:-0} == 1 ]]; then
+        printf '%s\t%s\n' "$1" "$((SECONDS - stage_start))" >> "$OUT/stage-wall-seconds.tsv"
+    fi
+    stage_start=$SECONDS
+}
 RESULTS=$OUT/RESULTS.txt
 : > "$RESULTS"
 note() { echo "$*" | tee -a "$RESULTS"; }
@@ -55,10 +75,10 @@ note "cand-neginf stage 1, HEAD $SHA, $(date -Iseconds)"
 
 # ---------------------------------------------------------------- stage 1: CPU build
 {
-    "$BUILDGATE" cmake -B build-cpu -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_CCACHE=ON -DGGML_OPENMP_FETCH=OFF \
+    "$BUILDGATE" cmake -B build-cpu -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_CCACHE="${BW_CCACHE:-ON}" -DGGML_OPENMP_FETCH=OFF \
         -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_EXAMPLES=OFF \
-        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON &&
-    "$BUILDGATE" cmake --build build-cpu --target llama-server test-llama-archs test-sampling -j4 &&
+        -DCMAKE_EXPORT_COMPILE_COMMANDS=ON "${cpu_extra[@]}" &&
+    "$BUILDGATE" cmake --build build-cpu --target llama-server test-llama-archs test-sampling -j"${BW_JOBS:-4}" &&
     "$BUILDGATE" g++ -std=c++17 -O2 -pthread -DGGML_SHARED -DLLAMA_SHARED -Itools/server -Icommon -Iinclude -Iggml/include -Ivendor \
         -Itools/mtmd -I. codex/bw-cand-driver.cpp build-cpu/tools/server/libserver-context.a build-cpu/common/libllama-common-base.a \
         -Lbuild-cpu/bin -Wl,-rpath,"$ROOT/build-cpu/bin" -lllama-common -lmtmd -lllama -lggml -lggml-cpu -lggml-base \
@@ -66,6 +86,7 @@ note "cand-neginf stage 1, HEAD $SHA, $(date -Iseconds)"
 } > "$OUT/build-cpu.log" 2>&1 || die 8 "CPU build (see $OUT/build-cpu.log)"
 [[ $(git rev-parse HEAD) == "$SHA" ]] || die 8 "HEAD moved during the CPU build"
 log "CPU build ok"
+stage_time cpu-build
 
 # ---------------------------------------------------------------- stage 1a: unit tests
 "$CPUGATE" build-cpu/bin/test-sampling > "$OUT/test-sampling.log" 2>&1 || die 2 "test-sampling (see $OUT/test-sampling.log)"
@@ -77,11 +98,16 @@ for seed in 42 1729; do
     note "unit seed $seed: $(grep -E 'banned ids|test_banned_candidates:' "$OUT/tp-sampling-$seed.log" | tr '\n' ' ')"
 done
 log "unit tests ok"
+stage_time unit-tests
 
 # ---------------------------------------------------------------- stage 1b: code mutant (no extension)
 mutant_stage() {
     local m=$OUT/mutant
-    rm -rf "$m" && mkdir -p "$m" || return 1
+    if [[ ${BW_CPU_ONLY:-0} == 1 ]]; then
+        mkdir -p "$m" || return 1
+    else
+        rm -rf "$m" && mkdir -p "$m" || return 1
+    fi
     sed 's/llama_sampler_init_top_k(candidate_k + 1 + n_ban)/llama_sampler_init_top_k(candidate_k + 1)/' common/sampling.cpp > "$m/sampling.cpp"
     ! cmp -s common/sampling.cpp "$m/sampling.cpp" || { echo "mutant sed changed nothing"; return 1; }
     # the library's own compile command for sampling.cpp, pointed at the mutant source and object
@@ -102,9 +128,32 @@ EOF
     "$BUILDGATE" bash "$m/compile.sh" || return 1
     # the test's own link line, plus the mutant object ahead of libllama-common (executable definitions win)
     local link
-    link=$(sed "s| -o [^ ]*test-llama-archs | -o $m/test-llama-archs-mutant $m/sampling.o |" build-cpu/tests/CMakeFiles/test-llama-archs.dir/link.txt)
+    if [[ -f build-cpu/build.ninja ]]; then
+        ninja -C build-cpu -t commands test-llama-archs | tail -1 > "$m/link.txt" || return 1
+        link=$(python3 - "$m" <<'EOF'
+import shlex, sys
+from pathlib import Path
+m = Path(sys.argv[1])
+args = shlex.split((m / 'link.txt').read_text())
+if args[:2] == [':', '&&']:
+    args = args[2:]
+if args[-2:] == ['&&', ':']:
+    args = args[:-2]
+i = args.index('-o')
+args[i + 1] = str(m / 'test-llama-archs-mutant')
+args.insert(i + 2, str(m / 'sampling.o'))
+print(shlex.join(args))
+EOF
+        ) || return 1
+    else
+        link=$(sed "s| -o [^ ]*test-llama-archs | -o $m/test-llama-archs-mutant $m/sampling.o |" build-cpu/tests/CMakeFiles/test-llama-archs.dir/link.txt)
+    fi
     [[ $link == *"$m/sampling.o"* ]] || { echo "could not rewrite the link line"; return 1; }
-    (cd build-cpu/tests && "$BUILDGATE" bash -c "$link") || return 1
+    if [[ -f build-cpu/build.ninja ]]; then
+        (cd build-cpu && "$BUILDGATE" bash -c "$link") || return 1
+    else
+        (cd build-cpu/tests && "$BUILDGATE" bash -c "$link") || return 1
+    fi
     nm -C "$m/test-llama-archs-mutant" | grep " T common_sampler_init" >/dev/null || { echo "mutant common_sampler_init not in the executable"; return 1; }
 }
 mutant_stage > "$OUT/mutant-build.log" 2>&1 || die 8 "mutant build (see $OUT/mutant-build.log)"
@@ -115,14 +164,35 @@ grep -q "banned: read the full row although the top k is unique" "$OUT/mutant-ru
     die 3 "mutant failed (rc=$mrc) but not on a full-row read (see $OUT/mutant-run.log)"
 note "mutant (no extension): rc=$mrc, caught by: $(grep -m1 'banned: read the full row' "$OUT/mutant-run.log")"
 log "mutant caught"
+stage_time mutant
 
 # ---------------------------------------------------------------- stage 1c: server_context driver
 run_driver() { # meta spec temp arm
+    if [[ ${BW_CPU_ONLY:-0} == 1 && $(uname) == Darwin ]]; then
+        while ! python3 - <<'EOF'
+import re, subprocess, sys
+memory = subprocess.check_output(['memory_pressure', '-Q'], text=True)
+fraction = int(re.search(r'free percentage: (\d+)%', memory)[1]) / 100
+total = int(subprocess.check_output(['sysctl', '-n', 'hw.memsize'], text=True))
+models = {'bw-cand-driver', 'bw-np2-driver', 'chain-cpu', 'fold-cpu', 'outproj-cpu'}
+busy = any(p.rsplit('/', 1)[-1] in models for p in subprocess.check_output(['ps', '-axo', 'comm'], text=True).splitlines())
+if busy or total * fraction < 10 * 1024**3:
+    print('WAIT: another model process or less than 10 GiB available:', memory.strip(), flush=True)
+    sys.exit(1)
+EOF
+        do
+            sleep 20
+        done
+    fi
     LD_LIBRARY_PATH="$ROOT/build-cpu/bin" "$CPUGATE" build-cpu/bin/bw-cand-driver "$MODEL" "$OUT/e2e/$1-$2-$3-$4.json" "$1" "$2" "$3" "$4" 1729 96 \
         > "$OUT/e2e/$1-$2-$3-$4.log" 2>&1 || die 8 "driver meta=$1 spec=$2 temp=$3 arm=$4 (see $OUT/e2e/$1-$2-$3-$4.log)"
     log "ran meta=$1 spec=$2 temp=$3 arm=$4"
 }
-rm -rf "$OUT/e2e" && mkdir -p "$OUT/e2e"
+if [[ ${BW_CPU_ONLY:-0} == 1 ]]; then
+    mkdir -p "$OUT/e2e"
+else
+    rm -rf "$OUT/e2e" && mkdir -p "$OUT/e2e"
+fi
 for spec in 1 0; do
     for temp in 0 1; do
         for arm in cand host refused; do
@@ -146,6 +216,8 @@ case $crc in
 esac
 note "stage 1 PASS"
 log "stage 1 pass"
+stage_time driver-and-compare
+[[ ${BW_CPU_ONLY:-0} != 1 ]] || exit 0
 
 # ---------------------------------------------------------------- stage 2: CUDA build, freeze
 cuda_flags=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER_FORCED=ON -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.2/bin/nvcc

@@ -42,6 +42,9 @@ int main(int argc, char ** argv) {
     params.n_batch = params.n_ubatch = 128;
     params.n_gpu_layers = 0;
     params.cpuparams.n_threads = params.cpuparams_batch.n_threads = meta ? 4 : 8;
+    if (const char * cpu_only = std::getenv("BW_CPU_ONLY"); cpu_only && std::strcmp(cpu_only, "1") == 0) {
+        params.cpuparams.n_threads = params.cpuparams_batch.n_threads = 4;
+    }
     if (spec) {
         params.speculative.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
         params.speculative.draft.n_max = 3;
@@ -112,7 +115,7 @@ int main(int argc, char ** argv) {
                 for (const auto & o : partial->probs_output) {
                     json row = json::array();
                     for (const auto & p : o.probs) {
-                        row.push_back(json{p.tok, p.prob});
+                        row.push_back(json::array({p.tok, p.prob}));
                     }
                     probs.push_back(json{{"tok", o.tok}, {"prob", o.prob}, {"top", row}});
                 }
