@@ -50,9 +50,12 @@ expect_fail() {
     fi
 }
 
+# S7_SKIP_ROW0=1 (diagnostic only, makes this stage a partial gate): dyld interposing of the shim did not take effect on arm64 macOS
+if [[ ${S7_SKIP_ROW0:-0} != 1 ]]; then
 PRELOAD="$ROOT/build-cpu/bin/row0-mutant.$SHIM_EXT" run_test mut-row0 --getter-gate
 grep "ROW0_MUTANT active" "$OUT/mut-row0.log" >/dev/null || die 22 "row0 shim was not loaded (see $OUT/mut-row0.log)"
 expect_fail mut-row0 "logits differ from the single-sequence context"
+fi
 
 source_mutant() { # NAME SED_REPLACEMENT REASON
     sed "s/n_seqs == 1) {/$2) {/" "$GATE_SRC" > "$GATE_SRC.s7tmp" && cat "$GATE_SRC.s7tmp" > "$GATE_SRC" && rm -f "$GATE_SRC.s7tmp"
