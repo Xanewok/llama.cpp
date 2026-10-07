@@ -10431,6 +10431,18 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         }
     }
 
+    // Few-column q6_K MMQ streams src0 in 2-block stages: even blocks per row (staged), odd blocks per row
+    // (plain k loop), a row count that needs the out-of-bounds fallback, broadcast channels, and stream-k fixups.
+    for (int n = 1; n <= 16; ++n) {
+        test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q6_K, GGML_TYPE_F32, 4096, n, 2048, { 1, 1 }, { 1, 1 }));
+        test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q6_K, GGML_TYPE_F32, 1000, n, 2304, { 1, 1 }, { 1, 1 }));
+        test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q6_K, GGML_TYPE_F32,  136, n, 4096, { 1, 1 }, { 2, 1 }));
+    }
+    for (int n : { 6, 12 }) {
+        test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q6_K, GGML_TYPE_F32, 5120, n, 8704, { 1, 1 }, { 1, 1 }));
+        test_cases.emplace_back(new test_mul_mat_id(GGML_TYPE_Q6_K, GGML_TYPE_F32, 4, 2, false, 1000, n, 2048));
+    }
+
     // The SYCL backend picks between one and two output rows per subgroup by row count when there
     // are two destination columns (Q4_K_MMVQ_ROW_PAIR_MIN_NROWS in ggml-sycl/mmvq.cpp). Cover both
     // sides of that boundary, including an odd row count above it for the row-pair tail.

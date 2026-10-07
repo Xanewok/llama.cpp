@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common.cuh"
+#include "cp-async.cuh"
 
 #include <climits>
 #include <cstdint>
@@ -172,10 +173,13 @@ struct ggml_cuda_mmq_config {
     int                       K_vram;      // VRAM tile length in src0->ne[0]/src1->ne[0] direction (logical elements).
     bool                      stream_k;    // Whether or not to use stream-k decomposition.
     bool                      fallback;    // Whether a fallback for out-of-bounds check in src0->ne[1] direction is needed.
+    int                       pipe_blocks; // > 0: raw src0 rows are streamed through a 2-stage cp.async ring, this many blocks per stage.
 
     constexpr __host__ __device__ ggml_cuda_mmq_config(
-            ggml_type type, int nthreads, int occupancy, int I, int J, ggml_cuda_mmq_sram_layout sram_layout, int K_vram, bool stream_k, bool fallback) :
-        type(type), nthreads(nthreads), occupancy(occupancy), I(I), J(J), sram_layout(sram_layout), K_vram(K_vram), stream_k(stream_k), fallback(fallback) {}
+            ggml_type type, int nthreads, int occupancy, int I, int J, ggml_cuda_mmq_sram_layout sram_layout, int K_vram, bool stream_k, bool fallback,
+            int pipe_blocks = 0) :
+        type(type), nthreads(nthreads), occupancy(occupancy), I(I), J(J), sram_layout(sram_layout), K_vram(K_vram), stream_k(stream_k), fallback(fallback),
+        pipe_blocks(pipe_blocks) {}
 
     constexpr __device__ int rows_per_warp() const {
 #if defined(AMD_MFMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
@@ -213,6 +217,14 @@ struct ggml_cuda_mmq_config {
         return ggml_cuda_mmq_config((type_), (nthreads_), (occupancy_), (I_), (J_), (sram_layout_), (K_vram_), (stream_k_), (fallback_)); \
     }                                                                                                                                     \
 
+// Variant of CASE for configs whose k loop streams src0 through a cp.async ring (see mul_mat_q_process_tile).
+#define CASE_PIPE(type_, nthreads_, occupancy_, I_, J_, sram_layout_, K_vram_, stream_k_, fallback_, pipe_blocks_)                        \
+    if (type == (type_) && J == (J_) && fallback == (fallback_)) {                                                                        \
+        static_assert((pipe_blocks_) > 0 && (pipe_blocks_)*ggml_cuda_type_traits<type_>::qk % (K_vram_) == 0, "bad pipe_blocks");        \
+        return ggml_cuda_mmq_config((type_), (nthreads_), (occupancy_), (I_), (J_), (sram_layout_), (K_vram_), (stream_k_), (fallback_), \
+                                    (pipe_blocks_));                                                                                      \
+    }                                                                                                                                     \
+
 #include "mmq-config-pascal-older.cuh"
 #include "mmq-config-pascal-dp4a.cuh"
 #include "mmq-config-ampere.cuh"
@@ -226,6 +238,7 @@ struct ggml_cuda_mmq_config {
 #include "mmq-config-rdna4.cuh"
 
 #undef CASE
+#undef CASE_PIPE
 
 static __host__ ggml_cuda_mmq_config ggml_cuda_mmq_get_config(const ggml_type type, const int J, const bool fallback, const int cc, const ggml_prec prec_src1 = GGML_PREC_Q8) {
     if (GGML_CUDA_CC_IS_AMD(cc)) {
@@ -349,6 +362,10 @@ static __host__ bool ggml_cuda_mmq_get_stream_k(const ggml_type type, const int 
 
 static constexpr __device__ bool ggml_cuda_mmq_get_stream_k(ggml_type type, int J, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8) {
     return ggml_cuda_mmq_get_config(type, J, fallback, prec_src1).stream_k;
+}
+
+static constexpr __device__ int ggml_cuda_mmq_get_pipe_blocks(ggml_type type, int J, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8) {
+    return ggml_cuda_mmq_get_config(type, J, fallback, prec_src1).pipe_blocks;
 }
 
 static __host__ int ggml_cuda_mmq_get_fallback(const ggml_type type, const int J, const bool fallback, const int cc) {
@@ -883,7 +900,7 @@ static __device__ __forceinline__ void mul_mat_q_process_tile(
         const int * __restrict__ ids_dst, float * __restrict__ dst, float * __restrict__ tmp_fixup,
         const float * __restrict__ y_scale,
         const int stride_row_x, const int ncols_y, const int stride_col_dst,
-        const int tile_x_max_i, const int tile_y_max_j, const int kb0_start, const int kb0_stop) {
+        const int tile_x_max_i, const int tile_y_max_j, const int kb0_start, const int kb0_stop, const bool pipe) {
 
     constexpr int              warp_size  = ggml_cuda_get_physical_warp_size();
     constexpr int              nwarps     = ggml_cuda_mmq_get_nthreads(type, J, fallback, prec_src1) / warp_size;
@@ -913,8 +930,8 @@ static __device__ __forceinline__ void mul_mat_q_process_tile(
 
     constexpr int sz = sizeof(block_q8_1_mmq) / sizeof(int);
 
-    for (int kb0 = kb0_start; kb0 < kb0_stop; kb0 += blocks_per_iter) {
-        load_tiles(x, tile_x, offset_x + kb0, tile_x_max_i, stride_row_x);
+    // Consumes the src0 tile already in tile_x (written, not yet synchronized) against src1 at k block kb0.
+    auto dot_iter = [&](const int kb0) {
         {
             const int * by0 = y + ncols_y * (kb0 * qk / ne_block) * sz;
 #pragma unroll
@@ -946,6 +963,71 @@ static __device__ __forceinline__ void mul_mat_q_process_tile(
         vec_dot(tile_x, tile_y, sum, MMQ_TILE_NE_K);
 
         __syncthreads();
+    };
+
+    constexpr int pipe_blocks = ggml_cuda_mmq_get_pipe_blocks(type, J, fallback, prec_src1);
+    bool k_loop_done = false;
+#ifdef CP_ASYNC_AVAILABLE
+    if constexpr (pipe_blocks > 0) {
+        if (pipe) {
+            // Raw src0 rows go global -> shared via cp.async, one stage ahead of the dequantization into tile_x,
+            // so that the next stage's bytes are in flight while this one is converted and multiplied.
+            // load_tiles then reads a stage exactly as it reads VRAM, with a row stride of pipe_blocks blocks.
+            // Host contract (mmq_pipe_supported): row/channel/sample strides and the base pointer keep every
+            // stage 4-byte aligned, and kb0_start/kb0_stop are multiples of pipe_blocks.
+            constexpr int row_bytes   = pipe_blocks * ggml_cuda_type_traits<type>::bs;
+            constexpr int stage_bytes = I * row_bytes;
+            static_assert(row_bytes % 4 == 0, "pipe stage rows must be 4-byte aligned");
+            constexpr int row_words   = row_bytes / 4;
+
+            char * stages = (char *) (tile_x + I*ggml_cuda_mmq_get_sram_stride(type, J, fallback, prec_src1));
+            const unsigned int stages_s = ggml_cuda_cvta_generic_to_shared(stages);
+
+            auto issue = [&](const int buf, const int kb0) {
+                const unsigned int stage_s = stages_s + buf*stage_bytes;
+#pragma unroll 2
+                for (int i = threadIdx.y; i < I; i += nwarps) {
+                    const int i_src = fallback ? min(i, tile_x_max_i) : i;
+                    const char * src = x + (int64_t(offset_x) + int64_t(i_src)*stride_row_x + kb0) * ggml_cuda_type_traits<type>::bs;
+#pragma unroll
+                    for (int c = threadIdx.x; c < row_words; c += warp_size) {
+                        cp_async_ca_4(stage_s + i*row_bytes + 4*c, src + 4*c);
+                    }
+                }
+                cp_async_commit_group();
+            };
+
+            const int nstages = (kb0_stop - kb0_start) / pipe_blocks;
+            if (nstages > 0) {
+                issue(0, kb0_start);
+            }
+            for (int st = 0; st < nstages; ++st) {
+                // The buffer refilled here was last read before the trailing __syncthreads of stage st-1.
+                if (st + 1 < nstages) {
+                    issue((st + 1) & 1, kb0_start + (st + 1)*pipe_blocks);
+                    cp_async_wait_group<1>();
+                } else {
+                    cp_async_wait_group<0>();
+                }
+                __syncthreads();
+
+                const char * stage = stages + (st & 1)*stage_bytes;
+#pragma unroll
+                for (int kbs = 0; kbs < pipe_blocks; kbs += blocks_per_iter) {
+                    load_tiles(stage, tile_x, kbs, tile_x_max_i, pipe_blocks);
+                    dot_iter(kb0_start + st*pipe_blocks + kbs);
+                }
+            }
+            k_loop_done = true;
+        }
+    }
+#endif // CP_ASYNC_AVAILABLE
+    GGML_UNUSED(pipe);
+    if (!k_loop_done) {
+        for (int kb0 = kb0_start; kb0 < kb0_stop; kb0 += blocks_per_iter) {
+            load_tiles(x, tile_x, offset_x + kb0, tile_x_max_i, stride_row_x);
+            dot_iter(kb0);
+        }
     }
 
     if (fixup) {
@@ -967,7 +1049,7 @@ static __global__ void mul_mat_q(
         const uint3 blocks_per_ne00, const int nrows_x, const int ncols_dst, const int stride_row_x, const int ncols_y, const int stride_col_dst,
         const uint3 channel_ratio, const uint3 nchannels_y, const int stride_channel_x, const int stride_channel_y, const int stride_channel_dst,
         const uint3 sample_ratio, const uint3 nsamples_y, const int stride_sample_x, const int stride_sample_y, const int stride_sample_dst,
-        const uint3 ntx) {
+        const uint3 ntx, const bool pipe) {
 
     // Skip unused template specializations for faster compilation:
     if (ggml_cuda_mmq_get_config(type, J, fallback, prec_src1).type == GGML_TYPE_COUNT) {
@@ -1064,12 +1146,13 @@ static __global__ void mul_mat_q(
         mul_mat_q_process_tile<type, J, fallback, fixup, prec_src1>
             (x, offset_x, y + offset_y, ids_dst_shared, dst + offset_dst, tmp_fixup, y_scale_tile,
              stride_row_x, ncols_y, stride_col_dst,
-             tile_x_max_i, tile_y_max_j, 0, blocks_per_ne00.z);
+             tile_x_max_i, tile_y_max_j, 0, blocks_per_ne00.z, pipe);
         return;
     }
 
     constexpr int ITER_K          = ggml_cuda_mmq_get_K_vram(type, J, fallback, prec_src1);
-    constexpr int blocks_per_iter = ITER_K / qk;
+    constexpr int pipe_blocks     = ggml_cuda_mmq_get_pipe_blocks(type, J, fallback, prec_src1);
+    constexpr int blocks_per_iter = pipe_blocks > 0 ? pipe_blocks : ITER_K / qk; // k granularity of the stream-k split
 
     // kbc == k block continuous, current index in continuous ijk space.
     int kbc      = int64_t(blockIdx.x)    *(nsamples_y.z*nchannels_y.z*ntx.z*nty*blocks_per_ne00.z) / gridDim.x;
@@ -1158,7 +1241,7 @@ static __global__ void mul_mat_q(
         mul_mat_q_process_tile<type, J, fallback, fixup, prec_src1>
             (x, offset_x, y + offset_y, ids_dst_shared, dst + offset_dst, tmp_fixup, y_scale_tile,
              stride_row_x, ncols_y, stride_col_dst,
-             tile_x_max_i, tile_y_max_j, kb0_start, kb0_stop);
+             tile_x_max_i, tile_y_max_j, kb0_start, kb0_stop, pipe);
 
         kbc += blocks_per_ne00.z;
         kbc -= fastmodulo(kbc, blocks_per_ne00);
@@ -1242,7 +1325,7 @@ static __global__ void mul_mat_q(
     mul_mat_q_process_tile<type, J, fallback, fixup, prec_src1>
         (x, offset_x, y + offset_y, ids_dst_shared, dst + offset_dst, tmp_fixup, y_scale_tile,
          stride_row_x, ncols_y, stride_col_dst,
-         tile_x_max_i, tile_y_max_j, kb0_start, kb0_stop);
+         tile_x_max_i, tile_y_max_j, kb0_start, kb0_stop, pipe);
 }
 
 template <ggml_type type, int J, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>
@@ -1257,7 +1340,8 @@ static __global__ void mul_mat_q_stream_k_fixup(
     constexpr int I               = ggml_cuda_mmq_get_I(type, J, fallback, prec_src1);
     constexpr int qk              = ggml_cuda_type_traits<type>::qk;
     constexpr int ITER_K          = ggml_cuda_mmq_get_K_vram(type, J, fallback, prec_src1);
-    constexpr int blocks_per_iter = ITER_K / qk;
+    constexpr int pipe_blocks     = ggml_cuda_mmq_get_pipe_blocks(type, J, fallback, prec_src1);
+    constexpr int blocks_per_iter = pipe_blocks > 0 ? pipe_blocks : ITER_K / qk; // must match mul_mat_q
 
     float sum[J / nwarps] = {0.0f};
     const int i = blockIdx.y*warp_size + threadIdx.x;
@@ -1393,11 +1477,26 @@ struct mmq_args {
     int64_t ncols_opt; // value to optimize the tile size against, launch grid still uses ncols_max
 };
 
+static size_t mmq_get_nbytes_shared_pipe(const ggml_cuda_mmq_config & config) {
+    return 2 * config.I * config.pipe_blocks * ggml_type_size(config.type);
+}
+
 static size_t mmq_get_nbytes_shared(const ggml_cuda_mmq_config & config, const int cc) {
     const size_t nbs_ids = config.J*sizeof(int);
     const size_t nbs_x = ggml_cuda_mmq_get_nbytes_shared_x(config, cc);
     const size_t nbs_y = config.J * (sizeof(block_q8_1_mmq));
-    return nbs_ids + nbs_x + GGML_PAD(nbs_y, config.nthreads*sizeof(int));
+    return nbs_ids + nbs_x + GGML_PAD(nbs_y, config.nthreads*sizeof(int)) + mmq_get_nbytes_shared_pipe(config);
+}
+
+// The pipelined k loop copies whole stages with 4-byte cp.async: every stage start must stay 4-byte aligned.
+static bool mmq_pipe_supported(const ggml_cuda_mmq_config & config, const mmq_args & args) {
+    if (config.pipe_blocks == 0) {
+        return false;
+    }
+    const int64_t bs = ggml_type_size(config.type);
+    const int64_t nb = args.ncols_x / ggml_blck_size(config.type);
+    return nb % config.pipe_blocks == 0 && (uintptr_t) args.x % 4 == 0 &&
+        (args.stride_row_x*bs) % 4 == 0 && (args.stride_channel_x*bs) % 4 == 0 && (args.stride_sample_x*bs) % 4 == 0;
 }
 
 template <ggml_type type, int J, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>
@@ -1434,13 +1533,15 @@ static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & a
     const uint3 channel_ratio_fd   = init_fastdiv_values(channel_ratio);
     const uint3 sample_ratio_fd    = init_fastdiv_values(sample_ratio);
 
+    const bool pipe = mmq_pipe_supported(config, args);
+
     if (!config.stream_k) {
         mul_mat_q<type, J, fallback, prec_src1><<<block_nums_xy_tiling, block_dims, nbytes_shared, stream>>>
             (args.x, args.y, args.ids_dst, args.expert_bounds, args.dst, nullptr, args.y_scale,
              blocks_per_ne00_fd, args.nrows_x, args.ncols_dst, args.stride_row_x, args.ncols_y, args.nrows_dst,
              channel_ratio_fd, nchannels_y_fd, args.stride_channel_x, args.stride_channel_y, args.stride_channel_dst,
              sample_ratio_fd, nsamples_y_fd, args.stride_sample_x, args.stride_sample_y, args.stride_sample_dst,
-             ntx_fd);
+             ntx_fd, pipe);
         return;
     }
 
@@ -1469,7 +1570,7 @@ static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & a
          blocks_per_ne00_fd, args.nrows_x, args.ncols_dst, args.stride_row_x, args.ncols_y, args.nrows_dst,
          channel_ratio_fd, nchannels_y_fd, args.stride_channel_x, args.stride_channel_y, args.stride_channel_dst,
          sample_ratio_fd, nsamples_y_fd, args.stride_sample_x, args.stride_sample_y, args.stride_sample_dst,
-         ntx_fd);
+         ntx_fd, pipe);
 
     if (!fixup_needed) {
         return;

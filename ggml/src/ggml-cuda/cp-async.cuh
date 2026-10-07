@@ -55,3 +55,34 @@ static __device__ __forceinline__ void cp_async_wait_all() {
     NO_DEVICE_CODE;
 #endif // CP_ASYNC_AVAILABLE
 }
+
+// Copies 4 bytes from global to shared memory through L1; both pointers must be 4-byte aligned.
+// For data whose rows are only 4-byte aligned (e.g. q6_K blocks of 210 bytes).
+static __device__ __forceinline__ void cp_async_ca_4(const unsigned int dst, const void * src) {
+#ifdef CP_ASYNC_AVAILABLE
+    asm volatile("cp.async.ca.shared.global [%0], [%1], 4;"
+        : : "r"(dst), "l"(src));
+#else
+    GGML_UNUSED(dst);
+    GGML_UNUSED(src);
+    NO_DEVICE_CODE;
+#endif // CP_ASYNC_AVAILABLE
+}
+
+static __device__ __forceinline__ void cp_async_commit_group() {
+#ifdef CP_ASYNC_AVAILABLE
+    asm volatile("cp.async.commit_group;");
+#else
+    NO_DEVICE_CODE;
+#endif // CP_ASYNC_AVAILABLE
+}
+
+// Waits until at most n of this thread's committed groups are still in flight.
+template <int n>
+static __device__ __forceinline__ void cp_async_wait_group() {
+#ifdef CP_ASYNC_AVAILABLE
+    asm volatile("cp.async.wait_group %0;" : : "n"(n));
+#else
+    NO_DEVICE_CODE;
+#endif // CP_ASYNC_AVAILABLE
+}

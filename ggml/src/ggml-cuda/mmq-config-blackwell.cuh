@@ -1,4 +1,11 @@
 static constexpr __host__ __device__ ggml_cuda_mmq_config ggml_cuda_mmq_get_config_blackwell(ggml_type type, int J, bool fallback) {
+    // Few columns: the src0 bytes dominate, so keep a stage of raw rows in flight while the previous one is dequantized.
+    // 2 q6_K blocks (420 bytes) per stage keep stage rows 4-byte aligned; I=64 keeps the 2 stages within shared memory.
+    CASE_PIPE(GGML_TYPE_Q6_K, 128, 1, 64,  8, GGML_CUDA_MMQ_SRAM_LAYOUT_Q6_K, MMQ_ITER_K, true, true,  2);
+    CASE_PIPE(GGML_TYPE_Q6_K, 128, 1, 64, 16, GGML_CUDA_MMQ_SRAM_LAYOUT_Q6_K, MMQ_ITER_K, true, true,  2);
+    CASE_PIPE(GGML_TYPE_Q6_K, 128, 1, 64,  8, GGML_CUDA_MMQ_SRAM_LAYOUT_Q6_K, MMQ_ITER_K, true, false, 2);
+    CASE_PIPE(GGML_TYPE_Q6_K, 128, 1, 64, 16, GGML_CUDA_MMQ_SRAM_LAYOUT_Q6_K, MMQ_ITER_K, true, false, 2);
+
     CASE(GGML_TYPE_MXFP4, 256, 1, 128,   8, GGML_CUDA_MMQ_SRAM_LAYOUT_FP4, MMQ_ITER_K_FP4, true, true);
     CASE(GGML_TYPE_MXFP4, 256, 1, 128,  16, GGML_CUDA_MMQ_SRAM_LAYOUT_FP4, MMQ_ITER_K_FP4, true, true);
     CASE(GGML_TYPE_MXFP4, 256, 1, 128,  32, GGML_CUDA_MMQ_SRAM_LAYOUT_FP4, MMQ_ITER_K_FP4, true, true);
