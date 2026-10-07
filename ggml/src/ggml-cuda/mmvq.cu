@@ -1,4 +1,5 @@
 #include "mmvq.cuh"
+#include "mmvq-mma.cuh"
 #include "quantize.cuh"
 #include "unary.cuh"
 #include "vecdotq.cuh"
@@ -323,6 +324,12 @@ int get_mmvq_mmid_max_batch(ggml_type type, int cc) {
 
 bool ggml_cuda_should_use_mmvq(enum ggml_type type, int cc, int64_t ne11) {
     if (!ggml_is_quantized(type)) {
+        return false;
+    }
+    // local study knob: GGML_CUDA_MMVQ_MMA_MIN=N hands q6_K/iq4_xs at N-16 columns to mmvq-mma (overrides the MMVQ cut)
+    static const int mma_min = getenv("GGML_CUDA_MMVQ_MMA_MIN") ? atoi(getenv("GGML_CUDA_MMVQ_MMA_MIN")) : 0;
+    if (mma_min > 0 && (type == GGML_TYPE_Q6_K || type == GGML_TYPE_IQ4_XS) && ne11 >= mma_min && ne11 <= MMVQ_MMA_MAX_BATCH_SIZE &&
+            turing_mma_available(cc)) {
         return false;
     }
     // k-quants cost more to decode and mvq redoes that per column, so MMQ wins sooner.

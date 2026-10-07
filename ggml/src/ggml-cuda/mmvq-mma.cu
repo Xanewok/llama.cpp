@@ -283,7 +283,9 @@ bool ggml_cuda_should_use_mmvq_mma(const ggml_tensor * src0, const int64_t ne11,
         default:
             return false;
     }
-    return true;
+    // local study knob: GGML_CUDA_MMVQ_MMA=0 keeps MMQ
+    static const bool mma_off = getenv("GGML_CUDA_MMVQ_MMA") && atoi(getenv("GGML_CUDA_MMVQ_MMA")) == 0;
+    return !mma_off;
 }
 
 void ggml_cuda_mul_mat_vec_q_mma(ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, ggml_tensor * dst) {
@@ -324,6 +326,13 @@ void ggml_cuda_mul_mat_vec_q_mma(ggml_backend_cuda_context & ctx, const ggml_ten
     const int64_t s11 = ne10_padded / QK8_1;
     const int64_t s12 = ne11*s11;
     const int64_t s13 = ne12*s12;
+
+    static const bool mma_debug = getenv("GGML_CUDA_DEBUG_MMVQ_MMA") != nullptr;
+    if (mma_debug) {
+        fprintf(stderr, "mmvq_mma: device=%d type=%s columns=%lld ntiles=%d rows=%lld k=%lld channels=%lld samples=%lld\n",
+                ctx.device, ggml_type_name(src0->type), (long long) ne11, ne11 <= 8 ? 1 : 2, (long long) ne01, (long long) ne00,
+                (long long) ne12, (long long) ne13);
+    }
 
     const char       * x = (const char *) src0->data;
     const block_q8_1 * y = (const block_q8_1 *) src1_q8_1.get();
