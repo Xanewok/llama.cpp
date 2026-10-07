@@ -1749,11 +1749,16 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             return;
         }
         c.attached = false;
-        if (!llama_set_sampler(params.ctx_dft, seq_id, backend_chains[seq_id])) {
+        // a sampler can be set only once: its backend side stays initialised after it is replaced
+        llama_sampler * fresh = llama_sampler_clone(backend_chains[seq_id]);
+        const bool ok = llama_set_sampler(params.ctx_dft, seq_id, fresh);
+        llama_sampler_free(backend_chains[seq_id]);
+        if (!ok) {
             SPC_WRN("backend offload failed for seq_id=%d; using CPU sampler\n", (int) seq_id);
-            llama_sampler_free(backend_chains[seq_id]);
-            backend_chains[seq_id] = nullptr;
+            llama_sampler_free(fresh);
+            fresh = nullptr;
         }
+        backend_chains[seq_id] = fresh;
     }
 
     // Gives seq_id the chain top-k -> temp -> dist that the step loop's host sampler (spec_retune) implements:
@@ -1764,7 +1769,17 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         if (c.smpl && c.temp == temp && c.seed == seed) {
             if (!c.attached) {
-                c.attached = llama_set_sampler(ctx_dft, seq_id, c.smpl);
+                llama_sampler * fresh = llama_sampler_clone(c.smpl);
+                if (llama_set_sampler(ctx_dft, seq_id, fresh)) {
+                    llama_sampler_free(c.smpl);
+                    c.smpl     = fresh;
+                    c.attached = true;
+                } else {
+                    llama_sampler_free(fresh);
+                    // the failed call dropped whatever was attached
+                    c.attached = true;
+                    mtp_chain_release(seq_id);
+                }
             }
             return c.attached;
         }
