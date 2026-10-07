@@ -1,0 +1,101 @@
+id = "cand-neginf-depth-j5q"
+kind = "depth"
+title = "cand-neginf (stack6 + backend candidates kept under -inf logit_bias, i.e. ignore_eos) vs frozen stack6, J5q TP2 np1 k=5, ABBA, cross-arm identity"
+# Template: bw-cand-neginf.sh substitutes @COMMIT@, @DATE@ and @RESULTS@ and installs it as harness/experiments/cand-neginf-depth-j5q.toml.
+# The harness always sends ignore_eos, so stack6 takes the TP CPU-sampling fallback on every verify row (eager full-row D2H +
+# host top_k_select, ~90 us/row, 0.64/0.31/0.17 ms/round at 8k/32k/90k, verify-sampling REPORT). cn keeps the device candidate
+# chain top-k(k + 1 + n_EOG) and drops the banned ids on the host.
+# Identity cross-arm (D): without a tie in the top 21 unbanned logits both arms hand the chain the same 20 ids with the same raw
+# logits (the meta gather is bit-exact) in the same order, and on a tie both read the full row; same chain, same RNG, so the same
+# draws and verify verdicts. A cross-arm failure is a finding (non-exactness), not noise.
+plan = ["s6", "cn", "cn", "s6"]
+protected = ["identity", "steady_minimum", "SHA256SUMS", "frozen", "DEPTHS", "ARM_ENV", "engaged", "min_p"]
+devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
+out = "/home/xanewok/repos/qwen38-eval/results/@DATE@-cand-neginf-depth-j5q"
+cpu_evidence = { path = "@RESULTS@", command = "bw-cand-neginf.sh stage 1: test-llama-archs --tp-sampling (synthetic ties + Meta(CPU,CPU) banned-id candidates, rejection verdicts, unextended-chain control), code mutant (no extension) must fail, server_context driver on Qwen3.5-4B -c 4096 Meta(CPU,CPU) and CPU, MTP and plain, temp 0/1: cand vs host vs refused tokens, draft counters, post-sampling top-20 sets" }
+
+[model]
+id = "swift15-j5q"
+path = "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf"
+bytes = 19996051744
+sha = "f2c850ea3cd818b9d669fbd1e18767ef669ce012e614d819cce5ab6809e3a774"
+
+[draft_vocab]
+path = "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json"
+sha = "e30af79520ade5b7ddb851d75cf271f07d407dc768bf646e4517607d562a65a6"
+
+# Both arms: stack6 env and flags (stack6-depth-j5q). Proofs: the slot launch line (log captured), then s6 logs the TP refusal
+# of the logit-bias-led chain and cn never logs a set_sampler CPU fallback.
+[arms.s6]
+label = "stack6 ac7465885, --kv-pad 4096, CCCL343, staging (TP CPU-sampling fallback under ignore_eos)"
+commit = "ac7465885dc9f13de396ccd91b4be5eaffde3730"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6"
+bin = "build/bin"
+repo = "/home/xanewok/repos/stack4"
+exe = "build/bin/round-trace"
+env = { GGML_CUDA_DEBUG_SSM_CONV = "1", GGML_SCHED_INPUT_STAGING = "1", LLAMA_ARG_LOG_VERBOSITY = "4", LD_LIBRARY_PATH = "{root}/build/bin" }
+flags = ["--kv-pad", "4096", "--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16"]
+canary_log = ["(?s)n_kv_pad += 4096\\b.*n_kv_pad += 4096\\b", "copy-engine H2D streams per GPU: 2\\b",
+  "ssm_conv_state_fusion: graph device=0 graph=\\d+ tokens=6 conv=([1-9]\\d*) fused=\\1\\b",
+  "ssm_conv_state_fusion: graph device=1 graph=\\d+ tokens=6 conv=([1-9]\\d*) fused=\\1\\b",
+  "(?s)\\A(?!.*ssm_conv_state_fusion: graph device=\\d+ graph=\\d+ tokens=[1-8] conv=(\\d+) fused=(?!\\1\\b))",
+  "sampler chain: logits -> logit-bias -> ",
+  "set_sampler: seq_id = \\d+: backend sampling with SPLIT_MODE_TENSOR needs a sampler chain whose first active sampler is top-k with 1 <= k <= 256; using CPU"]
+
+[arms.cn]
+label = "cand-neginf @COMMIT@ (stack6 + candidates under -inf bias), --kv-pad 4096, CCCL343, staging"
+commit = "@COMMIT@"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/frozen/cand-neginf"
+bin = "build/bin"
+repo = "/home/xanewok/repos/llama.cpp"
+exe = "build/bin/round-trace"
+env = { GGML_CUDA_DEBUG_SSM_CONV = "1", GGML_SCHED_INPUT_STAGING = "1", LLAMA_ARG_LOG_VERBOSITY = "4", LD_LIBRARY_PATH = "{root}/build/bin" }
+flags = ["--kv-pad", "4096", "--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16"]
+canary_log = ["(?s)n_kv_pad += 4096\\b.*n_kv_pad += 4096\\b", "copy-engine H2D streams per GPU: 2\\b",
+  "ssm_conv_state_fusion: graph device=0 graph=\\d+ tokens=6 conv=([1-9]\\d*) fused=\\1\\b",
+  "ssm_conv_state_fusion: graph device=1 graph=\\d+ tokens=6 conv=([1-9]\\d*) fused=\\1\\b",
+  "(?s)\\A(?!.*ssm_conv_state_fusion: graph device=\\d+ graph=\\d+ tokens=[1-8] conv=(\\d+) fused=(?!\\1\\b))",
+  "sampler chain: logits -> logit-bias -> ",
+  "(?s)\\A(?!.*set_sampler: [^\\n]*using CPU)"]
+
+[server]
+args = ["-m", "{model}", "-c", "102400", "-np", "1", "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "{arm_flags}",
+        "-sm", "tensor", "--tensor-split", "50,50", "-ngl", "99", "-b", "2048", "-ub", "512",
+        "--spec-type", "draft-mtp", "--spec-draft-n-max", "5", "--spec-draft-n-min", "0", "--spec-draft-p-min", "0",
+        "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--backend-sampling",
+        "--spec-draft-vocab", "{draft_vocab}", "--cache-ram", "0", "--metrics", "-t", "8", "-tb", "8",
+        "--host", "127.0.0.1", "--port", "{port}"]
+knobs = ["GGML_SCHED_INPUT_STAGING", "LLAMA_ARG_LOG_VERBOSITY", "GGML_CUDA_AR_COPY_STREAMS", "GGML_CUDA_DEBUG_SSM_CONV", "LLAMA_ROUND_TRACE", "GGML_SCHED_DEBUG"]
+
+boot_cap_s = 300
+request_cap_s = 600
+
+[depth]
+depths = [8192, 32768, 90112]
+k = 5
+identity = "cross-arm"
+distinct_builds = true
+min_steady_intervals = 40
+min_predicted = 256
+fixtures = "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures"
+request = { seed = 1729, n_predict = 512, temperature = 1, top_k = 20, top_p = 0.95, min_p = 0.05 }
+counters = ["graph_hit", "graph_miss"]
+wall_s = 420
+
+[canary]
+plan = ["s6", "cn"]
+depths = [8192]
+proofs = []
+
+[budget]
+canary_s = 900
+margin = 1.5
+cleanup_s = 150
+est_s = 2300
+startup_grace_s = 300
+preflight_s = 300
+
+[outputs]
+run = "full-a{attempt}"
+canary = "canary-a{attempt}"
+preflight = "preflight-plan"

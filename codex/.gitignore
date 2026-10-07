@@ -1,8 +1,2 @@
-base-src/
-frozen/*/bin/*
-!frozen/*/bin/SHA256SUMS
-*.log
-reuse-results/
-input-results/
-runs/
+bw-results/
 __pycache__/
