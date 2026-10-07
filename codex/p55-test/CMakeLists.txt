@@ -1,0 +1,17 @@
+cmake_minimum_required(VERSION 3.16)
+project(p55_cuda_checks LANGUAGES C CXX)
+set(LLAMA_SOURCE "${CMAKE_CURRENT_LIST_DIR}/../..")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+add_subdirectory("${LLAMA_SOURCE}" llama)
+
+# The test uses hardware_concurrency(), which ignores the queue's CPU affinity.
+file(READ "${LLAMA_SOURCE}/tests/test-backend-ops.cpp" source)
+set(thread_count "#   define N_THREADS std::thread::hardware_concurrency()")
+string(FIND "${source}" "${thread_count}" thread_count_at)
+if(thread_count_at EQUAL -1)
+    message(FATAL_ERROR "test-backend-ops thread limit definition changed")
+endif()
+string(REPLACE "${thread_count}" "#   define N_THREADS 8" source "${source}")
+file(WRITE "${CMAKE_BINARY_DIR}/test-backend-ops.cpp" "${source}")
+set_property(TARGET test-backend-ops PROPERTY SOURCES "${CMAKE_BINARY_DIR}/test-backend-ops.cpp")
+target_include_directories(test-backend-ops PRIVATE "${LLAMA_SOURCE}/tests")

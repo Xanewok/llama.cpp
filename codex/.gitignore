@@ -6,3 +6,7 @@ reuse-results/
 input-results/
 runs/
 __pycache__/
+/snapshots/
+/experiments/*.toml
+/items/p55-*.gpuq.toml
+/checks-p55/
