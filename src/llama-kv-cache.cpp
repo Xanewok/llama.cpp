@@ -420,15 +420,13 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
 
         uint32_t new_head = cells.size();
 
-        for (uint32_t i = 0; i < cells.size(); ++i) {
-            if (!cells.pos_in(i, p0, p1)) {
-                continue;
-            }
-
-            if (cells.seq_has(i, seq_id) && cells.seq_rm(i, seq_id)) {
-                if (new_head == cells.size()) {
-                    new_head = i;
-                }
+        const auto & positions = cells.seq_pos_get(seq_id);
+        auto it = positions.lower_bound({p0, 0});
+        while (it != positions.end() && it->first < p1) {
+            const uint32_t i = (it++)->second;
+            // seq_rm erases this entry; position order need not match cell order.
+            if (cells.seq_rm(i, seq_id)) {
+                new_head = std::min(new_head, i);
             }
         }
 
