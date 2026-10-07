@@ -4,7 +4,7 @@ set(LLAMA_SOURCE "${CMAKE_CURRENT_LIST_DIR}/../.." CACHE PATH "Source tree under
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 add_subdirectory("${LLAMA_SOURCE}" llama)
 find_package(Threads REQUIRED)
-foreach(fixture bw-np2-driver chain-cpu fold-cpu)
+foreach(fixture bw-np2-driver chain-cpu fold-cpu bw-cand-driver)
     add_executable(${fixture} "../${fixture}.cpp")
     target_compile_features(${fixture} PRIVATE cxx_std_17)
     target_include_directories(${fixture} PRIVATE "${LLAMA_SOURCE}/tools/server" "${LLAMA_SOURCE}/tools/mtmd" "${LLAMA_SOURCE}/vendor" "${LLAMA_SOURCE}")

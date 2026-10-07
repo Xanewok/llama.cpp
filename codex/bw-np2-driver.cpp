@@ -56,6 +56,9 @@ int main(int argc, char ** argv) {
         params.cache_type_k = params.cache_type_v = GGML_TYPE_Q8_0;
     }
     params.cpuparams.n_threads = params.cpuparams_batch.n_threads = meta ? 4 : 8;
+    if (std::getenv("BW_CPU_ONLY")) {
+        params.cpuparams.n_threads = params.cpuparams_batch.n_threads = 4;
+    }
     params.speculative.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
     params.speculative.draft.n_max = 3;
     params.speculative.draft.n_min = 0;
