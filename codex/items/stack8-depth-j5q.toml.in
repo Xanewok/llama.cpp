@@ -45,7 +45,7 @@ repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8"
 bin = "build/bin"
 exe = "build/bin/round-trace"
 flags = []
-canary_log = ["MTP chain: k=5\\b", "mtp_fold_decode: engaged\\b", "set_logits: using backend candidates: n_cand = \\d+, n_ban = [1-9]\\d*, top_k = 20\\b", "(?s)^(?!.*set_sampler: [^\\n]*using CPU)"]
+canary_log = ["MTP chain: k=5\\b", "mtp_fold_decode: engaged\\b", "set_logits: using backend candidates: n_cand = [1-9]\\d*, n_ban = [1-9]\\d*, top_k = 20\\b", "(?s)^(?!.*set_sampler: [^\\n]*using CPU)"]
 
 [arms.s8f.env]
 GGML_SCHED_INPUT_STAGING = "1"

@@ -43,10 +43,10 @@ def fixture_checks():
     lib.verify_log_patterns(CHAIN.read_text(), [r'MTP chain: k=5\b'], 'recorded chain')
     candidate = EVAL / 'results/2026-10-07-cand-neginf-depth-j5q/canary-a1/1-cn/server.log'
     candidate_text = candidate.read_text()
-    candidate_patterns = [r'set_logits: using backend candidates: n_cand = \d+, n_ban = [1-9]\d*, top_k = 20\b',
+    candidate_patterns = [r'set_logits: using backend candidates: n_cand = [1-9]\d*, n_ban = [1-9]\d*, top_k = 20\b',
                           r'(?s)^(?!.*set_sampler: [^\n]*using CPU)']
     lib.verify_log_patterns(candidate_text, candidate_patterns, 'recorded banned candidates')
-    for bad in ((REAL / 'server.log').read_text(), re.sub(r'n_ban = [1-9]\d*', 'n_ban = 0', candidate_text),
+    for bad in ((REAL / 'server.log').read_text(), re.sub(r'n_cand = [1-9]\d*', 'n_cand = 0', candidate_text), re.sub(r'n_ban = [1-9]\d*', 'n_ban = 0', candidate_text),
                 candidate_text + '\nset_sampler: seq_id = 0: using CPU\n'):
         try:
             lib.verify_log_patterns(bad, candidate_patterns, 'candidate proof control')
