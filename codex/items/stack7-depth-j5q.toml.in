@@ -1,3 +1,4 @@
+priority = 30
 id = "stack7-depth-j5q"
 kind = "depth"
 title = "stack7 vs stack6: J5q real prompts, untraced, k5; NH1 off/on, chain on; cross-arm tokens and draft counters gated"
@@ -97,7 +98,7 @@ temperature = 1
 top_k = 20
 top_p = 0.95
 min_p = 0.05
-ignore_eos = false
+ignore_eos = true
 
 [canary]
 plan = ["s7f"]

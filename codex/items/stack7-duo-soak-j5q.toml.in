@@ -1,3 +1,4 @@
+priority = 20
 id = "stack7-duo-soak-j5q"
 kind = "campaign"
 title = "stack7 duo serving soak, J5q; swift15-j5q-duo profile, NH1 off pending np1 A/B, chain off (np2 chain fallback unverified, bw-stack7 a1 stage 29); untraced"

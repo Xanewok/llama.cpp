@@ -1,3 +1,4 @@
+priority = 30
 id = "stack7-np2-real-j5q"
 kind = "depth"
 title = "stack7 vs stack6: J5q real prompts, untraced, k5; np2 serving profile; NH1 off, chain off (np2 chain fallback unverified, bw-stack7 a1 stage 29)"
@@ -81,7 +82,7 @@ temperature = 1
 top_k = 20
 top_p = 0.95
 min_p = 0.05
-ignore_eos = false
+ignore_eos = true
 
 [canary]
 plan = ["patch"]

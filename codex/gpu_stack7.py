@@ -13,7 +13,7 @@ REAL = EVAL / 'results/2026-10-05-stack6-depth-j5q/full-a1/1-s6'
 REAL_NP2 = EVAL / 'results/2026-10-07-gdn-getter-gate-np2-busy-j5q/canary-a1/0-up'
 GETTER = EVAL / 'results/2026-10-07-gdn-getter-gate-np1-j5q/canary-a1/0-patch/server.log'
 CHAIN = EVAL / 'results/2026-10-06-draft-chain-m1-depth-j5q/canary-a2/0-chain/server.log'
-sys.path.insert(0, str(EVAL))
+sys.path.insert(0, os.environ['HARNESS_CODE_ROOT'])
 from harness import lib, depth, campaign
 from harness.__main__ import main as harness_main
 
