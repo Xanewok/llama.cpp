@@ -1862,7 +1862,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     static llama_sampler * mtp_dist_of(llama_sampler * chain) {
         for (int32_t i = llama_sampler_chain_n(chain) - 1; i >= 0; --i) {
             llama_sampler * s = llama_sampler_chain_get(chain, i);
-            if (std::strcmp(llama_sampler_name(s), "dist") == 0) {
+            const char * name = llama_sampler_name(s);
+            // a sampler set up for backend use reports "+dist" or "-dist"
+            if (std::strcmp(name + (name[0] == '+' || name[0] == '-'), "dist") == 0) {
                 return s;
             }
         }
