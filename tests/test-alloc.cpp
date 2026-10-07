@@ -5,6 +5,7 @@
 #include "ggml.h"
 
 #include <algorithm>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -1191,6 +1192,71 @@ static ggml_backend_meta_split_state test_meta_split_state_mirrored(const ggml_t
     return {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
 }
 
+static ggml_backend_meta_split_state test_meta_split_state_rows(const ggml_tensor * tensor, void * userdata) {
+    if (strcmp(tensor->name, "cache") == 0 || strcmp(tensor->name, "rows") == 0) {
+        return {GGML_BACKEND_SPLIT_AXIS_0, {tensor->ne[0]/2, tensor->ne[0]/2}, {1}, 1};
+    }
+    return test_meta_split_state_mirrored(tensor, userdata);
+}
+
+static void test_meta_host_view(ggml_op op, bool split) {
+    ggml_backend_load_all();
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+    ggml_backend_dev_t devs[2] = {cpu, cpu};
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2,
+            split ? test_meta_split_state_rows : test_meta_split_state_mirrored, nullptr);
+    ggml_backend_ptr backend(ggml_backend_dev_init(meta, nullptr));
+    GGML_ASSERT(backend);
+
+    ggml_init_params params = {ggml_tensor_overhead()*8 + ggml_graph_overhead(), nullptr, true};
+    ggml_context_ptr ctx(ggml_init(params));
+    ggml_tensor * cache = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, 8, 4);
+    ggml_set_name(cache, "cache");
+    ggml_tensor * rows = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, 8, 2);
+    ggml_set_name(rows, "rows");
+    ggml_tensor * idxs = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I64, 2);
+    ggml_tensor * view = ggml_view_2d(ctx.get(), cache, 8, 2, cache->nb[1], 0);
+    ggml_tensor * out = view;
+    if (op == GGML_OP_CPY) {
+        out = ggml_cpy(ctx.get(), rows, view);
+    } else if (op == GGML_OP_SET_ROWS) {
+        out = ggml_set_rows(ctx.get(), cache, rows, idxs);
+    }
+    ggml_cgraph * gf = ggml_new_graph(ctx.get());
+    ggml_build_forward_expand(gf, out);
+    gf->uid = ggml_graph_next_uid();
+    ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors(ctx.get(), backend.get()));
+    GGML_ASSERT(buffer && ggml_backend_buffer_is_host(buffer.get()));
+
+    // CPU Meta buffers are host buffers, but their views and writes still belong to the Meta plan.
+    GGML_ASSERT(out->view_src == cache && cache->op == GGML_OP_NONE);
+    const int64_t indices[2] = {1, 3};
+    ggml_backend_tensor_set(idxs, indices, 0, sizeof(indices));
+    ggml_backend_graph_plan_t plan = ggml_backend_graph_plan_create(backend.get(), gf);
+    GGML_ASSERT(plan);
+    for (int pass = 0; pass < 3; ++pass) {
+        float data[16], expected[32] = {}, result[32];
+        for (int i = 0; i < 16; ++i) {
+            data[i] = float(i + 1 + pass*16);
+        }
+        ggml_backend_tensor_set(cache, expected, 0, sizeof(expected));
+        ggml_backend_tensor_set(rows, data, 0, sizeof(data));
+        if (op == GGML_OP_CPY) {
+            memcpy(expected, data, sizeof(data));
+        } else if (op == GGML_OP_SET_ROWS) {
+            memcpy(expected + 8, data, 8*sizeof(float));
+            memcpy(expected + 24, data + 8, 8*sizeof(float));
+        }
+        const ggml_status status = pass == 0 ? ggml_backend_graph_compute(backend.get(), gf) :
+                ggml_backend_graph_plan_compute(backend.get(), plan);
+        GGML_ASSERT(status == GGML_STATUS_SUCCESS);
+        ggml_backend_tensor_get(cache, result, 0, sizeof(result));
+        GGML_ASSERT(memcmp(expected, result, sizeof(result)) == 0);
+    }
+    ggml_backend_graph_plan_free(backend.get(), plan);
+}
+
 static void test_meta_split_state_rebuild(bool select_other) {
 #ifndef _WIN32
     const int n_chain = 512;
@@ -1300,5 +1366,11 @@ int main() {
     run("test_meta_split_state_rebuild(other)", []() { test_meta_split_state_rebuild(true); });
     run("test_meta_subgraph_realloc_count", test_meta_subgraph_realloc_count);
     run("test_meta_subgraph_realloc_size", test_meta_subgraph_realloc_size);
+    run("test_meta_host_view(mirrored)", []() { test_meta_host_view(GGML_OP_VIEW, false); });
+    run("test_meta_host_view(split)", []() { test_meta_host_view(GGML_OP_VIEW, true); });
+    run("test_meta_host_cpy(mirrored)", []() { test_meta_host_view(GGML_OP_CPY, false); });
+    run("test_meta_host_cpy(split)", []() { test_meta_host_view(GGML_OP_CPY, true); });
+    run("test_meta_host_set_rows(mirrored)", []() { test_meta_host_view(GGML_OP_SET_ROWS, false); });
+    run("test_meta_host_set_rows(split)", []() { test_meta_host_view(GGML_OP_SET_ROWS, true); });
     return 0;
 }
