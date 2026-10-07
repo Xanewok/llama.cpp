@@ -17,11 +17,15 @@ free_gib() {
         awk '/MemAvailable/ {print int($2 / 2^20)}' /proc/meminfo
     fi
 }
-for _ in $(seq 120); do
+# the Mac keeps 8 GiB in a VM: wait at most 10 min for >= 4 GiB free and no other model, then skip (rc 124)
+for _ in $(seq 20); do
     others=$(ps -axo comm | awk '/llama-server|llama-cli|test-llama/ {n++} END {print n + 0}')
     [[ $(free_gib) -ge 4 && $others == 0 ]] && break
     sleep 30
 done
-[[ $(free_gib) -ge 4 ]] || { echo "less than 4 GiB free" >&2; exit 125; }
+if [[ $(free_gib) -lt 4 || $others != 0 ]]; then
+    echo "skipped: RAM (free $(free_gib) GiB, other model processes $others)" | tee "$OUT/check.log"
+    exit 124
+fi
 
 python3 codex/bg_server_check.py "$B/bin/llama-server" "${BW_MODEL:?}" "$OUT/server" | tee "$OUT/check.log"

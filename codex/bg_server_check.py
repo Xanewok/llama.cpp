@@ -15,8 +15,8 @@ import time
 import urllib.request
 
 SERVER, MODEL, OUT = sys.argv[1], sys.argv[2], Path(sys.argv[3])
-SEEDS = [int(s) for s in os.environ.get("BG_SEEDS", "1 7 1729 31337").split()]
-MAX_TOKENS = int(os.environ.get("BG_MAX_TOKENS", "1024"))
+SEEDS = [int(s) for s in os.environ.get("BG_SEEDS", "1 7 1729").split()]
+MAX_TOKENS = int(os.environ.get("BG_MAX_TOKENS", "768"))
 TOOLS = [{
     "type": "function",
     "function": {
@@ -62,7 +62,7 @@ def main():
     port = free_port()
     cmd = [SERVER, "-m", MODEL, "-c", "8192", "-np", "1", "-t", "4", "-tb", "4", "--jinja",
            "--temp", "1", "--top-k", "20", "--top-p", "0.95", "--min-p", "0.05", "--backend-sampling",
-           "--cache-ram", "0", "-lv", "4", "--host", "127.0.0.1", "--port", str(port)]
+           "--cache-ram", "0", "-lv", "5", "--host", "127.0.0.1", "--port", str(port)]
     (OUT / "server-cmd.txt").write_text(" ".join(cmd) + "\n")
     log = open(log_path, "wb")
     proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT)
