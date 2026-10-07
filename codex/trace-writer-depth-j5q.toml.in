@@ -5,7 +5,7 @@ plan = ["up", "patch", "patch", "up", "patch", "up", "up", "patch"]
 protected = ["identity", "steady_minimum", "SHA256SUMS", "frozen", "DEPTHS", "ARM_ENV", "GGML_ROUND_TRACE_SYNC", "engaged", "min_p"]
 devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
 out = "/home/xanewok/repos/qwen38-eval-worktrees/wt/trace-writer/codex/gpu-results/depth"
-cpu_evidence = { path = "@CPU_EVIDENCE@", command = "bw-trace-writer.sh: old/sync/async raw-byte identity, omitted-tail mutant, TLS exit, ownership, concurrent stress, 200KB begin(V) timing" }
+cpu_evidence = { path = "@CPU_EVIDENCE@", command = "bw-trace-writer.sh: old/sync/async raw-byte identity, omitted-tail mutant, TLS exit, ownership, ordered stress with backpressure, separate TSan stress, 200KB warm-worker begin(V) timing" }
 
 [model]
 id = "swift15-j5q"
@@ -65,7 +65,7 @@ request = { seed = 1729, n_predict = 512, temperature = 1, top_k = 20, top_p = 0
 wall_s = 420
 
 [canary]
-plan = ["patch"]
+plan = ["up", "patch"]
 depths = [8192]
 proofs = []
 
@@ -73,7 +73,10 @@ proofs = []
 canary_s = 600
 margin = 1.5
 cleanup_s = 150
-est_s = 3500 # G
+# G: 2300 s includes full run, both 8k canary arms, cleanup and contingency; reference full run = 1529 s (M).
+# D: run budget ceil50(8 x 420 x 1.5 + 150) = 5200; total = 5200 + 600 + 150 = 5950 s.
+# D: 8 x 420 = 3360 <= 0.7 x 5200 = 3640 s. Async median <= 0.1 ms is a G target; sync >= 0.3 ms proves the control.
+est_s = 2300
 startup_grace_s = 300
 preflight_s = 300
 

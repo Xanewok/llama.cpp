@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build-window payload only. 0 passes; 10 preflight; 20 CPU build; 21 correctness; 22 timing; 23 recorded parsers;
-# 24 control sources; 30 CUDA build; 31 freeze; 32 stamp; 33 CCCL; 34 moving HEAD; 40 item. Never returns 3 or 4.
+# 24 control sources; 25 TSan build; 26 TSan stress; 30 CUDA build; 31 freeze; 32 stamp; 33 CCCL; 34 moving HEAD; 40 item. Never returns 3 or 4.
 set -euo pipefail
 export CUDA_VISIBLE_DEVICES="" GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1
 export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8
@@ -26,7 +26,7 @@ if [[ ${1:-} == --preflight ]]; then
              /home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json; do
         [[ -e $p ]] || die 10 "missing $p"
     done
-    for t in gpuq cmake ccache g++ strings git python3; do
+    for t in gpuq cmake ccache g++ strings git python3 timeout; do
         command -v "$t" >/dev/null || die 10 "missing command $t"
     done
     command -v "${PATCHELF:-patchelf}" >/dev/null || die 10 'wt freeze needs patchelf'
@@ -80,6 +80,18 @@ export PYTHONPATH="$EVAL"
 "$CPUGATE" python3 codex/trace_gap.py --fixtures > "$OUT/parsers.log" 2>&1 || die 23 "recorded parsers: $OUT/parsers.log"
 log 'CPU identity, negative control, drains, stress, timing and recorded parsers passed'
 
+# Stage 1b: instrument the writer and all producers, without the old-writer oracle or timing gate.
+{
+    "$BUILDGATE" cmake -S codex/trace-test -B build-cpu-tsan -DGGML_CUDA=OFF -DGGML_CCACHE=ON -DGGML_ROUND_TRACE_TSAN=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo &&
+    "$BUILDGATE" cmake --build build-cpu-tsan --target trace-test-tsan -j4
+} > "$OUT/build-cpu-tsan.log" 2>&1 || die 25 "TSan build: $OUT/build-cpu-tsan.log"
+[[ ! -e $OUT/tsan-stress.jsonl ]] || die 26 'TSan output already exists'
+rc=0
+LLAMA_ROUND_TRACE="$OUT/tsan-stress.jsonl" GGML_ROUND_TRACE_SYNC=0 TSAN_OPTIONS=halt_on_error=1:exitcode=66 \
+    "$CPUGATE" timeout 120 build-cpu-tsan/trace-test-tsan --stress > "$OUT/tsan-stress.log" 2>&1 || rc=$?
+[[ $rc == 0 ]] || die 26 "TSan stress rc=$rc: $OUT/tsan-stress.log"
+log 'TSan producer order, backpressure and concurrent flush stress passed'
+
 # Stage 2: stack6 CUDA recipe; inspect artifacts but never execute a CUDA binary.
 cuda_flags=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER_FORCED=ON -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.2/bin/nvcc
     -DGGML_CUDA=ON -DCUDAToolkit_ROOT=/usr/local/cuda-13.2 -DGGML_CUDA_NCCL=OFF -DCMAKE_CUDA_ARCHITECTURES=120a
@@ -99,14 +111,14 @@ strings build-cuda/bin/libggml-base.so | grep -x "$short" >/dev/null || die 32 "
 "$W/bin/wt" freeze "$ROOT" trace-writer --build build-cuda \
     --desc "stack6 + async round trace writer; CUDA 13.2, CCCL343, NCCL OFF; CPU byte identity and mutant pass" \
     > "$OUT/freeze.log" 2>&1 || die 31 "freeze: $OUT/freeze.log"
-# wt freeze is the explicitly requested write outside the worktree; all other outputs stay under codex/ or build*/.
+# Keep provenance beside the frozen bytes.
 {
     printf 'commit %s (base stack6 %s)\n' "$SHA" "$STACK6"
     printf 'configure: cmake -B build-cuda '; printf '%q ' "${cuda_flags[@]}"
     printf '\nbuild: bin/buildgate cmake --build build-cuda --target llama-server -j4\n'
     printf 'DeviceTopK strings %s; ggml stamp %s; CUDA_VISIBLE_DEVICES=""; no CUDA binary executed\n' "$n" "$short"
     printf 'round-trace is a copy of llama-server; all frozen binaries have RUNPATH $ORIGIN and SHA256SUMS\n'
-} > "$ROOT/codex/RECIPE-trace-writer.txt"
+} > "$W/frozen/trace-writer/RECIPE.txt" || die 31 'frozen recipe write'
 log "frozen $W/frozen/trace-writer"
 
 # Stage 3: pin the real freeze and passing CPU evidence; validate, never submit.

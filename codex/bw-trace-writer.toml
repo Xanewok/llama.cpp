@@ -1,5 +1,5 @@
 id = "bw-trace-writer"
-title = "Build window only: async round trace writer, CPU byte oracle/mutant/drain/timing, stack6 CUDA freeze, depth item checked not submitted"
+title = "Build window only: async round trace writer, CPU byte oracle/mutant/drain/warm timing, ordered backpressure stress and TSan, stack6 CUDA freeze, depth item checked not submitted"
 priority = 1
 kind = "filler"
 # G: 2400 s estimate (mostly CUDA build); budget = estimate x 1.5.
