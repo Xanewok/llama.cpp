@@ -4172,6 +4172,11 @@ static bool ggml_cuda_debug_ssm_conv() {
 #endif
 }
 
+static bool ggml_cuda_debug_gdn_state() {
+    static const bool debug = [] { const char * v = std::getenv("GGML_CUDA_DEBUG_GDN_STATE"); return v && std::atoi(v); }();
+    return debug;
+}
+
 // try and fuse nodes and return the number of nodes to skip
 static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, int i) {
 
@@ -5101,6 +5106,24 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
             ggml_round_trace_scope trace_capture(use_cuda_graph ? "cuda_capture" : "cuda_submit", cuda_ctx->device);
             [[maybe_unused]] int prev_i = 0;
             const bool debug_ssm_conv = ggml_cuda_debug_ssm_conv();
+            const bool debug_gdn_fusion = ggml_cuda_debug_gdn_state();
+            int gdn_count = 0;
+            int gdn_fused = 0;
+            int gdn_indexed = 0;
+            int64_t gdn_tokens = -1;
+            int64_t gdn_seqs = -1;
+            if (debug_gdn_fusion) {
+                for (int i = 0; i < cgraph->n_nodes; ++i) {
+                    const ggml_tensor * node = cgraph->nodes[i];
+                    if (node->op == GGML_OP_GATED_DELTA_NET && (node->flags & GGML_TENSOR_FLAG_COMPUTE)) {
+                        gdn_tokens = node->src[2]->ne[2];
+                        gdn_seqs   = node->src[2]->ne[3];
+                        gdn_indexed += node->src[6] != nullptr;
+                        ++gdn_count;
+                    }
+                }
+            }
+
             int conv_count = 0;
             int conv_fused = 0;
             int64_t conv_tokens = -1;
@@ -5229,6 +5252,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                 int nodes_to_skip = ggml_cuda_try_fuse(cuda_ctx, cgraph, i);
 
                 if (nodes_to_skip != 0) {
+                    gdn_fused += debug_gdn_fusion && node->op == GGML_OP_GATED_DELTA_NET;
                     if (debug_ssm_conv && node->op == GGML_OP_CPY) {
                         for (int j = i; j <= i + nodes_to_skip; ++j) {
                             conv_fused += cgraph->nodes[j]->op == GGML_OP_SSM_CONV;
@@ -5281,6 +5305,10 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                }
             }
             cuda_ctx->q8_cache = nullptr;
+            if (debug_gdn_fusion && gdn_count > 0) {
+                GGML_LOG_INFO("gdn_cache_fusion: graph device=%d graph=%" PRIu64 " tokens=%" PRId64 " seqs=%" PRId64 " indexed=%d gdn=%d fused=%d\n",
+                              cuda_ctx->device, cgraph->uid, gdn_tokens, gdn_seqs, gdn_indexed, gdn_count, gdn_fused);
+            }
             if (debug_ssm_conv && conv_count > 0) {
                 GGML_LOG_INFO("ssm_conv_state_fusion: graph device=%d graph=%" PRIu64 " tokens=%" PRId64 " conv=%d fused=%d\n",
                               cuda_ctx->device, cgraph->uid, conv_tokens, conv_count, conv_fused);
