@@ -2260,6 +2260,10 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
     if (mctx_fold) {
         mtp_fold_n_tok = (int32_t) n_tokens_all;
         ggml_round_trace_count("mtp_fold");
+        if (std::getenv("LLAMA_STACK7_PROOF")) {
+            static const bool once = [] { LLAMA_LOG_INFO("mtp_fold_decode: engaged\n"); return true; }();
+            (void) once;
+        }
     }
 
     // set to total number of outputs in the batch, for use in llama_get_logits_ith

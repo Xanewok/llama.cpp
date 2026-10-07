@@ -4,6 +4,7 @@
 #include "llama-memory-recurrent.h"
 #include "llama-sampler.h"
 
+#include <cinttypes>
 #include <cstdlib>
 
 void llama_model_qwen35::load_arch_hparams(llama_model_loader & ml) {
@@ -573,6 +574,13 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
 
     ggml_tensor * final_output = ggml_reshape_2d(ctx0, attn_out_norm, head_v_dim * num_v_heads, n_seq_tokens * n_seqs);
     cb(final_output, "final_output", il);
+    if (n_seqs > 1 && std::getenv("LLAMA_STACK7_PROOF")) {
+        static const bool once = [n_seqs, final_output] {
+            LLAMA_LOG_INFO("ssm_out_2d: seqs=%" PRId64 " rows=%" PRId64 " matrices=%" PRId64 "\n", n_seqs, final_output->ne[1], final_output->ne[2]);
+            return true;
+        }();
+        (void) once;
+    }
 
     // Output projection
     cur = build_lora_mm(model.layers[il].ssm_out, final_output, model.layers[il].ssm_out_s);

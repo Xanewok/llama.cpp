@@ -429,6 +429,7 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
                 const uint32_t i = (it++)->second;
                 if (skip_one) {
                     skip_one = false;
+                    LLAMA_LOG_INFO("host_trims_mutant: seqrm_skip engaged\n");
                     continue;
                 }
                 // seq_rm erases this entry; position order need not match cell order.
