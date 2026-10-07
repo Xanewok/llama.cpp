@@ -1,0 +1,104 @@
+id = "host-trims-v2-np2-iq4-same-real"
+kind = "depth"
+title = "host-trims-v2 same binary: both switches off (stack6 path) vs default, np2 iq4, ABBA, REAL session prompts (KLDT tokens64k, one distinct prompt per stream, closed by the generation prompt); per-stream acceptance on real text, untraced"
+plan = ["up", "patch", "patch", "up"]
+protected = ["identity", "steady_minimum", "SHA256SUMS", "frozen", "DEPTHS", "ARM_ENV", "min_overlap", "streams", "min_p"]
+devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
+out = "/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2/codex/gpu-results/host-trims-v2-np2-iq4-same-real"
+extra_pins = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2/codex/bw-host-trims-v2.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2/codex/bw-np2-driver.cpp", "/home/xanewok/repos/qwen38-eval/recipes/_common/kld/tokens64k.bin"]
+
+[model]
+id = "swift15-iq4-xs"
+path = "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf"
+bytes = 15475951296
+sha = "e3b59faa312a6202d7ac0a2400123956104bc720e77f6ff21c754aec5c3740df"
+
+[draft_vocab]
+path = "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json"
+sha = "e30af79520ade5b7ddb851d75cf271f07d407dc768bf646e4517607d562a65a6"
+
+[arms]
+
+[arms.up]
+label = "switches-off"
+commit = "81f954b2a10924face43c53588b29518a4de136d"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2"
+repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2"
+bin = "build/bin"
+exe = "build/bin/round-trace"
+flags = ["--kv-pad", "4096"]
+canary_log = ["copy-engine H2D streams per GPU: 2\\b", "n_kv_pad += 4096\\b"]
+
+[arms.up.env]
+GGML_SCHED_INPUT_STAGING = "1"
+LLAMA_ARG_LOG_VERBOSITY = "4"
+LD_LIBRARY_PATH = "{root}/build/bin"
+LLAMA_HOST_TRIMS_SEQRM = "0"
+LLAMA_HOST_TRIMS_BULKH = "0"
+
+[arms.patch]
+label = "switches-default"
+commit = "81f954b2a10924face43c53588b29518a4de136d"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2"
+repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2"
+bin = "build/bin"
+exe = "build/bin/round-trace"
+flags = ["--kv-pad", "4096"]
+canary_log = ["copy-engine H2D streams per GPU: 2\\b", "n_kv_pad += 4096\\b", "host_trims: kv_seq_rm_indexed engaged\\b", "host_trims: mtp_verify_bulk rows=[1-9]\\d*\\b"]
+
+[arms.patch.env]
+GGML_SCHED_INPUT_STAGING = "1"
+LLAMA_ARG_LOG_VERBOSITY = "4"
+LD_LIBRARY_PATH = "{root}/build/bin"
+LLAMA_HOST_TRIMS_PROOF = "1"
+
+[server]
+args = ["-m", "{model}", "-c", "{ctx}", "-np", "{np}", "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "{arm_flags}", "-sm", "tensor", "--tensor-split", "50,50", "-ngl", "99", "-b", "2048", "-ub", "512", "--spec-type", "draft-mtp", "--spec-draft-n-max", "5", "--spec-draft-n-min", "0", "--spec-draft-p-min", "0", "--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16", "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--backend-sampling", "--spec-draft-vocab", "{draft_vocab}", "--cache-ram", "0", "--metrics", "-t", "8", "-tb", "8", "--host", "127.0.0.1", "--port", "{port}"]
+knobs = ["GGML_SCHED_INPUT_STAGING", "LLAMA_ROUND_TRACE", "GGML_SCHED_DEBUG", "LLAMA_ARG_LOG_VERBOSITY", "LLAMA_HOST_TRIMS_PROOF", "LLAMA_HOST_TRIMS_SEQRM", "LLAMA_HOST_TRIMS_BULKH"]
+boot_cap_s = 300
+request_cap_s = 900
+
+[depth]
+depths = [8192, 32768, 90112]
+k = 5
+streams = 2
+identity = "off"
+identity_off_reason = "Arrival-dependent np2 batches; exactness is checked on the CPU np2 matrix of bw-host-trims-v2.sh."
+min_steady_intervals = 40
+min_predicted = 256
+min_overlap = 0.8
+slot_ctx = 102400
+prompt = { path = "/home/xanewok/repos/qwen38-eval/recipes/_common/kld/tokens64k.bin", sha = "753920ad0a0dbfc135aece41284c74e96d70d856df0351100a5305511aabf412" }
+fixtures = "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures"
+# M: same-binary fixture boots took 312-332 s (3 depths, np2, 512 tokens) -> 500 s = 1.5 x; real text has higher acceptance, so fewer rounds.
+wall_s = 500
+
+[depth.request]
+seed = 1729
+n_predict = 512
+temperature = 1
+top_k = 20
+top_p = 0.95
+min_p = 0.05
+
+[canary]
+plan = ["patch"]
+depths = [8192]
+proofs = ["staging"]
+
+[budget]
+canary_s = 600
+margin = 1.5
+cleanup_s = 150
+est_s = 2000
+startup_grace_s = 300
+preflight_s = 300
+
+[outputs]
+run = "full-a{attempt}"
+canary = "canary-a{attempt}"
+preflight = "preflight-plan"
+
+[cpu_evidence]
+path = "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/host-trims-v2-a4/summary.json"
+command = "bw-host-trims-v2.sh: CPU and Meta(CPU,CPU) np2, per-stream counters, switch bisect, mutants"

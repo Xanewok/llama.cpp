@@ -1,0 +1,89 @@
+id = "host-trims-v2-np2-iq4-same-real"
+title = "host-trims-v2 same binary: both switches off (stack6 path) vs default, np2 iq4, ABBA, REAL session prompts (KLDT tokens64k, one distinct prompt per stream, closed by the generation prompt); per-stream acceptance on real text, untraced"
+# up patch patch up: 4 x 500 s x 1.5 + 150 = run 3150; + canary 600 + cleanup 150 = 3900.
+# cpu_evidence: bw-host-trims-v2.sh: CPU and Meta(CPU,CPU) np2, per-stream counters, switch bisect, mutants
+kind = "measure"
+ab = true
+retry = "fresh"
+budget_s = 3900
+est_s = 2000
+startup_grace_s = 300
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "integrity", regex = "frozen bytes changed|inputs changed|model SHA changed|effective params mismatch|frozen file set changed|cross-arm identity failed|path-engaged proof failed|staging-engaged proof failed|canary prompt differs" },
+  { class = "insufficient_data", regex = "too few verify steps|proof inconclusive|missing final token identity|canary prompt has \\d+ tokens|reached only \\d+ cached|R2 reused only" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2/codex/items/host-trims-v2-np2-iq4-same-real.toml", "--execute", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2/codex/gpu-results/host-trims-v2-np2-iq4-same-real/full-a{attempt}", "--port", "{port}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt/harness"
+env = { GPUQ_ACTIVE = "1" }
+ports = "dynamic"
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2/codex/items/host-trims-v2-np2-iq4-same-real.toml", "--preflight", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2/codex/gpu-results/host-trims-v2-np2-iq4-same-real/preflight-plan"]
+timeout_s = 300
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2/codex/items/host-trims-v2-np2-iq4-same-real.toml", "--canary", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2/codex/gpu-results/host-trims-v2-np2-iq4-same-real/canary-a{attempt}", "--port", "{port}"]
+env = { GPUQ_ACTIVE = "1" }
+timeout_s = 600
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2/codex/gpu-results/host-trims-v2-np2-iq4-same-real/full-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["identity", "steady_minimum", "SHA256SUMS", "frozen", "DEPTHS", "ARM_ENV", "min_overlap", "streams", "min_p"]
+
+[pins]
+files = [
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf",
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2/codex/bw-host-trims-v2.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2/codex/bw-np2-driver.cpp",
+  "/home/xanewok/repos/qwen38-eval/recipes/_common/kld/tokens64k.bin",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/host-trims-v2-a4/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/host-trims-v2/build/bin/round-trace",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-apps.csv",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-query.csv",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/xid-lines.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt/harness/__init__.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt/harness/__main__.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt/harness/agents.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt/harness/campaign.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt/harness/depth.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt/harness/lib.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt/harness/mkitem.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt/harness/probe.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt/harness/stub_server.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/harness-real-prompt/harness/run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/host-trims-v2/codex/items/host-trims-v2-np2-iq4-same-real.toml",
+]
