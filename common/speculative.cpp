@@ -1769,7 +1769,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         const int32_t k = params.n_max;
 
         llama_seq_id seq_id = -1;
-        bool eligible = params.mtp_chain && !chain_heads && !is_mem_shared && params.p_min <= 0.0f &&
+        // The chain graph requires one attached sampler; idle slots keep their samplers.
+        bool eligible = params.mtp_chain && n_seq == 1 && !chain_heads && !is_mem_shared && params.p_min <= 0.0f &&
                 params.probabilistic && params.backend_sampling && k >= 2 && k <= LLAMA_MTP_CHAIN_MAX;
         for (llama_seq_id s = 0; eligible && s < (llama_seq_id) n_seq; ++s) {
             if (dparams[s].drafting) {
@@ -2768,7 +2769,7 @@ common_params common_base_params_to_speculative(const common_params & params) {
     result.moe_cache_size = 0;
 
     // the MTP chain samples every step of a round in one decode
-    if (params_spec.mtp_chain && params_spec.backend_sampling && params_spec.n_max > 1) {
+    if (params_spec.mtp_chain && params.n_parallel == 1 && params_spec.backend_sampling && params_spec.n_max > 1) {
         result.n_outputs_max = std::max(result.n_outputs_max, params_spec.n_max);
         result.n_outputs_max_per_seq = params_spec.n_max;
     }
