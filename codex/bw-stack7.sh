@@ -96,6 +96,9 @@ cpu_flags=(-DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_CCACHE="$S7_CCACHE"
     -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DFETCHCONTENT_UPDATES_DISCONNECTED=ON)
 # Darwin: Metal/Accelerate would add non-CPU paths to a CPU identity gate.
 [[ $(uname) != Darwin ]] || cpu_flags+=(-DGGML_METAL=OFF -DGGML_BLAS=OFF -DGGML_ACCELERATE=OFF)
+# S7_CPU_EXTRA: extra CPU-build cmake flags, e.g. -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod to drop i8mm
+# shellcheck disable=SC2206
+[[ -z ${S7_CPU_EXTRA:-} ]] || cpu_flags+=($S7_CPU_EXTRA)
 cpu_build() {
     "$BUILDGATE" cmake -S codex/stack7-test -B build-cpu "${cpu_flags[@]}"
     "$BUILDGATE" cmake --build build-cpu --target test-recurrent-state-rollback test-alloc bw-np2-driver chain-cpu fold-cpu outproj-cpu row0-mutant -j"$S7_JOBS"
