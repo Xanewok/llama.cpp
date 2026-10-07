@@ -5,7 +5,7 @@ export PATH="$HOME/.local/bin:$PATH"
 cd "$(dirname "$0")/.."
 OUT=${1:-codex/cpu-exact}
 MODEL=/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf
-GATE=(./codex/gate.sh "$HOME/repos/qwen38-eval-worktrees/bin/cpugate")
+GATE=("$HOME/repos/qwen38-eval-worktrees/bin/cpugate" ./codex/gate.sh)
 FLAGS=(-m "$MODEL" -c 4096 -np 1 -ngl 0 -fa on --kv-pad 4096 -b 2048 -ub 512 --temp 1 \
        --spec-type draft-mtp --spec-draft-n-max 5 --spec-draft-type-k f16 --spec-draft-type-v f16 -t 8 -tb 8)
 for arm in rerun misaligned permuted; do

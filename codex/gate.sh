@@ -11,7 +11,12 @@ d = json.load(sys.stdin)
 blocked = [i for i in d["items"] if i.get("state") in ("running", "ready") and not i["id"].startswith(("bw-", "build-window-")) and (i.get("kind") == "measure" or any(s in i["id"] for s in ("depth", "perf", "probe")))]
 if blocked:
     print("Waiting for measure items:", ", ".join(i["id"] for i in blocked))
-sys.exit(bool(blocked))'; then
+with open("/proc/meminfo") as f:
+    available = next(int(line.split()[1]) for line in f if line.startswith("MemAvailable:"))
+low_ram = available < 10 * 1024 ** 2
+if low_ram:
+    print("Waiting for MemAvailable >= 10 GiB")
+sys.exit(bool(blocked) or low_ram)'; then
         break
     fi
     sleep 30

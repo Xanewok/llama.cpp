@@ -51,6 +51,10 @@ def check_frozen():
             raise ValueError('frozen bytes changed')
     if not (sums.parent / 'round-trace').exists():
         raise ValueError('missing frozen teacher-forced executable')
+    symbols = subprocess.run(['strings', str(sums.parent / 'libggml-base.so')],
+                             check=True, capture_output=True, text=True)
+    if source[:9] not in symbols.stdout.splitlines():
+        raise ValueError('ggml source stamp mismatch')
     return source
 
 

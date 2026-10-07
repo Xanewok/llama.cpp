@@ -22,7 +22,7 @@ def check(target, arm, trace, streams, tolerance):
     for line in trace.read_text().splitlines():
         record = json.loads(line)
         rounds[record["r"]].append(record)
-    records, errors = [], []
+    records, errors, all_t = [], [], []
     for i, stream in enumerate(streams):
         n, prompt = len(stream["prompt"]) + len(stream["continuation"]), len(stream["prompt"])
         pids = array(target / str(i), "p_ids", "<i4", [n, header["p_width"]])
@@ -31,7 +31,7 @@ def check(target, arm, trace, streams, tolerance):
         qprobs = array(arm / str(i), "q_probs", "<f4", qids.shape)
         t = prompt
         p_error = q_error = 0.0
-        p_count = q_count = support_changes = censored = 0
+        p_count = q_count = support_changes = censored = p_true_missing = 0
         emitted = []
         for row in rounds[i]:
             L = row["L"]
@@ -44,6 +44,8 @@ def check(target, arm, trace, streams, tolerance):
                 error, support = distance(pids[t + j], pprobs[t + j], prow)
                 p_error = max(p_error, error)
                 p_count += 1
+                next_id = stream["continuation"][t + j + 1 - prompt]
+                p_true_missing += not np.any((pids[t + j] == next_id) & (pprobs[t + j] > 0))
                 support_changes += support
             for j in range(min(L + 1, row["k"])):
                 if t + j >= n - 1:
@@ -63,14 +65,15 @@ def check(target, arm, trace, streams, tolerance):
         _, beta, _, tt = load_stream(target, arm, i)
         measured = float(np.mean([r["L"] + 1 for r in rounds[i]]))
         predicted = harmonic(tt)
+        all_t.append(tt)
         records.append({"stream": i, "rounds_M": len(rounds[i]), "p_rows_M": p_count, "q_rows_M": q_count,
                         "p_max_abs_error_M": p_error, "q_max_abs_error_M": q_error,
-                        "support_changes_M": support_changes, "censored_rows_M": censored,
+                        "support_changes_M": support_changes, "censored_rows_M": censored, "true_tokens_outside_tool_p_M": p_true_missing,
                         "measured_tokens_per_round_M": measured, "predicted_tokens_per_round_G": predicted,
                         "selection_bias_D": predicted - measured, "beta1_mean_D": float(beta[:, 0].mean())})
     return {"streams": records, "errors": errors, "tolerance": tolerance,
-            "measured_tokens_per_round_M": float(np.mean([s["measured_tokens_per_round_M"] for s in records])),
-            "predicted_tokens_per_round_G": float(np.mean([s["predicted_tokens_per_round_G"] for s in records]))}
+            "measured_tokens_per_round_M": float(sum(s["measured_tokens_per_round_M"] * s["rounds_M"] for s in records) / sum(s["rounds_M"] for s in records)),
+            "predicted_tokens_per_round_G": harmonic(np.concatenate(all_t))}
 
 
 def main():

@@ -47,6 +47,8 @@ def main():
     ap.add_argument("--out", type=Path, default=ROOT / "codex/cpu-results")
     ap.add_argument("--trace-off", action="store_true")
     ap.add_argument("--no-repack", action="store_true")
+    ap.add_argument("--ctx-checkpoints", type=int)
+    ap.add_argument("--verbosity", type=int, default=3)
     args = ap.parse_args()
     assert os.environ.get("CUDA_VISIBLE_DEVICES") == ""
     available = int(next(line.split()[1] for line in Path("/proc/meminfo").read_text().splitlines() if line.startswith("MemAvailable:")))
@@ -63,6 +65,9 @@ def main():
              "--spec-draft-backend-sampling", "--backend-sampling", "--kv-pad", "4096", "-b", "2048", "-ub", "512",
              "--temp", "1", "--top-k", "20", "--top-p", "0.95", "--min-p", "0.05", "-t", "8", "-tb", "8",
              "--host", "127.0.0.1", "--port", str(port), "--cache-ram", "0"]
+    flags += ["-lv", str(args.verbosity)]
+    if args.ctx_checkpoints is not None:
+        flags += ["--ctx-checkpoints", str(args.ctx_checkpoints)]
     if args.no_repack:
         flags.append("--no-repack")
     records, streams = [], []
@@ -83,6 +88,7 @@ def main():
             for i, prompt in enumerate(PROMPTS[:args.prompts]):
                 prompt_ids = request(port, "tokenize", {"content": prompt, "add_special": True})["tokens"]
                 for seed in (1729, 2718):
+                    subprocess.run([str(ROOT / "codex/gate.sh"), "true"], check=True)
                     body = {"prompt": prompt_ids, "n_predict": args.predict, "seed": seed, "temperature": 1,
                             "top_k": 20, "top_p": 0.95, "min_p": 0.05, "ignore_eos": True,
                             "stream": False, "return_tokens": True, "cache_prompt": False}
