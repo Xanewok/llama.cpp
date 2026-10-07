@@ -55,7 +55,8 @@ int main(int argc, char ** argv) {
     if (std::getenv("HOST_KV_Q8")) {
         params.cache_type_k = params.cache_type_v = GGML_TYPE_Q8_0;
     }
-    params.cpuparams.n_threads = params.cpuparams_batch.n_threads = meta ? 4 : 8;
+    const char * threads = std::getenv("NP2_DRIVER_THREADS"); // per device; shared hosts cap model runs
+    params.cpuparams.n_threads = params.cpuparams_batch.n_threads = threads ? std::atoi(threads) : meta ? 4 : 8;
     params.speculative.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
     params.speculative.draft.n_max = 3;
     params.speculative.draft.n_min = 0;
