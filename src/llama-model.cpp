@@ -29,6 +29,7 @@
 #include <cassert>
 #include <cfloat>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <functional>
@@ -2044,9 +2045,12 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
                 const size_t row_bytes = ggml_row_size(src->type, src->ne[0]);
                 std::vector<uint8_t> rows(ggml_nbytes(draft_token_embd));
                 std::vector<int32_t> map(n_vocab, -1);
+                // negative control of the MTP chain identity test: every row holds its successor's embedding
+                static const bool shift = std::getenv("LLAMA_MTP_CHAIN_DEBUG_SHIFT_EMBD") != nullptr;
                 for (size_t i = 0; i < draft_vocab_ids.size(); ++i) {
                     void * dst = rows.data() + i * row_bytes;
-                    const void * row = ml.load_data_range(*weight, size_t(draft_vocab_ids[i]) * row_bytes, row_bytes, dst);
+                    const size_t i_src = shift ? (i + 1) % draft_vocab_ids.size() : i;
+                    const void * row = ml.load_data_range(*weight, size_t(draft_vocab_ids[i_src]) * row_bytes, row_bytes, dst);
                     if (row != dst) {
                         std::memcpy(dst, row, row_bytes);
                     }
