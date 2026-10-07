@@ -1,4 +1,6 @@
 #include "models.h"
+#include "llama-impl.h"
+#include "llama-kv-cache.h"
 #include "llama-memory-recurrent.h"
 #include "llama-sampler.h"
 
@@ -237,6 +239,104 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
     res->t_logits = cur;
 
     ggml_build_forward_expand(gf, cur);
+
+    // after every target node, so the target's node order (and its fusions) do not change
+    if (mctx_fold) {
+        build_mtp_fold(res->t_h_nextn, inp_pos, sections);
+    }
+}
+
+// Contract: the draft cache ends up byte-identical to the catch-up decode of the same rows through graph_mtp (same
+// inputs, same ops up to the cache write). That decode has no outputs, so nothing past the K/V store is built.
+void llama_model_qwen35::graph::build_mtp_fold(
+        ggml_tensor * h_nextn,
+        ggml_tensor * inp_pos,
+                int * sections) {
+    const int il = hparams.n_layer();
+    const auto & layer = model.layers[il];
+
+    const int64_t n_embd_head = hparams.n_embd_head_v();
+
+    GGML_ASSERT(hparams.n_layer_nextn == 1 && layer.nextn.eh_proj && layer.nextn.enorm && layer.nextn.hnorm);
+    GGML_ASSERT(res->t_inp_tokens && fold_h_prev);
+    // unmasked: one nextn row per ubatch row
+    GGML_ASSERT(h_nextn->ne[0] == hparams.n_embd && h_nextn->ne[1] == n_tokens);
+
+    const auto * mctx_dft = static_cast<const llama_kv_cache_context *>(mctx_fold);
+
+    auto kv = std::make_unique<llm_graph_input_attn_kv>(hparams, cparams, mctx_dft);
+    kv->self_k_idxs = mctx_dft->build_input_k_idxs(ctx0, ubatch);
+    kv->self_v_idxs = mctx_dft->build_input_v_idxs(ctx0, ubatch);
+    kv->self_k_rot  = mctx_dft->build_input_k_rot(ctx0);
+    kv->self_v_rot  = mctx_dft->build_input_v_rot(ctx0);
+
+    auto inp = std::make_unique<llm_graph_input_mtp_fold>(std::move(kv), fold_h_prev);
+
+    inp->h_prev = ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, hparams.n_embd, 1);
+    ggml_set_input(inp->h_prev);
+    ggml_set_name(inp->h_prev, "mtp_fold_h_prev");
+
+    ggml_tensor * h_embd = inp->h_prev;
+    if (n_tokens > 1) {
+        ggml_tensor * h_shift = ggml_view_2d(ctx0, h_nextn, hparams.n_embd, n_tokens - 1, h_nextn->nb[1], 0);
+        h_embd = ggml_concat(ctx0, h_embd, h_shift, 1);
+    }
+    cb(h_embd, "mtp_fold_h", il);
+
+    ggml_tensor * tok_embd_w = layer.nextn.embed_tokens ? layer.nextn.embed_tokens : model.tok_embd;
+    ggml_tensor * tok_embd   = ggml_get_rows(ctx0, tok_embd_w, res->t_inp_tokens);
+    cb(tok_embd, "mtp_tok_embd", il);
+
+    // from here to the cache write: the same nodes as graph_mtp
+    ggml_tensor * h_norm = build_norm(h_embd, layer.nextn.hnorm, nullptr, LLM_NORM_RMS, il);
+    cb(h_norm, "mtp_hnorm", il);
+
+    ggml_tensor * e_norm = build_norm(tok_embd, layer.nextn.enorm, nullptr, LLM_NORM_RMS, il);
+    cb(e_norm, "mtp_enorm", il);
+
+    ggml_tensor * concat = ggml_concat(ctx0, e_norm, h_norm, /*dim=*/ 0);
+    cb(concat, "mtp_concat", il);
+
+    ggml_tensor * cur = build_lora_mm(layer.nextn.eh_proj, concat, layer.nextn.eh_proj_s);
+    cb(cur, "mtp_eh_proj", il);
+
+    cur = build_norm(cur, layer.attn_norm, nullptr, LLM_NORM_RMS, il);
+    cb(cur, "mtp_attn_norm", il);
+
+    auto [Qcur_full, Kcur, Vcur] = build_qkv(layer, cur,
+            n_embd_head * 2, n_head,
+            n_embd_head,     n_head_kv,
+            n_embd_head,     n_head_kv,
+            il, false);
+    GGML_UNUSED(Qcur_full);
+
+    Kcur = ggml_reshape_3d(ctx0, Kcur, n_embd_head, n_head_kv, n_tokens);
+    Kcur = build_norm(Kcur, layer.attn_k_norm, nullptr, LLM_NORM_RMS, il);
+    cb(Kcur, "mtp_Kcur_normed", il);
+
+    Vcur = ggml_reshape_3d(ctx0, Vcur, n_embd_head, n_head_kv, n_tokens);
+    cb(Vcur, "mtp_Vcur", il);
+
+    Kcur = ggml_rope_multi(ctx0, Kcur, inp_pos, nullptr,
+            n_rot, sections, rope_type, n_ctx_orig, freq_base, freq_scale,
+            ext_factor, attn_factor, beta_fast, beta_slow);
+
+    // the store half of build_attn, in its node order (v, k, cpy_k, cpy_v keeps the rope -> set_rows fusion)
+    const auto * inp_kv = inp->kv.get();
+    if (inp_kv->self_k_rot) {
+        Kcur = llama_mul_mat_hadamard(ctx0, Kcur, inp_kv->self_k_rot);
+    }
+    if (inp_kv->self_v_rot) {
+        Vcur = llama_mul_mat_hadamard(ctx0, Vcur, inp_kv->self_v_rot);
+    }
+
+    ggml_build_forward_expand(gf, Vcur);
+    ggml_build_forward_expand(gf, Kcur);
+
+    ggml_build_forward_expand(gf, mctx_dft->cpy_k(ctx0, Kcur, inp_kv->self_k_idxs, il));
+    ggml_build_forward_expand(gf, mctx_dft->cpy_v(ctx0, Vcur, inp_kv->self_v_idxs, il));
+
+    res->add_input(std::move(inp));
 }
 
 std::pair<ggml_tensor *, ggml_tensor *> llama_model_qwen35::graph::build_qkvz(
