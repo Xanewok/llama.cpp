@@ -164,23 +164,24 @@ static test_status test_multi_seq_split_replay(const common_params & params, lla
 
     bool ok = true;
 
-    // decode tokens [p_begin, p_end) of seq s, a batch belongs to one context so it is built per call
-    const auto decode_range = [&](llama_context * ctx, uint32_t s, llama_pos p_begin, llama_pos p_end) {
+    // decode tokens [0, p_end) of all seqs in one batch, a batch belongs to one context so it is built per call
+    const auto decode_prefill = [&](llama_context * ctx, llama_pos p_end) {
         common_batch batch(ctx);
-        for (llama_pos pos = p_begin; pos < p_end; ++pos) {
-            batch.add(tok(s, pos), pos, (llama_seq_id) s, false);
+        for (uint32_t s = 0; s < n_seqs; ++s) {
+            for (llama_pos pos = 0; pos < p_end; ++pos) {
+                batch.add(tok(s, pos), pos, (llama_seq_id) s, false);
+            }
         }
         return llama_process(ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0;
     };
 
-    // both contexts decode the identical [0, p0) prefill; only ctx_roll decodes
-    // the tail, which is then rolled back so its restore is pending at replay
+    // only ctx_roll decodes the tail, which is then rolled back so its restore is pending at replay.
+    // the tail is part of the prefill batch: a rollback is valid only when shorter than the seq's tokens
+    // in its last ubatch, and split_equal() keeps the last n_rs_seq + 1 tokens of a seq in one ubatch
+    ok = decode_prefill(ctx_roll.get(), (llama_pos) n_prompt);
+    ok = ok && decode_prefill(ctx_ref.get(), p0);
+
     for (uint32_t s = 0; s < n_seqs && ok; ++s) {
-        ok = ok && decode_range(ctx_roll.get(), s, 0, (llama_pos) p0);
-        ok = ok && decode_range(ctx_ref.get(),  s, 0, (llama_pos) p0);
-
-        ok = ok && decode_range(ctx_roll.get(), s, (llama_pos) p0, (llama_pos) n_prompt);
-
         ok = ok && llama_memory_seq_rm(llama_get_memory(ctx_roll.get()), (llama_seq_id) s, p0, -1);
 
         // a second partial removal while one is pending must be refused
@@ -210,7 +211,9 @@ static test_status test_multi_seq_split_replay(const common_params & params, lla
     }
 
     // both contexts decode identical batches, so the logits should match;
-    // random dummy models can still drift up to ~1.7e-5, so the bound is 1e-4
+    // random dummy models can still drift up to ~1.7e-5, so the bound is 1e-4.
+    // on real models this holds only while ctx_ref splits [0, p0) like ctx_roll splits it; other
+    // n_ubatch/n_rollback values can add batch-shape noise above the bound
     constexpr float nmse_eps = 1e-4f;
 
     float    diff_max  = 0.0f;
