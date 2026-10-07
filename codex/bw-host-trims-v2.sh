@@ -101,7 +101,7 @@ cuda_stage() {
     echo "CCCL DeviceTopK strings: $n"
     [[ $n == 25 ]] || { echo "expected 25 DeviceTopK strings (CCCL v3.4.3)"; return 1; }
     local short; short=$(git rev-parse --short HEAD)
-    strings build-cuda/bin/libggml-base.so | grep -qx "$short" || { echo "ggml stamp $short not in libggml-base.so"; return 1; }
+    strings build-cuda/bin/libggml-base.so | grep -x "$short" >/dev/null || { echo "ggml stamp $short not in libggml-base.so"; return 1; }
     "$W/bin/wt" freeze "$ROOT" host-trims-v2 --build build-cuda \
         --desc "stack6 + host-trims v2 (indexed seq_rm, bulk MTP verify rows read after catch-up, env switches); CUDA 13.2, CCCL343, NCCL OFF; round-trace = cp of llama-server" || return 1
     {
