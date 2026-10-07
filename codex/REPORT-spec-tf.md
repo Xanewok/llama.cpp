@@ -4,7 +4,7 @@ Status: BLOCKED by RUN/ready measure items. The estimator and trace extension ar
 
 ## Conclusion so far
 
-The r-weighted teacher-forced estimator matches real rejection-sampling Monte Carlo on random small trees at k=5. Four trees give discrepancies of 0.043, 0.694, 1.026 and 2.355 combined standard errors (M), all below 3. The intentionally broken plain-product estimator misses by 92.193 standard errors on the biased tree (M). Identical input arms give paired delta exactly 0 and stream SE exactly 0 (D).
+The r-weighted teacher-forced estimator matches real rejection-sampling Monte Carlo on random small trees at k=5. Four trees give discrepancies of 0.043, 0.694, 1.026 and 2.355 combined standard errors (D), all below 3. The intentionally broken plain-product estimator misses by 92.193 standard errors on the biased tree (D). Identical input arms give paired delta exactly 0 and stream SE exactly 0 (D).
 
 The first CPU comparison fails the proposed 1e-3 probability-row tolerance. Two default CPU streams give maximum p error 0.0989324 and q error 0.0990024 (M); disabling repacking alone leaves p error 0.0796047 and q error 0.134229 (M). Disabling both CPU repacking and llamafile leaves p error 0.1306202 and q error 0.1705679 (M). Correct row/token alignment was checked. These are failed diagnostics, not selection-bias measurements.
 
