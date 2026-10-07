@@ -1,0 +1,69 @@
+id = "flatcost-v2-perf"
+title = "mmvq-mma (topic/flatcost-v2) perf: test-backend-ops on CUDA0 over the served q6_K/iq4_xs shapes at 1-17 columns; hot b,p,off,p,b; cold-L2 b,p,min5 at n 4-16; optional ncu"
+# Gate: preflight and run refuse without 'PASS <stamp>' from flatcost-v2-memcheck (it has the higher priority).
+# Arms: patch = general dispatch (mmvq-mma above the MMVQ cut, <= 16 columns); min5 = GGML_CUDA_MMVQ_MMA_MIN=5 (tuned
+# candidate); off = GGML_CUDA_MMVQ_MMA=0 in the patch libs (negative control vs base, median |d| <= 3% or rc 6).
+# Run (G ~100 min): 160 hot cases x 5 arms (~3 s/case), 116 cold cases x 3 arms (~10.5 s/case, M), engagement checks, ncu
+# of the new kernel when counters are allowed. Output: perf.md/json incl. q6_K+iq4_xs ms/round per GPU (J5q, IQ4) for
+# base/patch/min5 (D). Expected (G/D): cold q6_K at n=9-16 above ~360 GB/s if L1 wavefronts do not bind (model: they may,
+# see codex/SPIKE-flatcost.md); n=5-8 min5 vs MMVQ within +-5%.
+# GPU: CUDA0 only. No model, no server.
+priority = 20
+kind = "measure"
+host_sensitive = false
+budget_s = 9100
+est_s = 6000
+ab = true
+retry = "fresh"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "integrity", regex = "frozen bytes changed|unresolved libraries|libs resolve outside|ggml stamp|lacks mmvq-mma|carries mmvq-mma|is not an RTX 5060 Ti|did not run|engagement control|canary: |gate: |analyze: " },
+  { class = "timeout", regex = "hit its cap|budget expired" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/run.sh", "perf", "--run"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2"
+env = { CUDA_VISIBLE_DEVICES = "0", BUDGET_S = "8400", OUT = "/mnt/scratch/work/flatcost-v2-perf/a{attempt}" }
+ports = []
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/run.sh", "perf", "--preflight"]
+env = { OUT = "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/preflight-perf" }
+timeout_s = 120
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/run.sh", "perf", "--canary"]
+env = { CUDA_VISIBLE_DEVICES = "0", BUDGET_S = "540", OUT = "/mnt/scratch/work/flatcost-v2-perf/canary-a{attempt}" }
+timeout_s = 600
+
+[outputs]
+paths = ["/mnt/scratch/work/flatcost-v2-perf/a{attempt}"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "memcheck_first"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/analyze.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/build/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/base-bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/base-bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml.so.0.25.3",
+]

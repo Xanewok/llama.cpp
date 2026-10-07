@@ -1,0 +1,65 @@
+id = "flatcost-v2-memcheck"
+title = "mmvq-mma (topic/flatcost-v2): few-column q6_K/iq4_xs matmul on int8 tensor cores; compute-sanitizer + test-backend-ops correctness on CUDA0 vs stack6"
+# Canary (G ~40 s): one served case on patch and base (reference match, engagement line), one perf timing.
+# Run (G ~15 min, M ~10 min for the ring analogue): sanitizer on the q6_K/iq4_xs eval cases with the default dispatch and with
+# mmvq-mma at every width 1-16, and on the served shapes; plain MUL_MAT/MUL_MAT_ID for every type on base and patch; served
+# shapes with default / min1 / off dispatch. Writes VERDICT 'PASS <stamp>' (gates flatcost-v2-perf).
+# GPU: CUDA0 only. No model, no server.
+priority = 21
+kind = "measure"
+host_sensitive = false
+budget_s = 5000
+est_s = 1200
+ab = true
+retry = "fresh"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "integrity", regex = "frozen bytes changed|unresolved libraries|libs resolve outside|ggml stamp|lacks mmvq-mma|carries mmvq-mma|is not an RTX 5060 Ti|did not run|engagement control|canary: |gate: |analyze: " },
+  { class = "timeout", regex = "hit its cap|budget expired" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/run.sh", "memcheck", "--run"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2"
+env = { CUDA_VISIBLE_DEVICES = "0", BUDGET_S = "4300", OUT = "/mnt/scratch/work/flatcost-v2-memcheck/a{attempt}" }
+ports = []
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/run.sh", "memcheck", "--preflight"]
+env = { OUT = "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/preflight-memcheck" }
+timeout_s = 120
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/run.sh", "memcheck", "--canary"]
+env = { CUDA_VISIBLE_DEVICES = "0", BUDGET_S = "540", OUT = "/mnt/scratch/work/flatcost-v2-memcheck/canary-a{attempt}" }
+timeout_s = 600
+
+[outputs]
+paths = ["/mnt/scratch/work/flatcost-v2-memcheck/a{attempt}"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/analyze.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/build/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/flatcost-v2/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/base-bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/flatcost-v2/base-bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/build/bin/libggml.so.0.25.3",
+]
