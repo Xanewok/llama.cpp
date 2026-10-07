@@ -27,7 +27,7 @@ struct trace_phase {
 };
 
 struct trace_event {
-    std::string kind;
+    const char * kind;
     size_t phase;
     int device;
     uint64_t count;
@@ -105,7 +105,7 @@ static void trace_write(FILE * out, const trace_record & record) {
     for (size_t i = 0; i < record.events.size(); ++i) {
         const auto & e = record.events[i];
         std::fprintf(out, "%s{\"kind\":\"%s\",\"phase\":%zu,\"device\":%d,\"count\":%llu,\"bytes\":%llu,\"begin_ns\":%lld,\"end_ns\":%lld}",
-            i ? "," : "", e.kind.c_str(), e.phase, e.device, (unsigned long long) e.count, (unsigned long long) e.bytes,
+            i ? "," : "", e.kind, e.phase, e.device, (unsigned long long) e.count, (unsigned long long) e.bytes,
             (long long) e.begin, (long long) e.end);
     }
     std::fprintf(out, "]}\n");
@@ -118,6 +118,10 @@ struct trace_writer {
     std::deque<trace_record> queue;
     std::thread worker;
     bool stopping = false;
+#ifdef GGML_ROUND_TRACE_TEST_HOOKS
+    bool test_pause = false;
+    uint64_t test_full_queue_waits = 0;
+#endif
     const bool sync = [] { const char * p = std::getenv("GGML_ROUND_TRACE_SYNC"); return p && std::string(p) == "1"; }();
 
     ~trace_writer() { finish(); }
@@ -134,6 +138,9 @@ struct trace_writer {
             {
                 std::unique_lock<std::mutex> lock(mutex);
                 changed.wait(lock, [this] { return stopping || !queue.empty(); });
+#ifdef GGML_ROUND_TRACE_TEST_HOOKS
+                changed.wait(lock, [this] { return !test_pause; });
+#endif
                 if (queue.empty()) { break; }
                 record = std::move(queue.front());
                 queue.pop_front();
@@ -149,6 +156,12 @@ struct trace_writer {
     void submit(trace_record record) {
         std::unique_lock<std::mutex> lock(mutex);
         // At most 64 pending rounds, plus the round owned by the writer. Backpressure must not drop records.
+#ifdef GGML_ROUND_TRACE_TEST_HOOKS
+        if (!sync && queue.size() == 64) {
+            ++test_full_queue_waits;
+            changed.notify_all();
+        }
+#endif
         changed.wait(lock, [this] { return !stopping && queue.size() < 64; });
         if (sync) {
             FILE * out = trace_open();
