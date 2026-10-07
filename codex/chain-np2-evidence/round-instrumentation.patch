@@ -1,0 +1,32 @@
+diff --git a/common/speculative.cpp b/common/speculative.cpp
+index 3c86a1be4..d4c4b662f 100644
+--- a/common/speculative.cpp
++++ b/common/speculative.cpp
+@@ -1938,7 +1938,19 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+
+     void draft(common_speculative_draft_params_vec & dparams) override {
+         ++mtp_chain_round;
++        const auto trace_round = [&](bool chain) {
++            int active = 0;
++            for (const auto & dp : dparams) {
++                active += dp.drafting;
++            }
++            std::fprintf(stderr, "NP2_ROUND round=%d path=%s slots=%u active=%d", mtp_chain_round, chain ? "chain" : "fallback", n_seq, active);
++            for (llama_seq_id s = 0; s < (llama_seq_id) n_seq; ++s) {
++                std::fprintf(stderr, " seq%d=%zu", s, dparams[s].drafting ? dparams[s].result->size() : 0);
++            }
++            std::fprintf(stderr, "\n");
++        };
+         if (draft_chain(dparams)) {
++            trace_round(true);
+             return;
+         }
+
+@@ -2112,6 +2124,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+                 dp.result->clear();
+             }
+         }
++        trace_round(false);
+     }
+
+     void accept(llama_seq_id seq_id, uint16_t n_accepted, bool /*is_other*/) override {

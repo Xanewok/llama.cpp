@@ -1,0 +1,15 @@
+diff --git a/src/models/qwen35.cpp b/src/models/qwen35.cpp
+--- a/src/models/qwen35.cpp
++++ b/src/models/qwen35.cpp
+@@ -639,6 +639,11 @@ llm_build_qwen35::llm_build_qwen35(const llama_model & model, const llm_graph_param
+     const int32_t n_chain = cparams.mtp_chain;
+     const bool    chain   = n_chain > 0 && (int64_t) n_tokens == n_chain && (int64_t) n_outputs == n_chain &&
+                             ubatch.token && ubatch.embd && samplers.size() == 1;
++    if (n_chain > 0) {
++        std::fprintf(stderr, "NP2_GRAPH requested=%d path=%s samplers=%zu tokens=%lld outputs=%lld\n",
++                n_chain, chain ? "chain" : "plain", samplers.size(),
++                (long long) n_tokens, (long long) n_outputs);
++    }
+
+     // TODO: make static using `ggml_build_forward_select()`
+     //       see llm_graph_context::build_inp_embd() for reference
