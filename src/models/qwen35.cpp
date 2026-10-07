@@ -873,10 +873,14 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
         const int32_t n_chain = cl.n_chain;
         const int32_t n_seq   = cl.n_seq;
 
-        // a step attends with one mask row per sequence: n_seq rows of one stream, or row s of each stream
+        // a step attends with one mask row per sequence: n_seq rows of one stream, or row s of each stream. FA takes
+        // a contiguous mask, so with one stream per sequence the rows are regrouped by step once per graph.
         ggml_tensor * mask = inp_attn->self_kq_mask_cnv;
         const int64_t n_stream = mask->ne[3];
         GGML_ASSERT(mask->ne[2] == 1 && mask->ne[1]*n_stream == n_tokens && n_stream == (cl.seq_major ? n_seq : 1));
+        if (n_stream > 1) {
+            mask = ggml_cont(ctx0, ggml_permute(ctx0, mask, 0, 3, 2, 1)); // [n_kv, n_stream, 1, n_chain]
+        }
 
         int32_t k_top = 0;
         for (auto * smpl : cl.smpls) {
@@ -949,7 +953,7 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
                                   : ggml_view_1d(ctx0, inp_attn->self_v_idxs, n_seq, s*n_seq*inp_attn->self_v_idxs->nb[0]);
             attn.self_kq_mask_cnv = n_stream == 1
                 ? ggml_view_4d(ctx0, mask, mask->ne[0], n_seq, 1, 1, mask->nb[1], mask->nb[2], mask->nb[3], s*n_seq*mask->nb[1])
-                : ggml_view_4d(ctx0, mask, mask->ne[0], 1, 1, n_stream, mask->nb[1], mask->nb[2], mask->nb[3], s*mask->nb[1]);
+                : ggml_view_4d(ctx0, mask, mask->ne[0], 1, 1, n_stream, mask->nb[1], mask->nb[1], mask->nb[1], s*n_stream*mask->nb[1]);
 
             h = mtp_block(e_in, h_in, pos, &attn);
             h_steps.push_back(h);
