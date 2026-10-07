@@ -1,0 +1,83 @@
+id = "trace-writer-depth-j5q"
+kind = "depth"
+title = "Same-binary stack6 trace writer: synchronous control vs async, J5q np1 k5 TP2, trace counters in both arms, byte identity and writer gap gates"
+plan = ["up", "patch", "patch", "up", "patch", "up", "up", "patch"]
+protected = ["identity", "steady_minimum", "SHA256SUMS", "frozen", "DEPTHS", "ARM_ENV", "GGML_ROUND_TRACE_SYNC", "engaged", "min_p"]
+devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
+out = "/home/xanewok/repos/qwen38-eval-worktrees/wt/trace-writer/codex/gpu-results/depth"
+cpu_evidence = { path = "@CPU_EVIDENCE@", command = "bw-trace-writer.sh: old/sync/async raw-byte identity, omitted-tail mutant, TLS exit, ownership, concurrent stress, 200KB begin(V) timing" }
+
+[model]
+id = "swift15-j5q"
+path = "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf"
+bytes = 19996051744
+sha = "f2c850ea3cd818b9d669fbd1e18767ef669ce012e614d819cce5ab6809e3a774"
+
+[draft_vocab]
+path = "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json"
+sha = "e30af79520ade5b7ddb851d75cf271f07d407dc768bf646e4517607d562a65a6"
+
+[arms.up]
+label = "synchronous trace writer"
+commit = "@COMMIT@"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/frozen/trace-writer"
+bin = "build/bin"
+repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/trace-writer"
+exe = "build/bin/round-trace"
+env = { GGML_ROUND_TRACE_SYNC = "1", GGML_CUDA_DEBUG_SSM_CONV = "1", GGML_SCHED_INPUT_STAGING = "1", LLAMA_ARG_LOG_VERBOSITY = "4", LLAMA_ARG_KV_PAD = "4096", LD_LIBRARY_PATH = "{root}/build/bin" }
+flags = ["--kv-pad", "4096", "--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16"]
+canary_log = ["(?s)n_kv_pad += 4096\\b.*n_kv_pad += 4096\\b", "copy-engine H2D streams per GPU: 2\\b"]
+
+[arms.patch]
+label = "asynchronous trace writer"
+commit = "@COMMIT@"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/frozen/trace-writer"
+bin = "build/bin"
+repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/trace-writer"
+exe = "build/bin/round-trace"
+env = { GGML_ROUND_TRACE_SYNC = "0", GGML_CUDA_DEBUG_SSM_CONV = "1", GGML_SCHED_INPUT_STAGING = "1", LLAMA_ARG_LOG_VERBOSITY = "4", LLAMA_ARG_KV_PAD = "4096", LD_LIBRARY_PATH = "{root}/build/bin" }
+flags = ["--kv-pad", "4096", "--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16"]
+canary_log = ["(?s)n_kv_pad += 4096\\b.*n_kv_pad += 4096\\b", "copy-engine H2D streams per GPU: 2\\b"]
+
+[server]
+args = ["-m", "{model}", "-c", "102400", "-np", "1", "-fa", "on", "-ctk", "q8_0", "-ctv", "q8_0", "{arm_flags}",
+        "-sm", "tensor", "--tensor-split", "50,50", "-ngl", "99", "-b", "2048", "-ub", "512",
+        "--spec-type", "draft-mtp", "--spec-draft-n-max", "5", "--spec-draft-n-min", "0", "--spec-draft-p-min", "0",
+        "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--backend-sampling",
+        "--spec-draft-vocab", "{draft_vocab}", "--cache-ram", "0", "--metrics", "-t", "8", "-tb", "8",
+        "--host", "127.0.0.1", "--port", "{port}"]
+knobs = ["GGML_SCHED_INPUT_STAGING", "LLAMA_ARG_LOG_VERBOSITY", "GGML_CUDA_AR_COPY_STREAMS", "GGML_CUDA_DEBUG_SSM_CONV", "GGML_META_AR_NODE", "GGML_CUDA_AR_NODE_SPIN_MS", "GGML_ROUND_TRACE_SYNC", "LLAMA_ROUND_TRACE", "GGML_SCHED_DEBUG"]
+
+boot_cap_s = 300
+request_cap_s = 600
+
+[depth]
+depths = [8192, 32768, 90112]
+k = 5
+identity = "cross-arm"
+distinct_builds = false
+min_steady_intervals = 40
+min_predicted = 256
+fixtures = "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures"
+counters = ["input", "input_api", "ar_call", "graph_hit", "input_fence_staged", "sampling"]
+expected = { "8192" = -0.85, "32768" = -0.85, "90112" = -0.85 } # G, ms/round; no GPU result yet.
+request = { seed = 1729, n_predict = 512, temperature = 1, top_k = 20, top_p = 0.95, min_p = 0.05 }
+wall_s = 420
+
+[canary]
+plan = ["patch"]
+depths = [8192]
+proofs = []
+
+[budget]
+canary_s = 600
+margin = 1.5
+cleanup_s = 150
+est_s = 3500 # G
+startup_grace_s = 300
+preflight_s = 300
+
+[outputs]
+run = "full-a{attempt}"
+canary = "canary-a{attempt}"
+preflight = "preflight-plan"

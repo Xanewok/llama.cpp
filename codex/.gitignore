@@ -6,3 +6,10 @@ reuse-results/
 input-results/
 runs/
 __pycache__/
+
+# Trace-writer build-window outputs are regenerated after the final commit and freeze.
+bw-results*/
+gpu-results/
+items/trace-writer-depth-j5q.toml
+items/trace-writer-depth-j5q.gpuq.toml
+RECIPE-trace-writer.txt
