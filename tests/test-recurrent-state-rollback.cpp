@@ -310,6 +310,135 @@ static test_status test_multi_seq_split_replay(const common_params & params, lla
     return test_status::PASS;
 }
 
+// Counts gated delta net nodes by how they read their state (row ids or a gathered copy) and by ubatch sequence count.
+struct gdn_probe {
+    int n_indexed[2] = { 0, 0 }; // [n_seqs > 1]
+    int n_plain[2]   = { 0, 0 };
+};
+
+static bool gdn_probe_cb(ggml_tensor * t, bool ask, void * user_data) {
+    if (ask && t->op == GGML_OP_GATED_DELTA_NET) {
+        auto * probe = (gdn_probe *) user_data;
+        (t->src[6] ? probe->n_indexed : probe->n_plain)[t->src[2]->ne[3] > 1]++;
+    }
+    return false;
+}
+
+// The GDN state getter reads states in place, which the CUDA snapshot fusion cannot cover with several sequences in a
+// ubatch, so those ubatches keep the gather. The graph probe checks which form each ubatch shape built, and the logits
+// of every phase must equal those of a single-sequence context decoding the same stream (a wrong row reads another
+// sequence's state).
+static test_status test_getter_gate(const common_params & params, llama_model * model, uint8_t fill) {
+    const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
+
+    constexpr uint32_t n_ubatch = 16;
+    constexpr uint32_t n_seqs   = 2;
+
+    gdn_probe probe;
+    const auto make_ctx_gate = [&](uint32_t n_seq_max, bool probed) {
+        auto cparams = common_context_params_to_llama(params);
+        cparams.n_seq_max  = n_seq_max;
+        cparams.n_rs_seq   = 8;
+        cparams.n_ctx      = 256;
+        cparams.n_batch    = 256;
+        cparams.n_ubatch   = n_ubatch;
+        cparams.kv_unified = false;
+        if (probed) {
+            cparams.cb_eval           = gdn_probe_cb;
+            cparams.cb_eval_user_data = &probe;
+        }
+        return init_ctx(model, cparams, fill);
+    };
+
+    llama_context_ptr ctx_gate = make_ctx_gate(n_seqs, true);
+    std::vector<llama_context_ptr> ctx_ref;
+    for (uint32_t s = 0; s < n_seqs; ++s) {
+        ctx_ref.push_back(make_ctx_gate(1, false));
+    }
+    if (!ctx_gate || !ctx_ref[0] || !ctx_ref[1]) {
+        LOG_ERR("%s: failed to init contexts\n", __func__);
+        return test_status::FAIL;
+    }
+    if (llama_n_rs_seq(ctx_gate.get()) == 0) {
+        LOG_INF("%s: skipping because n_rs_seq is disabled\n", __func__);
+        return test_status::SKIP;
+    }
+
+    const auto tok = [&](uint32_t seq, llama_pos pos) {
+        return (llama_token) ((11*(uint32_t) pos + 29*seq + 3) % (uint32_t) n_vocab);
+    };
+
+    // the streams share one batch in order, tokens from out_from on request logits
+    struct phase {
+        const char *          name;
+        std::vector<uint32_t> streams;
+        llama_pos             p0, p1, out_from;
+    };
+    const std::vector<phase> phases = {
+        { "prefill seq 0",             { 0 },    0, 19, 18 }, // two ubatches of one sequence
+        { "prefill seq 1",             { 1 },    0, 19, 18 },
+        { "verify batch, both seqs",   { 0, 1 }, 19, 25, 19 }, // n_seqs = 2, several tokens each
+        { "decode, both seqs",         { 0, 1 }, 25, 26, 25 }, // n_seqs = 2, one token each
+        { "decode, both seqs again",   { 0, 1 }, 26, 27, 26 },
+        { "seq 1 beside an idle slot", { 1 },    27, 28, 27 }, // n_seqs = 1, n_rs > n_seqs
+    };
+
+    constexpr double nmse_eps = 1e-4;
+
+    for (const auto & ph : phases) {
+        common_batch batch(ctx_gate.get());
+        for (uint32_t s : ph.streams) {
+            for (llama_pos pos = ph.p0; pos < ph.p1; ++pos) {
+                batch.add(tok(s, pos), pos, (llama_seq_id) s, pos >= ph.out_from);
+            }
+        }
+        if (llama_process(ctx_gate.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+            LOG_ERR("%s: %s: decode failed\n", __func__, ph.name);
+            return test_status::FAIL;
+        }
+
+        for (size_t j = 0; j < ph.streams.size(); ++j) {
+            const uint32_t s = ph.streams[j];
+            common_batch batch_ref(ctx_ref[s].get());
+            for (llama_pos pos = ph.p0; pos < ph.p1; ++pos) {
+                batch_ref.add(tok(s, pos), pos, 0, pos >= ph.out_from);
+            }
+            if (llama_process(ctx_ref[s].get(), LLAMA_PROCESS_TYPE_DECODE, batch_ref.get()) != 0) {
+                LOG_ERR("%s: %s: reference decode failed\n", __func__, ph.name);
+                return test_status::FAIL;
+            }
+            const int32_t first = (int32_t) j*(ph.p1 - ph.p0) - ph.p0; // batch index of pos is first + pos
+            for (llama_pos pos = ph.out_from; pos < ph.p1; ++pos) {
+                const float * l_gate = llama_get_logits_ith(ctx_gate.get(), first + pos);
+                const float * l_ref  = llama_get_logits_ith(ctx_ref[s].get(), (int32_t) (pos - ph.p0));
+                const double  err    = l_gate && l_ref ? nmse(l_ref, l_gate, n_vocab) : std::numeric_limits<double>::infinity();
+                if (err > nmse_eps) {
+                    LOG_ERR("%s: %s: seq %u pos %d logits differ from the single-sequence context (nmse %g)\n",
+                            __func__, ph.name, s, (int) pos, err);
+                    return test_status::FAIL;
+                }
+            }
+        }
+    }
+
+    LOG_INF("%s: gdn nodes, one sequence: %d by id, %d gathered; several: %d by id, %d gathered\n", __func__,
+            probe.n_indexed[0], probe.n_plain[0], probe.n_indexed[1], probe.n_plain[1]);
+
+    if (probe.n_indexed[0] + probe.n_plain[0] + probe.n_indexed[1] + probe.n_plain[1] == 0) {
+        LOG_INF("%s: skipping because the model has no gated delta net\n", __func__);
+        return test_status::SKIP;
+    }
+    if (probe.n_indexed[0] == 0 || probe.n_plain[0] != 0) {
+        LOG_ERR("%s: single-sequence ubatches must read the state by id\n", __func__);
+        return test_status::FAIL;
+    }
+    if (probe.n_plain[1] == 0 || probe.n_indexed[1] != 0) {
+        LOG_ERR("%s: multi-sequence ubatches must keep the gathered state\n", __func__);
+        return test_status::FAIL;
+    }
+    return test_status::PASS;
+}
+
 // Save a rolled-back single-seq state, restore it into fresh and dirty
 // contexts, and verify exact logit matches on replay.
 static test_status test_rollback(const common_params & params, llama_model * model, uint8_t fill) {
@@ -749,6 +878,7 @@ struct test_results {
     test_status rollback = test_status::SKIP;
     test_status replay   = test_status::SKIP;
     test_status shared   = test_status::SKIP;
+    test_status gate     = test_status::SKIP;
 };
 
 // Run every test for an initialized model over both cache fills.
@@ -759,10 +889,12 @@ static test_results run_tests(const common_params & params, llama_model * model)
         const test_status rb = test_rollback(params, model, fill);
         const test_status rp = test_multi_seq_split_replay(params, model, fill);
         const test_status ss = test_shared_seq_reserve(params, model, fill);
+        const test_status rg = test_getter_gate(params, model, fill);
         res.rollback = merge_status(res.rollback, rb);
         res.replay   = merge_status(res.replay,   rp);
         res.shared   = merge_status(res.shared,   ss);
-        if (rb == test_status::FAIL || rp == test_status::FAIL || ss == test_status::FAIL) {
+        res.gate     = merge_status(res.gate,     rg);
+        if (rb == test_status::FAIL || rp == test_status::FAIL || ss == test_status::FAIL || rg == test_status::FAIL) {
             break;
         }
     }
@@ -797,6 +929,7 @@ static void print_usage(int /* argc */, char ** argv) {
     LOG("\n  %s -m your_model.gguf\n", argv[0]);
     LOG("\n  %s --models tests/test-models\n", argv[0]);
     LOG("\n  %s --state-movers -m your_model.gguf\n", argv[0]);
+    LOG("\n  %s --getter-gate -m your_model.gguf\n", argv[0]);
     LOG("\n");
 }
 
@@ -812,11 +945,14 @@ int main(int argc, char ** argv) {
     // extract our own --models DIR option before handing the rest to the common arg parser
     std::string models_dir;
     bool state_movers = false;
+    bool getter_gate  = false;
     std::vector<char *> filtered_argv;
     filtered_argv.push_back(argv[0]);
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--state-movers") == 0) {
             state_movers = true;
+        } else if (strcmp(argv[i], "--getter-gate") == 0) {
+            getter_gate = true;
         } else if (strcmp(argv[i], "--models") == 0) {
             if (i + 1 >= argc) {
                 LOG_ERR("%s: --models requires a directory argument\n", __func__);
@@ -847,6 +983,21 @@ int main(int argc, char ** argv) {
         return init->model() && test_state_movers(params, init->model()) == test_status::PASS ? 0 : 1;
     }
 
+    if (getter_gate) {
+        auto init = common_init_from_params(params, true);
+        if (!init->model()) {
+            return 1;
+        }
+        test_status gate = test_status::SKIP;
+        for (uint8_t fill : { 0, 0x3e }) {
+            gate = merge_status(gate, test_getter_gate(params, init->model(), fill));
+            if (gate == test_status::FAIL) {
+                break;
+            }
+        }
+        return gate == test_status::FAIL ? 1 : 0;
+    }
+
     if (!models_dir.empty()) {
         // run every test over each dummy model in the directory
         if (!std::filesystem::exists(models_dir) || !std::filesystem::is_directory(models_dir)) {
@@ -875,12 +1026,12 @@ int main(int argc, char ** argv) {
         // silence everything but the table itself (LOG has verbosity LOG_LEVEL_OUTPUT = 0)
         common_log_set_verbosity_thold(0);
 
-        LOG("%-*s  %-8s  %-11s  %s\n", (int) name_width, "Model", "rollback", "split replay", "shared seq");
+        LOG("%-*s  %-8s  %-11s  %-10s  %s\n", (int) name_width, "Model", "rollback", "split replay", "shared seq", "getter gate");
         common_log_flush(common_log_main());
 
-        size_t n_pass[3] = { 0, 0, 0 };
-        size_t n_skip[3] = { 0, 0, 0 };
-        size_t n_fail[3] = { 0, 0, 0 };
+        size_t n_pass[4] = { 0, 0, 0, 0 };
+        size_t n_skip[4] = { 0, 0, 0, 0 };
+        size_t n_fail[4] = { 0, 0, 0, 0 };
         for (const auto & model_path : models) {
             const auto name = std::filesystem::path(model_path).filename().string();
 
@@ -890,12 +1041,12 @@ int main(int argc, char ** argv) {
 
             // all status strings have the same raw length, so the columns line up;
             // pad the first status to the width of the "rollback" header + separator
-            LOG("  %s      %s         %s", test_status_str(res.rollback), test_status_str(res.replay), test_status_str(res.shared));
+            LOG("  %s      %s         %s        %s", test_status_str(res.rollback), test_status_str(res.replay), test_status_str(res.shared), test_status_str(res.gate));
             LOG("\n");
             common_log_flush(common_log_main());
 
-            const test_status all[3] = { res.rollback, res.replay, res.shared };
-            for (int t = 0; t < 3; ++t) {
+            const test_status all[4] = { res.rollback, res.replay, res.shared, res.gate };
+            for (int t = 0; t < 4; ++t) {
                 switch (all[t]) {
                     case test_status::PASS: n_pass[t]++; break;
                     case test_status::FAIL: n_fail[t]++; break;
@@ -913,12 +1064,14 @@ int main(int argc, char ** argv) {
                 __func__, n_pass[1], n_skip[1], n_fail[1], models.size());
         LOG_INF("%s: shared seq:   %zu passed, %zu skipped, %zu failed (of %zu)\n",
                 __func__, n_pass[2], n_skip[2], n_fail[2], models.size());
+        LOG_INF("%s: getter gate:  %zu passed, %zu skipped, %zu failed (of %zu)\n",
+                __func__, n_pass[3], n_skip[3], n_fail[3], models.size());
 
-        return (n_fail[0] + n_fail[1] + n_fail[2]) == 0 ? 0 : 1;
+        return (n_fail[0] + n_fail[1] + n_fail[2] + n_fail[3]) == 0 ? 0 : 1;
     }
 
     // single-model mode
     const test_results res = run_tests_for_model(params.model.path, params);
 
-    return (res.rollback == test_status::FAIL || res.replay == test_status::FAIL || res.shared == test_status::FAIL) ? 1 : 0;
+    return (res.rollback == test_status::FAIL || res.replay == test_status::FAIL || res.shared == test_status::FAIL || res.gate == test_status::FAIL) ? 1 : 0;
 }
