@@ -101,7 +101,17 @@ Run with `bin/bw-mac`, payload `codex/np2/cpu-gate.sh`, on the 4B fixture, 4 thr
   - All two-slot phases read by id with 0 state rows gathered, and logits matched in every scenario. This included swapped cells and the joint zero-state start, with 24 GDN nodes by id per joint ubatch.
   - The "extra state" scenario produced no extra state. Seqs 0 and 2 never share a ubatch without `kv_unified`, so its GATHERED expectation failed.
   - Fixed in `ccefc0c11`: seq 2 is placed between seqs 0 and 1.
-- **a2, at `085f744d3`:** @MAC_A2@
+- **a2, at `085f744d3`:** **PASS** (rc 0; `codex/np2/mac-out/np2-gate-mac-a2/`):
+  - **New build.** All gate scenarios pass, including the full rollback suite.
+    - Every two-slot phase reads by id (24 GDN nodes per joint ubatch, 0 state rows gathered) and matches single-sequence logits.
+    - The extra-state verify (seqs 0+1, seq 2 between them) keeps the gather: 24 nodes, 72 rows. The phases that follow read by id, and their logits match.
+  - **np2 driver identity, getter vs the stack7 gate (`n_seqs == 1`).** Plain and Meta(CPU,CPU), chain/fold off, q8 KV: 288 tokens each, all draft counters equal.
+  - **Mutants, all caught:**
+    - control (stack7 gate): fails the by-id form;
+    - `mut-extras` (getter even with extra states): "must keep the gathered state";
+    - `mut-tail` (tail gather kept): "gather none";
+    - `mut-row` (every sequence reads row 0): logits differ, and the np2 driver output differs.
+  - **Restore.** The rebuild is clean, and the gate passes again.
 
 ### GPU (G until the items run)
 
