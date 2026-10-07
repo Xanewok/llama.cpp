@@ -42,7 +42,28 @@ def fixture_checks():
     lib.verify_log_patterns(GETTER.read_text(), [r'gdn_state_indexed: device=0 graph=\d+ tokens=6 gathers_skipped=[1-9]\d*'], 'recorded getter')
     lib.verify_log_patterns(CHAIN.read_text(), [r'MTP chain: k=5\b'], 'recorded chain')
     candidate = EVAL / 'results/2026-10-07-cand-neginf-depth-j5q/canary-a1/1-cn/server.log'
-    lib.verify_log_patterns(candidate.read_text(), [r'set_logits: using backend candidates: n_cand = \d+, n_ban = [1-9]\d*, top_k = 20\b'], 'recorded banned candidates')
+    candidate_text = candidate.read_text()
+    candidate_patterns = [r'set_logits: using backend candidates: n_cand = \d+, n_ban = [1-9]\d*, top_k = 20\b',
+                          r'(?s)^(?!.*set_sampler: [^\n]*using CPU)']
+    lib.verify_log_patterns(candidate_text, candidate_patterns, 'recorded banned candidates')
+    for bad in ((REAL / 'server.log').read_text(), re.sub(r'n_ban = [1-9]\d*', 'n_ban = 0', candidate_text),
+                candidate_text + '\nset_sampler: seq_id = 0: using CPU\n'):
+        try:
+            lib.verify_log_patterns(bad, candidate_patterns, 'candidate proof control')
+        except lib.Fail:
+            pass
+        else:
+            raise AssertionError('candidate proof control escaped')
+    evidence = Path(os.environ.get('S8_MAC_EVIDENCE', str(Path(__file__).resolve().parent / 'mac-evidence')))
+    fallback_patterns = [r'MTP chain disabled: needs one sequence \(n_seq=2\)', r'(?s)^(?!.*MTP chain: k=)']
+    lib.verify_log_patterns((evidence / 'np2-on.log').read_text(), fallback_patterns, 'recorded np2 fallback')
+    for bad in ((REAL / 'server.log').read_text(), (evidence / 'np2-old-on.log').read_text()):
+        try:
+            lib.verify_log_patterns(bad, fallback_patterns, 'np2 fallback control')
+        except lib.Fail:
+            pass
+        else:
+            raise AssertionError('np2 fallback control escaped')
     # The new fold and projection markers have no GPU artifact until this window builds them. The parser must reject
     # their absence in a real log; their positive engagement gate runs in the queued canary.
     for marker in (r'mtp_fold_decode: engaged\b', r'ssm_out_2d: seqs=2 rows=[1-9]\d* matrices=1\b'):
@@ -57,7 +78,7 @@ def fixture_checks():
     extra = {'LLAMA_ROUND_TRACE': '/should/not/be/written'}
     env = untraced_env({}, arm, ['LLAMA_ROUND_TRACE'], extra)
     assert 'LLAMA_ROUND_TRACE' not in env and not extra
-    print('recorded SSE, native tokens, overlap, memory, kernel journal, getter/chain logs and negative controls PASS')
+    print('recorded SSE, native tokens, overlap, memory, kernel journal, getter/chain/candidate/fallback logs and negative controls PASS')
     return 0
 
 

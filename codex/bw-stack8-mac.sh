@@ -94,10 +94,30 @@ candidates() {
     done
     python3 codex/bw-cand-compare.py "$OUT/cand"
 }
+parsers() {
+    local primary=${S8_PRIMARY:?} data=$S8_PRIMARY/src/build-parser-inputs
+    mkdir -p "$OUT/parser-evidence"
+    python3 - "$primary/out" "$OUT/parser-evidence" <<'PY'
+from pathlib import Path
+import hashlib, json, sys
+source, out = map(Path, sys.argv[1:])
+records = {}
+for name, path in [('np2-on.log', source/'np2/1-1.log'), ('np2-old-on.log', source/'np2-old/1-1.log')]:
+    text = path.read_text()
+    lines = [line for line in text.splitlines() if 'MTP chain' in line]
+    assert lines, path
+    (out/name).write_text('\n'.join(lines)+'\n')
+    records[name] = {'source':str(path), 'source_sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+(out/'provenance.json').write_text(json.dumps(records, indent=2)+'\n')
+PY
+    HARNESS_CODE_ROOT="$data" S8_EVAL="$data" S8_MAC_EVIDENCE="$OUT/parser-evidence" \
+        "$BW_GATE" python3 codex/gpu_stack8.py --fixtures
+}
 stage 20 cpu-build build
 stage 21 unit-tests units
 stage 23 np1-chain-identity chain
 stage 29 np2-chain-identity np2
+stage 31 recorded-parser-controls parsers
 stage 32 np2-old-negative-control old_control
 stage 33 cand-cpu-identity candidates
 stage 34 cand-mutant bash codex/check-cand-mutant.sh "$OUT/cand-mutant"
