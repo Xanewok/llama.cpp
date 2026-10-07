@@ -2,9 +2,10 @@ id = "bw-stack7"
 title = "Build window: integrate stack7, CPU exactness/engagement/mutants/graph rank, CUDA stack6 recipe, freeze and validate three GPU items; no GPU execution"
 kind = "filler"
 priority = 25
-# G: 15300 s estimate; D: budget = estimate x 1.5.
-est_s = 15300
-budget_s = 22950
+# a2 reruns only stages 20 29-31 40-43: 21-28 PASS on x86 in stack7-a1 (d98212aef; later commits touch codex/ and one server-context.cpp return type), 30-31 PASS on the Mac (stack7-a10, stack7-a3).
+# G: 3600 s estimate; D: budget = estimate x 1.5.
+est_s = 3600
+budget_s = 5400
 ab = false
 retry = "never"
 exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
@@ -13,7 +14,7 @@ signatures = [{ class = "deterministic", regex = "bw-run: FAIL" }]
 [run]
 cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/bw-stack7.sh", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/stack7-a{attempt}"]
 cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7"
-env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0" } # Wrapper hides GPUs before invoking the payload.
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0", S7_ONLY = "20 29 30 31 40 41 42 43" } # Wrapper hides GPUs before invoking the payload.
 ports = []
 
 [preflight]
@@ -40,6 +41,7 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/src/models/delta-net-base.cpp",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/bw-stack7.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/build.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/hostgate.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/check-getter.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/check-host.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack7/codex/check-chain.py",

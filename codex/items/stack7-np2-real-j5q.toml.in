@@ -1,6 +1,6 @@
 id = "stack7-np2-real-j5q"
 kind = "depth"
-title = "stack7 vs stack6: J5q real prompts, untraced, k5; np2 serving profile; NH1 off, chain requested with two-active fallback"
+title = "stack7 vs stack6: J5q real prompts, untraced, k5; np2 serving profile; NH1 off, chain off (np2 chain fallback unverified, bw-stack7 a1 stage 29)"
 plan = ["up", "patch", "patch", "up"]
 devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
 out = "/home/xanewok/repos/qwen38-eval/results/2026-10-07-stack7-np2-real-j5q"
@@ -48,7 +48,7 @@ canary_log = ["copy-engine H2D streams per GPU: 2\\b", "(?s)n_kv_pad += 4096\\b.
 GGML_SCHED_INPUT_STAGING = "1"
 LLAMA_ARG_KV_PAD = "4096"
 LD_LIBRARY_PATH = "{root}/build/bin"
-LLAMA_MTP_CHAIN = "1"
+LLAMA_MTP_CHAIN = "0"
 LLAMA_MTP_FOLD_C = "0"
 
 [server]

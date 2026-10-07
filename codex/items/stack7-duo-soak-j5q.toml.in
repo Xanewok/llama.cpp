@@ -1,6 +1,6 @@
 id = "stack7-duo-soak-j5q"
 kind = "campaign"
-title = "stack7 duo serving soak, J5q; swift15-j5q-duo profile, NH1 off pending np1 A/B, chain requested with multi-active fallback; untraced"
+title = "stack7 duo serving soak, J5q; swift15-j5q-duo profile, NH1 off pending np1 A/B, chain off (np2 chain fallback unverified, bw-stack7 a1 stage 29); untraced"
 plan = ["A"]
 devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
 out = "/home/xanewok/repos/qwen38-eval/results/2026-10-07-stack7-duo-soak-j5q"
@@ -35,7 +35,7 @@ p_min = 0
 GGML_SCHED_INPUT_STAGING = "1"
 LLAMA_ARG_KV_PAD = "4096"
 LD_LIBRARY_PATH = "{root}/build/bin"
-LLAMA_MTP_CHAIN = "1"
+LLAMA_MTP_CHAIN = "0"
 LLAMA_MTP_FOLD_C = "0"
 
 [server]
