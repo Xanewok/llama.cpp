@@ -1458,6 +1458,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         float           temp = NAN;
         uint32_t        seed = 0;
         bool            attached = false;
+        bool            rng_chain = false; // smpl, not smpls[seq_id], holds the sequence's current RNG state
     };
     std::vector<mtp_chain_seq> mtp_chain_seqs;
 
@@ -1611,6 +1612,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         if (mtp_chain_seqs[seq_id].smpl) {
             llama_sampler_reset(mtp_chain_seqs[seq_id].smpl);
         }
+        mtp_chain_seqs[seq_id].rng_chain = false;
 
         const int32_t N = (int32_t) prompt.size();
         if (N <= 0) {
@@ -1856,85 +1858,139 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         return true;
     }
 
-    // Drafts one sequence's n_max tokens in a single decode, see llama_set_mtp_chain. p_min = 0 stops no step early,
-    // so it samples the tokens and candidates the step loop would. Returns false to leave the drafting to the loop.
+    // dist of the host sampler (step loop) or of the chain sampler
+    static llama_sampler * mtp_dist_of(llama_sampler * chain) {
+        for (int32_t i = llama_sampler_chain_n(chain) - 1; i >= 0; --i) {
+            llama_sampler * s = llama_sampler_chain_get(chain, i);
+            if (std::strcmp(llama_sampler_name(s), "dist") == 0) {
+                return s;
+            }
+        }
+        return nullptr;
+    }
+
+    // A sequence's draft uniforms come from one RNG stream whichever path drafts it, so a switch hands the RNG over.
+    void mtp_chain_rng_to(llama_seq_id seq_id, bool chain) {
+        auto & c = mtp_chain_seqs[seq_id];
+        if (c.rng_chain == chain) {
+            return;
+        }
+        c.rng_chain = chain;
+        if (!c.smpl) {
+            return;
+        }
+        llama_sampler * host = mtp_dist_of(common_sampler_get(smpls[seq_id].get()));
+        llama_sampler * dev  = mtp_dist_of(c.smpl);
+        GGML_ASSERT(host && dev);
+        if (chain) {
+            llama_sampler_copy(host, dev);
+        } else {
+            llama_sampler_copy(dev, host);
+        }
+    }
+
+    // Drafts the n_max tokens of every drafting sequence in a single decode, see llama_set_mtp_chain. p_min = 0
+    // stops no step early, so it samples the tokens and candidates the step loop would. Returns false to leave the
+    // drafting to the loop.
     bool draft_chain(common_speculative_draft_params_vec & dparams) {
         auto * ctx_dft = params.ctx_dft;
         const int32_t k = params.n_max;
 
-        llama_seq_id seq_id = -1;
-        // The chain graph requires one attached sampler; idle slots keep their samplers.
-        bool eligible = params.mtp_chain && n_seq == 1 && !chain_heads && !is_mem_shared && params.p_min <= 0.0f &&
+        std::vector<llama_seq_id> seqs;
+        bool eligible = params.mtp_chain && !chain_heads && !is_mem_shared && params.p_min <= 0.0f &&
                 params.probabilistic && params.backend_sampling && k >= 2 && k <= LLAMA_MTP_CHAIN_MAX;
         for (llama_seq_id s = 0; eligible && s < (llama_seq_id) n_seq; ++s) {
             if (dparams[s].drafting) {
-                eligible = seq_id < 0;
-                seq_id = s;
+                // greedy requests leave no candidates to reject against, so the step loop drafts them
+                eligible = dparams[s].result_q && backend_chains[s];
+                seqs.push_back(s);
             }
         }
-        eligible = eligible && seq_id >= 0 && dparams[seq_id].result_q && backend_chains[seq_id];
+        const int32_t n_d = (int32_t) seqs.size();
+        eligible = eligible && n_d > 0 && (int64_t) n_d*k <= (int64_t) llama_n_ubatch(ctx_dft);
 
-        if (eligible && !mtp_chain_attach(seq_id, dparams[seq_id].temp, dparams[seq_id].seed)) {
-            SPC_WRN("%s", "the draft context does not take the MTP chain's sampler; drafting step by step\n");
+        for (llama_seq_id s : seqs) {
+            if (!eligible) {
+                break;
+            }
+            spec_retune(smpls, smpls_cfg, llama_get_model(ctx_dft), s, dparams[s].temp, dparams[s].seed);
+            if (!mtp_chain_attach(s, dparams[s].temp, dparams[s].seed)) {
+                SPC_WRN("%s", "the draft context does not take the MTP chain's sampler; drafting step by step\n");
+                params.mtp_chain = false;
+                eligible = false;
+            }
+        }
+        if (eligible && !llama_set_mtp_chain(ctx_dft, k)) {
+            SPC_WRN("%s", "the draft context cannot run the MTP chain; drafting step by step\n");
             params.mtp_chain = false;
             eligible = false;
         }
+
+        if (eligible) {
+            batch.clear();
+            for (int32_t s = 0; s < k; ++s) {
+                for (llama_seq_id seq_id : seqs) {
+                    const auto & dp = dparams[seq_id];
+                    const int32_t idx = batch.add(dp.id_last, dp.pos0 + s, seq_id, true);
+                    batch.set_embd(idx, { s == 0 ? pending_h[seq_id].data() : mtp_chain_zeros.data(), 1, (size_t) n_embd });
+                }
+            }
+            for (llama_seq_id seq_id : seqs) {
+                mtp_chain_rng_to(seq_id, true);
+            }
+            if (!mtp_chain_announced) {
+                mtp_chain_announced = true;
+                SPC_INF("MTP chain: k=%d\n", k);
+            }
+
+            ggml_round_trace_begin("DC", batch.size());
+            ggml_round_trace_count("mtp_chain");
+            const int ret = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
+            ggml_round_trace_end(ret);
+            llama_set_mtp_chain(ctx_dft, 0);
+
+            if (ret == 0) {
+                for (int32_t s = 0; s < k; ++s) {
+                    for (int32_t j = 0; j < n_d; ++j) {
+                        const llama_seq_id seq_id = seqs[j];
+                        const int32_t idx = s*n_d + j;
+                        auto & dp   = dparams[seq_id];
+                        auto * smpl = smpls[seq_id].get();
+
+                        const llama_token id = common_sampler_sample(smpl, ctx_dft, idx, true);
+                        GGML_ASSERT(id != LLAMA_TOKEN_NULL && llama_get_sampled_token_ith(ctx_dft, idx) == id);
+
+                        const auto * cur_p = common_sampler_get_candidates(smpl, true);
+
+                        mtp_chain_dump_step(s, id, cur_p);
+                        common_sampler_accept(smpl, id, true);
+                        // commits the uniform behind this token, or the next round draws it again
+                        llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
+
+                        dp.result->push_back(id);
+                        dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
+                    }
+                }
+                return true;
+            }
+
+            // a failed decode commits no uniform and leaves no draft K/V behind
+            SPC_WRN("llama_process[chain] returned %d; drafting step by step\n", ret);
+            params.mtp_chain = false;
+            batch.clear();
+        }
+
+        // idle sequences keep the chain sampler: re-attaching costs a graph reserve
         for (llama_seq_id s = 0; s < (llama_seq_id) n_seq; ++s) {
-            if (!eligible || s != seq_id) {
+            if (dparams[s].drafting || !params.mtp_chain) {
+                if (dparams[s].drafting && dparams[s].result_q) {
+                    spec_retune(smpls, smpls_cfg, llama_get_model(ctx_dft), s, dparams[s].temp, dparams[s].seed);
+                }
+                mtp_chain_rng_to(s, false);
                 mtp_chain_release(s);
             }
         }
-        if (!eligible) {
-            return false;
-        }
-
-        auto & dp   = dparams[seq_id];
-        auto * smpl = smpls[seq_id].get();
-
-        batch.clear();
-        for (int32_t s = 0; s < k; ++s) {
-            const int32_t idx = batch.add(dp.id_last, dp.pos0 + s, seq_id, true);
-            batch.set_embd(idx, { s == 0 ? pending_h[seq_id].data() : mtp_chain_zeros.data(), 1, (size_t) n_embd });
-        }
-
-        if (!llama_set_mtp_chain(ctx_dft, k)) {
-            SPC_WRN("%s", "the draft context cannot run the MTP chain; drafting step by step\n");
-            params.mtp_chain = false;
-            mtp_chain_release(seq_id);
-            batch.clear();
-            return false;
-        }
-        if (!mtp_chain_announced) {
-            mtp_chain_announced = true;
-            SPC_INF("MTP chain: k=%d\n", k);
-        }
-
-        ggml_round_trace_begin("DC", batch.size());
-        ggml_round_trace_count("mtp_chain");
-        const int ret = llama_process(ctx_dft, LLAMA_PROCESS_TYPE_DECODE, batch.get());
-        ggml_round_trace_end(ret);
-        llama_set_mtp_chain(ctx_dft, 0);
-        if (ret != 0) {
-            SPC_ERR("llama_process[chain] returned %d\n", ret);
-            return true;
-        }
-
-        for (int32_t s = 0; s < k; ++s) {
-            const llama_token id = common_sampler_sample(smpl, ctx_dft, s, true);
-            GGML_ASSERT(id != LLAMA_TOKEN_NULL && llama_get_sampled_token_ith(ctx_dft, s) == id);
-
-            const auto * cur_p = common_sampler_get_candidates(smpl, true);
-
-            mtp_chain_dump_step(s, id, cur_p);
-            common_sampler_accept(smpl, id, true);
-            // commits the uniform behind this token, or the next round draws it again
-            llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
-
-            dp.result->push_back(id);
-            dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
-        }
-
-        return true;
+        return false;
     }
 
     void draft(common_speculative_draft_params_vec & dparams) override {
@@ -2866,8 +2922,8 @@ common_params common_base_params_to_speculative(const common_params & params) {
     result.n_outputs_max_per_seq = 1;
 
     // the MTP chain samples every step of a round in one decode
-    if (params_spec.mtp_chain && params.n_parallel == 1 && params_spec.backend_sampling && params_spec.n_max > 1) {
-        result.n_outputs_max = std::max(result.n_outputs_max, params_spec.n_max);
+    if (params_spec.mtp_chain && params_spec.backend_sampling && params_spec.n_max > 1) {
+        result.n_outputs_max = std::max(result.n_outputs_max, params.n_parallel*params_spec.n_max);
         result.n_outputs_max_per_seq = params_spec.n_max;
     }
 
