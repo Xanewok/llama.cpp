@@ -242,7 +242,7 @@ cuda_stage() {
         --desc "stack6 ac7465885 + backend candidates kept under -inf logit_bias (ignore_eos); CUDA 13.2, CCCL343, NCCL OFF; round-trace = cp of llama-server" || return 1
     {
         printf 'name %s\n' "$NAME"
-        printf 'commit %s (base stack6 ac7465885dc9f13de396ccd91b4be5eaffde3730, branch topic/cand-neginf-bias)\n' "$SHA"
+        printf 'commit %s (base stack6 ac7465885dc9f13de396ccd91b4be5eaffde3730, branch %s)\n' "$SHA" "$(git -C "$ROOT" rev-parse --abbrev-ref HEAD)"
         printf 'worktree %s, build dir build-cuda\n' "$ROOT"
         printf 'configure: cmake -B build-cuda '; printf '%q ' "${cuda_flags[@]}"
         printf ' (CUDA_HOME=/usr/local/cuda-13.2, CUDA_VISIBLE_DEVICES="")\n'
