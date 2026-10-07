@@ -1,0 +1,151 @@
+From ecc50d80178da4248f4aa12eca051e620edbb9b9 Mon Sep 17 00:00:00 2001
+From: Igor Matuszewski <xanewok@gmail.com>
+Date: Wed, 7 Oct 2026 14:56:27 +0200
+Subject: [PATCH] models : flatten SSM output projection inputs across
+ sequences
+
+---
+ src/models/clef.cpp       | 4 ++--
+ src/models/mamba-base.cpp | 2 +-
+ src/models/plamo2.cpp     | 3 +--
+ src/models/qwen35.cpp     | 6 +-----
+ src/models/qwen35moe.cpp  | 6 +-----
+ src/models/qwen3next.cpp  | 6 +-----
+ src/models/qwen4exp.cpp   | 4 +---
+ 7 files changed, 8 insertions(+), 23 deletions(-)
+
+diff --git a/src/models/clef.cpp b/src/models/clef.cpp
+index 81e4ad65e..542d98354 100644
+--- a/src/models/clef.cpp
++++ b/src/models/clef.cpp
+@@ -487,12 +487,12 @@ ggml_tensor * llama_model_clef::graph::build_layer_attn_linear(
+     output = build_norm(output, layer.ssm_norm, nullptr, LLM_NORM_RMS, il);
+     output = ggml_mul(ctx0, output, ggml_silu(ctx0, z_4d));
+ 
+-    output = ggml_reshape_3d(ctx0, output, head_v_dim * num_v_heads, n_tokens, n_seqs);
++    output = ggml_reshape_2d(ctx0, output, head_v_dim * num_v_heads, n_tokens * n_seqs);
+ 
+     cur = build_lora_mm(layer.ssm_out, output, layer.ssm_out_s);
+     cb(cur, "linear_attn_out", il);
+ 
+-    return ggml_reshape_2d(ctx0, cur, n_embd, n_tokens);
++    return cur;
+ }
+ 
+ ggml_tensor * llama_model_clef::graph::build_head_norm(ggml_tensor * cur, const norm & n) {
+diff --git a/src/models/mamba-base.cpp b/src/models/mamba-base.cpp
+index 370de0f01..00fa5595d 100644
+--- a/src/models/mamba-base.cpp
++++ b/src/models/mamba-base.cpp
+@@ -140,7 +140,7 @@ ggml_tensor * llm_build_mamba_base::build_mamba_layer(llm_graph_input_rs * inp,
+         y = ggml_add(ctx0, y, ggml_mul(ctx0, cur, layer.ssm_d));
+         y = ggml_swiglu_split(ctx0, ggml_cont(ctx0, z), y);
+ 
+-        // {d_inner, n_embd} @ {d_inner, n_seq_tokens, n_seqs} => {n_embd, n_seq_tokens, n_seqs}
++        y = ggml_reshape_2d(ctx0, y, d_inner, n_seq_tokens * n_seqs);
+         cur = build_lora_mm(layer.ssm_out, y, layer.ssm_out_s);
+     }
+ 
+diff --git a/src/models/plamo2.cpp b/src/models/plamo2.cpp
+index ba1cea146..f7d678062 100644
+--- a/src/models/plamo2.cpp
++++ b/src/models/plamo2.cpp
+@@ -412,8 +412,7 @@ ggml_tensor * llama_model_plamo2::graph::build_plamo2_mamba_layer(llm_graph_inpu
+         y = ggml_swiglu_split(ctx0, ggml_cont(ctx0, z), y);
+         cb(y, "mamba_y_swiglu_z", il);
+ 
+-        // out_proj: {d_inner, n_embd} @ {d_inner, n_seq_tokens, n_seqs} => {n_embd, n_seq_tokens, n_seqs}
+-        y   = ggml_view_3d(ctx0, y, head_dim * n_heads, n_seq_tokens, n_seqs, y->nb[2], y->nb[3], 0);
++        y   = ggml_reshape_2d(ctx0, y, head_dim * n_heads, n_seq_tokens * n_seqs);
+         cur = build_lora_mm(model.layers[il].ssm_out, y);
+         cb(cur, "mamba_out_proj", il);
+     }
+diff --git a/src/models/qwen35.cpp b/src/models/qwen35.cpp
+index ab98744a5..3768fc9c0 100644
+--- a/src/models/qwen35.cpp
++++ b/src/models/qwen35.cpp
+@@ -467,17 +467,13 @@ ggml_tensor * llama_model_qwen35::graph::build_layer_attn_linear(
+     // Apply gated normalization: self.norm(core_attn_out, z)
+     ggml_tensor * attn_out_norm = build_norm_gated(output, model.layers[il].ssm_norm, z_2d, il);
+ 
+-    // Final reshape: [head_dim, n_heads, n_tokens, n_seqs] -> [n_tokens, n_seqs, n_heads * head_dim]
+-    ggml_tensor * final_output = ggml_reshape_3d(ctx0, attn_out_norm, head_v_dim * num_v_heads, n_seq_tokens, n_seqs);
++    ggml_tensor * final_output = ggml_reshape_2d(ctx0, attn_out_norm, head_v_dim * num_v_heads, n_seq_tokens * n_seqs);
+     cb(final_output, "final_output", il);
+ 
+     // Output projection
+     cur = build_lora_mm(model.layers[il].ssm_out, final_output, model.layers[il].ssm_out_s);
+     cb(cur, "linear_attn_out", il);
+ 
+-    // Reshape back to original dimensions
+-    cur = ggml_reshape_2d(ctx0, cur, n_embd, n_seq_tokens * n_seqs);
+-
+     return cur;
+ }
+ 
+diff --git a/src/models/qwen35moe.cpp b/src/models/qwen35moe.cpp
+index f0f917af7..cfa1bde13 100644
+--- a/src/models/qwen35moe.cpp
++++ b/src/models/qwen35moe.cpp
+@@ -477,17 +477,13 @@ ggml_tensor * llama_model_qwen35moe::graph::build_layer_attn_linear(
+     // Apply gated normalization: self.norm(core_attn_out, z)
+     ggml_tensor * attn_out_norm = build_norm_gated(output, model.layers[il].ssm_norm, z_2d, il);
+ 
+-    // Final reshape: [head_dim, n_heads, n_tokens, n_seqs] -> [n_tokens, n_seqs, n_heads * head_dim]
+-    ggml_tensor * final_output = ggml_reshape_3d(ctx0, attn_out_norm, head_v_dim * num_v_heads, n_seq_tokens, n_seqs);
++    ggml_tensor * final_output = ggml_reshape_2d(ctx0, attn_out_norm, head_v_dim * num_v_heads, n_seq_tokens * n_seqs);
+     cb(final_output, "final_output", il);
+ 
+     // Output projection
+     cur = build_lora_mm(model.layers[il].ssm_out, final_output, model.layers[il].ssm_out_s);
+     cb(cur, "linear_attn_out", il);
+ 
+-    // Reshape back to original dimensions
+-    cur = ggml_reshape_2d(ctx0, cur, n_embd, n_seq_tokens * n_seqs);
+-
+     return cur;
+ }
+ 
+diff --git a/src/models/qwen3next.cpp b/src/models/qwen3next.cpp
+index 340ef28f7..8c5747aec 100644
+--- a/src/models/qwen3next.cpp
++++ b/src/models/qwen3next.cpp
+@@ -548,17 +548,13 @@ ggml_tensor * llama_model_qwen3next::graph::build_layer_attn_linear(
+     // Apply gated normalization: self.norm(core_attn_out, z)
+     ggml_tensor * attn_out_norm = build_norm_gated(output, model.layers[il].ssm_norm, z_2d, il);
+ 
+-    // Final reshape: [head_dim, n_heads, n_tokens, n_seqs] -> [n_tokens, n_seqs, n_heads * head_dim]
+-    ggml_tensor * final_output = ggml_reshape_3d(ctx0, attn_out_norm, head_v_dim * num_v_heads, n_seq_tokens, n_seqs);
++    ggml_tensor * final_output = ggml_reshape_2d(ctx0, attn_out_norm, head_v_dim * num_v_heads, n_seq_tokens * n_seqs);
+     cb(final_output, "final_output", il);
+ 
+     // Output projection
+     cur = build_lora_mm(model.layers[il].ssm_out, final_output);
+     cb(cur, "linear_attn_out", il);
+ 
+-    // Reshape back to original dimensions
+-    cur = ggml_reshape_2d(ctx0, cur, n_embd, n_seq_tokens * n_seqs);
+-
+     return cur;
+ }
+ 
+diff --git a/src/models/qwen4exp.cpp b/src/models/qwen4exp.cpp
+index 250eb74da..951c1c287 100644
+--- a/src/models/qwen4exp.cpp
++++ b/src/models/qwen4exp.cpp
+@@ -1132,14 +1132,12 @@ ggml_tensor * llama_model_qwen4exp::graph::build_layer_attn_linear(
+     // gated normalization, as self.norm(core_attn_out, z) in the reference
+     ggml_tensor * attn_out_norm = build_norm_gated(output, model.layers[il].ssm_norm, z_2d, il);
+ 
+-    ggml_tensor * final_output = ggml_reshape_3d(ctx0, attn_out_norm, head_v_dim * num_v_heads, n_seq_tokens, n_seqs);
++    ggml_tensor * final_output = ggml_reshape_2d(ctx0, attn_out_norm, head_v_dim * num_v_heads, n_seq_tokens * n_seqs);
+     cb(final_output, "final_output", il);
+ 
+     cur = build_lora_mm(model.layers[il].ssm_out, final_output, model.layers[il].ssm_out_s);
+     cb(cur, "linear_attn_out", il);
+ 
+-    cur = ggml_reshape_2d(ctx0, cur, n_embd, n_seq_tokens * n_seqs);
+-
+     return cur;
+ }
+ 

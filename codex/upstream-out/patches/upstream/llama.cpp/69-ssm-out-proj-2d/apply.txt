@@ -1,0 +1,9 @@
+Base: 7049ff0cbeb1f5ead231de4522af6b75d8d773c0
+Prerequisite count: 0 (apply prerequisites/*.patch in lexical order first; exclude them from a submission).
+Root series replay tip: ecc50d80178da4248f4aa12eca051e620edbb9b9
+Root parent: 7049ff0cbeb1f5ead231de4522af6b75d8d773c0
+Transport: local shallow base.bundle; mini-builder only, no network fetch.
+Mac: /Users/builder/qwen38-upstream-pack/20261008/69-ssm-out-proj-2d
+CPU recipe: GGML_CUDA=OFF, GGML_METAL=OFF, GGML_BLAS=OFF, GGML_NATIVE=OFF, GGML_CPU_ARM_ARCH=armv8.2-a+dotprod, GGML_CCACHE=ON; Clang, nice 19, -j4, model threads <=4, explicit 4096 contexts; RAM >=4 GiB and one model through validation/model_gate.py.
+M: fresh git am of prerequisites + root onto 7049ff0cb and Clang builds of test-llama-archs/test-sampling/test-alloc passed (see collector REPORT-upstream-pack.md; Mac committer dates give different commit IDs).
+M: Qwen3.5-4B-UD-Q4_K_XL np2 CPU probe passes. Baseline graph rank returns rc 42 (408 batched projection observations); patched rank has 408 observations, none batched. Complete logits/tokens match byte-for-byte, SHA256 e1b0c1664518c59287c59da2a0acf1233609ea7e4239538d719057cc2b1c3170 in both arms. Command: bash validation/model_tests.sh "$PWD" 69-ssm-out-proj-2d. Logs: codex/upstream-out/mac-evidence/final/69/.
