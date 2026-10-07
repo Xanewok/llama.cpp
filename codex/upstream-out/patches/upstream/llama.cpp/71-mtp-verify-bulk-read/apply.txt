@@ -1,0 +1,9 @@
+Base: 7049ff0cbeb1f5ead231de4522af6b75d8d773c0
+Prerequisite count: 0 (apply prerequisites/*.patch in lexical order first; exclude them from a submission).
+Root series replay tip: 117cfd7f9f6078f019071a7fcf96103f0826c740
+Root parent: 7049ff0cbeb1f5ead231de4522af6b75d8d773c0
+Transport: local shallow base.bundle; mini-builder only, no network fetch.
+Mac: /Users/builder/qwen38-upstream-pack/20261008/71-mtp-verify-bulk-read
+CPU recipe: GGML_CUDA=OFF, GGML_METAL=OFF, GGML_BLAS=OFF, GGML_NATIVE=OFF, GGML_CPU_ARM_ARCH=armv8.2-a+dotprod, GGML_CCACHE=ON; Clang, nice 19, -j4, model threads <=4, explicit 4096 contexts; RAM >=4 GiB and one model through validation/model_gate.py.
+M: fresh git am of prerequisites + root onto 7049ff0cb and Clang builds of test-llama-archs/test-sampling/test-alloc passed (see collector REPORT-upstream-pack.md; Mac committer dates give different commit IDs).
+M: Qwen3.5-4B np2 plain-CPU MTP test passes: patch/baseline JSON (tokens and counters) is byte-identical at seed 1729, fixed 16+16 output tokens. Wrong-slot-row mutant differs. Source restored, final build and clean-source check pass. Command: bash validation/model_tests.sh "$PWD" 71-mtp-verify-bulk-read; logs: codex/upstream-out/mac-evidence/final/71/.
