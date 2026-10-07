@@ -1533,7 +1533,15 @@ static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & a
     const uint3 channel_ratio_fd   = init_fastdiv_values(channel_ratio);
     const uint3 sample_ratio_fd    = init_fastdiv_values(sample_ratio);
 
-    const bool pipe = mmq_pipe_supported(config, args);
+    // local study knobs: GGML_CUDA_MMQ_PIPE=0 keeps the plain k loop (same config); GGML_CUDA_DEBUG_MMQ_PIPE logs launches
+    static const bool pipe_off = getenv("GGML_CUDA_MMQ_PIPE") && atoi(getenv("GGML_CUDA_MMQ_PIPE")) == 0;
+    static const bool pipe_debug = getenv("GGML_CUDA_DEBUG_MMQ_PIPE") != nullptr;
+    const bool pipe = !pipe_off && mmq_pipe_supported(config, args);
+    if (pipe_debug && config.pipe_blocks > 0) {
+        fprintf(stderr, "mmq_pipe: device=%d type=%s columns=%lld J=%d I=%d threads=%d pipe=%d fallback=%d rows=%lld k=%lld\n",
+                id, ggml_type_name(type), (long long) args.ncols_max, config.J, config.I, config.nthreads, (int) pipe,
+                (int) fallback, (long long) args.nrows_x, (long long) args.ncols_x);
+    }
 
     if (!config.stream_k) {
         mul_mat_q<type, J, fallback, prec_src1><<<block_nums_xy_tiling, block_dims, nbytes_shared, stream>>>

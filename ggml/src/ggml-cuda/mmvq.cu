@@ -345,8 +345,11 @@ bool ggml_cuda_should_use_mmvq(enum ggml_type type, int cc, int64_t ne11) {
                 return ne11 <= 5;
             case GGML_TYPE_Q5_K:
                 return ne11 <= 6;
-            case GGML_TYPE_Q6_K:
-                return ne11 <= 4; // MMQ streams q6_K through a cp.async ring from J=8 on (mmq-config-blackwell.cuh)
+            case GGML_TYPE_Q6_K: {
+                // local study knob: GGML_CUDA_Q6_K_MMVQ_MAX overrides the cut (0 = MMQ for every width)
+                static const int q6_k_mmvq_max = getenv("GGML_CUDA_Q6_K_MMVQ_MAX") ? atoi(getenv("GGML_CUDA_Q6_K_MMVQ_MAX")) : 4;
+                return ne11 <= q6_k_mmvq_max; // MMQ streams q6_K through a cp.async ring from J=8 on (mmq-config-blackwell.cuh)
+            }
             default:
                 return ne11 <= MMVQ_MAX_BATCH_SIZE;
         }
