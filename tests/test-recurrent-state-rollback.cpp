@@ -444,6 +444,8 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
                 return test_status::FAIL;
             }
             llama_synchronize(ctx_gate.get());
+            LOG_INF("%s: %s: %s: gdn nodes %d by id, %d gathered; state rows gathered %" PRId64 "\n", __func__,
+                    sc.name, ph.name, probe.n_indexed, probe.n_plain, probe.n_gathered);
 
             for (size_t j = 0; j < ph.streams.size(); ++j) {
                 const uint32_t s = ph.streams[j];
@@ -468,8 +470,6 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
                 }
             }
 
-            LOG_INF("%s: %s: %s: gdn nodes %d by id, %d gathered; state rows gathered %" PRId64 "\n", __func__,
-                    sc.name, ph.name, probe.n_indexed, probe.n_plain, probe.n_gathered);
             n_gdn += probe.n_indexed + probe.n_plain;
             if (probe.n_indexed + probe.n_plain == 0) {
                 continue;
