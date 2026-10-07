@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 import signal
 import sys
+import tempfile
+import tomllib
 
 EVAL = Path(os.environ.get('S8_EVAL', '/home/xanewok/repos/qwen38-eval'))
 FIXTURES = EVAL / 'orchestration/gpuq/fixtures'
@@ -78,7 +80,27 @@ def fixture_checks():
     extra = {'LLAMA_ROUND_TRACE': '/should/not/be/written'}
     env = untraced_env({}, arm, ['LLAMA_ROUND_TRACE'], extra)
     assert 'LLAMA_ROUND_TRACE' not in env and not extra
-    print('recorded SSE, native tokens, overlap, memory, kernel journal, getter/chain/candidate/fallback logs and negative controls PASS')
+    from harness import mkitem
+    with tempfile.TemporaryDirectory(dir=evidence.parent) as temporary:
+        for source in (Path(__file__).resolve().parent / 'items').glob('stack8-*.toml.in'):
+            for fold in ('0', '1'):
+                path = Path(temporary) / source.name.removesuffix('.in')
+                path.write_text(source.read_text().replace('@STACK8_SHA@', '0'*40).replace('@DUO_FOLD_C@', fold))
+                x = lib.read_experiment(path)
+                assert type(x['priority']) is int and len(x['canary']['plan']) == 1
+                assert set(x['canary']['plan']) <= x['arms'].keys()
+                assert x['budget']['canary_s'] <= 600
+                assert len(x['plan'])*mkitem.boot_wall(x) + x['budget']['canary_s'] <= 0.7*mkitem.budget(x)['budget_s']
+                if x['kind'] == 'depth':
+                    assert x['depth']['request']['ignore_eos'] is True
+                for arm in x['arms'].values():
+                    for pattern in arm['canary_log']:
+                        re.compile(pattern)
+    window = tomllib.loads((Path(__file__).resolve().parent / 'bw-stack8.toml').read_text())
+    assert window['kind'] == 'filler' and window['priority'] == 20
+    assert window['host_sensitive'] is False and window['preemptible'] is False
+    assert window['run']['env']['S7_ONLY'] == '40 41 42 43'
+    print('recorded parsers, proof mutants, experiment structures and window fields PASS')
     return 0
 
 
