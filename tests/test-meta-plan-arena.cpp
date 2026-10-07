@@ -3,11 +3,12 @@
 // later graph reuses it and every cgraph_main it touches must belong to the current arena.
 //
 // Sequence on one Meta(CPU,CPU) backend (a freed plan becomes the spare that the next plan_create reuses):
-//   A: many subgraphs, few nodes   -> max_subgraphs = splits(A)
-//   B: 2 subgraphs, many nodes     -> max_nnodes raised, arena rebuilt, only 2 subgraphs created
-//   A again                        -> no capacity raised, splits(A) > 2: used cgraph_main entries 2.. of the old arena
-// Only plan_create (the build loop) is exercised, nothing is computed. The defect is a use after free, so the test
-// perturbs freed memory (glibc M_PERTURB) and runs in a child: unfixed it dies on a signal, a sanitizer build reports it.
+//   A: 7 subgraphs, 618 nodes   -> max_subgraphs = 7
+//   B: 2 subgraphs, 1203 nodes  -> max_nnodes raised, arena rebuilt, (unfixed) only 2 cgraph_main created
+//   A again                     -> no capacity raised, 7 > 2: used cgraph_main entries 2.. of the freed arena
+// Only plan_create (the build loop) is exercised, nothing is computed. The defect is a use after free: the child pins
+// the glibc mmap threshold low, so the freed arena is unmapped and the stale write faults, and perturbs freed heap
+// (M_PERTURB) for what stays mapped. Unfixed the child dies on a signal; a sanitizer build of ggml would report it.
 // GGML_META_AR_NODE=1 is run too: on CPU it only computes and logs the node plan, the split plan executes, so this
 // covers the shared defect, not the CUDA-only node plan that makes it reachable in the server.
 #include "ggml.h"
@@ -30,6 +31,8 @@ static const int64_t D = 64; // model dim
 static const int64_t H = 64; // hidden dim, split in two
 static const int64_t T = 4;  // tokens
 static const int N_LAYERS_MAX = 6;
+static const int N_TAIL_A = 600;
+static const int N_TAIL_B = 1200;
 
 static ggml_backend_meta_split_state split_state(const ggml_tensor * tensor, void * userdata) {
     (void) userdata;
@@ -103,9 +106,9 @@ static void run_sequence(bool ar_node) {
     GGML_ASSERT(buf_w != nullptr);
 
     test_graph a, b;
-    build_graph(a, buft, up, down, N_LAYERS_MAX, 0);
-    build_graph(b, buft, up, down, 1, 200);
-    GGML_ASSERT(b.gf->n_nodes > a.gf->n_nodes);
+    build_graph(a, buft, up, down, N_LAYERS_MAX, N_TAIL_A);
+    build_graph(b, buft, up, down, 1, N_TAIL_B);
+    GGML_ASSERT(ggml_graph_n_nodes(b.gf) > ggml_graph_n_nodes(a.gf));
 
     plan_once(backend, a.gf);
     plan_once(backend, b.gf);
@@ -127,7 +130,8 @@ static void run_in_child(const char * name, bool ar_node) {
     GGML_ASSERT(pid >= 0);
     if (pid == 0) {
 #ifdef __GLIBC__
-        mallopt(M_PERTURB, 0xA5);
+        GGML_ASSERT(mallopt(M_MMAP_THRESHOLD, 64*1024) == 1);
+        GGML_ASSERT(mallopt(M_PERTURB, 0xA5) == 1);
 #endif
         run_sequence(ar_node);
         _exit(0);
