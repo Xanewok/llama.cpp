@@ -15,4 +15,5 @@ for quant in ('iq4_xs', 'q6_k', 'q5_k', 'q8_0', 'q4_k'):
         command = base + (['-DGGML_CUDA_MMQ_SMALLJ_DISABLE'] if mode == 'base' else []) + ['-c',
                           str(ROOT / f'ggml/src/ggml-cuda/template-instances/mmq-instance-{quant}.cu'),
                           '-o', str(HERE / 'resources' / f'{mode}-{quant}.o')]
-        print(mode + '\t' + quant + '\t' + shlex.join(command))
+        # flags.make paths (@CMakeFiles/...rsp) are relative to the ggml-cuda build dir
+        print(mode + '\t' + quant + '\t' + 'cd ' + shlex.quote(str(cuda)) + ' && ' + shlex.join(command))
