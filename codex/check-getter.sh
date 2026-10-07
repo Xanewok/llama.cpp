@@ -18,14 +18,14 @@ restore() { git restore --source=HEAD -- "$GATE_SRC"; }
 trap restore EXIT
 TEST=build-cpu/bin/test-recurrent-state-rollback
 SHIM_EXT=so; [[ $(uname) != Darwin ]] || SHIM_EXT=dylib
-# run_test NAME ARGS...: log in $OUT/NAME.log, rc in $RC; PRELOAD=lib preloads a shim into the test only (flat namespace on Darwin)
+# run_test NAME ARGS...: log in $OUT/NAME.log, rc in $RC; PRELOAD=lib preloads a shim into the test only (dyld interposing on Darwin)
 run_test() {
     local name=$1; shift
     RC=0
     local PRELOAD_ENV=(LD_PRELOAD="${PRELOAD:-}")
     if [[ $(uname) == Darwin ]]; then
         PRELOAD_ENV=()
-        [[ -z ${PRELOAD:-} ]] || PRELOAD_ENV=(DYLD_INSERT_LIBRARIES="$PRELOAD" DYLD_FORCE_FLAT_NAMESPACE=1)
+        [[ -z ${PRELOAD:-} ]] || PRELOAD_ENV=(DYLD_INSERT_LIBRARIES="$PRELOAD")
     fi
     "$CPUGATE" env ${PRELOAD_ENV[@]+"${PRELOAD_ENV[@]}"} LD_LIBRARY_PATH="$ROOT/build-cpu/bin" "$TEST" "$@" -m "$MODEL" -c 4096 -t 8 > "$OUT/$name.log" 2>&1 || RC=$?
 }
