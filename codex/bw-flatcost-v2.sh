@@ -70,7 +70,7 @@ if [[ ${BW_CPU_ONLY:-0} == 1 ]]; then
             -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_EXAMPLES=OFF "${cpu_extra[@]}" &&
         "$BUILDGATE" cmake --build build-cpu --target test-backend-ops -j3  # Mac rule: at most 3 build jobs
     } > "$OUT/build-cpu.log" 2>&1 || die 8 "CPU build (see $OUT/build-cpu.log)"
-    note "CPU build ok, HEAD $SHA, $(uname -sm), $(c++ --version | head -1)"
+    note "CPU build ok, HEAD $SHA, $(uname -sm), $(c++ --version | sed -n 1p)"
     TBO=build-cpu/bin/test-backend-ops
     "$CPUGATE" "$TBO" test -o MUL_MAT -b CPU -p 'type_a=(q6_K|iq4_xs),' --output sql > "$OUT/cpu-eval.sql" 2> "$OUT/cpu-eval.err" ||
         die 2 "CPU eval cases (see $OUT/cpu-eval.err)"
