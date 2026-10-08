@@ -1,6 +1,6 @@
-purpose: Mac mini port of bw-stack7 CPU stages (spike)
-base: d98212aefb74dd518b6c744560a745a8e45586e8
+purpose: fold C for n_seq > 1 (multi-sequence catch-up fold), default-on with exact fallback; design SPIKE-np2.md §4
+base: 48b82b0d1559e936dbf612c871f2583cd4c79f3e
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack7-mac
-created: 2026-10-07T15:48:57+02:00
+branch: topic/fold-mseq
+created: 2026-10-08T03:38:59+02:00
 creator: xanewok
