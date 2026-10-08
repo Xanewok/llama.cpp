@@ -291,7 +291,10 @@ static int ggml_cuda_flash_attn_ext_mma_f16_get_ncols2(const ggml_tensor * dst) 
 // This count must not shrink below the largest batch of a context if the f16 scratch of the graph reserve is to go away:
 // ggml_cuda_flash_attn_ext_get_alloc_size skips the scratch for exactly the calls that this function accepts.
 static int64_t ggml_cuda_flash_attn_ext_mma_q8_0_max_query_tiles() {
-    return 16; // G: set from the measured crossover of the in-kernel dequantization and the copy
+    // local: GGML_CUDA_FA_Q8_QTILES overrides the cap (0 disables the multi-query q8_0 path). Read per call so that a test
+    // driver can switch it between graphs; a graph must be allocated and computed under the same value.
+    const char * e = getenv("GGML_CUDA_FA_Q8_QTILES");
+    return e ? atoll(e) : 16; // G: set from the measured crossover of the in-kernel dequantization and the copy
 }
 
 // q8_0 K/V with several queries per K/V head: the MMA kernel stages raw q8_0 rows and dequantizes them in shared memory
@@ -374,10 +377,22 @@ static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_con
                   ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, ncols1_wide,   ncols2)) {
         if (ggml_cuda_flash_attn_ext_mma_q8_0_supported(cc, dst)) {
             GGML_ASSERT(ncols2 == ggml_cuda_flash_attn_ext_mma_f16_get_ncols2(dst));
+            const int ncols1 = Q->ne[1] <= ncols1_narrow ? ncols1_narrow : ncols1_wide;
+            GGML_LOG_DEBUG("fattn_q8_mq: device=%d dk=%lld ncols1=%d ncols2=%d rows=%lld seqs=%lld\n",
+                ctx.device, (long long) DKQ, ncols1, ncols2, (long long) Q->ne[1], (long long) Q->ne[3]);
+            // local: must-fail mutant of the exactness gates, K and V swapped for the in-kernel call
+            const char * mutant_env = getenv("GGML_CUDA_FA_Q8_MUTANT");
+            const bool mutant = mutant_env && atoi(mutant_env) != 0;
+            if (mutant) {
+                std::swap(dst->src[1], dst->src[2]);
+            }
             if (Q->ne[1] <= ncols1_narrow) {
                 ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, ncols1_narrow, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
             } else {
                 ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, ncols1_wide,   ncols2, GGML_TYPE_Q8_0>(ctx, dst);
+            }
+            if (mutant) {
+                std::swap(dst->src[1], dst->src[2]);
             }
             return;
         }
