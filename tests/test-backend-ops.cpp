@@ -4575,6 +4575,65 @@ struct test_ssm_conv_state_fusion : public test_case {
     }
 };
 
+// State rows the sequences of an ssm_conv_rs batch read, given that sequence s writes cell head + s:
+// 0 its own, 1 reversed, 2 rotated by one (each reads the cell its neighbour writes), 3 all the first cell written,
+// 4 cells no sequence writes. Cell 0 and the two cells after the batch are never written.
+static std::vector<int32_t> ssm_conv_rs_ids(int mode, int64_t seqs, int64_t head) {
+    std::vector<int32_t> ids(seqs);
+    for (int64_t s = 0; s < seqs; ++s) {
+        switch (mode) {
+            case 0:  ids[s] = head + s; break;
+            case 1:  ids[s] = head + (seqs - 1 - s); break;
+            case 2:  ids[s] = head + (s + 1) % seqs; break;
+            case 3:  ids[s] = head; break;
+            default: ids[s] = s % 2 == 0 ? 0 : head + seqs + (s / 2) % 2; break;
+        }
+    }
+    return ids;
+}
+
+// GGML_OP_SSM_CONV_RS: states read by id, snapshots written in place; the cache is read back after the operation
+struct test_ssm_conv_rs : public test_case {
+    const int64_t channels, tokens, seqs, K, width;
+    const int mode;
+    const bool silu;
+    ggml_tensor * ids = nullptr;
+    ggml_tensor * out = nullptr;
+    ggml_tensor * readback = nullptr;
+
+    static constexpr int64_t head = 1;
+
+    test_ssm_conv_rs(int64_t channels, int64_t tokens, int64_t seqs, int64_t K, int64_t width, int mode, bool silu)
+        : channels(channels), tokens(tokens), seqs(seqs), K(K), width(width), mode(mode), silu(silu) {}
+
+    std::string vars() override { return VARS_TO_STR7(channels, tokens, seqs, K, width, mode, silu); }
+    std::string op_desc(ggml_tensor *) override { return "SSM_CONV_RS"; }
+    bool run_whole_graph() override { return true; }
+    std::vector<ggml_tensor *> fusion_test_nodes() override { return { out, readback }; }
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        const int64_t history = width - 1;
+        const int64_t cells = seqs + 3;
+        auto * x = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, channels, tokens, seqs);
+        auto * w = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, width, channels);
+        auto * cache = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, history * channels, cells * K);
+        ids = ggml_new_tensor_1d(ctx, GGML_TYPE_I32, seqs);
+        auto * snap = ggml_view_3d(ctx, cache, history * channels, seqs, K, cache->nb[1], cells * cache->nb[1], head * cache->nb[1]);
+        auto * conv = ggml_ssm_conv_rs(ctx, ggml_transpose(ctx, x), w, cache, ids, snap);
+        out = silu ? ggml_silu(ctx, conv) : conv;
+        ggml_build_forward_expand(gf, out);
+        readback = ggml_cont(ctx, cache);
+        ggml_build_forward_expand(gf, readback);
+        return out;
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        test_case::initialize_tensors(ctx);
+        const std::vector<int32_t> rows = ssm_conv_rs_ids(mode, seqs, head);
+        ggml_backend_tensor_set(ids, rows.data(), 0, rows.size() * sizeof(int32_t));
+    }
+};
+
 // GGML_OP_SSM_CONV + GGML_OP_ADD (channel-wise bias, optional) + GGML_OP_UNARY(SILU) (fused operation)
 struct test_ssm_conv_bias_silu : public test_case {
     const ggml_type type;
@@ -10386,6 +10445,23 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     for (int64_t width : {3, 5, 9, 15}) {
         test_cases.emplace_back(new test_ssm_conv_state_fusion(128, 6, 2, 6, width, false));
     }
+    for (int64_t seqs : {1, 2, 3, 8}) {
+        for (int64_t tokens : {1, 2, 6, 32}) {
+            for (int64_t K : {1, 2, 6, 9}) {
+                for (int mode = 0; mode < 5; ++mode) {
+                    test_cases.emplace_back(new test_ssm_conv_rs(384, tokens, seqs, K, 4, mode, true));
+                }
+            }
+        }
+    }
+    for (int64_t width : {3, 5, 9, 15}) {
+        test_cases.emplace_back(new test_ssm_conv_rs(128, 6, 2, 6, width, 1, width % 2 == 1));
+    }
+    // channel counts that are not a multiple of the 128-thread block, and a batch the CUDA operation hands back
+    test_cases.emplace_back(new test_ssm_conv_rs(7, 6, 2, 6, 4, 1, true));
+    test_cases.emplace_back(new test_ssm_conv_rs(200, 3, 3, 3, 4, 2, false));
+    test_cases.emplace_back(new test_ssm_conv_rs(128, 33, 2, 6, 4, 1, true));
+    test_cases.emplace_back(new test_ssm_conv_rs(128, 2, 9, 6, 4, 2, true));
 
     test_cases.emplace_back(new test_ssm_scan_rollback(GGML_TYPE_F32, 96, 64, 16, 8, 8, 2, /*K=*/3)); // d_state=96 rollback snapshots match prefix states
     test_cases.emplace_back(new test_ssm_scan(GGML_TYPE_F32, 128, 64, 16, 2, 32, 4)); // Mamba-2
@@ -12465,6 +12541,106 @@ static bool run_alpha_gate_identity(ggml_backend_t backend, const char * filter)
     return true;
 }
 
+// Byte-for-byte identity of the operation with the path it replaces, on the tested backend: the states of a batch are
+// gathered by id, concatenated with the tokens, cut into snapshots and convolved. The ids make sequences read rows that
+// other sequences' snapshots overwrite, and changing them between replays reuses one graph (a captured CUDA graph).
+static bool run_ssm_conv_rs_identity(ggml_backend_t backend, const char * filter) {
+    if (filter && std::string(filter).find("SSM_CONV_RS") == std::string::npos) {
+        return true;
+    }
+    constexpr int64_t head = 1;
+    constexpr int64_t history = 3;
+    int cases = 0, unsupported = 0;
+    for (int64_t channels : { 128, 384 }) {
+        for (int64_t tokens : { 1, 2, 4, 6, 32 }) {
+            for (int64_t seqs : { 1, 2, 3, 8 }) {
+                for (int64_t K : { 1, 2, 6, 9 }) {
+                    for (int mode = 0; mode < 5; ++mode) {
+                        const int64_t cells = seqs + 3;
+                        const int64_t row = history * channels;
+                        ggml_init_params params = { 256*ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true };
+                        ggml_context_ptr ctx(ggml_init(params));
+                        auto * x = ggml_new_tensor_3d(ctx.get(), GGML_TYPE_F32, channels, tokens, seqs);
+                        auto * w = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, history + 1, channels);
+                        auto * ids = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I32, seqs);
+                        auto * cache_ref = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, row, cells * K);
+                        auto * cache_rs = ggml_dup_tensor(ctx.get(), cache_ref);
+                        auto * graph = ggml_new_graph(ctx.get());
+
+                        auto * gathered = ggml_get_rows(ctx.get(), cache_ref, ids);
+                        auto * cat = ggml_concat(ctx.get(), ggml_reshape_3d(ctx.get(), gathered, history, channels, seqs),
+                            ggml_transpose(ctx.get(), x), 0);
+                        for (int64_t slot = K - 1; slot >= 0; --slot) {
+                            auto * src = ggml_view_3d(ctx.get(), cat, history, channels, seqs, cat->nb[1], cat->nb[2],
+                                std::max<int64_t>(0, tokens - slot) * sizeof(float));
+                            auto * dst = ggml_view_2d(ctx.get(), cache_ref, row, seqs, cache_ref->nb[1],
+                                (slot * cells + head) * cache_ref->nb[1]);
+                            ggml_build_forward_expand(graph, ggml_cpy(ctx.get(), src, dst));
+                        }
+                        auto * reference = ggml_silu(ctx.get(), ggml_ssm_conv(ctx.get(), cat, w));
+                        ggml_build_forward_expand(graph, reference);
+
+                        auto * snap = ggml_view_3d(ctx.get(), cache_rs, row, seqs, K, cache_rs->nb[1],
+                            cells * cache_rs->nb[1], head * cache_rs->nb[1]);
+                        auto * actual = ggml_silu(ctx.get(), ggml_ssm_conv_rs(ctx.get(), ggml_transpose(ctx.get(), x), w, cache_rs, ids, snap));
+                        ggml_build_forward_expand(graph, actual);
+
+                        bool supported = true;
+                        for (int i = 0; i < ggml_graph_n_nodes(graph); ++i) {
+                            supported &= ggml_backend_supports_op(backend, ggml_graph_node(graph, i));
+                        }
+                        if (!supported) {
+                            ++unsupported;
+                            continue;
+                        }
+                        ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors(ctx.get(), backend));
+                        if (!buffer) {
+                            return false;
+                        }
+
+                        std::vector<float> cache_values(ggml_nelements(cache_ref));
+                        std::vector<float> x_values(ggml_nelements(x)), w_values(ggml_nelements(w));
+                        std::vector<float> out_ref(ggml_nelements(reference)), out_rs(ggml_nelements(actual));
+                        std::vector<float> cache_out_ref(cache_values.size()), cache_out_rs(cache_values.size());
+                        for (int replay = 0; replay < 3; ++replay) {
+                            std::mt19937 gen(1000003u * (unsigned) cases + (unsigned) replay);
+                            std::uniform_real_distribution<float> dis(-2.0f, 2.0f);
+                            for (auto * values : { &cache_values, &x_values, &w_values }) {
+                                for (float & v : *values) {
+                                    v = dis(gen);
+                                }
+                            }
+                            const std::vector<int32_t> rows = ssm_conv_rs_ids((mode + replay) % 5, seqs, head);
+                            ggml_backend_tensor_set(x, x_values.data(), 0, ggml_nbytes(x));
+                            ggml_backend_tensor_set(w, w_values.data(), 0, ggml_nbytes(w));
+                            ggml_backend_tensor_set(ids, rows.data(), 0, ggml_nbytes(ids));
+                            ggml_backend_tensor_set(cache_ref, cache_values.data(), 0, ggml_nbytes(cache_ref));
+                            ggml_backend_tensor_set(cache_rs, cache_values.data(), 0, ggml_nbytes(cache_rs));
+                            if (ggml_backend_graph_compute(backend, graph) != GGML_STATUS_SUCCESS) {
+                                return false;
+                            }
+                            ggml_backend_tensor_get(reference, out_ref.data(), 0, ggml_nbytes(reference));
+                            ggml_backend_tensor_get(actual, out_rs.data(), 0, ggml_nbytes(actual));
+                            ggml_backend_tensor_get(cache_ref, cache_out_ref.data(), 0, ggml_nbytes(cache_ref));
+                            ggml_backend_tensor_get(cache_rs, cache_out_rs.data(), 0, ggml_nbytes(cache_rs));
+                            if (memcmp(out_ref.data(), out_rs.data(), ggml_nbytes(reference)) != 0 ||
+                                    memcmp(cache_out_ref.data(), cache_out_rs.data(), ggml_nbytes(cache_ref)) != 0) {
+                                printf("  FAIL SSM_CONV_RS byte identity: channels=%lld tokens=%lld seqs=%lld K=%lld mode=%d replay=%d (%s)\n",
+                                    (long long) channels, (long long) tokens, (long long) seqs, (long long) K, (mode + replay) % 5, replay,
+                                    memcmp(out_ref.data(), out_rs.data(), ggml_nbytes(reference)) != 0 ? "output" : "cache");
+                                return false;
+                            }
+                        }
+                        ++cases;
+                    }
+                }
+            }
+        }
+    }
+    printf("  SSM_CONV_RS: byte identity with the gathered path and changing-id replay PASS cases=%d unsupported=%d\n", cases, unsupported);
+    return true;
+}
+
 static bool run_fa_vec_slice(ggml_backend_t backend, ggml_backend_t backend_cpu, const char * op_names_filter) {
     const char * LLAMA_TEST_FA_VEC_DISABLE = getenv("LLAMA_TEST_FA_VEC_DISABLE");
     if (LLAMA_TEST_FA_VEC_DISABLE) {
@@ -12665,7 +12841,10 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
 
         const bool slice_ok = run_fa_vec_slice(backend, backend_cpu.get(), op_names_filter);
 
-        return n_ok == tests_run && slice_ok && run_alpha_gate_identity(backend, op_names_filter);
+        const bool alpha_ok = run_alpha_gate_identity(backend, op_names_filter);
+        const bool conv_ok  = run_ssm_conv_rs_identity(backend, op_names_filter);
+        return n_ok == tests_run && slice_ok && alpha_ok && conv_ok &&
+               run_rms_norm_scale_pair_identity(backend, op_names_filter);
     }
 
     if (mode == MODE_GRAD) {
