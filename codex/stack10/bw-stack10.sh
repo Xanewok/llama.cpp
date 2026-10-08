@@ -54,7 +54,8 @@ preflight() {
     git merge-base --is-ancestor "$CAND2" HEAD || { echo 'stack10-cand2 is not an ancestor'; return 1; }
     local log
     log=$(git log --format=%s "$CAND2..HEAD")
-    [[ $log != *'process 4 GDN columns per warp'* && $log != *'time the fused GDN+CPY pair'* ]] || { echo 'gdn4 commits are still in HEAD'; return 1; }
+    # d751759e7 (test-only perf timing) stays: K8's perf_nodes() rotation is written on top of it
+    [[ $log != *'process 4 GDN columns per warp'* ]] || { echo 'gdn4 kernel commit is still in HEAD'; return 1; }
     for p in "$CCCL" "$BUILDGATE" "$W/bin/cpugate" "$W/bin/wt" "$W/frozen/stack6/RECIPE.txt" "$W/work/aa-load/ccx01.sh" /usr/local/cuda-13.2/bin/nvcc \
              "$EVAL/harness/mkitem.py" "$W/frozen/stack9/SOURCE" "$W/frozen/stack9-p55/SOURCE" "$W/frozen/stack10-cand/SOURCE" \
              "$S9_LIB/libggml-cuda.so" "$CAND_LIB/libggml-cuda.so" "$P55_LIB/test-backend-ops" "$P55_LIB/round-trace" "$EVIDENCE" /mnt/scratch; do
