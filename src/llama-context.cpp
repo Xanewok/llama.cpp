@@ -832,7 +832,9 @@ void llama_context::synchronize(bool force) {
         const int64_t t0 = ggml_time_us();
         ggml_backend_sched_synchronize(sched.get());
         const int64_t waited = ggml_time_us() - t0;
-        n_sync_elided++;
+        if (n_sync_elided++ == 0) {
+            LLAMA_LOG_INFO("%s: sync_elide: debug check engaged\n", __func__);
+        }
         if (waited > 20) {
             n_sync_missed++;
             LLAMA_LOG_ERROR("%s: sync_elide: skipped sync waited %lld us (a device enqueue was not tracked)\n", __func__, (long long) waited);
