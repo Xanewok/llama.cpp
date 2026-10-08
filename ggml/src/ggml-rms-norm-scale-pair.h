@@ -48,6 +48,12 @@ static inline bool ggml_match_rms_norm_scale_pair(const ggml_cgraph * graph, int
         return false;
     }
 
+    static const bool alias_mutant = getenv("GGML_RMS_NORM_SCALE_PAIR_ALIAS_MUTANT") != nullptr;
+    if (alias_mutant) {
+        i_b = j;
+        return true;
+    }
+
     const ggml_tensor * root_b = x[1];
     while (root_b->view_src) {
         root_b = root_b->view_src;
