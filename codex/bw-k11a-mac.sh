@@ -11,6 +11,8 @@ mkdir -p "$OUT/run"
 GATE=$ROOT/codex/mac-model-gate.sh
 MODEL=${BW_MODEL:?}
 TOKENS=${K11A_TOKENS:-48}
+# the deferred backend spins >= 100 us when it has queued work; Mac scheduler noise on an empty queue was seen at 23 us
+DEBUG_US=80
 # np,meta,fold: -duo shape (np2 fold off), np1 and Meta variants, fold C on
 COMBOS=${K11A_COMBOS:-"1,0,1 1,1,0 2,0,0 2,1,0 2,1,1"}
 stage() {
@@ -49,7 +51,7 @@ identity() {
         drive "$t-off" "$np" "$meta" "$fold" LLAMA_SYNC_ELIDE=0
         drive "$t-on" "$np" "$meta" "$fold"
         drive "$t-defer-off" "$np" "$meta" "$fold" HOST_DEFER=1 LLAMA_SYNC_ELIDE=0
-        drive "$t-defer-debug" "$np" "$meta" "$fold" HOST_DEFER=1 LLAMA_SYNC_ELIDE_DEBUG=1
+        drive "$t-defer-debug" "$np" "$meta" "$fold" HOST_DEFER=1 LLAMA_SYNC_ELIDE_DEBUG=$DEBUG_US
     done
     python3 - "$OUT/run" $COMBOS <<'PY_COMPARE'
 import json, re, sys
@@ -82,7 +84,7 @@ mutants() {
         for m in 1 2 3; do
             for dbg in 0 1; do
                 rc=0
-                drive "$t-mut$m-dbg$dbg" "$np" "$meta" "$fold" HOST_DEFER=1 LLAMA_SYNC_ELIDE_MUTANT=$m LLAMA_SYNC_ELIDE_DEBUG=$dbg || rc=$?
+                drive "$t-mut$m-dbg$dbg" "$np" "$meta" "$fold" HOST_DEFER=1 LLAMA_SYNC_ELIDE_MUTANT=$m LLAMA_SYNC_ELIDE_DEBUG=$(( dbg ? DEBUG_US : 0 )) || rc=$?
                 echo "$t mutant=$m debug=$dbg driver_rc=$rc"
             done
         done
