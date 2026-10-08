@@ -23,6 +23,11 @@
 #        define GGML_CUDA_TOP_K_NCOLS_THRESHOLD_BITONIC_FEW_ROWS 1024
 #    endif
 #endif // GGML_CUDA_TOP_K_NCOLS_THRESHOLD_BITONIC_FEW_ROWS
+// NVIDIA only: HIP keeps its radix path below, MUSA is unverified.
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+#    define GGML_CUDA_TOPK_BATCHED
+#    include "top-k-batched.cuh"
+#endif
 
 #ifdef GGML_CUDA_USE_CUB
 #    include <cub/cub.cuh>
@@ -293,6 +298,23 @@ void ggml_cuda_op_top_k(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const int64_t    nrows = ggml_nrows(src0);
     const int64_t    k     = dst->ne[0];
     ggml_cuda_pool & pool  = ctx.pool();
+#ifdef GGML_CUDA_TOPK_BATCHED
+    // One launch set for all rows. A single wide row stays on CUB: its chain is shorter than the radix passes.
+    if (topk_batched_supported(ncols, nrows, k) && (nrows > 1 || ncols <= TOPK_SMALL_NCOLS)) {
+        size_t n_states = 0;
+        size_t n_hist   = 0;
+        topk_batched_scratch((int) ncols, (int) nrows, n_states, n_hist);
+        ggml_cuda_pool_alloc<topk_row_state> states_alloc(pool);
+        ggml_cuda_pool_alloc<int>            hist_alloc(pool);
+        if (n_states > 0) {
+            states_alloc.alloc(n_states);
+            hist_alloc.alloc(n_hist);
+        }
+        topk_batched(src0_d, dst_d, states_alloc.get(), hist_alloc.get(), (int) ncols, (int) nrows, (int) k, stream);
+        CUDA_CHECK(cudaGetLastError());
+        return;
+    }
+#endif // GGML_CUDA_TOPK_BATCHED
 
     const int device = ggml_cuda_get_device();
 
