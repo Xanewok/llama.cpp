@@ -1,0 +1,87 @@
+{
+  "result": "PASS",
+  "commit": "fa4e41f7ef2fccdef9b2e51fb68eb9d36da70f22",
+  "source_files": [
+    "codex/bw-cand-driver.cpp",
+    "codex/bw-np2-driver.cpp",
+    "codex/chain-cpu.cpp",
+    "common/sampling.cpp",
+    "common/speculative.cpp",
+    "ggml/src/ggml-cuda/gated_delta_net.cu",
+    "ggml/src/ggml-cuda/gated_delta_net.cuh",
+    "ggml/src/ggml-cuda/ggml-cuda.cu",
+    "src/llama-context.cpp",
+    "src/llama-context.h",
+    "src/llama-ext.h",
+    "src/llama-graph.cpp",
+    "src/llama-graph.h",
+    "src/models/delta-net-base.cpp",
+    "src/models/qwen35.cpp",
+    "tests/test-backend-ops.cpp",
+    "tests/test-llama-archs.cpp",
+    "tests/test-recurrent-state-rollback.cpp"
+  ],
+  "source_sha256": "37a319ad6018bfd767cbee467c296c2acb5c2ac21ed1c9877c0f006ab60d5643",
+  "stages": [
+    {
+      "code": 20,
+      "name": "cpu-build",
+      "rc": 0,
+      "wall_s_M": 71
+    },
+    {
+      "code": 21,
+      "name": "unit-tests",
+      "rc": 0,
+      "wall_s_M": 109
+    },
+    {
+      "code": 23,
+      "name": "np1-chain-identity",
+      "rc": 0,
+      "wall_s_M": 3383
+    },
+    {
+      "code": 24,
+      "name": "fold-mseq-identity",
+      "rc": 0,
+      "wall_s_M": 1496
+    },
+    {
+      "code": 29,
+      "name": "np2-chain-identity",
+      "rc": 0,
+      "wall_s_M": 124
+    },
+    {
+      "code": 31,
+      "name": "recorded-parser-controls",
+      "rc": 0,
+      "wall_s_M": 0
+    },
+    {
+      "code": 32,
+      "name": "np2-old-negative-control",
+      "rc": 0,
+      "wall_s_M": 183
+    },
+    {
+      "code": 33,
+      "name": "cand-cpu-identity",
+      "rc": 0,
+      "wall_s_M": 133
+    },
+    {
+      "code": 34,
+      "name": "cand-mutant",
+      "rc": 0,
+      "wall_s_M": 3
+    },
+    {
+      "code": 35,
+      "name": "np2-getter",
+      "rc": 0,
+      "wall_s_M": 293
+    }
+  ]
+}

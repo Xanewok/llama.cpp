@@ -1,0 +1,13 @@
+gate-new	0
+full-new	0
+drv-new-plain	0
+drv-new-meta	0
+ctl	1
+gate-ctl	0
+drv-ctl-plain	0
+drv-ctl-meta	0
+mut-extras	1
+mut-tail	1
+mut-row	1
+drv-mut-row	0
+gate-restored	0

@@ -1,0 +1,61 @@
+{
+  "wrong_sequence_changed_tokens_M": 2,
+  "forced_layout": {
+    "elapsed_s_M": 27.117830874864012,
+    "counters": {
+      "compute_submit": 251,
+      "graph_incompatible": 33,
+      "graph_miss": 39,
+      "graph_stale_alloc": 6,
+      "llama_build": 39,
+      "reset_graphs": 10,
+      "set_inputs": 251,
+      "ubatch": 1750,
+      "sampling": 592,
+      "graph_hit": 212,
+      "input_fence_staged": 81,
+      "mtp_fold_layout_fallback": 45
+    },
+    "catchup_decodes_M": 50,
+    "dump_rows_M": 228
+  },
+  "mixed_off": {
+    "elapsed_s_M": 8.19315104233101,
+    "counters": {
+      "compute_submit": 172,
+      "graph_incompatible": 18,
+      "graph_miss": 25,
+      "graph_stale_alloc": 7,
+      "llama_build": 25,
+      "reset_graphs": 10,
+      "set_inputs": 172,
+      "ubatch": 454,
+      "sampling": 260,
+      "graph_hit": 147,
+      "input_fence_staged": 57
+    },
+    "catchup_decodes_M": 36,
+    "dump_rows_M": 96
+  },
+  "mixed_on": {
+    "elapsed_s_M": 8.03700308315456,
+    "counters": {
+      "compute_submit": 140,
+      "graph_incompatible": 12,
+      "graph_miss": 19,
+      "graph_stale_alloc": 7,
+      "llama_build": 19,
+      "reset_graphs": 10,
+      "set_inputs": 140,
+      "ubatch": 322,
+      "mtp_fold": 32,
+      "sampling": 260,
+      "graph_hit": 121,
+      "input_fence_staged": 3
+    },
+    "catchup_decodes_M": 4,
+    "dump_rows_M": 96
+  },
+  "model_processes_M": 52,
+  "logit_artifact_bytes_M": 123169696
+}

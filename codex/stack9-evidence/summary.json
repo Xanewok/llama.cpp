@@ -1,0 +1,111 @@
+{
+  "result": "PASS",
+  "commit": "dc22c96d87f925c5479d4763ef08a146be03b893",
+  "source_files": [
+    "codex/bw-cand-driver.cpp",
+    "codex/bw-np2-driver.cpp",
+    "codex/chain-cpu.cpp",
+    "common/sampling.cpp",
+    "common/speculative.cpp",
+    "ggml/src/ggml-cuda/gated_delta_net.cu",
+    "ggml/src/ggml-cuda/gated_delta_net.cuh",
+    "ggml/src/ggml-cuda/ggml-cuda.cu",
+    "src/llama-context.cpp",
+    "src/llama-context.h",
+    "src/llama-ext.h",
+    "src/llama-graph.cpp",
+    "src/llama-graph.h",
+    "src/models/delta-net-base.cpp",
+    "src/models/qwen35.cpp",
+    "tests/test-backend-ops.cpp",
+    "tests/test-llama-archs.cpp",
+    "tests/test-recurrent-state-rollback.cpp"
+  ],
+  "source_sha256": "09bc57eaf168ba3074d430eda9f8c31b2cd3d48201261d7b679579a1770a0644",
+  "stages": [
+    {
+      "code": 20,
+      "name": "cpu-build",
+      "rc": 0,
+      "wall_s_M": 51,
+      "source_commit": "dc22c96d87f925c5479d4763ef08a146be03b893",
+      "evidence": "codex/stack9-evidence/final-stages.tsv"
+    },
+    {
+      "code": 21,
+      "name": "unit-tests",
+      "rc": 0,
+      "wall_s_M": 97,
+      "source_commit": "dc22c96d87f925c5479d4763ef08a146be03b893",
+      "evidence": "codex/stack9-evidence/final-stages.tsv"
+    },
+    {
+      "code": 23,
+      "name": "np1-chain-identity",
+      "rc": 0,
+      "wall_s_M": 3383,
+      "source_commit": "fa4e41f7ef2fccdef9b2e51fb68eb9d36da70f22",
+      "evidence": "codex/stack9-evidence/primary-stages.tsv"
+    },
+    {
+      "code": 24,
+      "name": "fold-mseq-identity",
+      "rc": 0,
+      "wall_s_M": 1496,
+      "source_commit": "fa4e41f7ef2fccdef9b2e51fb68eb9d36da70f22",
+      "evidence": "codex/stack9-evidence/primary-stages.tsv"
+    },
+    {
+      "code": 29,
+      "name": "np2-chain-identity",
+      "rc": 0,
+      "wall_s_M": 107,
+      "source_commit": "dc22c96d87f925c5479d4763ef08a146be03b893",
+      "evidence": "codex/stack9-evidence/final-stages.tsv"
+    },
+    {
+      "code": 31,
+      "name": "recorded-parser-controls",
+      "rc": 0,
+      "wall_s_M": 0,
+      "source_commit": "dc22c96d87f925c5479d4763ef08a146be03b893",
+      "evidence": "codex/stack9-evidence/final-stages.tsv"
+    },
+    {
+      "code": 32,
+      "name": "np2-old-negative-control",
+      "rc": 0,
+      "wall_s_M": 183,
+      "source_commit": "fa4e41f7ef2fccdef9b2e51fb68eb9d36da70f22",
+      "evidence": "codex/stack9-evidence/primary-stages.tsv"
+    },
+    {
+      "code": 33,
+      "name": "cand-cpu-identity",
+      "rc": 0,
+      "wall_s_M": 133,
+      "source_commit": "fa4e41f7ef2fccdef9b2e51fb68eb9d36da70f22",
+      "evidence": "codex/stack9-evidence/primary-stages.tsv"
+    },
+    {
+      "code": 34,
+      "name": "cand-mutant",
+      "rc": 0,
+      "wall_s_M": 3,
+      "source_commit": "fa4e41f7ef2fccdef9b2e51fb68eb9d36da70f22",
+      "evidence": "codex/stack9-evidence/primary-stages.tsv"
+    },
+    {
+      "code": 35,
+      "name": "np2-getter",
+      "rc": 0,
+      "wall_s_M": 293,
+      "source_commit": "fa4e41f7ef2fccdef9b2e51fb68eb9d36da70f22",
+      "evidence": "codex/stack9-evidence/primary-stages.tsv"
+    }
+  ],
+  "model_math_unchanged_since_primary": true,
+  "primary_source_commit": "fa4e41f7ef2fccdef9b2e51fb68eb9d36da70f22",
+  "primary_source_sha256": "37a319ad6018bfd767cbee467c296c2acb5c2ac21ed1c9877c0f006ab60d5643",
+  "final_source_delta": "Fold engagement logging restored to the original uint64 mask, bounded by mtp_fold_max_tokens=64; corrected the chain dump format comment. Inference and sampling operations unchanged."
+}

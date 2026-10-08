@@ -1,0 +1,9 @@
+np2-gate: built fa4e41f7ef2fccdef9b2e51fb68eb9d36da70f22
+np2-gate: new build: gate scenarios, full suite and np2 driver pass
+np2-gate: mutant ctl caught (rc=1)
+np2-gate: getter/gather: all same-batch vocabulary logits byte-identical (both cache fills)
+np2-gate: mutant mut-extras caught (rc=1)
+np2-gate: mutant mut-tail caught (rc=1)
+np2-gate: mutant mut-row caught (rc=1)
+np2-gate: mutant drv-mut-row caught by the np2 driver comparison
+np2-gate: PASS fa4e41f7ef2fccdef9b2e51fb68eb9d36da70f22
