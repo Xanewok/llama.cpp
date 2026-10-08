@@ -2,6 +2,7 @@
 # Combined Mac CPU payload of topk/stack10 (run through bin/bw-mac, argument = OUT dir). One configure+build for the union of
 # targets, then per-component libs (codex/stack10/mac/<comp>.sh), each sourced in its own subshell. Cheap stages first, long
 # model runs last. S10_ONLY="k7 k4" reruns components only (the build always runs); S10_KEEP_GOING=0 stops at the first failure.
+# bw-mac forwards no environment, so the filter may also ride in the bw-mac OUT_NAME: `stack10-mac__k7__k4` selects k7 and k4.
 # Libs define <comp>_cheap and/or <comp>_model, which call `stage CODE NAME FN`.
 set -euo pipefail
 export CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1
@@ -13,6 +14,10 @@ OUT=${1:?output}
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 MODEL=${BW_MODEL:?}
+if [[ -z ${S10_ONLY:-} ]]; then
+    run_name=$(basename "$(dirname "$(dirname "$(dirname "$OUT")")")")
+    [[ $run_name != *__* ]] || { S10_ONLY=${run_name#*__}; S10_ONLY=${S10_ONLY//__/ }; }
+fi
 LIBDIR=$ROOT/codex/stack10/mac
 MGATE=$LIBDIR/model-gate.sh
 export ROOT OUT MODEL LIBDIR MGATE
