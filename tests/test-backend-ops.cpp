@@ -1292,6 +1292,10 @@ struct test_case {
 
     virtual bool run_whole_graph() { return false; }
     virtual std::vector<ggml_tensor *> fusion_test_nodes() { return {}; }
+
+    // Nodes eval_perf repeats, in graph order. A fusion under test must list every node it spans (adjacent
+    // after repetition), or the perf rows time only the output node.
+    virtual std::vector<ggml_tensor *> perf_nodes(ggml_tensor * out) { return { out }; }
     virtual bool use_weight_context() { return false; }
 
     ggml_cgraph * gf = nullptr;
@@ -1639,6 +1643,10 @@ struct test_case {
             return false;
         }
 
+        const std::vector<ggml_tensor *> repeat_nodes = perf_nodes(out);
+        GGML_ASSERT(!repeat_nodes.empty());
+        const int64_t node_slack = (ggml_graph_size(gf) - ggml_graph_n_nodes(gf)) / (int64_t) repeat_nodes.size();
+
         // determine number of runs
         int n_runs;
         bool is_cpu = ggml_backend_dev_type(ggml_backend_get_device(backend)) == GGML_BACKEND_DEVICE_TYPE_CPU;
@@ -1648,19 +1656,21 @@ struct test_case {
             const uint64_t target_flops_cpu =   8ULL * GFLOP;
             const uint64_t target_flops_gpu = 100ULL * GFLOP;
             uint64_t target_flops = is_cpu ? target_flops_cpu : target_flops_gpu;
-            n_runs = (int)std::min<int64_t>(ggml_graph_size(gf) - ggml_graph_n_nodes(gf), target_flops / op_flops(out)) + 1;
+            n_runs = (int)std::min<int64_t>(node_slack, target_flops / op_flops(out)) + 1;
         } else {
             // based on memory size
             const size_t GB = 1ULL << 30;
             const size_t target_size_cpu =  8 * GB;
             const size_t target_size_gpu = 32 * GB;
             size_t target_size = is_cpu ? target_size_cpu : target_size_gpu;
-            n_runs = (int)std::min<int64_t>(ggml_graph_size(gf) - ggml_graph_n_nodes(gf), target_size / op_size(out)) + 1;
+            n_runs = (int)std::min<int64_t>(node_slack, target_size / op_size(out)) + 1;
         }
 
         // duplicate the op
         for (int i = 1; i < n_runs; i++) {
-            ggml_graph_add_node(gf, out);
+            for (ggml_tensor * node : repeat_nodes) {
+                ggml_graph_add_node(gf, node);
+            }
         }
 
         // calculate memory
@@ -4984,7 +4994,9 @@ struct test_gated_delta_net_cache_fusion : public test_case {
     const bool indexed;
     ggml_tensor * indices = nullptr;
 
+    ggml_tensor * gdn_node = nullptr;
     ggml_tensor * cpy_node = nullptr;
+    ggml_tensor * attn_node = nullptr;
 
     std::string vars() override {
         return VARS_TO_STR6(type, head_count, head_size, n_seq_tokens, n_seqs, K) + (indexed ? ",indexed=1" : "");
@@ -5030,6 +5042,7 @@ struct test_gated_delta_net_cache_fusion : public test_case {
             ggml_gated_delta_net(ctx, q, k, v, g, beta, state, indices, K) :
             ggml_gated_delta_net(ctx, q, k, v, g, beta, state, nullptr, K);
         ggml_set_name(gdn_out, "gdn_out");
+        gdn_node = gdn_out;
 
         // attn scores view (first part of the gdn output)
         ggml_tensor * attn = ggml_view_4d(ctx, gdn_out,
@@ -5060,6 +5073,12 @@ struct test_gated_delta_net_cache_fusion : public test_case {
         // read the cpy output (not the plain dst view, which would not pull the cpy into the graph)
         // so that neither the gdn nor the cpy is the graph output
         ggml_tensor * out = ggml_sum(ctx, cpy);
+
+        // The fused kernel writes the scores too; compare them element-wise. The cpy operand stays first so the
+        // cpy directly follows the gdn in the graph order (the fusion pattern).
+        attn_node = ggml_cont(ctx, attn);
+        ggml_set_name(attn_node, "attn_cont");
+        out = ggml_add(ctx, out, ggml_sum(ctx, attn_node));
         return out;
     }
 
@@ -5069,7 +5088,13 @@ struct test_gated_delta_net_cache_fusion : public test_case {
     }
 
     bool run_whole_graph() override { return true; }
-    std::vector<ggml_tensor *> fusion_test_nodes() override { return { cpy_node }; }
+    std::vector<ggml_tensor *> fusion_test_nodes() override { return { cpy_node, attn_node }; }
+
+    // out is ggml_sum(cpy); repeating it alone would time the sum, not the fused GDN+CPY pair.
+    std::vector<ggml_tensor *> perf_nodes(ggml_tensor * out) override {
+        GGML_UNUSED(out);
+        return { gdn_node, cpy_node };
+    }
 
     uint64_t op_flops(ggml_tensor * t) override {
         GGML_UNUSED(t);
@@ -11723,6 +11748,24 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     // enough heads that the first sequence finishes before the second starts if each runs in its own blocks
     test_cases.emplace_back(new test_gated_delta_net_cache_fusion(GGML_TYPE_F32, 1024, 32, 6, 2, 6, true));
 
+    // four state columns per warp: S_v = 128 at the 24-head per-device count of a 48-head model, every joint width
+    // (the indexed rows are reversed, so each sequence reads a row another one overwrites)
+    for (int64_t n_tokens : {1, 6}) {
+        for (int64_t B : {1, 2, 3, 4}) {
+            test_cases.emplace_back(new test_gated_delta_net_cache_fusion(GGML_TYPE_F32, 24, 128, n_tokens, B, 6, true));
+        }
+    }
+    // few heads shrink the CTA to 2 or 1 warps to fill the SMs
+    for (int64_t H : {1, 2, 4}) {
+        for (int64_t B : {1, 2}) {
+            test_cases.emplace_back(new test_gated_delta_net_cache_fusion(GGML_TYPE_F32, H, 128, 6, B, 6, true));
+        }
+    }
+    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 24, 128, 6, 1, 1, false, false, /*K=*/6));
+    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 24, 128, 6, 2, 1, false, false, /*K=*/6));
+    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 1, 128, 6, 1, 1, false, false, /*K=*/6));
+    test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 24, 128, 6, 2, 1, false, true,  /*K=*/6));
+
     test_cases.emplace_back(new test_gated_delta_net_cache_fusion(GGML_TYPE_F32, 4, 32,   2, 1, 2));
     test_cases.emplace_back(new test_gated_delta_net_cache_fusion(GGML_TYPE_F32, 4, 64,   4, 1, 2));
     test_cases.emplace_back(new test_gated_delta_net_cache_fusion(GGML_TYPE_F32, 4, 32,   4, 1, 4));
@@ -12230,6 +12273,17 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
         }
     }
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 128, 64, 1, 1, false, true)); // KDA PP-64
+
+    // MTP verify (6 tokens) and decode (1 token) of a 48-head model split over two devices: plain (K = 1) and the
+    // GDN+CPY cache fusion (K = 6, gathered and indexed)
+    for (int64_t n_seq_tokens : {1, 6}) {
+        for (int64_t n_seqs : {1, 2}) {
+            test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 24, 128, n_seq_tokens, n_seqs));
+            for (bool indexed : {false, true}) {
+                test_cases.emplace_back(new test_gated_delta_net_cache_fusion(GGML_TYPE_F32, 24, 128, n_seq_tokens, n_seqs, 6, indexed));
+            }
+        }
+    }
 
     // lightning_indexer
     for (int kv : { 256, 4096, 65536 }) {
