@@ -1,0 +1,585 @@
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:97 (test_temp)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:100 (test_temp)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:97 (test_temp)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:100 (test_temp)
+0: 0.000000 (-inf)
+1: 0.000000 (-inf)
+2: 0.000000 (-inf)
+3: 1.000000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:108 (test_temp_ext)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:111 (test_temp_ext)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:108 (test_temp_ext)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:111 (test_temp_ext)
+0: 0.000000 (-inf)
+1: 0.000000 (-inf)
+2: 0.000000 (-inf)
+3: 1.000000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:119 (test_top_k)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:122 (test_top_k)
+3: 1.000000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:119 (test_top_k)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:122 (test_top_k)
+3: 0.444444 (-0.916291)
+2: 0.333333 (-1.203973)
+1: 0.222222 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:119 (test_top_k)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:122 (test_top_k)
+3: 0.400000 (-0.916291)
+2: 0.300000 (-1.203973)
+1: 0.200000 (-1.609438)
+0: 0.100000 (-2.302585)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:119 (test_top_k)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:122 (test_top_k)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:130 (test_top_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:133 (test_top_p)
+3: 1.000000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:130 (test_top_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:133 (test_top_p)
+3: 0.571429 (-0.916291)
+2: 0.428571 (-1.203973)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:130 (test_top_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:133 (test_top_p)
+3: 0.444444 (-0.916291)
+2: 0.333333 (-1.203973)
+1: 0.222222 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:130 (test_top_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:133 (test_top_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:141 (test_min_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:144 (test_min_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:141 (test_min_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:144 (test_min_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:141 (test_min_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:144 (test_min_p)
+1: 0.222222 (-1.609438)
+2: 0.333333 (-1.203973)
+3: 0.444444 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:141 (test_min_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:144 (test_min_p)
+1: 0.222222 (-1.609438)
+2: 0.333333 (-1.203973)
+3: 0.444444 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:141 (test_min_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:144 (test_min_p)
+2: 0.428571 (-1.203973)
+3: 0.571429 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:141 (test_min_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:144 (test_min_p)
+2: 0.428571 (-1.203973)
+3: 0.571429 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:141 (test_min_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:144 (test_min_p)
+3: 1.000000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:141 (test_min_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:144 (test_min_p)
+3: 1.000000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:141 (test_min_p)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:144 (test_min_p)
+3: 1.000000 (-0.916291)
+-
+XTC should:
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:152 (test_xtc)
+0: 0.400000 (-0.916291)
+1: 0.300000 (-1.203973)
+2: 0.200000 (-1.609438)
+3: 0.100000 (-2.302585)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:154 (test_xtc)
+3: 0.100000 (-2.302585)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:152 (test_xtc)
+0: 0.400000 (-0.916291)
+1: 0.300000 (-1.203973)
+2: 0.200000 (-1.609438)
+3: 0.100000 (-2.302585)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:154 (test_xtc)
+2: 0.200000 (-1.609438)
+3: 0.100000 (-2.302585)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:152 (test_xtc)
+0: 0.400000 (-0.916291)
+1: 0.300000 (-1.203973)
+2: 0.200000 (-1.609438)
+3: 0.100000 (-2.302585)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:154 (test_xtc)
+1: 0.300000 (-1.203973)
+2: 0.200000 (-1.609438)
+3: 0.100000 (-2.302585)
+-
+XTC should not:
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:152 (test_xtc)
+0: 0.400000 (-0.916291)
+1: 0.300000 (-1.203973)
+2: 0.200000 (-1.609438)
+3: 0.100000 (-2.302585)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:154 (test_xtc)
+0: 0.400000 (-0.916291)
+1: 0.300000 (-1.203973)
+2: 0.200000 (-1.609438)
+3: 0.100000 (-2.302585)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:162 (test_typical)
+0: 0.970000 (-0.030459)
+1: 0.010000 (-4.605170)
+2: 0.010000 (-4.605170)
+3: 0.010000 (-4.605170)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:164 (test_typical)
+0: 0.970000 (-0.030459)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:162 (test_typical)
+0: 0.400000 (-0.916291)
+1: 0.200000 (-1.609438)
+2: 0.200000 (-1.609438)
+3: 0.200000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:164 (test_typical)
+2: 0.200000 (-1.609438)
+1: 0.200000 (-1.609438)
+3: 0.200000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:183 (test_penalties)
+0: 0.200000 (-1.609438)
+1: 0.200000 (-1.609438)
+2: 0.200000 (-1.609438)
+3: 0.2000empty DRY sequence breakers list in llama_sampler_init_dry_testing
+empty DRY sequence breakers list in llama_sampler_init_dry_testing
+00 (-1.609438)
+4: 0.200000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:186 (test_penalties)
+0: 0.000000 (-80.471893)
+1: 0.250000 (-1.609438)
+2: 0.250000 (-1.609438)
+3: 0.250000 (-1.609438)
+4: 0.250000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:183 (test_penalties)
+0: 0.200000 (-1.609438)
+1: 0.200000 (-1.609438)
+2: 0.200000 (-1.609438)
+3: 0.200000 (-1.609438)
+4: 0.200000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:186 (test_penalties)
+0: 0.000000 (-80.471893)
+1: 0.000000 (-80.471893)
+2: 0.000000 (-80.471893)
+3: 0.500000 (-1.609438)
+4: 0.500000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:183 (test_penalties)
+0: 0.200000 (-1.609438)
+1: 0.200000 (-1.609438)
+2: 0.200000 (-1.609438)
+3: 0.200000 (-1.609438)
+4: 0.200000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:186 (test_penalties)
+0: 0.000000 (-80.471893)
+1: 0.000000 (-80.471893)
+2: 0.000000 (-80.471893)
+3: 0.500000 (-1.609438)
+4: 0.500000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:183 (test_penalties)
+0: 0.200000 (-1.609438)
+1: 0.200000 (-1.609438)
+2: 0.200000 (-1.609438)
+3: 0.200000 (-1.609438)
+4: 0.200000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:186 (test_penalties)
+0: 0.000011 (-11.609438)
+1: 0.249997 (-1.609438)
+2: 0.249997 (-1.609438)
+3: 0.249997 (-1.609438)
+4: 0.249997 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:183 (test_penalties)
+0: 0.200000 (-1.609438)
+1: 0.200000 (-1.609438)
+2: 0.200000 (-1.609438)
+3: 0.200000 (-1.609438)
+4: 0.200000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:186 (test_penalties)
+0: 0.000023 (-11.609438)
+1: 0.000023 (-11.609438)
+2: 0.000023 (-11.609438)
+3: 0.499966 (-1.609438)
+4: 0.499966 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:183 (test_penalties)
+0: 0.200000 (-1.609438)
+1: 0.200000 (-1.609438)
+2: 0.200000 (-1.609438)
+3: 0.200000 (-1.609438)
+4: 0.200000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:186 (test_penalties)
+0: 0.000000 (-21.609438)
+1: 0.000023 (-11.609438)
+2: 0.000023 (-11.609438)
+3: 0.499977 (-1.609438)
+4: 0.499977 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:207 (test_dry)
+0: 0.250000 (-1.386294)
+1: 0.250000 (-1.386294)
+2: 0.250000 (-1.386294)
+3: 0.250000 (-1.386294)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:210 (test_dry)
+0: 0.250000 (-1.386294)
+1: 0.250000 (-1.386294)
+2: 0.250000 (-1.386294)
+3: 0.250000 (-1.386294)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:207 (test_dry)
+0: 0.250000 (-1.386294)
+1: 0.250000 (-1.386294)
+2: 0.250000 (-1.386294)
+3: 0.250000 (-1.386294)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:210 (test_dry)
+0: 0.296923 (-1.386294)
+1: 0.296923 (-1.386294)
+2: 0.109232 (-2.386294)
+3: 0.296923 (-1.386294)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:207 (test_dry)
+0: 0.200000 (-1.6empty DRY sequence breakers list in llama_sampler_init_dry_testing
+empty DRY sequence breakers list in llama_sampler_init_dry_testing
+09438)
+1: 0.200000 (-1.609438)
+2: 0.200000 (-1.609438)
+3: 0.200000 (-1.609438)
+4: 0.200000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:210 (test_dry)
+0: 0.200000 (-1.609438)
+1: 0.200000 (-1.609438)
+2: 0.200000 (-1.609438)
+3: 0.200000 (-1.609438)
+4: 0.200000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:207 (test_dry)
+0: 0.200000 (-1.609438)
+1: 0.200000 (-1.609438)
+2: 0.200000 (-1.609438)
+3: 0.200000 (-1.609438)
+4: 0.200000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:210 (test_dry)
+0: 0.241818 (-1.609438)
+1: 0.241818 (-1.609438)
+2: 0.032727 (-3.609438)
+3: 0.241818 (-1.609438)
+4: 0.241818 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:207 (test_dry)
+0: 0.200000 (-1.609438)
+1: 0.200000 (-1.609438)
+2: 0.200000 (-1.609438)
+3: 0.200000 (-1.609438)
+4: 0.200000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:210 (test_dry)
+0: 0.200000 (-1.609438)
+1: 0.200000 (-1.609438)
+2: 0.200000 (-1.609438)
+3: 0.200000 (-1.609438)
+4: 0.200000 (-1.609438)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:217 (test_top_n_sigma)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:220 (test_top_n_sigma)
+0: 0.000000 (-inf)
+1: 0.000000 (-inf)
+2: 0.428571 (-1.203973)
+3: 0.571429 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:217 (test_top_n_sigma)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:220 (test_top_n_sigma)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:217 (test_top_n_sigma)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+/Users/builder/qwen38-bw/stack8-units-final/63e659d71b22e2d40ecb1e6419dc0b3578572741/run.bjb5Ho/src/tests/test-sampling.cpp:220 (test_top_n_sigma)
+0: 0.100000 (-2.302585)
+1: 0.200000 (-1.609438)
+2: 0.300000 (-1.203973)
+3: 0.400000 (-0.916291)
+-
+Sampler queue   k OK with n_vocab=10000 top_k=10000 top_p=1.000000 min_p=1.000000
+Sampler queue   k OK with n_vocab=10000 top_k=    1 top_p=1.000000 min_p=1.000000
+Sampler queue   p OK with n_vocab=10000 top_k=10000 top_p=1.000000 min_p=1.000000
+Sampler queue   p OK with n_vocab=10000 top_k=10000 top_p=0.000000 min_p=1.000000
+Sampler queue   m OK with n_vocab=10000 top_k=10000 top_p=1.000000 min_p=1.000000
+Sampler queue   m OK with n_vocab=10000 top_k=10000 top_p=1.000000 min_p=0.000000
+Sampler queue   k OK with n_vocab=10000 top_k=  100 top_p=1.000000 min_p=1.000000
+Sampler queue   p OK with n_vocab=10000 top_k=10000 top_p=0.000300 min_p=1.000000
+Sampler queue   p OK with n_vocab=10000 top_k=10000 top_p=0.800000 min_p=1.000000
+Sampler queue   m OK with n_vocab=10000 top_k=10000 top_p=1.000000 min_p=0.999890
+Sampler queue   m OK with n_vocab=10000 top_k=10000 top_p=1.000000 min_p=0.100000
+Sampler queue  kp OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue  km OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue  pk OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue  pm OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue  mk OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue  mp OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.999890
+Sampler queue  mp OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue kpm OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue kmp OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue pkm OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue pmk OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue mkp OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+Sampler queue mpk OK with n_vocab=10000 top_k=  100 top_p=0.800000 min_p=0.100000
+OK
+llama_sampler_init_top_k (40)              :  118.594 us/iter
+llama_sampler_init_top_p (0.8f, 1)         : 5974.750 us/iter
+llama_sampler_init_min_p (0.2f, 1)         :  374.656 us/iter
+llama_sampler_init_typical(0.5f, 1)        : 8431.281 us/iter
+llama_sampler_init_xtc (1.0f, 0.1f, 1, 1)  : 5751.750 us/iter
+test_max_size_too_many_tensors PASSED
+test_max_size_tensor_too_large PASSED
+test_tensor_larger_than_max_size PASSED
+test_not_enough_chunks PASSED
+test_fill_leftover_space PASSED
+test_view_inplace PASSED
+test_reuse_and_free PASSED
+test_merge_free_block(32) PASSED
+test_merge_free_block(SIZE_MAX) PASSED
+test_prefer_already_allocated_memory PASSED
+test_multiple_buffer_types PASSED
+test_buffer_size_zero PASSED
+test_reallocation PASSED
+test_graph_optimize_alloc_dep PASSED
+test_buft_alloc_buffer_n_single_buffer PASSED
+test_buft_alloc_buffer_n_multi_buffer PASSED
+test_buft_alloc_buffer_n_zero_size PASSED
+test_buft_alloc_buffer_n_already_allocated PASSED
+test_buft_alloc_buffer_n_views PASSED
+test_alloc_ctx_tensors_from_buft_size_matches PASSED
+test_buft_alloc_buffer_n_custom_override PASSED
+test_buft_get_alloc_size_n_single_buffer PASSED
+test_buft_get_alloc_size_n_multi_buffer PASSED
+test_buft_get_alloc_size_n_single_tensor_exceeds_max PASSED
+test_buft_get_alloc_size_n_zero_size PASSED
+test_buft_get_alloc_size_n_already_allocated PASSED
+test_buft_get_alloc_size_n_views PASSED
+test_buft_get_alloc_size_n_n_tensors_zero PASSED
+test_buft_get_alloc_size_n_alignment PASSED
+test_buft_get_alloc_size_n_custom_override PASSED
+test_buft_get_alloc_size_n_custom_override_ctx_size PASSED
+test_buft_get_alloc_size_n_does_not_allocate PASSED
+test_meta_split_state_rebuild(same) PASSED
+test_meta_split_state_rebuild(other) PASSED
+test_meta_host_view(mirrored) PASSED
+test_meta_host_view(split) PASSED
+test_meta_host_cpy(mirrored) PASSED
+test_meta_host_cpy(split) PASSED
+test_meta_host_set_rows(mirrored) PASSED
+test_meta_host_set_rows(split) PASSED
+warning: no usable GPU found, --gpu-layers option will be ignored
+warning: one possible reason is that llama.cpp was compiled without GPU support
+warning: consult docs/build.md for compilation instructions
+0.00.558.261 W model has unused tensor blk.32.attn_norm.weight (size = 10240 bytes) -- ignoring
+0.00.558.268 W model has unused tensor blk.32.post_attention_norm.weight (size = 10240 bytes) -- ignoring
+0.00.558.272 W model has unused tensor blk.32.attn_q.weight (size = 11796480 bytes) -- ignoring
+0.00.558.274 W model has unused tensor blk.32.attn_k.weight (size = 1474560 bytes) -- ignoring
+0.00.558.276 W model has unused tensor blk.32.attn_v.weight (size = 2150400 bytes) -- ignoring
+0.00.558.282 W model has unused tensor blk.32.attn_output.weight (size = 5898240 bytes) -- ignoring
+0.00.558.286 W model has unused tensor blk.32.attn_q_norm.weight (size = 1024 bytes) -- ignoring
+0.00.558.288 W model has unused tensor blk.32.attn_k_norm.weight (size = 1024 bytes) -- ignoring
+0.00.558.289 W model has unused tensor blk.32.ffn_gate.weight (size = 13271040 bytes) -- ignoring
+0.00.558.291 W model has unused tensor blk.32.ffn_down.weight (size = 13271040 bytes) -- ignoring
+0.00.558.293 W model has unused tensor blk.32.ffn_up.weight (size = 13271040 bytes) -- ignoring
+0.00.558.296 W model has unused tensor blk.32.nextn.eh_proj.weight (size = 13926400 bytes) -- ignoring
+0.00.558.298 W model has unused tensor blk.32.nextn.enorm.weight (size = 10240 bytes) -- ignoring
+0.00.558.300 W model has unused tensor blk.32.nextn.hnorm.weight (size = 10240 bytes) -- ignoring
+0.00.558.305 W model has unused tensor blk.32.nextn.shared_head_norm.weight (size = 10240 bytes) -- ignoring
+0.00.660.564 I run_tests: testing with cache fill 0x00
+0.02.891.613 I test_rollback: recurrent rollback checkpoint restored successfully
+0.02.912.117 W llama_context: n_ctx is not divisible by n_seq_max - rounding down to 512
+0.02.967.503 W llama_context: n_ctx is not divisible by n_seq_max - rounding down to 512
+0.13.813.226 I test_multi_seq_split_replay: multi-seq split replay matched (max diff 0, nmse 0)
+0.14.385.743 I test_multi_seq_split_replay: seq-1-only decode independent of seq 0 (max diff 0, nmse 0)
+0.14.435.650 W llama_context: n_ctx is not divisible by n_seq_max - rounding down to 512
+0.18.433.619 I test_getter_gate: gdn nodes, one sequence: 120 by id, 0 gathered; several: 0 by id, 72 gathered
+0.18.456.207 I run_tests: testing with cache fill 0x3e
+1.06.035.048 I test_rollback: recurrent rollback checkpoint restored successfully
+1.06.068.947 W llama_context: n_ctx is not divisible by n_seq_max - rounding down to 512
+1.06.667.264 W llama_context: n_ctx is not divisible by n_seq_max - rounding down to 512
+1.17.780.678 I test_multi_seq_split_replay: multi-seq split replay matched (max diff 0, nmse 0)
+1.18.490.549 I test_multi_seq_split_replay: seq-1-only decode independent of seq 0 (max diff 0, nmse 0)
+1.18.521.429 W llama_context: n_ctx is not divisible by n_seq_max - rounding down to 512
+1.24.415.695 I test_getter_gate: gdn nodes, one sequence: 144 by id, 0 gathered; several: 0 by id, 72 gathered

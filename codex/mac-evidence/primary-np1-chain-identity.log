@@ -1,0 +1,251 @@
+boot plain-k3-off rc=0 elapsed_s_M=497
+boot plain-k3-on rc=0 elapsed_s_M=1162
+plain-k3 {"tokens": {"short-t0-s1729": true, "short-t1-s1729": true, "short-t1-s2718": true, "mid-t0-s1729": true, "mid-t1-s1729": true, "mid-t1-s2718": true, "long-t0-s1729": true, "long-t1-s1729": true, "long-t1-s2718": true}, "counters_equal": {"short-t0-s1729": true, "short-t1-s1729": true, "short-t1-s2718": true, "mid-t0-s1729": true, "mid-t1-s1729": true, "mid-t1-s2718": true, "long-t0-s1729": true, "long-t1-s1729": true, "long-t1-s2718": true}, "n_tokens": 818, "dump_rows": [876, 876], "dump_ids_equal": true, "dump_q_bit_equal": false, "dump_max_abs_dq": 1.200000000478596e-07, "dump_rows_ids_differ": 0}
+boot plain-k5-off rc=0 elapsed_s_M=797
+boot plain-k5-on rc=0 elapsed_s_M=435
+plain-k5 {"tokens": {"short-t0-s1729": true, "short-t1-s1729": true, "short-t1-s2718": true, "mid-t0-s1729": true, "mid-t1-s1729": true, "mid-t1-s2718": true, "long-t0-s1729": true, "long-t1-s1729": true, "long-t1-s2718": true}, "counters_equal": {"short-t0-s1729": true, "short-t1-s1729": true, "short-t1-s2718": true, "mid-t0-s1729": true, "mid-t1-s1729": true, "mid-t1-s2718": true, "long-t0-s1729": true, "long-t1-s1729": true, "long-t1-s2718": true}, "n_tokens": 735, "dump_rows": [1075, 1075], "dump_ids_equal": true, "dump_q_bit_equal": false, "dump_max_abs_dq": 1.200000000478596e-07, "dump_rows_ids_differ": 0}
+boot meta-k3-off rc=0 elapsed_s_M=277
+boot meta-k3-on rc=0 elapsed_s_M=276
+meta-k3 {"tokens": {"short-t0-s1729": true, "short-t1-s1729": true, "short-t1-s2718": true, "mid-t0-s1729": true, "mid-t1-s1729": true, "mid-t1-s2718": true, "long-t0-s1729": true, "long-t1-s1729": true, "long-t1-s2718": true}, "counters_equal": {"short-t0-s1729": true, "short-t1-s1729": true, "short-t1-s2718": true, "mid-t0-s1729": true, "mid-t1-s1729": true, "mid-t1-s2718": true, "long-t0-s1729": true, "long-t1-s1729": true, "long-t1-s2718": true}, "n_tokens": 668, "dump_rows": [669, 669], "dump_ids_equal": true, "dump_q_bit_equal": false, "dump_max_abs_dq": 1.200000000478596e-07, "dump_rows_ids_differ": 0}
+boot meta-k5-off rc=0 elapsed_s_M=312
+boot meta-k5-on rc=0 elapsed_s_M=304
+meta-k5 {"tokens": {"short-t0-s1729": true, "short-t1-s1729": true, "short-t1-s2718": true, "mid-t0-s1729": true, "mid-t1-s1729": true, "mid-t1-s2718": true, "long-t0-s1729": true, "long-t1-s1729": true, "long-t1-s2718": true}, "counters_equal": {"short-t0-s1729": true, "short-t1-s1729": true, "short-t1-s2718": true, "mid-t0-s1729": true, "mid-t1-s1729": true, "mid-t1-s2718": true, "long-t0-s1729": true, "long-t1-s1729": true, "long-t1-s2718": true}, "n_tokens": 821, "dump_rows": [1235, 1235], "dump_ids_equal": true, "dump_q_bit_equal": false, "dump_max_abs_dq": 1.200000000478596e-07, "dump_rows_ids_differ": 0}
+boot plain-k5-off-repeat rc=0 elapsed_s_M=279
+boot plain-k5-on-reverse-u rc=0 elapsed_s_M=280
+boot plain-k5-on-shift-embd rc=0 elapsed_s_M=303
+{
+ "noise_floor_off_vs_off": {
+  "tokens": {
+   "short-t0-s1729": true,
+   "short-t1-s1729": true,
+   "short-t1-s2718": true,
+   "mid-t0-s1729": true,
+   "mid-t1-s1729": true,
+   "mid-t1-s2718": true,
+   "long-t0-s1729": true,
+   "long-t1-s1729": true,
+   "long-t1-s2718": true
+  },
+  "counters_equal": {
+   "short-t0-s1729": true,
+   "short-t1-s1729": true,
+   "short-t1-s2718": true,
+   "mid-t0-s1729": true,
+   "mid-t1-s1729": true,
+   "mid-t1-s2718": true,
+   "long-t0-s1729": true,
+   "long-t1-s1729": true,
+   "long-t1-s2718": true
+  },
+  "n_tokens": 735,
+  "dump_rows": [
+   1075,
+   1075
+  ],
+  "dump_ids_equal": true,
+  "dump_q_bit_equal": true,
+  "dump_max_abs_dq": 0.0,
+  "dump_rows_ids_differ": 0
+ },
+ "control_reverse_u": {
+  "cmp": {
+   "tokens": {
+    "short-t0-s1729": true,
+    "short-t1-s1729": false,
+    "short-t1-s2718": false,
+    "mid-t0-s1729": true,
+    "mid-t1-s1729": false,
+    "mid-t1-s2718": false,
+    "long-t0-s1729": true,
+    "long-t1-s1729": false,
+    "long-t1-s2718": false
+   },
+   "counters_equal": {
+    "short-t0-s1729": true,
+    "short-t1-s1729": false,
+    "short-t1-s2718": false,
+    "mid-t0-s1729": true,
+    "mid-t1-s1729": false,
+    "mid-t1-s2718": false,
+    "long-t0-s1729": true,
+    "long-t1-s1729": false,
+    "long-t1-s2718": false
+   },
+   "n_tokens": 735,
+   "dump_rows": [
+    1075,
+    1110
+   ],
+   "dump_ids_equal": false,
+   "dump_q_bit_equal": false,
+   "dump_max_abs_dq": 0.8310263,
+   "dump_rows_ids_differ": 976
+  },
+  "on": {
+   "short-t0-s1729": [
+    96,
+    26,
+    17,
+    84,
+    78
+   ],
+   "short-t1-s1729": [
+    96,
+    26,
+    23,
+    115,
+    71
+   ],
+   "short-t1-s2718": [
+    96,
+    26,
+    23,
+    112,
+    72
+   ],
+   "mid-t0-s1729": [
+    96,
+    524,
+    27,
+    129,
+    68
+   ],
+   "mid-t1-s1729": [
+    96,
+    524,
+    28,
+    136,
+    67
+   ],
+   "mid-t1-s2718": [
+    61,
+    524,
+    27,
+    135,
+    33
+   ],
+   "long-t0-s1729": [
+    96,
+    2174,
+    28,
+    136,
+    67
+   ],
+   "long-t1-s1729": [
+    96,
+    2174,
+    25,
+    123,
+    69
+   ],
+   "long-t1-s2718": [
+    72,
+    2174,
+    24,
+    120,
+    47
+   ]
+  }
+ },
+ "control_shift_embd": {
+  "cmp": {
+   "tokens": {
+    "short-t0-s1729": true,
+    "short-t1-s1729": false,
+    "short-t1-s2718": false,
+    "mid-t0-s1729": true,
+    "mid-t1-s1729": false,
+    "mid-t1-s2718": false,
+    "long-t0-s1729": true,
+    "long-t1-s1729": false,
+    "long-t1-s2718": false
+   },
+   "counters_equal": {
+    "short-t0-s1729": true,
+    "short-t1-s1729": false,
+    "short-t1-s2718": false,
+    "mid-t0-s1729": true,
+    "mid-t1-s1729": false,
+    "mid-t1-s2718": false,
+    "long-t0-s1729": false,
+    "long-t1-s1729": false,
+    "long-t1-s2718": false
+   },
+   "n_tokens": 735,
+   "dump_rows": [
+    1075,
+    1450
+   ],
+   "dump_ids_equal": false,
+   "dump_q_bit_equal": false,
+   "dump_max_abs_dq": 0.818120762,
+   "dump_rows_ids_differ": 988
+  },
+  "on": {
+   "short-t0-s1729": [
+    96,
+    26,
+    17,
+    84,
+    78
+   ],
+   "short-t1-s1729": [
+    96,
+    26,
+    43,
+    212,
+    51
+   ],
+   "short-t1-s2718": [
+    96,
+    26,
+    36,
+    175,
+    59
+   ],
+   "mid-t0-s1729": [
+    96,
+    524,
+    27,
+    129,
+    68
+   ],
+   "mid-t1-s1729": [
+    51,
+    524,
+    27,
+    135,
+    23
+   ],
+   "mid-t1-s2718": [
+    96,
+    524,
+    50,
+    248,
+    44
+   ],
+   "long-t0-s1729": [
+    96,
+    2174,
+    29,
+    141,
+    66
+   ],
+   "long-t1-s1729": [
+    64,
+    2174,
+    32,
+    160,
+    31
+   ],
+   "long-t1-s2718": [
+    55,
+    2174,
+    29,
+    145,
+    25
+   ]
+  }
+ }
+}
+chain identity, engagement and negative controls PASS

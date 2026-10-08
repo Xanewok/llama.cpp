@@ -1,0 +1,2 @@
+spec common_specu: MTP chain disabled: needs one sequence (n_seq=2)
+No parser definition detected, assuming pure content parser.spec  draft_chain: MTP chain: k=3

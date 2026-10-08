@@ -71,5 +71,3 @@ grep -q "banned: read the full row although the top k is unique" "$OUT/mutant-ru
     die 3 "mutant failed (rc=$mrc) but not on a full-row read (see $OUT/mutant-run.log)"
 echo "mutant (no extension): rc=$mrc, caught by: $(grep -m1 'banned: read the full row' "$OUT/mutant-run.log")"
 echo "mutant caught"
-
-

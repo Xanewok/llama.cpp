@@ -1,0 +1,30 @@
+{
+  "result": "PASS",
+  "GPU_execution": false,
+  "CUDA_build": "deferred to parent window",
+  "primary_source_commit": "bdae9b6aa3f29c761b70e6a133a7a0a54bbc3c9a",
+  "final_source_commit": "63e659d71b22e2d40ecb1e6419dc0b3578572741",
+  "model_identity_scope": "ordinary bounded top-k; final bound is equivalent, and final-source units cover INT32_MAX",
+  "stages": [
+    {"code": 20, "name": "cpu-build", "rc": 0, "wall_s_M": 64, "run": "final"},
+    {"code": 21, "name": "unit-tests", "rc": 0, "wall_s_M": 113, "run": "final"},
+    {"code": 23, "name": "np1-chain-identity", "rc": 0, "wall_s_M": 4923, "run": "primary"},
+    {"code": 29, "name": "np2-chain-identity", "rc": 0, "wall_s_M": 112, "run": "primary"},
+    {"code": 32, "name": "np2-old-negative-control", "rc": 0, "wall_s_M": 242, "run": "primary"},
+    {"code": 33, "name": "cand-cpu-identity", "rc": 0, "wall_s_M": 360, "run": "primary"},
+    {"code": 34, "name": "cand-mutant", "rc": 0, "wall_s_M": 2, "run": "primary"},
+    {"code": 31, "name": "recorded-parser-controls", "rc": 0, "wall_s_M": 0, "timer_resolution_s": 1, "run": "final"}
+  ],
+  "excluded_unit_runs": [
+    {"run": "primary", "reason": "rollback lacked model; conditional invocation disabled errexit"},
+    {"run": "interrupted", "rc": 143, "wall_s_M": 3902, "reason": "owned waiting gate stopped before poll correction"}
+  ],
+  "controls": {
+    "reverse_uniforms": "caught",
+    "shifted_embedding": "caught",
+    "old_np2_binary": "caught",
+    "candidate_no_extension": "caught",
+    "seeded_candidate_mutants": "caught for seeds 42 and 1729",
+    "recorded_gpu_parser_mutants": "caught"
+  }
+}

@@ -1,0 +1,7 @@
+meta=0 spec=1 temp=0: arms ['cand', 'host'], set_sampler CPU fallbacks {'cand': 0, 'host': 0}, top-k refusals {'cand': 0, 'host': 0}, 96 tokens, stats {'draft': 89, 'accepted': 65, 'rounds': 30}, 0 candidate entries: OK
+meta=0 spec=1 temp=1: arms ['cand', 'host'], set_sampler CPU fallbacks {'cand': 0, 'host': 0}, top-k refusals {'cand': 0, 'host': 0}, 96 tokens, stats {'draft': 101, 'accepted': 61, 'rounds': 34}, 0 candidate entries: OK
+meta=1 spec=0 temp=0: arms ['cand', 'host', 'refused'], set_sampler CPU fallbacks {'cand': 1, 'host': 0, 'refused': 1}, top-k refusals {'cand': 0, 'host': 0, 'refused': 0}, 96 tokens, stats {'draft': 0, 'accepted': 0, 'rounds': 0}, 96 candidate entries: OK
+meta=1 spec=0 temp=1: arms ['cand', 'host', 'refused'], set_sampler CPU fallbacks {'cand': 1, 'host': 0, 'refused': 1}, top-k refusals {'cand': 0, 'host': 0, 'refused': 0}, 96 tokens, stats {'draft': 0, 'accepted': 0, 'rounds': 0}, 224 candidate entries: OK
+meta=1 spec=1 temp=0: arms ['cand', 'host', 'refused'], set_sampler CPU fallbacks {'cand': 2, 'host': 1, 'refused': 2}, top-k refusals {'cand': 0, 'host': 0, 'refused': 0}, 96 tokens, stats {'draft': 88, 'accepted': 65, 'rounds': 30}, 0 candidate entries: OK
+meta=1 spec=1 temp=1: arms ['cand', 'host', 'refused'], set_sampler CPU fallbacks {'cand': 2, 'host': 1, 'refused': 2}, top-k refusals {'cand': 0, 'host': 0, 'refused': 0}, 96 tokens, stats {'draft': 90, 'accepted': 64, 'rounds': 30}, 0 candidate entries: OK
+PASS CPU identity; backend path proof belongs to the CUDA canary

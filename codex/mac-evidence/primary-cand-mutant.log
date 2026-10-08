@@ -1,0 +1,2 @@
+mutant (no extension): rc=1, caught by: 0.00.194.176 E operator(): banned: read the full row although the top k is unique: row 0: id 9805, logit 0.000000, want 1.000000
+mutant caught
