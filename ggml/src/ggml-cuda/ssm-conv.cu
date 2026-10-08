@@ -275,3 +275,123 @@ void ggml_cuda_op_ssm_conv_state(ggml_backend_cuda_context & ctx, const ggml_ssm
         default: GGML_ABORT("unsupported fused conv size");
     }
 }
+
+// One thread owns a channel for every sequence: it reads that channel's state of all sequences before it writes any
+// snapshot, and channels never share data, so a snapshot row that another sequence reads is safe without a barrier.
+// The arithmetic is that of ssm_conv_state_f32.
+template <bool apply_silu, int d_conv>
+static __global__ void ssm_conv_rs_f32(const char * x, const char * weights, const char * states, const int32_t * ids,
+        char * snap, float * out, int64_t channels, int64_t n_t, int64_t n_s, int64_t n_slots,
+        size_t x0, size_t x1, size_t x2, size_t w1, size_t states_row, size_t snap_row, size_t snap_slot) {
+    ggml_cuda_pdl_lc();
+    const int64_t channel = (int64_t) blockIdx.x * blockDim.x + threadIdx.x;
+    const bool live = channel < channels;
+    float hist[GGML_CUDA_SSM_CONV_RS_MAX_SEQS][d_conv - 1];
+    float w[d_conv];
+    ggml_cuda_pdl_sync();
+    if (!live) {
+        return;
+    }
+#pragma unroll
+    for (int j = 0; j < d_conv; ++j) {
+        w[j] = *(const float *) (weights + channel * w1 + j * sizeof(float));
+    }
+#pragma unroll
+    for (int s = 0; s < GGML_CUDA_SSM_CONV_RS_MAX_SEQS; ++s) {
+        if (s < n_s) {
+            const char * row = states + (int64_t) ids[s] * states_row + channel * (d_conv - 1) * sizeof(float);
+#pragma unroll
+            for (int j = 0; j < d_conv - 1; ++j) {
+                hist[s][j] = *(const float *) (row + j * sizeof(float));
+            }
+        }
+    }
+#pragma unroll
+    for (int s = 0; s < GGML_CUDA_SSM_CONV_RS_MAX_SEQS; ++s) {
+        if (s >= n_s) {
+            continue;
+        }
+        char * snap_s = snap + (int64_t) s * snap_row + channel * (d_conv - 1) * sizeof(float);
+        float win[d_conv];
+#pragma unroll
+        for (int j = 0; j < d_conv - 1; ++j) {
+            win[j] = hist[s][j];
+        }
+        for (int64_t i = 0; i < n_t; ++i) {
+            win[d_conv - 1] = *(const float *) (x + channel * x1 + i * x0 + s * x2);
+            float sum = 0.0f;
+#pragma unroll
+            for (int j = 0; j < d_conv; ++j) {
+                sum += win[j] * w[j];
+            }
+            sum += 0.0f;
+            out[(s * n_t + i) * channels + channel] = apply_silu ? ggml_cuda_op_silu_single(sum) : sum;
+            // Slot k starts at token max(0, n_t - k); slots older than the batch hold the input state.
+            for (int64_t k = 1; k < n_slots; ++k) {
+                if ((n_t > k ? n_t - k : 0) == i) {
+#pragma unroll
+                    for (int j = 0; j < d_conv - 1; ++j) {
+                        *(float *) (snap_s + k * snap_slot + j * sizeof(float)) = win[j];
+                    }
+                }
+            }
+#pragma unroll
+            for (int j = 0; j < d_conv - 1; ++j) {
+                win[j] = win[j + 1];
+            }
+        }
+#pragma unroll
+        for (int j = 0; j < d_conv - 1; ++j) {
+            *(float *) (snap_s + j * sizeof(float)) = win[j];
+        }
+    }
+}
+
+bool ggml_cuda_ssm_conv_rs_supported(const ggml_tensor * op) {
+    const ggml_tensor * x = op->src[0];
+    const ggml_tensor * w = op->src[1];
+    switch (w->ne[0]) {
+        case 3: case 4: case 5: case 9: case 15: break;
+        default: return false;
+    }
+    return op->type == GGML_TYPE_F32 && x->type == GGML_TYPE_F32 && w->type == GGML_TYPE_F32 &&
+        op->src[2]->type == GGML_TYPE_F32 && op->src[4]->type == GGML_TYPE_F32 && w->nb[0] == sizeof(float) &&
+        x->ne[0] <= GGML_CUDA_SSM_CONV_RS_MAX_TOKENS && x->ne[2] <= GGML_CUDA_SSM_CONV_RS_MAX_SEQS;
+}
+
+void ggml_cuda_op_ssm_conv_rs(ggml_backend_cuda_context & ctx, ggml_tensor * dst, ggml_tensor * silu_dst) {
+    const ggml_tensor * x      = dst->src[0];
+    const ggml_tensor * w      = dst->src[1];
+    const ggml_tensor * states = dst->src[2];
+    const ggml_tensor * ids    = dst->src[3];
+    const ggml_tensor * snap   = dst->src[4];
+    const ggml_tensor * out    = silu_dst ? silu_dst : dst;
+
+    GGML_ASSERT(ggml_cuda_ssm_conv_rs_supported(dst));
+    GGML_ASSERT(ggml_is_contiguous(out) && out->type == GGML_TYPE_F32);
+
+    const int64_t channels = w->ne[1];
+    const dim3 blocks((channels + 127) / 128);
+    const auto params = ggml_cuda_kernel_launch_params(blocks, 128, 0, ctx.stream());
+    auto launch = [&](auto nc, auto silu) {
+        ggml_cuda_kernel_launch(ssm_conv_rs_f32<decltype(silu)::value, decltype(nc)::value>, params,
+            (const char *) x->data, (const char *) w->data, (const char *) states->data, (const int32_t *) ids->data,
+            (char *) snap->data, (float *) out->data, channels, x->ne[0], x->ne[2], snap->ne[2],
+            x->nb[0], x->nb[1], x->nb[2], w->nb[1], states->nb[1], snap->nb[1], snap->nb[2]);
+    };
+    auto launch_nc = [&](auto nc) {
+        if (silu_dst) {
+            launch(nc, std::true_type{});
+        } else {
+            launch(nc, std::false_type{});
+        }
+    };
+    switch (w->ne[0]) {
+        case 3:  launch_nc(std::integral_constant<int, 3>{}); break;
+        case 4:  launch_nc(std::integral_constant<int, 4>{}); break;
+        case 5:  launch_nc(std::integral_constant<int, 5>{}); break;
+        case 9:  launch_nc(std::integral_constant<int, 9>{}); break;
+        case 15: launch_nc(std::integral_constant<int, 15>{}); break;
+        default: GGML_ABORT("unsupported conv size");
+    }
+}
