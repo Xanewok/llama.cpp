@@ -1443,7 +1443,11 @@ struct ggml_cuda_stream_context {
     }
 };
 
+struct ggml_cuda_fattn_kv_max_cache;
+
 struct ggml_backend_cuda_context {
+    // Set only for the span of one graph evaluation's node loop, see fattn-kv-max-cache.h.
+    ggml_cuda_fattn_kv_max_cache * fattn_kv_max_cache = nullptr;
     int device;
     std::string name;
     cudaEvent_t copy_event = nullptr;
