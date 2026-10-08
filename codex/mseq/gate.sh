@@ -7,7 +7,7 @@ avail_gib() {
     vm_stat | awk '/page size of/{ps=$8} /Pages free/{f=$3} /Pages inactive/{i=$3} /Pages speculative/{s=$3} END{printf "%d", (f+i+s)*ps/1073741824}'
 }
 busy() {
-    ps -axo comm | awk -F/ '{print $NF}' | grep -qxE 'bw-np2-driver|chain-cpu|fold-cpu|outproj-cpu|llama-server|llama-cli'
+    ps -axo comm | awk -F/ '{print $NF}' | grep -cxE 'bw-np2-driver|chain-cpu|fold-cpu|outproj-cpu|llama-server|llama-cli' > /dev/null
 }
 t=0
 while [[ $(avail_gib) -lt 4 ]] || busy; do
