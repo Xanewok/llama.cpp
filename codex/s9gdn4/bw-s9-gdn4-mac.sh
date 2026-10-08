@@ -46,7 +46,7 @@ perf_rows() {
     "$BW_GATE" build-cpu/bin/test-backend-ops perf -b CPU -o 'GATED_DELTA_NET.*' -p 'head_count=24,' > "$OUT/perf-new.log" 2>&1
     python3 "$CHECK" perf "$OUT/perf-new.log" 12
     # the old harness: the fusion cases repeat only their output node (ggml_sum)
-    sed -i 's#return { gdn_node, cpy_node };#return { out };#' "$T"
+    perl -pi -e 's#return \{ gdn_node, cpy_node \};#return { out };#' "$T"
     [[ $(git diff --numstat -- "$T") == $'1\t1\t'"$T" ]]
     "$BW_BUILDGATE" cmake --build build-cpu --target test-backend-ops -j4
     "$BW_GATE" build-cpu/bin/test-backend-ops perf -b CPU -o 'GATED_DELTA_NET.*' -p 'head_count=24,' > "$OUT/perf-old.log" 2>&1
