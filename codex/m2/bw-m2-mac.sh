@@ -29,7 +29,7 @@ export S7_GATE=$GATE S7_MODEL=$MODEL S7_VOCAB=$HOME/qwen38-stack7/models/swift_d
 python3 codex/chain_cpu_identity.py --out "$OUT/np1" --n-predict 48 > "$OUT/np1.log" 2>&1
 np1=$?
 if grep -rqs 'skipped: RAM' "$OUT/np1"; then
-    grep -rhs 'skipped: RAM' "$OUT/np1" | head -1
+    grep -rhs 'skipped: RAM' "$OUT/np1" | sed -n 1p
     exit 75
 fi
 [[ $np1 == 0 ]] && { python3 codex/check-chain.py "$OUT/np1" | tee "$OUT/np1-judge.log"; np1=${PIPESTATUS[0]}; }
