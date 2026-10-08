@@ -134,3 +134,5 @@ Legend:
 |                            XIELU | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ |
 
 The CUDA backend can fuse recurrent conv-state snapshot copies with `SSM_CONV` and an optional `SILU`, after executing `CONCAT` for short batches. Other shapes and backends keep the unfused operations.
+
+The NVIDIA CUDA backend can fuse contiguous F32 `ADD -> SOFTPLUS -> MUL` with row-broadcast bias and scale, preserving the intermediate F32 rounding. Other layouts, types and backends keep the separate operations.

@@ -12370,6 +12370,92 @@ static bool op_names_filter_selects(const char * op_names_filter, const char * o
 
 // Covers padded rows, sinks, kvpad, multi-SIMDgroup reduction, quantized K/V, and MLA views.
 // The override is backend-global, so this runs after all parallel workers have joined.
+static bool run_alpha_gate_identity(ggml_backend_t backend, const char * filter) {
+    if (filter && std::string(filter).find("ADD_SOFTPLUS_MUL") == std::string::npos) {
+        return true;
+    }
+    int cases = 0;
+    for (int64_t width : { 1, 24, 48, 128 }) {
+        for (int64_t rows : { 1, 2, 12, 1024 }) {
+            for (int64_t broadcast : { int64_t(1), width }) {
+                for (int layout = 0; layout < 4; ++layout) {
+                    ggml_init_params params = { 32*ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true };
+                    ggml_context_ptr ctx(ggml_init(params));
+                    auto * x = ggml_new_tensor_3d(ctx.get(), GGML_TYPE_F32, width, rows, 2);
+                    auto * x_ref = ggml_dup_tensor(ctx.get(), x);
+                    auto * bias = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, broadcast);
+                    auto * bias_ref = ggml_dup_tensor(ctx.get(), bias);
+                    auto * scale = ggml_dup_tensor(ctx.get(), bias);
+                    auto * store = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, ggml_nelements(x) + 1);
+                    const bool inplace = layout == 1;
+                    auto * add = inplace ? ggml_add_inplace(ctx.get(), x, bias) : ggml_add(ctx.get(), x, bias);
+                    auto * u = inplace ? ggml_softplus_inplace(ctx.get(), add) : ggml_softplus(ctx.get(), add);
+                    auto * fused = inplace ? ggml_mul_inplace(ctx.get(), u, scale) : ggml_mul(ctx.get(), u, scale);
+                    auto * ref_add = ggml_add(ctx.get(), x_ref, bias_ref);
+                    auto * ref_unary = ggml_softplus(ctx.get(), ref_add);
+                    ggml_set_output(ref_add);
+                    ggml_set_output(ref_unary);
+                    auto * reference = ggml_mul(ctx.get(), ref_unary, scale);
+                    auto * graph = ggml_new_graph(ctx.get());
+                    ggml_build_forward_expand(graph, fused);
+                    ggml_build_forward_expand(graph, reference);
+                    for (int i = 0; i < ggml_graph_n_nodes(graph); ++i) {
+                        if (!ggml_backend_supports_op(backend, ggml_graph_node(graph, i))) {
+                            return true;
+                        }
+                    }
+                    ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors(ctx.get(), backend));
+                    if (!buffer) {
+                        return false;
+                    }
+                    // These aliases are safe for the materialized chain: ADD finishes before MUL overwrites its inputs.
+                    if (layout == 2) {
+                        bias->data = store->data;
+                        fused->data = store->data;
+                    } else if (layout == 3) {
+                        x->data = store->data;
+                        fused->data = (char *) store->data + sizeof(float);
+                    }
+                    std::vector<float> inputs(ggml_nelements(x));
+                    std::vector<float> biases(broadcast), scales(broadcast);
+                    const float edge[] = { -100.0f, -20.0f, -1.0f, -0.0f, 0.0f, 1.0f, 20.0f,
+                        std::nextafter(20.0f, 0.0f), std::nextafter(20.0f, 21.0f), 100.0f,
+                        std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity() };
+                    std::vector<float> actual(inputs.size()), expected(inputs.size());
+                    // Changing inputs exercise the same graph after capture, including the softplus threshold.
+                    for (int replay = 0; replay < 4; ++replay) {
+                        for (size_t i = 0; i < inputs.size(); ++i) {
+                            inputs[i] = edge[(i + replay) % (sizeof(edge)/sizeof(edge[0]))];
+                        }
+                        for (int64_t i = 0; i < broadcast; ++i) {
+                            biases[i] = (i + replay) % 3 == 0 ? 0.0f : (i + replay) % 3 == 1 ? 0.125f : -0.125f;
+                            scales[i] = -0.75f - float(i % 3)*0.25f;
+                        }
+                        ggml_backend_tensor_set(x, inputs.data(), 0, ggml_nbytes(x));
+                        ggml_backend_tensor_set(x_ref, inputs.data(), 0, ggml_nbytes(x_ref));
+                        ggml_backend_tensor_set(bias, biases.data(), 0, ggml_nbytes(bias));
+                        ggml_backend_tensor_set(bias_ref, biases.data(), 0, ggml_nbytes(bias_ref));
+                        ggml_backend_tensor_set(scale, scales.data(), 0, ggml_nbytes(scale));
+                        if (ggml_backend_graph_compute(backend, graph) != GGML_STATUS_SUCCESS) {
+                            return false;
+                        }
+                        ggml_backend_tensor_get(fused, actual.data(), 0, ggml_nbytes(fused));
+                        ggml_backend_tensor_get(reference, expected.data(), 0, ggml_nbytes(reference));
+                        if (memcmp(actual.data(), expected.data(), ggml_nbytes(fused)) != 0) {
+                            printf("  FAIL ADD_SOFTPLUS_MUL byte identity: width=%lld rows=%lld broadcast=%lld layout=%d replay=%d\n",
+                                (long long) width, (long long) rows, (long long) broadcast, layout, replay);
+                            return false;
+                        }
+                    }
+                    ++cases;
+                }
+            }
+        }
+    }
+    printf("  ADD_SOFTPLUS_MUL: same-backend byte identity and changing-input replay PASS cases=%d\n", cases);
+    return true;
+}
+
 static bool run_fa_vec_slice(ggml_backend_t backend, ggml_backend_t backend_cpu, const char * op_names_filter) {
     const char * LLAMA_TEST_FA_VEC_DISABLE = getenv("LLAMA_TEST_FA_VEC_DISABLE");
     if (LLAMA_TEST_FA_VEC_DISABLE) {
@@ -12570,7 +12656,7 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
 
         const bool slice_ok = run_fa_vec_slice(backend, backend_cpu.get(), op_names_filter);
 
-        return n_ok == tests_run && slice_ok;
+        return n_ok == tests_run && slice_ok && run_alpha_gate_identity(backend, op_names_filter);
     }
 
     if (mode == MODE_GRAD) {

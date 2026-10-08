@@ -657,6 +657,42 @@ void ggml_cuda_op_leaky_relu(ggml_backend_cuda_context & ctx, ggml_tensor * dst)
     }
 }
 
+/* fused add + softplus + mul */
+
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+static __global__ void add_softplus_mul_f32(const float * x, const float * bias, const float * scale,
+        float * dst, int64_t n, int64_t width, int64_t bias_width, int64_t scale_width) {
+    ggml_cuda_pdl_lc();
+    const int64_t i = int64_t(blockIdx.x)*blockDim.x + threadIdx.x;
+    ggml_cuda_pdl_sync();
+    if (i < n) {
+        const int64_t col = i % width;
+        // Keep the rounding at both materialized boundaries of the unfused F32 chain.
+        const float a = __fadd_rn(x[i], bias[col % bias_width]);
+        const float b = op_softplus(a);
+        dst[i] = __fmul_rn(b, scale[col % scale_width]);
+    }
+}
+
+#endif
+
+void ggml_cuda_op_add_softplus_mul(ggml_backend_cuda_context & ctx, ggml_tensor * add, ggml_tensor * mul) {
+#if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
+    GGML_UNUSED_VARS(ctx, add, mul);
+    GGML_ABORT("add softplus mul fusion requires NVIDIA rounding intrinsics");
+#else
+    const auto * x = add->src[0];
+    const auto * bias = add->src[1];
+    const auto * scale = mul->src[1];
+    const int64_t n = ggml_nelements(mul);
+    const int threads = 256;
+    const dim3 blocks((n + threads - 1)/threads);
+    const auto params = ggml_cuda_kernel_launch_params(blocks, threads, 0, ctx.stream());
+    ggml_cuda_kernel_launch(add_softplus_mul_f32, params, (const float *) x->data, (const float *) bias->data,
+        (const float *) scale->data, (float *) mul->data, n, x->ne[0], bias->ne[0], scale->ne[0]);
+#endif
+}
+
 /* fused unary + mul */
 
 template <float (*op)(float)>
