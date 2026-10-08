@@ -28,14 +28,14 @@ build() {
     "$BW_BUILDGATE" cmake --build build-cpu --target test-meta-input-stage test-alloc -j4
 }
 units() {
-    timeout 600 "$BW_GATE" build-cpu/bin/test-meta-input-stage
+    "$BW_GATE" build-cpu/bin/test-meta-input-stage
     grep -c 'fake/staged: OK' "$OUT/units.log" > /dev/null
-    timeout 600 "$BW_GATE" build-cpu/bin/test-alloc
+    "$BW_GATE" build-cpu/bin/test-alloc
 }
 # The meta glue mutant must break the staged contract (test aborts or fails).
 glue_mutant() {
     grep -c 'GGML_META_INPUT_STAGE_MUTANT' ggml/src/ggml-backend-meta.cpp > /dev/null || { echo 'no glue mutant in this tree'; return 0; }
-    if env GGML_META_INPUT_STAGE_MUTANT=1 timeout 600 "$BW_GATE" build-cpu/bin/test-meta-input-stage; then
+    if env GGML_META_INPUT_STAGE_MUTANT=1 "$BW_GATE" build-cpu/bin/test-meta-input-stage; then
         echo 'FAIL glue mutant escaped'; return 1
     fi
 }
@@ -63,7 +63,7 @@ sim_build() {  # NAME [FROM TO]
         "-DSTAGE_SNIPPET=\"$ROOT/build-sim/$name.inc\"" codex/cuda-sim/stage_sim.cpp -o "build-sim/$name" \
         -Lbuild-cpu/bin -lggml-base -Wl,-rpath,"$ROOT/build-cpu/bin"
 }
-sim_run() { ASAN_OPTIONS=detect_leaks=0 timeout 300 "$BW_GATE" "build-sim/$1" "$2"; }
+sim_run() { ASAN_OPTIONS=detect_leaks=0 "$BW_GATE" "build-sim/$1" "$2"; }
 cuda_sim() {
     sim_build stage
     sim_run stage perrank
