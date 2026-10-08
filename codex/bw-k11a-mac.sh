@@ -70,14 +70,16 @@ for combo in sys.argv[2:]:
 print('sync elision identity PASS')
 PY_COMPARE
 }
-# Each mutant must be caught by the token comparison against the stock path under the deferred backend, or by the debug check.
+# Mutants 1 and 2 drop one of the two enqueue marks; on the exercised paths the other mark still covers the getter, so they can
+# only be seen by the debug check (a skipped sync that finds queued work). Mutant 3 clears the flag after every enqueue: stale reads,
+# which the token comparison under the deferred backend must catch in every combo (the test's sensitivity control).
 mutants() {
     local combo np meta fold t m dbg rc
-    for combo in ${K11A_MUTANT_COMBOS:-2,0,0 1,0,1}; do
+    for combo in ${K11A_MUTANT_COMBOS:-2,0,0 1,0,1 2,1,0}; do
         IFS=, read -r np meta fold <<< "$combo"
         t=$np-$meta-$fold
         [[ -s $OUT/run/$t-off.json ]] || drive "$t-off" "$np" "$meta" "$fold" LLAMA_SYNC_ELIDE=0
-        for m in 1 2; do
+        for m in 1 2 3; do
             for dbg in 0 1; do
                 rc=0
                 drive "$t-mut$m-dbg$dbg" "$np" "$meta" "$fold" HOST_DEFER=1 LLAMA_SYNC_ELIDE_MUTANT=$m LLAMA_SYNC_ELIDE_DEBUG=$dbg || rc=$?
@@ -85,15 +87,16 @@ mutants() {
             done
         done
     done
-    python3 - "$OUT/run" ${K11A_MUTANT_COMBOS:-2,0,0 1,0,1} <<'PY_MUTANTS'
+    python3 - "$OUT/run" ${K11A_MUTANT_COMBOS:-2,0,0 1,0,1 2,1,0} <<'PY_MUTANTS'
 import json, sys
 from pathlib import Path
 d = Path(sys.argv[1])
-bad = 0
+caught = {1: set(), 2: set(), 3: set()}
+tok3 = []
 for combo in sys.argv[2:]:
     t = combo.replace(',', '-')
     ref = json.loads((d/f'{t}-off.json').read_text())
-    for m in (1, 2):
+    for m in (1, 2, 3):
         for dbg in (0, 1):
             name = f'{t}-mut{m}-dbg{dbg}'
             jf, lf = d/f'{name}.json', d/f'{name}.log'
@@ -105,11 +108,15 @@ for combo in sys.argv[2:]:
                 how.append('tokens differ')
             if dbg and 'skipped sync waited' in log:
                 how.append('debug check fired')
-            print(f'{name}: {", ".join(how) or "ESCAPED"}')
-            # the debug-off run isolates the stale-read detector; the debug-on run must also be caught
-            bad += not how
-print('mutant controls', 'FAIL' if bad else 'PASS')
-sys.exit(1 if bad else 0)
+            print(f'{name}: {", ".join(how) or "not caught"}')
+            if how:
+                caught[m].add(name)
+            if m == 3 and not dbg:
+                tok3.append(bool(how))
+ok = all(caught.values()) and all(tok3)
+print({m: len(v) for m, v in caught.items()}, 'mutant 3 token-level catches per combo:', tok3)
+print('mutant controls', 'PASS' if ok else 'FAIL')
+sys.exit(0 if ok else 1)
 PY_MUTANTS
 }
 static_checks() {
