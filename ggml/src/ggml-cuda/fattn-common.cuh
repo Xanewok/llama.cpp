@@ -83,8 +83,33 @@ static inline bool ggml_cuda_fa_dense_per_stream(const ggml_tensor * t) {
 // The windows are even in units of FATTN_KQ_STRIDE cells, each at least 2 units long, and start at multiples of it.
 #define GGML_CUDA_FATTN_KV_WINDOW 8192
 
+// DO NOT MERGE: A/B switch, GGML_CUDA_FA_KV_WINDOW=<cells> sets the window size, 0 restores the one-pass conversion.
 static inline int64_t ggml_cuda_fattn_kv_window_cells() {
-    return GGML_CUDA_FATTN_KV_WINDOW;
+    static const int64_t cells = [] {
+        const char * e = getenv("GGML_CUDA_FA_KV_WINDOW");
+        return e ? (int64_t) atoll(e) : (int64_t) GGML_CUDA_FATTN_KV_WINDOW;
+    }();
+    return cells;
+}
+
+// DO NOT MERGE: negative controls for the window merge. Bits of window_pos above the two position bits select the
+// device mutants: 4 = the running result of the previous windows is not rescaled, 8 = the last window does not normalize.
+// Host mutants: 1 = the sinks go to every window, 2 = the mask is not offset by the window, 5 = the windows are one unit short.
+static inline int ggml_cuda_fattn_kv_window_mutant() {
+    static const int mutant = [] {
+        const char * e = getenv("GGML_CUDA_FA_KV_WINDOW_MUTANT");
+        return e ? atoi(e) : 0;
+    }();
+    return mutant;
+}
+
+// DO NOT MERGE: GGML_CUDA_FA_KV_WINDOW_LOG=1 logs every window (off: the log call would sit on the timed path).
+static inline bool ggml_cuda_fattn_kv_window_log() {
+    static const bool log = [] {
+        const char * e = getenv("GGML_CUDA_FA_KV_WINDOW_LOG");
+        return e && atoi(e) != 0;
+    }();
+    return log;
 }
 
 static inline int ggml_cuda_fattn_kv_n_windows(const int64_t n_kv) {
@@ -1009,7 +1034,7 @@ static __global__ void flash_attn_stream_k_fixup_general(
             const float diff_prev = prev.x  - max_val_new;
 
             const float scale_val  = diff_val  >= SOFTMAX_FTZ_THRESHOLD ? expf(diff_val)  : 0.0f;
-            const float scale_prev = diff_prev >= SOFTMAX_FTZ_THRESHOLD ? expf(diff_prev) : 0.0f;
+            const float scale_prev = (window_pos & 4) ? 1.0f : diff_prev >= SOFTMAX_FTZ_THRESHOLD ? expf(diff_prev) : 0.0f;
 
             dst_val = scale_val*dst_val + scale_prev*acc_prev;
             rowsum  = scale_val*rowsum  + scale_prev*prev.y;
@@ -1018,7 +1043,7 @@ static __global__ void flash_attn_stream_k_fixup_general(
         }
 
         if (window_pos & 2) {
-            *acc = dst_val / rowsum;
+            *acc = (window_pos & 8) ? dst_val : dst_val / rowsum;
         } else {
             *acc = dst_val;
             __syncthreads(); // All threads have read the old meta data.
@@ -1181,7 +1206,13 @@ void launch_fattn(
     if (n_windows > 1) {
         ggml_cuda_fattn_kv_window(K->ne[1], n_windows, iw, kv_begin, kv_end);
     }
+    if (ggml_cuda_fattn_kv_window_mutant() == 5 && iw < n_windows - 1) {
+        kv_end -= FATTN_KQ_STRIDE;
+    }
     const int64_t n_kv_win = kv_end - kv_begin;
+    if (n_windows > 1 && ggml_cuda_fattn_kv_window_log()) {
+        GGML_LOG_DEBUG("fattn_kv_window: window %d/%d cells [%lld, %lld) of %lld\n", iw, n_windows, (long long) kv_begin, (long long) kv_end, (long long) K->ne[1]);
+    }
 
     // The part of K and V in this window, it is all of them if there is only one window.
     ggml_tensor K_win = *K;
@@ -1191,7 +1222,7 @@ void launch_fattn(
     K_win.data  = (char *) K->data + kv_begin*K->nb[1];
     V_win.data  = (char *) V->data + kv_begin*V->nb[1];
 
-    const char * mask_data = mask ? (const char *) mask->data + kv_begin*sizeof(half) : nullptr;
+    const char * mask_data = mask ? (const char *) mask->data + (ggml_cuda_fattn_kv_window_mutant() == 2 ? 0 : kv_begin)*sizeof(half) : nullptr;
 
     ggml_cuda_pool_alloc<int>    KV_max(pool);
     ggml_cuda_pool_alloc<float>  dst_tmp(pool);
@@ -1420,7 +1451,7 @@ void launch_fattn(
         K_data,
         V_data,
         mask_data,
-        sinks && iw == 0 ? ((const char *) sinks->data) : nullptr, // the sinks are one more key, not one per window
+        sinks && (iw == 0 || ggml_cuda_fattn_kv_window_mutant() == 1) ? ((const char *) sinks->data) : nullptr, // the sinks are one more key, not one per window
         KV_max.ptr,
         n_windows > 1 ? window_part.ptr : !stream_k && parallel_blocks > 1 ? dst_tmp.ptr : (float *) KQV->data, dst_tmp_meta.ptr,
         scale, max_bias, m0, m1, n_head_log2, logit_softcap,
@@ -1444,7 +1475,8 @@ void launch_fattn(
             const dim3 block_dim_combine(DV, 1, 1);
             const dim3 blocks_num_combine = {blocks_num.x, ncols1, ncols2};
 
-            const int window_pos = (iw == 0 ? 1 : 0) | (iw == n_windows - 1 ? 2 : 0);
+            const int window_pos = (iw == 0 ? 1 : 0) | (iw == n_windows - 1 ? 2 : 0) |
+                (ggml_cuda_fattn_kv_window_mutant() == 3 ? 4 : 0) | (ggml_cuda_fattn_kv_window_mutant() == 4 ? 8 : 0);
 
             const ggml_cuda_kernel_launch_params launch_params = ggml_cuda_kernel_launch_params(blocks_num_combine, block_dim_combine, 0, main_stream);
             ggml_cuda_kernel_launch(flash_attn_stream_k_fixup_general<DV, ncols1, ncols2, true>, launch_params,
