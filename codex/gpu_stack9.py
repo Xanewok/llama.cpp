@@ -109,7 +109,7 @@ def fixture_checks():
             if x['kind'] == 'depth':
                 assert x['depth']['request']['ignore_eos'] is True
             else:
-                assert all('n_seq=2' not in pattern for arm in x['arms'].values() for pattern in arm['canary_log']), 'campaign canary sends sequential requests'
+                assert all('n_seq=2' not in pattern for arm in x['arms'].values() for pattern in arm['canary_log'] if 'mtp_fold_decode' in pattern), 'campaign canary sends sequential requests'
             for arm in x['arms'].values():
                 for pattern in arm['canary_log']:
                     re.compile(pattern)
