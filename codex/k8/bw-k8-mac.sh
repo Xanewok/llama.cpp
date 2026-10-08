@@ -33,7 +33,7 @@ build() {
 cases() {
     nice -n 19 build-cpu/bin/test-backend-ops test -b CPU -o MUL_MAT -p 'type_a=(iq4_xs|q4_K|q5_K|q6_K|q8_0),type_b=f32,m=(3072|5120|6144),n=(9|12|24|25),k=1024,' > "$OUT/mm.log" 2>&1
     grep -aEq '^ +([1-9][0-9]*)/\1 tests passed' "$OUT/mm.log"
-    nice -n 19 build-cpu/bin/test-backend-ops test -b CPU -o MUL_MAT_ID -p 'type_a=(iq4_xs|q4_K|q5_K|q6_K|q8_0),type_b=f32,n_mats=4,n_used=2,b=0,m=(3072|5120),n=(12|24),k=1024,' > "$OUT/id.log" 2>&1
+    nice -n 19 build-cpu/bin/test-backend-ops test -b CPU -o MUL_MAT_ID -p 'type_a=(iq4_xs|q4_K|q5_K|q6_K|q8_0),type_b=f32,n_mats=4,n_used=2,b=0,m=(3072|5120),n=(24|48),k=1024,' > "$OUT/id.log" 2>&1
     grep -aEq '^ +([1-9][0-9]*)/\1 tests passed' "$OUT/id.log"
 }
 hash() {
