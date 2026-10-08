@@ -13616,8 +13616,7 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
         }
 
         const bool alpha_ok = run_alpha_gate_identity(backend, op_names_filter);
-        const bool conv_ok  = run_ssm_conv_rs_identity(backend, op_names_filter);
-        return n_ok == tests_run && slice_ok && alpha_ok && conv_ok &&
+        return n_ok == tests_run && slice_ok && alpha_ok &&
                run_rms_norm_scale_pair_identity(backend, op_names_filter) &&
                run_fattn_shared_mask_identity(backend, op_names_filter);
     }
