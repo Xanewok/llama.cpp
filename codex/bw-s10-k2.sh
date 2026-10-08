@@ -74,7 +74,7 @@ stamps() {
 tbo() {
     local dev=$1 log=$2
     shift 2
-    env CUDA_VISIBLE_DEVICES="$VISIBLE" "$@" timeout 1800 nice -n 19 build-cuda/bin/test-backend-ops test -b "$dev" -j 1 > "$log" 2>&1
+    env CUDA_VISIBLE_DEVICES="$VISIBLE" timeout 1800 nice -n 19 build-cuda/bin/test-backend-ops test -b "$dev" -j 1 "$@" > "$log" 2>&1
 }
 # Runs only the same-backend identity check: the filter matches no eval case.
 identity() {
