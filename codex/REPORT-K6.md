@@ -25,10 +25,10 @@ D ceiling -0.3 ms/round at np2 (128 x 1.5 us + 144 x 0.94 us), depth-flat; G rea
 - CUDA must-fail (window): `GGML_CUDA_Q8_REUSE_STALE_MUTANT`, `GGML_CUDA_ADD_RMS_NORM_MUTANT`; off switches `GGML_CUDA_Q8_REUSE=0`, `GGML_CUDA_ADD_RMS_NORM=0` give zero markers; rows 17/33 give no marker. Removing a matcher overlap guard is not detectable by a CUDA mutant (kernel is per-row/per-thread safe); only the Mac matcher table covers it (G).
 
 ## Mac results
-MAC_RESULTS
+Mac (M, bw-mac run s10-k6-mac-a1, commit d65b293c4, source_sha256 0e443d84...): cpu-build 47 s rc0; host-contracts + 5 mutants 4 s rc0 (all 5 mutants exit 1 as required); cpu-backend-ops 186 s rc0 (MUL_MAT_SHARED identity PASS cases=160, ADD_RMS_NORM identity PASS cases=324); payload-lint 0 s rc0. Evidence: codex/k6/evidence/summary.json.
 
 ## Window
-`codex/k6/bw-s10-k6.{toml,sh}`: filler, priority 18, non-preemptible, host_sensitive=false, stack10-cand recipe (arch 120a, CUDA 13.2, NCCL OFF, CCCL 3.4.3, GCC 13, DeviceTopK 25). Builds test-backend-ops; per GPU: both identity tests, engagement greps, off switches, both mutants must fail; one memcheck on CUDA0. No freeze, no timing item. `gpuq submit --check`: CHECK_LINE
+`codex/k6/bw-s10-k6.{toml,sh}`: filler, priority 18, non-preemptible, host_sensitive=false, stack10-cand recipe (arch 120a, CUDA 13.2, NCCL OFF, CCCL 3.4.3, GCC 13, DeviceTopK 25). Builds test-backend-ops; per GPU: both identity tests, engagement greps, off switches, both mutants must fail; one memcheck on CUDA0. No freeze, no timing item. `gpuq submit --check`: bw-s10-k6: valid (after the evidence commit).
 
 ## Open
 CUDA code uncompiled/unexecuted (first compile in window stage 40); CUDA byte identity is a window gate; capture/replay engagement is G; real-graph engagement (adjacency after graph_optimize, Meta splits) unmeasured; MUL_MAT_ID reuse untested; a gate/up pair fused in MMVQ reserves a slice that is never hit (wasted scratch).
