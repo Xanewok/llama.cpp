@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1
+t0=$SECONDS
 while ! python3 - <<'PY'
 import re, subprocess, sys
 memory = subprocess.check_output(['memory_pressure', '-Q'], text=True)
@@ -13,6 +14,7 @@ if busy or total * fraction < 4 * 1024**3:
     sys.exit(1)
 PY
 do
+    (( SECONDS - t0 < 600 )) || { echo "FAIL Mac RAM/model wait exceeded 10 min"; exit 75; }
     sleep 1
 done
 exec nice -n 19 python3 - "$@" <<'PY'

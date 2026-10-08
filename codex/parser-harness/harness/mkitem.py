@@ -149,7 +149,8 @@ def render(x):
                   f"+ {m['cleanup_s']} = run {b['run_s']}; + canary {m['canary_s']} + cleanup {m['cleanup_s']} = {b['budget_s']}.")
     exit_codes = "{ " + ", ".join(f'"{rc}" = {j(cls)}' for rc, cls in lib.EXIT.items()) + " }"
     lines = [
-        f"# experiment = {j(str(x['file']))}", f"id = {j(x['id'])}", f"priority = {x['priority']}", f"title = {j(x['title'])}", arithmetic,
+        f"# experiment = {j(str(x['file']))}", f"id = {j(x['id'])}", f"priority = {x['priority']}", f"title = {j(x['title'])}",
+        *([f"note = {j(note_text(x))}"] if x.get("question") else []), arithmetic,
         *([f"# cpu_evidence: {x['cpu_evidence']['command']}"] if "cpu_evidence" in x else []),
         'kind = "measure"', f"ab = {'true' if len(x['arms']) > 1 else 'false'}", 'retry = "fresh"',
         f"budget_s = {b['budget_s']}", f"est_s = {b['est_s']}", f"startup_grace_s = {m.get('startup_grace_s', 900)}",
@@ -169,6 +170,17 @@ def render(x):
     if b["budget_s"] < m["canary_s"] + b["run_s"] or b["est_s"] > b["budget_s"] or m["canary_s"] > 900:
         raise lib.Fail(f"budget arithmetic: {b} with canary {m['canary_s']}", "integrity")
     return text
+
+
+NOTE_MAX = 600
+
+
+def note_text(x):
+    """The queue item's note: pre-registered expectation, falsifier and question, whitespace-collapsed; cut at gpuq's limit."""
+    q = x.get("question", {})
+    parts = [f"{key}: {' '.join(q[field].split())}" for key, field in (("expect", "expected"), ("falsifier", "falsifier"), ("answers", "answers")) if field in q]
+    text = " | ".join(parts)
+    return text if len(text) <= NOTE_MAX else text[:NOTE_MAX - 1] + "\u2026"
 
 
 def stale(directory):
@@ -213,6 +225,8 @@ def main(argv=None):
     try:
         x = lib.read_experiment(a.experiment)
         text = render(x)
+        if len(" | ".join(x.get("question", {}).values())) > NOTE_MAX:
+            print(f"mkitem: warning: [question] exceeds the {NOTE_MAX}-character item note; the note is cut", file=sys.stderr)
         if a.check:
             return 0 if a.check.exists() and a.check.read_text() == text else 1
         if a.submit:

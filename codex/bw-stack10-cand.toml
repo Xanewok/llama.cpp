@@ -1,0 +1,64 @@
+id = "bw-stack10-cand"
+title = "stack10-cand CUDA build, exact op gates, freeze and item check; Mac CPU gates required"
+kind = "filler"
+priority = 19
+host_sensitive = false
+preemptible = false
+# G: 3000 s; D: 9000 s cap includes compilation and both-device operation gates.
+est_s = 3000
+budget_s = 9000
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-stack10-cand: FAIL" }]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/bw-stack10-cand.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/window/stack10-cand-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0", GPUQ_BUILD_WINDOW = "1" }
+ports = []
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/bw-stack10-cand.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/window/stack10-cand-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/window/stack10-cand-a{attempt}/payload.log"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "stages", "controls"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/bw-stack10-cand.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/bw-stack10-cand.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/render_stack10_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/gpu_stack10.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/stack10-evidence/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/REPORT-stack10-cand.md",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/common/speculative.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/ggml/src/ggml-cuda/gated_delta_net.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/src/models/delta-net-base.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/src/llama-kv-cache.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/src/llama-kv-cache.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/ggml/src/ggml-cuda/fattn-mma-f16.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/ggml/src/ggml-cuda/unary.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/tests/test-recurrent-state-rollback.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/ggml/src/ggml-backend-meta.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/ggml/src/ggml-cuda/unary.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/ggml/src/ggml-cuda/fattn.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/tests/test-backend-ops.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/common/sampling.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/tests/test-llama-archs.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-index.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/items/s10c-depth-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/items/s10c-np2-real-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/items/s10c-q8dkv-np2-real-j5q.toml.in",
+]

@@ -1,0 +1,111 @@
+priority = 26
+id = "s10c-depth-j5q"
+kind = "depth"
+title = "stack9 vs stack10 np1 J5q f16 draft KV cross-arm identity ABBA"
+plan = ["s9", "s10", "s10", "s9"]
+devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
+out = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/runs/s10c-depth-j5q"
+protected = ["identity", "frozen", "budget", "arms", "steady_minimum"]
+extra_pins = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/codex/mac-evidence/np2-on.log", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack8/codex/mac-evidence/np2-old-on.log", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/gpu_ab.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/gpu_stack10.py", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/render_stack10_items.py", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/REPORT-stack10-cand.md", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "/home/xanewok/repos/qwen38-eval/recipes/_common/kld/tokens64k.bin", "/home/xanewok/repos/qwen38-eval/corpora/templates/swift-leading-instructions-v1.jinja", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-apps.csv", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-query.csv", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/xid-lines.txt", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/summary.md", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-server/serve-bench-tail.log", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1-input.json", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/cold-tool-1.json", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/warmup-0.json", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1.json", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/server.log", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/fit.json", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-94000.log", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-94000.json", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/single-94000.log", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/errors.txt", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-32768.json", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/steps.txt", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-32768.log", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/serve.log", "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/single-94000.json", "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack6-depth-j5q/full-a1/1-s6/depth-8192.json", "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack6-depth-j5q/full-a1/1-s6/server.log", "/home/xanewok/repos/qwen38-eval/results/2026-10-07-gdn-getter-gate-np2-busy-j5q/canary-a1/0-up/depth-8192.json", "/home/xanewok/repos/qwen38-eval/results/2026-10-07-gdn-getter-gate-np1-j5q/canary-a1/0-patch/server.log", "/home/xanewok/repos/qwen38-eval/results/2026-10-06-draft-chain-m1-depth-j5q/canary-a2/0-chain/server.log", "/home/xanewok/repos/qwen38-eval/results/2026-10-07-cand-neginf-depth-j5q/canary-a1/1-cn/server.log", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/stack9-evidence/recorded-getter.log", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/gpu_stack9.py"]
+
+[model]
+id = "swift15-j5q"
+path = "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf"
+bytes = 19996051744
+sha = "f2c850ea3cd818b9d669fbd1e18767ef669ce012e614d819cce5ab6809e3a774"
+
+[draft_vocab]
+path = "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json"
+sha = "e30af79520ade5b7ddb851d75cf271f07d407dc768bf646e4517607d562a65a6"
+
+[arms.s9]
+label = "s9"
+commit = "cd776e104dbd516c7b74506992d2e8efd7600155"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9"
+repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9"
+bin = "build/bin"
+exe = "build/bin/round-trace"
+flags = ["--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16"]
+canary_log = ["llama_kv_cache: size =[^\\n]*,\\s+1 layers,[^\\n]*K \\(f16\\):[^\\n]*V \\(f16\\):"]
+
+[arms.s9.env]
+GGML_SCHED_INPUT_STAGING = "1"
+LLAMA_ARG_KV_PAD = "4096"
+LD_LIBRARY_PATH = "{root}/build/bin"
+LLAMA_MTP_CHAIN = "1"
+
+[arms.s10]
+label = "s10"
+commit = "@STACK10_SHA@"
+root = "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10-cand"
+repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand"
+bin = "build/bin"
+exe = "build/bin/round-trace"
+flags = ["--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16"]
+canary_log = ["persistent rotations backend=", "alpha_gate_fusion: device=0 width=[1-9]\\d* rows=[1-9]\\d*", "alpha_gate_fusion: device=1 width=[1-9]\\d* rows=[1-9]\\d*", "mtp_fold_decode: engaged n_seq=1\\b", "llama_kv_cache: size =[^\\n]*,\\s+1 layers,[^\\n]*K \\(f16\\):[^\\n]*V \\(f16\\):"]
+
+[arms.s10.env]
+GGML_SCHED_INPUT_STAGING = "1"
+LLAMA_ARG_KV_PAD = "4096"
+LD_LIBRARY_PATH = "{root}/build/bin"
+LLAMA_MTP_CHAIN = "1"
+GGML_CUDA_Q8_DECODE = "0"
+
+[server]
+args = ["-m", "{model}", "{arm_flags}", "-c", "102400", "-np", "1", "-ctk", "q8_0", "-ctv", "q8_0", "-ngl", "99", "-fa", "on", "--spec-type", "draft-mtp", "--spec-draft-n-max", "5", "--spec-draft-n-min", "0", "--spec-draft-p-min", "0", "-sm", "tensor", "--tensor-split", "50,50", "-b", "2048", "-ub", "512", "--jinja", "--chat-template-file", "/home/xanewok/repos/qwen38-eval/corpora/templates/swift-leading-instructions-v1.jinja", "--temp", "1", "--top-k", "20", "--top-p", "0.95", "--min-p", "0.05", "--host", "127.0.0.1", "--port", "{port}", "--metrics", "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--backend-sampling", "-t", "8", "-tb", "8", "--spec-draft-vocab", "{draft_vocab}"]
+knobs = ["LLAMA_MTP_GRAPH_REUSE", "GGML_META_PLAN_REUSE", "GGML_SCHED_INPUT_STAGING", "LLAMA_ARG_KV_PAD", "LLAMA_ARG_LOG_VERBOSITY", "GGML_CUDA_DEBUG_SSM_CONV", "GGML_CUDA_AR_COPY_STREAMS", "LLAMA_GRAPH_REUSE_DISABLE", "LLAMA_ROUND_TRACE", "GGML_SCHED_DEBUG", "GGML_CUDA_FA_MMA_Q8_0", "LLAMA_MTP_CHAIN", "LLAMA_MTP_FOLD_C", "LLAMA_MTP_FOLD_DEBUG_MUTANT", "LLAMA_STACK7_PROOF", "LLAMA_HOST_TRIMS_SEQRM", "LLAMA_HOST_TRIMS_BULKH", "LLAMA_HOST_TRIMS_VERIFY", "LLAMA_HOST_TRIMS_MUTANT", "LLAMA_HOST_TRIMS_PROOF", "GGML_CUDA_DEBUG_GDN_STATE", "LLAMA_MTP_DRAFT_DUMP", "LLAMA_MTP_CHAIN_DUMP", "LLAMA_MTP_CHAIN_DEBUG_REVERSE_U", "LLAMA_MTP_CHAIN_DEBUG_SHIFT_EMBD", "GGML_ROUND_TRACE_SYNC", "LLAMA_MTP_FOLD_DEBUG_LAYOUT", "LLAMA_MTP_FOLD_DEBUG_SWAP_SEQ", "GGML_CUDA_GDN_JOINT_MUTANT", "LLAMA_KV_ROT_PERSIST", "LLAMA_KV_ROT_ALLOC_FAIL", "LLAMA_KV_ROT_MUTANT", "GGML_CUDA_ALPHA_GATE", "GGML_CUDA_ALPHA_GATE_MUTANT", "GGML_CUDA_Q8_DECODE"]
+boot_cap_s = 300
+request_cap_s = 600
+
+[depth]
+depths = [8192, 32768, 90112]
+k = 5
+streams = 1
+identity = "cross-arm"
+min_steady_intervals = 40
+min_predicted = 256
+slot_ctx = 102400
+min_overlap = 0.8
+fixtures = "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures"
+wall_s = 900
+
+[depth.prompt]
+path = "/home/xanewok/repos/qwen38-eval/recipes/_common/kld/tokens64k.bin"
+sha = "753920ad0a0dbfc135aece41284c74e96d70d856df0351100a5305511aabf412"
+
+[depth.request]
+seed = 1729
+n_predict = 512
+temperature = 1
+top_k = 20
+top_p = 0.95
+min_p = 0.05
+ignore_eos = true
+
+[canary]
+plan = ["s10"]
+depths = [8192]
+proofs = []
+
+[canary.env]
+LLAMA_ARG_LOG_VERBOSITY = "5"
+LLAMA_HOST_TRIMS_PROOF = "1"
+LLAMA_STACK7_PROOF = "1"
+GGML_CUDA_DEBUG_GDN_STATE = "1"
+
+[budget]
+canary_s = 600
+margin = 1.5
+cleanup_s = 150
+est_s = 4200
+startup_grace_s = 300
+preflight_s = 600
+
+[outputs]
+run = "full-a{attempt}"
+canary = "canary-a{attempt}"
+preflight = "preflight-plan"
+
+[cpu_evidence]
+path = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10-cand/codex/stack10-evidence/summary.json"
+command = "stack10 Mac CPU build/units, rotation same-batch byte logits, plain/Meta tokens and allocation control, recorded parser mutations"

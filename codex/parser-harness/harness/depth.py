@@ -20,6 +20,13 @@ experiment.toml, [depth] (the keys this module reads):
                 Arms of different k generate different tokens: use identity "within-arm".
   streams       concurrent requests, one per server slot (default 1). >1: each stream prefills alone from scratch, then all
                 decode together from their own slot's cache; per-stream ms/round and tok/s are taken inside the overlap window.
+  decode_start  streams > 1: "threads" sends one decode request per stream from concurrent threads; whether the server
+                launches both in one loop iteration is a race, and the first rounds' batch composition then picks the token
+                trajectory (2026-10-08 A/A: trajectories split by arm, false +0.47 ms/round). "joint" (default; its A/A gave one
+                counter signature per depth over 4 boots, |Δ| ≤ 0.03 ms/round) sends one request with all prompts, whose tasks the
+                server queues at once, so the first decode round always holds every stream; slots are chosen by prompt match
+                (id_slot -1), all streams share seed + depth (a seed new to the slot rebuilds the draft sampler, whose RNG
+                otherwise carries over from the previous depth's request), and each stream's chunks are split by "index".
   min_overlap   streams > 1: overlap window / shortest stream decode below this is insufficient data, rc 5 (default 0.8).
                 Streams of equal n_predict end apart when their acceptance differs, so the shortest one is the yardstick.
                 The ratio only bounds start misalignment (<= 1 - min_overlap of the shorter decode, 20 % by default); that the
@@ -240,6 +247,14 @@ def settle(results, mode, arm, depth, ident, unit=""):
         entry["identity"][arm] = ident
         return entry
     return results.setdefault(depth, {"identity": ident, "runs": []})
+
+
+def joint_body(x, arm, depth):
+    """decode_start "joint": one decode request carrying every stream's prompt."""
+    n = streams(x)
+    body = request_body(x, arm, depth, 0, True)
+    return body | {"prompt": [request_body(x, arm, depth, s, True)["prompt"] for s in range(n)], "id_slot": -1,
+                   "seed": arm_request(x, arm)["seed"] + depth}
 
 
 def first_prefill(depth):
@@ -614,7 +629,8 @@ def stream_depth(base, body, timeout, on_first, stamp=False):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as reply:
             for line in reply:
-                if line.startswith(b"data: ") and line.strip() != b"data: [DONE]":
+                # `data: null`: llama-server's begin marker for every task after the first of a multi-prompt request
+                if line.startswith(b"data: ") and line.strip() not in (b"data: [DONE]", b"data: null"):
                     if not record["chunks"]:
                         on_first()
                     record["chunks"].append(json.loads(line[6:]) | ({"t": time.monotonic_ns()} if stamp else {}))
@@ -650,10 +666,15 @@ def run_streams(x, arm, base, dest, depth):
     prefill = [stream_depth(base, request_body(x, arm, depth, s), cap, lambda: None) for s in range(n)]
     records = [{"error": "not run: a prefill failed"}] * n
     t0 = time.monotonic_ns()
-    if not any("error" in p for p in prefill):
+    first = lambda: window.__setitem__(slice(None), window or [(dest / "server.log").stat().st_size])
+    if not any("error" in p for p in prefill) and x["depth"].get("decode_start", "joint") == "joint":
+        body = joint_body(x, arm, depth)
+        joint = stream_depth(base, body, cap, first, stamp=True)
+        records = [{"request": body | {"prompt": prompt, "index": s}, "chunks": [c for c in joint["chunks"] if c.get("index", 0) == s]}
+                   | {key: joint[key] for key in ("error", "error_body") if key in joint} for s, prompt in enumerate(body["prompt"])]
+    elif not any("error" in p for p in prefill):
         def decode(s):
-            records[s] = stream_depth(base, request_body(x, arm, depth, s, True), cap,
-                                      lambda: window.__setitem__(slice(None), window or [(dest / "server.log").stat().st_size]), stamp=True)
+            records[s] = stream_depth(base, request_body(x, arm, depth, s, True), cap, first, stamp=True)
         threads = [threading.Thread(target=decode, args=(s,)) for s in range(n)]
         for th in threads:
             th.start()

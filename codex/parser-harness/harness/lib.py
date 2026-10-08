@@ -21,6 +21,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from . import calibration
+
 EXIT = {3: "hazard", 4: "transient", 5: "insufficient_data", 6: "integrity", 7: "timeout", 8: "deterministic"}
 RC = {cls: rc for rc, cls in EXIT.items()}
 XID_RE = r"\bXid\b|fallen off the bus"
@@ -130,6 +132,7 @@ def read_experiment(path):
     d = x.get("depth", {})
     need(isinstance(d.get("streams", 1), int) and 1 <= d.get("streams", 1) <= 8, "depth.streams must be an integer in 1..8")
     need(0 < d.get("min_overlap", 0.8) <= 1, "depth.min_overlap must be in (0, 1]")
+    need(d.get("decode_start", "joint") in ("threads", "joint"), 'depth.decode_start must be "threads" or "joint"')
     for what, n in (("depth.texts", d.get("texts", 1)), ("canary.texts", x.get("canary", {}).get("texts", 1))):
         need(isinstance(n, int) and not isinstance(n, bool) and 1 <= n <= 64, f"{what} must be an integer in 1..64")
         need(n == 1 or d.get("streams", 1) == 1, f"{what} > 1 needs depth.streams = 1")
@@ -144,6 +147,14 @@ def read_experiment(path):
     need(all(isinstance(k, str) for k in d.get("counters", [])), "depth.counters must be round-trace counter kinds")
     if "cpu_evidence" in x:
         need(set(x["cpu_evidence"]) == {"path", "command"} and Path(x["cpu_evidence"]["path"]).is_absolute(), "cpu_evidence = {path, command}, path absolute")
+    q = x.get("question", {})
+    need(isinstance(q, dict) and set(q) <= {"expected", "falsifier", "answers"} and all(isinstance(v, str) and v.strip() for v in q.values()),
+         "[question] takes non-empty strings expected, falsifier, answers")
+    if "expected" in q:
+        try:
+            calibration.parse_expected(q["expected"])
+        except ValueError as error:
+            need(False, f"question.{error}")
     x.setdefault("server", {})
     _cache_ram(x, need)
     x.setdefault("canary", {})
