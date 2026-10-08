@@ -4917,6 +4917,9 @@ static size_t ggml_cuda_q8_cache_prepare(ggml_cuda_q8_cache & cache, const ggml_
     return cache.reserve();
 }
 
+// Negative control: never invalidate, so an overwritten input is served from a stale quantization.
+static const bool q8_stale_mutant = getenv("GGML_CUDA_Q8_REUSE_STALE_MUTANT") != nullptr;
+
 static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, const bool use_cuda_graph, const bool cuda_graph_update_required, const void * graph_key) {
     bool graph_evaluated_or_captured = false;
     ggml_cuda_q8_cache q8_cache;
@@ -5070,7 +5073,8 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                 stream_ctx.concurrent_events.clear();
             }
 
-            if (stream_ctx.concurrent_events.empty()) {
+            static const bool q8_reuse = !getenv("GGML_CUDA_Q8_REUSE") || atoi(getenv("GGML_CUDA_Q8_REUSE")) != 0;
+            if (q8_reuse && stream_ctx.concurrent_events.empty()) {
                 const size_t size = ggml_cuda_q8_cache_prepare(q8_cache, cgraph, ggml_cuda_info().devices[cuda_ctx->device].cc);
                 if (size > 0) {
                     q8_cache.data = q8_scratch.alloc(size);
@@ -5150,7 +5154,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                             nodes_to_skip + 1, ggml_op_name(node->op), node->name,
                             ggml_op_name(cgraph->nodes[last_fused]->op), cgraph->nodes[last_fused]->name);
 #endif
-                    if (cuda_ctx->q8_cache) {
+                    if (cuda_ctx->q8_cache && !q8_stale_mutant) {
                         for (int j = i; j <= i + nodes_to_skip; ++j) {
                             if (!ggml_cuda_is_view_or_noop(cgraph->nodes[j])) {
                                 q8_cache.invalidate(cgraph->nodes[j]);
@@ -5189,7 +5193,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                     GGML_LOG_ERROR("%s: op not supported %s (%s)\n", __func__, node->name, ggml_op_name(node->op));
                 }
                 GGML_ASSERT(ok);
-                if (cuda_ctx->q8_cache) {
+                if (cuda_ctx->q8_cache && !q8_stale_mutant) {
                     q8_cache.invalidate(node);
                 }
                 if (cuda_ctx->fattn_kv_max_cache) {
@@ -5199,6 +5203,10 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                 if (!is_concurrent_event_active) {
                     try_launch_concurrent_event(node);
                }
+            }
+            if (cuda_ctx->q8_cache) {
+                GGML_LOG_DEBUG("q8_reuse: device=%d graph=%" PRIu64 " rows=%d skipped=%d quantized=%d bytes=%zu\n",
+                               cuda_ctx->device, cgraph->uid, q8_cache.rows, q8_cache.hits, q8_cache.misses, q8_scratch.actual_size);
             }
             cuda_ctx->q8_cache = nullptr;
             cuda_ctx->fattn_kv_max_cache = nullptr;
