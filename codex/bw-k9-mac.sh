@@ -32,18 +32,28 @@ build() {
     "$BW_BUILDGATE" cmake --build build-cpu --target test-backend-ops -j4
 }
 chain() {
-    "$GATE" $T mmq-chain CPU hash 8 quick > "$OUT/hash-1.out" 2> "$OUT/hash-1.err"
-    "$GATE" $T mmq-chain CPU hash 8 quick > "$OUT/hash-2.out" 2> "$OUT/hash-2.err"
+    # The model gate prints WAIT lines on stdout; keep only the harness lines.
+    run_chain() { # TAG ARGS...: harness stdout filtered to $OUT/TAG.out, stderr to $OUT/TAG.err, status in RC
+        local tag=$1
+        shift
+        RC=0
+        "$GATE" $T mmq-chain CPU "$@" > "$OUT/$tag.raw" 2> "$OUT/$tag.err" || RC=$?
+        grep -a '^\(chain\|perf\) ' "$OUT/$tag.raw" > "$OUT/$tag.out" || true
+    }
+    run_chain hash-1 hash 8 quick
+    [[ $RC == 0 ]]
+    run_chain hash-2 hash 8 quick
+    [[ $RC == 0 ]]
     cmp "$OUT/hash-1.out" "$OUT/hash-2.out"
     [[ $(grep -c '^chain ' "$OUT/hash-1.out") == 2 ]]
     awk '$1 == "chain" && $5 == $6 {bad = 1} END {exit bad}' "$OUT/hash-1.out"
     grep -c 'recompute mismatches 0 of 8' "$OUT/hash-1.err" > "$OUT/n-clean.txt"
     [[ $(cat "$OUT/n-clean.txt") == 2 ]]
-    local rc=0
-    "$GATE" $T mmq-chain CPU hash 8 quick corrupt > "$OUT/corrupt.out" 2> "$OUT/corrupt.err" || rc=$?
-    [[ $rc == 1 ]]
+    run_chain corrupt hash 8 quick corrupt
+    [[ $RC == 1 ]]
     grep -aq 'mmq-chain: FAIL 2 recomputes differ' "$OUT/corrupt.err"
-    "$GATE" $T mmq-chain CPU perf 3 quick > "$OUT/perf.out" 2> "$OUT/perf.err"
+    run_chain perf perf 3 quick
+    [[ $RC == 0 ]]
     [[ $(grep -c '^perf ' "$OUT/perf.out") == 2 ]]
 }
 static_checks() {
