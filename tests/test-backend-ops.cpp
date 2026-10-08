@@ -8396,6 +8396,96 @@ struct test_flash_attn_ext_large_logits : public test_flash_attn_ext {
     }
 };
 
+// Per-sequence visible lengths for the shared-mask FA tests: the sequences end in different KV tiles, so a
+// scan that is stale or indexed by the wrong sequence changes the outputs. rot rotates the lengths between replays.
+static std::vector<int64_t> fattn_shared_mask_lens(int64_t kv, int64_t nb, int64_t ns, int rot) {
+    std::vector<int64_t> lens(ns);
+    for (int64_t s = 0; s < ns; ++s) {
+        const int64_t i = (s + rot) % ns;
+        int64_t len = kv*(i + 1)/ns - 13*(ns - 1 - i);
+        if (ns == 1 && (rot & 1)) {
+            len = kv/3 + 5; // a single sequence alternates between long and short
+        }
+        lens[s] = std::clamp<int64_t>(len, std::min(nb, kv), kv);
+    }
+    return lens;
+}
+
+// Row r sees columns [0, len - nb + 1 + r); padding rows repeat the last row, as llama.cpp pads the mask.
+static void init_kq_mask_lens(ggml_tensor * mask, int64_t nb, const std::vector<int64_t> & lens) {
+    GGML_ASSERT(mask->type == GGML_TYPE_F16 && mask->ne[3] == (int64_t) lens.size());
+    const int64_t kv = mask->ne[0];
+    const int64_t rows = mask->ne[1];
+    std::vector<ggml_fp16_t> data(ggml_nelements(mask));
+    const ggml_fp16_t inf = ggml_fp32_to_fp16(-INFINITY);
+    for (int64_t s = 0; s < mask->ne[3]; ++s) {
+        for (int64_t r = 0; r < rows; ++r) {
+            const int64_t visible = std::min<int64_t>(kv, std::max<int64_t>(1, lens[s] - nb + 1 + std::min(r, nb - 1)));
+            for (int64_t c = 0; c < kv; ++c) {
+                data[(s*rows + r)*kv + c] = c < visible ? ggml_fp32_to_fp16(-0.0625f * float((c + r) % 5)) : inf;
+            }
+        }
+    }
+    ggml_backend_tensor_set(mask, data.data(), 0, ggml_nbytes(mask));
+}
+
+// GGML_OP_FLASH_ATTN_EXT: attention layers that read one KQ mask, as the layers of a model graph do
+struct test_flash_attn_ext_shared_mask : public test_case {
+    const int64_t hs;
+    const int64_t nh;
+    const int64_t gqa;
+    const std::array<int64_t, 2> kv; // layers alternate between the two KV extents
+    const int64_t nb;
+    const int64_t ns;
+    const int layers;
+    const ggml_type type_KV;
+
+    std::string op_desc(ggml_tensor * t) override {
+        GGML_UNUSED(t);
+        return "FLASH_ATTN_EXT";
+    }
+
+    std::string vars() override {
+        return std::string("shared_mask=1,") + VARS_TO_STR8(hs, nh, gqa, kv, nb, ns, layers, type_KV);
+    }
+
+    double max_nmse_err() override {
+        return 5e-4;
+    }
+
+    test_flash_attn_ext_shared_mask(int64_t hs, int64_t nh, int64_t gqa, std::array<int64_t, 2> kv, int64_t nb, int64_t ns, int layers,
+                                    ggml_type type_KV)
+        : hs(hs), nh(nh), gqa(gqa), kv(kv), nb(nb), ns(ns), layers(layers), type_KV(type_KV) {}
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        ggml_tensor * m = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, std::max(kv[0], kv[1]), GGML_PAD(nb, 64), 1, ns);
+        ggml_set_name(m, "m");
+
+        ggml_tensor * out = nullptr;
+        for (int l = 0; l < layers; ++l) {
+            const int64_t kv_l = kv[l % 2];
+            ggml_tensor * q = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, hs, nb, nh*gqa, ns);
+            ggml_tensor * k = ggml_new_tensor_4d(ctx, type_KV, hs, kv_l, nh, ns);
+            ggml_tensor * v = ggml_new_tensor_4d(ctx, type_KV, hs, kv_l, nh, ns);
+            ggml_tensor * fa = ggml_flash_attn_ext(ctx, q, k, v, m, 1.0f/sqrtf(hs), 0.0f, 0.0f);
+            ggml_prec_set_acc(fa, GGML_PREC_F32);
+            out = out ? ggml_add(ctx, out, fa) : fa;
+        }
+        ggml_set_name(out, "out");
+        return out;
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        for (ggml_tensor * t = ggml_get_first_tensor(ctx); t != NULL; t = ggml_get_next_tensor(ctx, t)) {
+            if (strcmp(t->name, "m") == 0) {
+                init_kq_mask_lens(t, nb, fattn_shared_mask_lens(t->ne[0], nb, ns, 0));
+            } else {
+                init_tensor_uniform(t);
+            }
+        }
+    }
+};
+
 // GGML_OP_CROSS_ENTROPY_LOSS
 struct test_cross_entropy_loss : public test_case {
     const ggml_type type;
@@ -11413,6 +11503,17 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         }
     }
 
+    // attention layers sharing one KQ mask: the CUDA backend scans the mask once per graph evaluation
+    for (ggml_type type_KV : { GGML_TYPE_F16, GGML_TYPE_Q8_0 }) {
+        for (int nb : { 1, 4, 8, 32 }) {
+            test_cases.emplace_back(new test_flash_attn_ext_shared_mask(128, 4, 1, {512, 512}, nb, 2, 4, type_KV));
+            test_cases.emplace_back(new test_flash_attn_ext_shared_mask(256, 2, 6, {512, 512}, nb, 2, 4, type_KV));
+        }
+    }
+    test_cases.emplace_back(new test_flash_attn_ext_shared_mask(128, 4, 1, {512, 256}, 8, 2, 6, GGML_TYPE_F16));
+    test_cases.emplace_back(new test_flash_attn_ext_shared_mask(128, 4, 2, {768, 768}, 8, 3, 4, GGML_TYPE_F16));
+    test_cases.emplace_back(new test_flash_attn_ext_shared_mask(128, 1, 1, {2048, 2048}, 1024, 1, 3, GGML_TYPE_F16));
+
     // prefill-shaped cases with long KV (nb >= 32, kv >= 1024): covers the
     // XMX/GEMM-accelerated SYCL FA path which only activates for these shapes.
     for (int kv : { 1024, 2048, }) {
@@ -12102,6 +12203,13 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     // GLM 4.7 Flash gqa20
     test_cases.emplace_back(new test_flash_attn_ext(576, 512, 1, {20, 1}, 8192, 32, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16, {0, 1, 2, 3}, true, true));
     test_cases.emplace_back(new test_flash_attn_ext(576, 512, 1, {20, 1}, 8192, 512, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16, {0, 1, 2, 3}, true, true));
+
+    // sixteen attention layers reading one mask: two sequences verifying a short draft
+    for (int64_t kv : { 8192, 32768 }) {
+        for (ggml_type type_KV : { GGML_TYPE_F16, GGML_TYPE_Q8_0 }) {
+            test_cases.emplace_back(new test_flash_attn_ext_shared_mask(256, 4, 6, {kv, kv}, 6, 2, 16, type_KV));
+        }
+    }
 
     // q8_0 KV cases with long context (decode and prompt)
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {16, 1},   128, 1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
@@ -12806,6 +12914,194 @@ static bool run_fa_vec_slice(ggml_backend_t backend, ggml_backend_t backend_cpu,
     return n_fail == 0;
 }
 
+using fattn_kv_max_counts_t = void (*)(uint64_t *, uint64_t *);
+
+// The CUDA backend scans the KQ mask once per graph evaluation for the attention layers that share it. On the same
+// backend, a graph whose layers share one mask must give the same bytes as a graph with one identical mask copy per
+// layer, across repeated evaluations of the same graph (CUDA graph capture and replay) with changing mask bytes, and
+// when a node overwrites the mask between layers.
+static bool run_fattn_shared_mask_identity(ggml_backend_t backend, const char * filter) {
+    if (!op_names_filter_selects(filter, "FLASH_ATTN_EXT")) {
+        return true;
+    }
+    auto * reg = ggml_backend_dev_backend_reg(ggml_backend_get_device(backend));
+    auto counts = (fattn_kv_max_counts_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_cuda_fattn_kv_max_counts");
+
+    struct config {
+        int64_t hs, nh, gqa;
+        std::array<int64_t, 2> kv;
+        int64_t nb, ns;
+        int layers;
+        ggml_type type_KV;
+    };
+    const config configs[] = {
+        { 128, 2, 1, {512, 512},  8, 2, 4, GGML_TYPE_F16  },
+        { 256, 2, 6, {512, 512},  4, 2, 4, GGML_TYPE_F16  },
+        { 128, 2, 1, {512, 256},  8, 2, 6, GGML_TYPE_F16  },
+        { 128, 2, 2, {768, 768}, 32, 3, 3, GGML_TYPE_Q8_0 },
+        { 128, 1, 1, {2048, 2048}, 1024, 1, 2, GGML_TYPE_F16 },
+    };
+    constexpr int n_replay = 7;
+
+    int cases = 0;
+    for (const config & c : configs) {
+        const int64_t rows = GGML_PAD(c.nb, 64);
+        const int64_t kv_max = std::max(c.kv[0], c.kv[1]);
+        const int half = c.layers / 2;
+
+        ggml_init_params params = { (32 + 16*size_t(c.layers))*ggml_tensor_overhead() + 4*ggml_graph_overhead(), nullptr, true };
+        ggml_context_ptr ctx(ggml_init(params));
+        auto new_mask = [&]() { return ggml_new_tensor_4d(ctx.get(), GGML_TYPE_F16, kv_max, rows, 1, c.ns); };
+        ggml_tensor * mask = new_mask();
+        ggml_tensor * mask_next = new_mask();
+        std::vector<ggml_tensor *> q(c.layers), k(c.layers), v(c.layers), own(c.layers);
+        for (int l = 0; l < c.layers; ++l) {
+            const int64_t kv_l = c.kv[l % 2];
+            q[l] = ggml_new_tensor_4d(ctx.get(), GGML_TYPE_F32, c.hs, c.nb, c.nh*c.gqa, c.ns);
+            k[l] = ggml_new_tensor_4d(ctx.get(), c.type_KV, c.hs, kv_l, c.nh, c.ns);
+            v[l] = ggml_new_tensor_4d(ctx.get(), c.type_KV, c.hs, kv_l, c.nh, c.ns);
+            own[l] = new_mask();
+        }
+        auto attn = [&](int l, ggml_tensor * m) {
+            ggml_tensor * fa = ggml_flash_attn_ext(ctx.get(), q[l], k[l], v[l], m, 1.0f/sqrtf(c.hs), 0.0f, 0.0f);
+            ggml_prec_set_acc(fa, GGML_PREC_F32);
+            return fa;
+        };
+        auto sum = [&](auto mask_of) {
+            ggml_tensor * out = nullptr;
+            for (int l = 0; l < c.layers; ++l) {
+                ggml_tensor * fa = attn(l, mask_of(l));
+                out = out ? ggml_add(ctx.get(), out, fa) : fa;
+            }
+            return out;
+        };
+        ggml_tensor * out_shared = sum([&](int) { return mask; });
+        ggml_tensor * out_own = sum([&](int l) { return own[l]; });
+        // layers [half, n) read the mask after node `written` copied mask_next over it
+        ggml_tensor * written = ggml_cpy(ctx.get(), mask_next, mask);
+        ggml_tensor * out_alias = sum([&](int l) { return l < half ? mask : written; });
+
+        ggml_cgraph * g_shared = ggml_new_graph(ctx.get());
+        ggml_build_forward_expand(g_shared, out_shared);
+        ggml_cgraph * g_own = ggml_new_graph(ctx.get());
+        ggml_build_forward_expand(g_own, out_own);
+        ggml_cgraph * g_alias = ggml_new_graph(ctx.get());
+        ggml_build_forward_expand(g_alias, out_alias);
+
+        for (ggml_cgraph * g : { g_shared, g_own, g_alias }) {
+            for (int i = 0; i < ggml_graph_n_nodes(g); ++i) {
+                if (!ggml_backend_supports_op(backend, ggml_graph_node(g, i))) {
+                    return true;
+                }
+            }
+        }
+        ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors(ctx.get(), backend));
+        if (!buffer) {
+            return false;
+        }
+        for (int l = 0; l < c.layers; ++l) {
+            init_tensor_uniform(q[l]);
+            init_tensor_uniform(k[l]);
+            init_tensor_uniform(v[l]);
+        }
+
+        std::vector<uint8_t> a(ggml_nbytes(out_shared)), b(a.size()), different(a.size());
+        const int groups = c.kv[0] == c.kv[1] ? 1 : 2;
+        bool engaged = false;
+        bool sensitive = false;
+        uint64_t s0 = 0, r0 = 0;
+        auto compute = [&](ggml_cgraph * g, ggml_tensor * out, std::vector<uint8_t> & dst, uint64_t & scans, uint64_t & reused) {
+            if (counts) {
+                counts(&s0, &r0);
+            }
+            if (ggml_backend_graph_compute(backend, g) != GGML_STATUS_SUCCESS) {
+                return false;
+            }
+            scans = reused = 0;
+            if (counts) {
+                uint64_t s1, r1;
+                counts(&s1, &r1);
+                scans = s1 - s0;
+                reused = r1 - r0;
+            }
+            ggml_backend_tensor_get(out, dst.data(), 0, dst.size());
+            return true;
+        };
+        const auto fail = [&](const char * what, int replay) {
+            printf("  FAIL FLASH_ATTN_EXT shared mask %s: hs=%lld kv=%lld/%lld nb=%lld ns=%lld layers=%d type=%s replay=%d\n", what,
+                (long long) c.hs, (long long) c.kv[0], (long long) c.kv[1], (long long) c.nb, (long long) c.ns, c.layers,
+                ggml_type_name(c.type_KV), replay);
+            return false;
+        };
+
+        for (int replay = 0; replay < n_replay; ++replay) {
+            const auto lens = fattn_shared_mask_lens(kv_max, c.nb, c.ns, replay);
+            const auto lens_next = fattn_shared_mask_lens(kv_max, c.nb, c.ns, replay + 1);
+            uint64_t scans, reused;
+
+            init_kq_mask_lens(mask, c.nb, lens);
+            for (int l = 0; l < c.layers; ++l) {
+                init_kq_mask_lens(own[l], c.nb, lens);
+            }
+            if (!compute(g_shared, out_shared, a, scans, reused)) {
+                return false;
+            }
+            if (counts && (scans != 0 || reused != 0)) {
+                if (scans != uint64_t(groups) || reused != uint64_t(c.layers - groups)) {
+                    return fail("scan counts", replay);
+                }
+                engaged = true;
+            }
+            uint64_t scans_own, reused_own;
+            if (!compute(g_own, out_own, b, scans_own, reused_own)) {
+                return false;
+            }
+            if (scans_own != 0 || reused_own != 0) {
+                return fail("per-layer masks must not share a scan", replay);
+            }
+            if (memcmp(a.data(), b.data(), a.size()) != 0) {
+                return fail("shared mask differs from per-layer masks", replay);
+            }
+
+            // the overwrite is part of the graph: the layers after it must see the new bytes
+            init_kq_mask_lens(mask, c.nb, lens);
+            init_kq_mask_lens(mask_next, c.nb, lens_next);
+            for (int l = 0; l < c.layers; ++l) {
+                init_kq_mask_lens(own[l], c.nb, l < half ? lens : lens_next);
+            }
+            if (!compute(g_alias, out_alias, a, scans, reused)) {
+                return false;
+            }
+            if (counts && (scans != 0 || reused != 0) && scans < 2) {
+                return fail("mask overwrite did not force a rescan", replay);
+            }
+            if (!compute(g_own, out_own, b, scans_own, reused_own)) {
+                return false;
+            }
+            if (memcmp(a.data(), b.data(), a.size()) != 0) {
+                return fail("mask overwritten between layers", replay);
+            }
+            // the two mask contents must matter, or the comparison above proves nothing
+            for (int l = 0; l < c.layers; ++l) {
+                init_kq_mask_lens(own[l], c.nb, lens);
+            }
+            if (!compute(g_own, out_own, different, scans_own, reused_own)) {
+                return false;
+            }
+            sensitive = sensitive || memcmp(different.data(), b.data(), b.size()) != 0;
+        }
+        if (counts && !engaged) {
+            return fail("shared scan did not engage", -1);
+        }
+        if (!sensitive) {
+            return fail("mask contents did not change the output", -1);
+        }
+        ++cases;
+    }
+    printf("  FLASH_ATTN_EXT shared mask: same-backend byte identity, replay and overwrite PASS cases=%d\n", cases);
+    return true;
+}
+
 static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mode mode, const char * op_names_filter, const char * params_filter,
                          printer * output_printer, const char * test_file_path, int parallel_workers) {
     auto filter_test_cases = [](std::vector<std::unique_ptr<test_case>> & test_cases, const char * params_filter) {
@@ -12956,7 +13252,8 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
         const bool alpha_ok = run_alpha_gate_identity(backend, op_names_filter);
         const bool conv_ok  = run_ssm_conv_rs_identity(backend, op_names_filter);
         return n_ok == tests_run && slice_ok && alpha_ok && conv_ok &&
-               run_rms_norm_scale_pair_identity(backend, op_names_filter);
+               run_rms_norm_scale_pair_identity(backend, op_names_filter) &&
+               run_fattn_shared_mask_identity(backend, op_names_filter);
     }
 
     if (mode == MODE_GRAD) {
