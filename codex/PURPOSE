@@ -1,6 +1,6 @@
-purpose: stack9 = stack8 + np2 getter (np2-kernels) + multi-seq fold C (fold-mseq); Codex assembly + window
-base: 5df0dbffc7b6ac753dc4521387f36098a01893bb
+purpose: stack9 + package 55: one build for all Swift profiles
+base: cd776e104dbd516c7b74506992d2e8efd7600155
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack9
-created: 2026-10-08T11:24:45+02:00
+branch: topic/stack9-p55
+created: 2026-10-08T20:41:47+02:00
 creator: xanewok

@@ -11,7 +11,7 @@ export S7_GATE=$ROOT/codex/mac-model-gate.sh
 unset LLAMA_MTP_CHAIN LLAMA_MTP_FOLD_C LLAMA_MTP_FOLD_DEBUG_MUTANT LLAMA_MTP_CHAIN_DEBUG_REVERSE_U LLAMA_MTP_CHAIN_DEBUG_SHIFT_EMBD
 unset LLAMA_ROUND_TRACE LLAMA_MTP_CHAIN_DUMP LLAMA_MTP_DRAFT_DUMP GGML_ROUND_TRACE_SYNC
 export OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1
-S7_ONLY=${S7_ONLY:-'20 21 23 24 29 31 32 33 34 35'}
+S7_ONLY=${S7_ONLY:-'20 21 23 24 29 31 32 33 34 35 36'}
 stage() {
     local code=$1 name=$2 rc=0 t0=$SECONDS
     shift 2
@@ -33,9 +33,10 @@ flags=(-DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_CCACHE="${BW_CCACHE:-ON
 read -r -a extra <<< "${BW_CPU_EXTRA:?}"
 build() {
     "$BW_BUILDGATE" cmake -S codex/stack7-test -B build-cpu "${flags[@]}" "${extra[@]}"
-    "$BW_BUILDGATE" cmake --build build-cpu --target test-sampling test-llama-archs test-alloc test-recurrent-state-rollback bw-np2-driver chain-cpu bw-cand-driver -j4
+    "$BW_BUILDGATE" cmake --build build-cpu --target test-sampling test-llama-archs test-alloc test-recurrent-state-rollback bw-np2-driver chain-cpu bw-cand-driver test-mmvq-params -j4
 }
 units() {
+    "$S7_GATE" build-cpu/bin/test-mmvq-params
     "$S7_GATE" build-cpu/bin/test-sampling
     "$S7_GATE" build-cpu/bin/test-alloc
     "$S7_GATE" build-cpu/bin/test-recurrent-state-rollback -m "$S7_MODEL" -c 4096 -t 4 -ngl 0
@@ -105,6 +106,24 @@ fold() {
 getter() {
     bash codex/np2/cpu-gate.sh "$OUT/getter"
 }
+# Negative control for test-mmvq-params: dropping IQ4_XS from the Blackwell n>=5 table must abort the test.
+mmvq_mutant() {
+    local d=$OUT/mmvq-mutant rc=0
+    mkdir -p "$d/tests" "$d/ggml/src/ggml-cuda"
+    cp tests/test-mmvq-params.cpp "$d/tests/"
+    python3 - ggml/src/ggml-cuda/mmvq-params.h "$d/ggml/src/ggml-cuda/mmvq-params.h" <<'PY'
+import sys
+from pathlib import Path
+s = Path(sys.argv[1]).read_text()
+old = "                case GGML_TYPE_Q4_K:\n                case GGML_TYPE_IQ4_XS:\n                    return 1;\n"
+assert s.count(old) == 1
+Path(sys.argv[2]).write_text(s.replace(old, "                case GGML_TYPE_Q4_K:\n                    return 1;\n"))
+PY
+    c++ -std=c++17 -O0 -I ggml/include -o "$d/test-mmvq-params-mutant" "$d/tests/test-mmvq-params.cpp"
+    "$d/test-mmvq-params-mutant" > "$d/run.log" 2>&1 || rc=$?
+    echo "mutant rc=$rc"
+    [[ $rc != 0 ]]
+}
 
 stage 20 cpu-build build
 stage 21 unit-tests units
@@ -116,13 +135,14 @@ stage 32 np2-old-negative-control old_control
 stage 33 cand-cpu-identity candidates
 stage 34 cand-mutant bash codex/check-cand-mutant.sh "$OUT/cand-mutant"
 stage 35 np2-getter getter
+stage 36 mmvq-table-mutant mmvq_mutant
 python3 - "$OUT" <<'PY'
 import json, sys
 from pathlib import Path
 p = Path(sys.argv[1])
 stages = [dict(code=int(c), name=n, rc=int(rc), wall_s_M=int(t)) for c,n,rc,t in (l.split('\t') for l in (p/'stages.tsv').read_text().splitlines())]
 import hashlib
-files = sorted(set(['common/speculative.cpp','common/sampling.cpp','codex/bw-np2-driver.cpp','codex/bw-cand-driver.cpp','codex/chain-cpu.cpp'] + [str(f) for pattern in ('src/llama-context.*','src/llama-ext.h','src/llama-graph.*','src/models/qwen35.cpp','src/models/delta-net-base.cpp','ggml/src/ggml-cuda/gated_delta_net.*','ggml/src/ggml-cuda/ggml-cuda.cu','tests/test-recurrent-state-rollback.cpp','tests/test-backend-ops.cpp','tests/test-llama-archs.cpp') for f in Path('.').glob(pattern)]))
+files = sorted(set(['common/speculative.cpp','common/sampling.cpp','codex/bw-np2-driver.cpp','codex/bw-cand-driver.cpp','codex/chain-cpu.cpp'] + [str(f) for pattern in ('src/llama-context.*','src/llama-ext.h','src/llama-graph.*','src/models/qwen35.cpp','src/models/delta-net-base.cpp','ggml/src/ggml-cuda/gated_delta_net.*','ggml/src/ggml-cuda/ggml-cuda.cu','ggml/src/ggml-cuda/mmvq*','tests/test-mmvq-params.cpp','tests/CMakeLists.txt','tests/test-recurrent-state-rollback.cpp','tests/test-backend-ops.cpp','tests/test-llama-archs.cpp') for f in Path('.').glob(pattern)]))
 d = hashlib.sha256()
 for name in files:
     d.update(name.encode() + b'\0' + Path(name).read_bytes())
