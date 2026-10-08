@@ -1613,6 +1613,19 @@ struct test_case {
             return true;
         }
 
+        // GGML_TEST_PERF_COLD_MB=N: rotate the weights of a MUL_MAT over >= N MiB of independent copies so the timed
+        // launches read them from DRAM instead of L2
+        std::vector<ggml_tensor *> perf_outputs = {out};
+        if (const char * cold_mb = getenv("GGML_TEST_PERF_COLD_MB")) {
+            GGML_ASSERT(out->op == GGML_OP_MUL_MAT);
+            const size_t weight_bytes = ggml_nbytes(out->src[0]);
+            const size_t copies = (size_t) atoi(cold_mb) * 1024*1024 / weight_bytes + 2;
+            for (size_t i = 1; i < copies; ++i) {
+                ggml_tensor * a = ggml_dup_tensor(ctx.get(), out->src[0]);
+                perf_outputs.push_back(ggml_mul_mat(ctx.get(), a, out->src[1]));
+            }
+        }
+
         ggml_backend_buffer_ptr buf_weights(nullptr);
         if (ctx_weights) {
             buf_weights.reset(ggml_backend_alloc_ctx_tensors(ctx_weights.get(), backend));
@@ -1639,7 +1652,9 @@ struct test_case {
 
         // build graph
         ggml_cgraph * gf = ggml_new_graph_custom(ctx.get(), graph_nodes, false);
-        ggml_build_forward_expand(gf, out);
+        for (ggml_tensor * perf_out : perf_outputs) {
+            ggml_build_forward_expand(gf, perf_out);
+        }
 
         // warmup run
         ggml_status status = ggml_backend_graph_compute(backend, gf);
@@ -1647,6 +1662,8 @@ struct test_case {
             fprintf(stderr, "%s: ggml_backend_graph_compute failed. status=%s \n", __func__, ggml_status_to_string(status));
             return false;
         }
+
+        const int64_t node_slack = (ggml_graph_size(gf) - ggml_graph_n_nodes(gf)) / (int64_t) perf_outputs.size();
 
         // determine number of runs
         int n_runs;
@@ -1657,23 +1674,25 @@ struct test_case {
             const uint64_t target_flops_cpu =   8ULL * GFLOP;
             const uint64_t target_flops_gpu = 100ULL * GFLOP;
             uint64_t target_flops = is_cpu ? target_flops_cpu : target_flops_gpu;
-            n_runs = (int)std::min<int64_t>(ggml_graph_size(gf) - ggml_graph_n_nodes(gf), target_flops / op_flops(out)) + 1;
+            n_runs = (int)std::min<int64_t>(node_slack, target_flops / op_flops(out)) + 1;
         } else {
             // based on memory size
             const size_t GB = 1ULL << 30;
             const size_t target_size_cpu =  8 * GB;
             const size_t target_size_gpu = 32 * GB;
             size_t target_size = is_cpu ? target_size_cpu : target_size_gpu;
-            n_runs = (int)std::min<int64_t>(ggml_graph_size(gf) - ggml_graph_n_nodes(gf), target_size / op_size(out)) + 1;
+            n_runs = (int)std::min<int64_t>(node_slack, target_size / op_size(out)) + 1;
         }
 
         // duplicate the op
         for (int i = 1; i < n_runs; i++) {
-            ggml_graph_add_node(gf, out);
+            for (ggml_tensor * perf_out : perf_outputs) {
+                ggml_graph_add_node(gf, perf_out);
+            }
         }
 
         // calculate memory
-        size_t mem = n_runs * op_size(out);
+        size_t mem = n_runs * perf_outputs.size() * op_size(out);
         auto tensor_op_size = [](ggml_tensor * t) {
             size_t size = ggml_nbytes(t);
             // add source tensors
@@ -1685,7 +1704,8 @@ struct test_case {
             return size;
         };
         for (int i = 0; i < ggml_graph_n_nodes(gf); ++i) {
-            if (ggml_is_view_op(ggml_graph_node(gf, i)->op) || ggml_graph_node(gf, i) == out) {
+            if (ggml_is_view_op(ggml_graph_node(gf, i)->op) ||
+                    std::find(perf_outputs.begin(), perf_outputs.end(), ggml_graph_node(gf, i)) != perf_outputs.end()) {
                 continue;
             }
             mem += tensor_op_size(ggml_graph_node(gf, i));
@@ -1706,7 +1726,7 @@ struct test_case {
 
             total_time_us += end_time - start_time;
             total_mem += mem;
-            total_runs += n_runs;
+            total_runs += n_runs * perf_outputs.size();
 
             // re-draw any data-dependent inputs (expert ids) outside the timed region
             reinit_perf_iter(ctx.get());
@@ -13650,6 +13670,155 @@ static void usage(char ** argv) {
     printf("  %s perf -o 'MUL_MAT.*'\n", argv[0]);
 }
 
+// `test-backend-ops mmq-hash DEVICE [MAX_ROWS]`: one FNV-1a hash of the MUL_MAT output bits per (type, m, k, n), so runs with different
+// GGML_CUDA_MMQ_TILES settings can be compared bit for bit.
+struct mmq_hash_shape { ggml_type type; int64_t m, k; };
+
+static uint64_t mmq_hash_fnv1a(const void * data, size_t n) {
+    uint64_t h = 1469598103934665603ull;
+    const uint8_t * p = (const uint8_t *) data;
+    for (size_t i = 0; i < n; ++i) {
+        h = (h ^ p[i]) * 1099511628211ull;
+    }
+    return h;
+}
+
+static int mmq_tiles_hash(const char * dev_name, int64_t max_rows) {
+    ggml_backend_load_all();
+    ggml_backend_dev_t dev = ggml_backend_dev_by_name(dev_name);
+    if (!dev) {
+        fprintf(stderr, "no device %s\n", dev_name);
+        return 2;
+    }
+    ggml_backend_ptr backend(ggml_backend_dev_init(dev, nullptr));
+    if (!backend) {
+        return 2;
+    }
+
+    std::vector<mmq_hash_shape> shapes;
+    for (ggml_type t : { GGML_TYPE_IQ4_XS, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0 }) {
+        for (int64_t m : { 1024, 2688, 3072, 5120, 5248, 6144, 8704, 9216, 11520, 17408 }) {
+            shapes.push_back({ t, m, 5120 });
+        }
+        shapes.push_back({ t, 8704, 8704 });
+        shapes.push_back({ t, 5120, 8704 });
+    }
+    shapes.push_back({ GGML_TYPE_Q6_K, 124160, 512 });
+
+    std::mt19937 rng(1);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+    for (const mmq_hash_shape & s : shapes) {
+        if (s.m > max_rows) {
+            continue;
+        }
+        ggml_init_params ipa = { 1u << 20, nullptr, true };
+        ggml_context_ptr ctx_a(ggml_init(ipa));
+        ggml_tensor * a = ggml_new_tensor_2d(ctx_a.get(), s.type, s.k, s.m);
+        ggml_backend_buffer_ptr buf_a(ggml_backend_alloc_ctx_tensors(ctx_a.get(), backend.get()));
+        if (!buf_a) {
+            fprintf(stderr, "alloc failed\n");
+            return 2;
+        }
+        {
+            std::vector<float> wf(s.m*s.k);
+            for (float & v : wf) { v = dist(rng); }
+            std::vector<uint8_t> wq(ggml_nbytes(a));
+            ggml_quantize_chunk(s.type, wf.data(), wq.data(), 0, s.m, s.k, nullptr);
+            ggml_backend_tensor_set(a, wq.data(), 0, wq.size());
+        }
+
+        for (int64_t n : { 6, 8, 9, 12, 16, 17, 24, 25 }) {
+            if (s.m == 124160 && n != 12 && n != 24) {
+                continue;
+            }
+            ggml_init_params ip = { 1u << 20, nullptr, true };
+            ggml_context_ptr ctx(ggml_init(ip));
+            ggml_tensor * b = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, s.k, n);
+            ggml_tensor * out = ggml_mul_mat(ctx.get(), a, b);
+            ggml_cgraph * gf = ggml_new_graph(ctx.get());
+            ggml_build_forward_expand(gf, out);
+            ggml_backend_buffer_ptr buf(ggml_backend_alloc_ctx_tensors(ctx.get(), backend.get()));
+            if (!buf) {
+                fprintf(stderr, "alloc failed\n");
+                return 2;
+            }
+            std::vector<float> bf(s.k*n);
+            for (float & v : bf) { v = dist(rng); }
+            ggml_backend_tensor_set(b, bf.data(), 0, ggml_nbytes(b));
+
+            if (ggml_backend_graph_compute(backend.get(), gf) != GGML_STATUS_SUCCESS) {
+                fprintf(stderr, "compute failed\n");
+                return 2;
+            }
+            std::vector<float> res(s.m*n);
+            ggml_backend_tensor_get(out, res.data(), 0, res.size()*sizeof(float));
+            printf("%s m=%lld k=%lld n=%lld %016llx\n", ggml_type_name(s.type), (long long) s.m, (long long) s.k, (long long) n,
+                   (unsigned long long) mmq_hash_fnv1a(res.data(), res.size()*sizeof(float)));
+        }
+    }
+
+    // The same stream-k shapes through the expert path: 4 experts (channels), 2 used per token, so 24 and 48 tokens are 12 and 24 columns per expert.
+    const int     n_mats = 4;
+    const int     n_used = 2;
+    const int64_t k_id   = 1024;
+    for (ggml_type type : { GGML_TYPE_IQ4_XS, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K }) {
+        for (int64_t m : { 3072, 5120, 8704 }) {
+            if (m > max_rows) {
+                continue;
+            }
+            ggml_init_params ipa = { 1u << 20, nullptr, true };
+            ggml_context_ptr ctx_a(ggml_init(ipa));
+            ggml_tensor * a = ggml_new_tensor_3d(ctx_a.get(), type, k_id, m, n_mats);
+            ggml_backend_buffer_ptr buf_a(ggml_backend_alloc_ctx_tensors(ctx_a.get(), backend.get()));
+            if (!buf_a) {
+                fprintf(stderr, "alloc failed\n");
+                return 2;
+            }
+            {
+                std::vector<float> wf(m*k_id);
+                std::vector<uint8_t> wq(ggml_nbytes(a)/n_mats);
+                for (int e = 0; e < n_mats; ++e) {
+                    for (float & v : wf) { v = dist(rng); }
+                    ggml_quantize_chunk(type, wf.data(), wq.data(), 0, m, k_id, nullptr);
+                    ggml_backend_tensor_set(a, wq.data(), e*a->nb[2], wq.size());
+                }
+            }
+            for (int64_t n : { 24, 48 }) {
+                ggml_init_params ip = { 1u << 20, nullptr, true };
+                ggml_context_ptr ctx(ggml_init(ip));
+                ggml_tensor * ids = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_I32, n_used, n);
+                ggml_tensor * b   = ggml_new_tensor_3d(ctx.get(), GGML_TYPE_F32, k_id, n_used, n);
+                ggml_tensor * out = ggml_mul_mat_id(ctx.get(), a, b, ids);
+                ggml_cgraph * gf = ggml_new_graph(ctx.get());
+                ggml_build_forward_expand(gf, out);
+                ggml_backend_buffer_ptr buf(ggml_backend_alloc_ctx_tensors(ctx.get(), backend.get()));
+                if (!buf) {
+                    fprintf(stderr, "alloc failed\n");
+                    return 2;
+                }
+                std::vector<int32_t> id_data(n_used*n);
+                for (int64_t t = 0; t < n; ++t) {
+                    id_data[t*n_used + 0] = t % n_mats;
+                    id_data[t*n_used + 1] = (t % n_mats + 1 + (t/4) % 3) % n_mats;
+                }
+                ggml_backend_tensor_set(ids, id_data.data(), 0, ggml_nbytes(ids));
+                std::vector<float> bf(k_id*n_used*n);
+                for (float & v : bf) { v = dist(rng); }
+                ggml_backend_tensor_set(b, bf.data(), 0, ggml_nbytes(b));
+                if (ggml_backend_graph_compute(backend.get(), gf) != GGML_STATUS_SUCCESS) {
+                    fprintf(stderr, "compute failed\n");
+                    return 2;
+                }
+                std::vector<float> res(m*n_used*n);
+                ggml_backend_tensor_get(out, res.data(), 0, res.size()*sizeof(float));
+                printf("id_%s m=%lld k=%lld n=%lld %016llx\n", ggml_type_name(type), (long long) m, (long long) k_id, (long long) n,
+                       (unsigned long long) mmq_hash_fnv1a(res.data(), res.size()*sizeof(float)));
+            }
+        }
+    }
+    return 0;
+}
+
 // `test-backend-ops mmq-chain DEVICE hash|perf [ITERS] [quick] [corrupt]`: two quantized MUL_MATs (quantize -> MMQ -> stream-k fixup) chained
 // with rms_norm/mul/add, so that every producer/consumer pair around MMQ is exercised. The graph is allocated once and recomputed
 // ITERS times with two alternating inputs, which includes CUDA graph replay.
@@ -13804,11 +13973,16 @@ static int mmq_chain(const char * dev_name, const char * kind, int iters, bool q
         fprintf(stderr, "mmq-chain: FAIL %lld recomputes differ\n", (long long) bad_total);
         return 1;
     }
+
     return 0;
 }
 
 int main(int argc, char ** argv) {
     test_mode mode = MODE_TEST;
+    if ((argc == 3 || argc == 4) && strcmp(argv[1], "mmq-hash") == 0) {
+        return mmq_tiles_hash(argv[2], argc == 4 ? atoll(argv[3]) : INT64_MAX);
+    }
+
     if (argc >= 4 && argc <= 7 && strcmp(argv[1], "mmq-chain") == 0) {
         bool quick = false, corrupt = false;
         for (int i = 5; i < argc; ++i) {
