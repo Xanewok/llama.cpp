@@ -364,6 +364,7 @@ if (NOT LLAMA_USE_SYSTEM_GGML)
     # Needs the non-public CUDA backend header; it is plain C++ and runs without CUDA
     llama_build_and_test(test-fattn-kv-max-cache.cpp)
     target_include_directories(test-fattn-kv-max-cache PRIVATE ${PROJECT_SOURCE_DIR}/ggml/src/ggml-cuda)
+    llama_build_and_test(test-meta-input-stage.cpp)
 endif()
 
 llama_build(test-export-graph-ops.cpp)
