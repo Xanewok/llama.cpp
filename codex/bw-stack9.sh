@@ -60,7 +60,7 @@ stage() {
     [[ $rc == 0 ]] || exit "$code"
 }
 flags=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER_FORCED=ON -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.2/bin/nvcc
-    -DGGML_CUDA=ON -DCUDAToolkit_ROOT=/usr/local/cuda-13.2 -DGGML_CUDA_NCCL=OFF -DCMAKE_CUDA_ARCHITECTURES=120
+    -DGGML_CUDA=ON -DCUDAToolkit_ROOT=/usr/local/cuda-13.2 -DGGML_CUDA_NCCL=OFF -DCMAKE_CUDA_ARCHITECTURES=120a
     -DGGML_OPENMP_FETCH=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF
     -DGGML_CUDA_CCCL_VERSION=v3.4.3 -DFETCHCONTENT_SOURCE_DIR_CCCL="$CCCL"
     -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DFETCHCONTENT_UPDATES_DISCONNECTED=ON -DGGML_CCACHE=ON)
@@ -78,7 +78,7 @@ stamps() {
     [[ $(git rev-parse HEAD) == "$SHA" && -z $(git status --porcelain --untracked-files=no) ]]
 }
 freeze() {
-    nice -n 19 "$W/bin/wt" freeze "$ROOT" stack9 --build build-cuda --desc 'stack8 + multi-sequence indexed GDN + catch-up fold; Mac gates passed; CUDA 13.2 120 CCCL343 NCCL OFF'
+    nice -n 19 "$W/bin/wt" freeze "$ROOT" stack9 --build build-cuda --desc 'stack8 + multi-sequence indexed GDN + catch-up fold; Mac gates passed; CUDA 13.2 120a CCCL343 NCCL OFF'
     [[ $(head -1 "$W/frozen/stack9/SOURCE") == "$SHA" ]]
     {
         printf 'commit %s\nconfigure: cmake -B build-cuda ' "$SHA"
