@@ -1,0 +1,7 @@
+10	emu-build	0	1
+11	emu-kernels	0	397
+12	emu-mutants	0	100
+20	cpu-build	0	81
+21	cpu-tests	0	616
+22	canonical-control	0	3
+31	static	0	0

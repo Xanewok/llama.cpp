@@ -1,0 +1,49 @@
+{
+  "result": "PASS",
+  "commit": "2f3c5b0d32a145f2bbbd9fe75e78169882c77c93",
+  "source_sha256": "1748490a834c0f646ae4bcf6e6ea26fc70ad7ed13fa656d7863f6cfdfd6b1dd0",
+  "stages": [
+    {
+      "code": 10,
+      "name": "emu-build",
+      "rc": 0,
+      "wall_s_M": 1
+    },
+    {
+      "code": 11,
+      "name": "emu-kernels",
+      "rc": 0,
+      "wall_s_M": 397
+    },
+    {
+      "code": 12,
+      "name": "emu-mutants",
+      "rc": 0,
+      "wall_s_M": 100
+    },
+    {
+      "code": 20,
+      "name": "cpu-build",
+      "rc": 0,
+      "wall_s_M": 81
+    },
+    {
+      "code": 21,
+      "name": "cpu-tests",
+      "rc": 0,
+      "wall_s_M": 616
+    },
+    {
+      "code": 22,
+      "name": "canonical-control",
+      "rc": 0,
+      "wall_s_M": 3
+    },
+    {
+      "code": 31,
+      "name": "static",
+      "rc": 0,
+      "wall_s_M": 0
+    }
+  ]
+}

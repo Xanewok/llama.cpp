@@ -1,6 +1,6 @@
 # K10 batched top-k
 
-Status: code, tests, Mac payload and CUDA window written and statically checked. NOT compiled or run anywhere: the Mac stayed at load 16-50 (limit 6, `ssh mini-builder uptime`, 20:54-21:30) for the whole 30 min wait. No CUDA, no GPU, no gpuq submit.
+Status: Mac CPU gates PASS at 2f3c5b0d3 (evidence/summary.json). CUDA compile and all GPU gates are unverified (window not run). No gpuq submit.
 
 ## Commits (base 0cfc0723e)
 - `7d4b96143` cuda : batch top-k over rows in one launch set with a deterministic order (general)
@@ -19,8 +19,7 @@ Local: `GGML_CUDA_TOPK_BATCHED=0|force`, `GGML_CUDA_TOPK_MUTANT=1..6` (`__consta
 ## Tests
 - `tests/test-topk-batched.cpp`: runs the actual kernel source on CPU (256 threads per block, barrier for `__syncthreads`, real atomics) against a brute-force (key desc, column asc) reference; narrow/wide, k 1..1024, ties, boundary ties, all-equal rows, -inf banned rows, +-inf, +-0, NaN, chunking. Mutants 1-6 must each fail (`TOPK_MUTANT`, `TOPK_FAILFAST`).
 - test-backend-ops `TOP_K ... canonical=1` (CUDA only, exact order, ~190 cases incl. ties/special) plus the generic set/value cases; `TOPK_CANONICAL_ANY=1` on CPU must fail them.
-- Mac results (M): NOT RUN (no slot). Parent command: `CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 ~/repos/qwen38-eval-worktrees/bin/bw-mac $PWD codex/k10/bw-k10-mac.sh k10-mac` from the tree; commit `codex/k10/evidence/summary.json` from its output (the window preflight requires it and its source hash).
-- Risk: first compile may need small fixes; emulation runtime unknown (est. minutes).
+- Mac results (M, wall s, `bw-mac ... k10-mac`, HEAD 2f3c5b0d3): emu-build 1, emu-kernels 397 (370 cases, 0 failed), emu-mutants 100 (mutants 1-6 each fail), cpu-build 81, cpu-tests 616 (`TOP_K` CPU 527/527 passed; canonical cases reported not supported on CPU), canonical-control 3 (CPU order fails canonical=1 cases), static 0. Evidence: `codex/k10/evidence/`. No source fixes were needed.
 
 ## Window
 `codex/k10/bw-k10.toml` / `bw-k10.sh` (priority 18, filler, non-preemptible, host-insensitive, same UUIDs/recipe, no freeze). `gpuq submit --check codex/k10/bw-k10.toml`: `bw-k10: valid` (before evidence exists; the payload preflight needs it). shlint and `bash -n` pass on both `.sh`; `py_compile` on `k10_perf.py`.
