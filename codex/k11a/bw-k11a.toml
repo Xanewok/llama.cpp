@@ -1,0 +1,54 @@
+id = "bw-k11a"
+title = "K11a getter sync elision: CUDA build, then StreamSync per np2 round with the elision off / on / debug-checked; Mac CPU gates required"
+kind = "filler"
+priority = 18
+host_sensitive = false
+preemptible = false
+# G: build 1500 s (ccache) + 3 arms x 8 min; D: 9000 s cap includes compilation.
+est_s = 3600
+budget_s = 9000
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-k11a: FAIL|K11a sync-count FAIL" }]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/codex/bw-k11a.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/codex/window/k11a-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0", GPUQ_BUILD_WINDOW = "1", PORT = "{port}" }
+ports = "dynamic"
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/codex/bw-k11a.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/codex/window/k11a-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/codex/window/k11a-a{attempt}/payload.log"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "stages", "controls"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/codex/bw-k11a.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/codex/bw-k11a.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/codex/k11a/sync_count.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/codex/k11a/count.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/codex/k11a/drive_np2.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/codex/k11a/mac-evidence/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/src/llama-context.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/src/llama-context.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/attrib-pack/attrib_pack.py",
+  "/home/xanewok/repos/attrib-pack/runs/hqgap8-analysis/an.py",
+  "/home/xanewok/repos/attrib-pack/gpu/llama_drive.py",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs.sha256",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs/agg.py",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs/corpus.txt",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs/chat-template.jinja",
+  "/home/xanewok/repos/attrib-pack/models/llama-swift15-iq4xs.json",
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf",
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json",
+]
