@@ -1,0 +1,27 @@
+M: original np2 arm=0 complete=129 anchored=120 embedded=9
+No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+M: original np2 arm=1 complete=129 anchored=122 embedded=7
+No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.No parser definition detected, assuming pure content parser.PACK_SHAPE type=1 tokens=1 seqs=1 outputs=1
+M: shape parser prefixed: rc=0, expected_pass=True
+M: shape parser missing: rc=1, expected_pass=False
+M: shape parser changed: rc=1, expected_pass=False
+M: shape parser malformed: rc=1, expected_pass=False
+
+M: np1 identity PASS, draft rows=24, max_abs_dq=6.000000007944095e-08
+M: np2 identity PASS, draft rows=78, max_abs_dq=0.0
+M: np1 identity PASS, draft rows=24, max_abs_dq=6.000000007944095e-08
+M: np2 identity PASS, draft rows=78, max_abs_dq=0.0

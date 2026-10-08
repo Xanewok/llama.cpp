@@ -1,0 +1,50 @@
+{
+  "gate_rc": 0,
+  "elapsed_seconds": 64.354,
+  "root_tip": "91d09c44b4219a746727a4b079970590b68a4c87",
+  "local_tip": "ebd22ec42b2412e6ed28bdd8aa4710e850d10435",
+  "restored_source_clean": true,
+  "arms": {
+    "np1": {
+      "tokens_counters_equal": true,
+      "dump_equal": false,
+      "draft_rows": 24,
+      "max_abs_dq": 6.000000007944095e-08,
+      "shape_count_off": 48,
+      "shape_count_on": 32,
+      "shapes_equal": false
+    },
+    "np2": {
+      "tokens_counters_equal": true,
+      "dump_equal": true,
+      "draft_rows": 78,
+      "max_abs_dq": 0.0,
+      "shape_count_off": 129,
+      "shape_count_on": 129,
+      "shapes_equal": true
+    }
+  },
+  "controls": {
+    "reverse-u": {
+      "tokens_counters_equal": false,
+      "dump_equal": false,
+      "shapes_equal": false,
+      "shape_count": 37,
+      "chain_announced": true
+    },
+    "shift-embd": {
+      "tokens_counters_equal": false,
+      "dump_equal": false,
+      "shapes_equal": false,
+      "shape_count": 38,
+      "chain_announced": true
+    },
+    "np2-mutant": {
+      "tokens_counters_equal": false,
+      "dump_equal": false,
+      "shapes_equal": false,
+      "shape_count": 132,
+      "chain_announced": true
+    }
+  }
+}

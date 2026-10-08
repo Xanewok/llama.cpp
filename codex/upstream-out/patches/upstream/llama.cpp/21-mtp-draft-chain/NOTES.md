@@ -23,3 +23,5 @@ Dupcheck pending (no network). Offline references are inherited from the named p
 local/ also retains the 4be92a4fa dump, shifted-embedding and reversed-uniform controls in the local control commit. Root sampling is unchanged by these diagnostics.
 
 Default-routing adaptation: automatic chain capacity must not change unrelated speculative types, greedy mode, p_min early-stop mode or unsupported lengths. The root capacity predicate now filters those configurations. The local series is consolidated into one diagnostic/control commit on the new general tree.
+
+2026-10-08 np2 schedule investigation: no production defect was found. Full recorded schedules were already equal; validation lost records prefixed by a newline-free chat parser log. The parser fix keeps strict schedule equality, with real-artifact missing/changed/malformed controls. The root and local mboxes remain unchanged. Fresh Mac np1/np2 model gate and all chain/np2 mutation controls pass; see EVIDENCE.md and apply.txt. M2 can replace the whole-slot-set guard after its multi-sequence graph and RNG hand-over are integrated and validated; it is a separate capability extension.

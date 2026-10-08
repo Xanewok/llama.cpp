@@ -7,4 +7,10 @@ Mac: /Users/builder/qwen38-upstream-pack/20261008/21-mtp-draft-chain
 CPU recipe: GGML_CUDA=OFF, GGML_METAL=OFF, GGML_BLAS=OFF, GGML_NATIVE=OFF, GGML_CPU_ARM_ARCH=armv8.2-a+dotprod, GGML_CCACHE=ON; Clang, nice 19, -j4, model threads <=4, explicit 4096 contexts; RAM >=4 GiB and one model through validation/model_gate.py.
 M: fresh git am of prerequisites + root onto 7049ff0cb and Clang builds of test-llama-archs/test-sampling/test-alloc passed (see collector REPORT-upstream-pack.md; Mac committer dates give different commit IDs).
 Local base: 485f25ca0e0bb583551487685401a67ea6455f7d (root-series tree; local/*.patch is optional control/diagnostic code, not submission code).
-M: chain-capacity contract passed seven configurations. Real-model np1/np2 identity and original mutation controls pending behind the shared Mac model gate.
+M: chain-capacity contract passed seven configurations.
+M: 2026-10-08 p21-np2-shape Mac gate PASS (rc 0, wall 64.354 seconds). Existing root 91d09c44b4219a746727a4b079970590b68a4c87 + local ebd22ec42b2412e6ed28bdd8aa4710e850d10435 were retained; source restored clean. No runtime/root-series change was needed.
+M: np1 tokens/counters and draft IDs equal, 24 draft rows, max_abs_dq 6.000000007944095e-08. np2 tokens/counters and draft dumps byte-equal, 78 draft rows, all 129 decode shapes equal, including one-slot and two-slot drafts.
+M: reverse-u, shift-embd and the relinked np2 guard-removal mutant all differ from their controls. Shape parser controls accept prefixed records and reject missing/changed/malformed records.
+Cause: line-start filtering dropped shape records preceded by the asynchronous chat parser log without a newline; original complete schedules were already equal. Root-series replay tip and optional local base above are unchanged.
+Rerun: PACK_GATE_MIN_FREE_GIB=10 PACK_GATE_WAIT_SECONDS=600 PACK_LOCAL_APPLIED=1 bash validation/model_tests.sh /Users/builder/qwen38-upstream-pack/20261008 21-mtp-draft-chain, under codex/p21-mac-gate.py (wall budget 3600 seconds, resource-wait skip rc 75).
+Evidence: codex/REPORT-p21-np2-shape.md and codex/p21-evidence/{summary.json,excerpts.txt,SHA256SUMS.txt}; full Mac logs in 21-mtp-draft-chain/p21-np2-shape/original/ and model-tests/.

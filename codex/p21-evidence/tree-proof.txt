@@ -1,0 +1,6 @@
+Root replay commit: 485f25ca0e0bb583551487685401a67ea6455f7d
+Mac root commit: 91d09c44b4219a746727a4b079970590b68a4c87
+M: both root trees = f98d88036d51ea1755d1dab7a1947964f241e686
+Mac local control commit: ebd22ec42b2412e6ed28bdd8aa4710e850d10435
+M: restored Mac source git diff --exit-code = 0
+Root mbox SHA256: 5f7ae1b0dafb7c2760764383a6c10eff8dc76b461bffd39933ce3d343acacf97

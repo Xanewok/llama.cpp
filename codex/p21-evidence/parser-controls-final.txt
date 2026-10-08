@@ -1,0 +1,4 @@
+M: shape parser prefixed: rc=0, expected_pass=True
+M: shape parser missing: rc=1, expected_pass=False
+M: shape parser changed: rc=1, expected_pass=False
+M: shape parser malformed: rc=1, expected_pass=False
