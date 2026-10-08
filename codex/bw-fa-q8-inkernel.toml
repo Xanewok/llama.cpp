@@ -1,0 +1,60 @@
+id = "bw-fa-q8-inkernel"
+title = "in-kernel q8_0 K/V dequantization for prefill FA tiles: CUDA build, SASS gate of every new instance, FA ops, byte identity with mutant, kernel ABBA, reserve canary, freeze and np1 depth item check"
+kind = "filler"
+priority = 18
+host_sensitive = false
+preemptible = false
+# G: 9000 s; D: 21600 s cap covers compilation, the full FLASH_ATTN_EXT run plus three q8_0 subsets on both devices (CPU reference
+# at 90k cells dominates), the identity and bench runs and seven server boots.
+est_s = 9000
+budget_s = 21600
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-fa-q8-inkernel: FAIL" }]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/bw-fa-q8-inkernel.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/window/fa-q8-inkernel-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0", GPUQ_BUILD_WINDOW = "1" }
+ports = []
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/bw-fa-q8-inkernel.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/window/fa-q8-inkernel-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/window/fa-q8-inkernel-a{attempt}/payload.log"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "stages", "controls"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/bw-fa-q8-inkernel.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/bw-fa-q8-inkernel.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/fa_q8_sass_gate.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/fa-q8-identity.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/fa-q8-bench.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/fa_q8_prefill_check.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/fa_q8_bench_summary.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/fa_q8_reserve.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/render_fa_q8_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/gpu_fa_q8.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/gpu_fa_q8.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/gpu_stack9.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/items/fa-q8-depth-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/REPORT-fa-q8-inkernel.md",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/codex/stack10-evidence/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/ggml/src/ggml-cuda/fattn-mma-f16.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/ggml/src/ggml-cuda/fattn.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/ggml/src/ggml-cuda/cp-async.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-inkernel/tests/test-backend-ops.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-index.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/RECIPE.txt"
+]
