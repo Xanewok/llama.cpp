@@ -375,6 +375,15 @@ static constexpr __device__ bool ggml_cuda_mmq_get_stream_k(ggml_type type, int 
     return ggml_cuda_mmq_get_config(type, J, fallback, tiles, prec_src1).stream_k;
 }
 
+// Stream-k work is partitioned in units of the default tile. A narrower tile (I < default I) runs sk_group consecutive blocks per
+// unit, one per row tile, all over the same k range, so every output element is accumulated in the same order as with the default tile.
+// Callers guarantee default I % I == 0, equal K_vram and rows % (default I) == 0 (checked in mmq_get_stream_k_plan).
+static constexpr __device__ int ggml_cuda_mmq_get_sk_group(ggml_type type, int J, bool fallback, ggml_cuda_mmq_tiles tiles, ggml_prec prec_src1 = GGML_PREC_Q8) {
+    const int I_default = ggml_cuda_mmq_get_config(type, J, fallback, GGML_CUDA_MMQ_TILES_DEFAULT, prec_src1).I;
+    const int I_tile    = ggml_cuda_mmq_get_config(type, J, fallback, tiles,                       prec_src1).I;
+    return I_default > I_tile ? I_default / I_tile : 1;
+}
+
 static __host__ int ggml_cuda_mmq_get_fallback(const ggml_type type, const int J, const bool fallback, const ggml_cuda_mmq_tiles tiles, const int cc) {
     return ggml_cuda_mmq_get_config(type, J, fallback, tiles, cc).fallback;
 }
@@ -1004,7 +1013,9 @@ static __global__ void mul_mat_q(
     constexpr int qk        = ggml_cuda_type_traits<type>::qk;
     constexpr int I         = ggml_cuda_mmq_get_I(type, J, fallback, tiles, prec_src1);
 
-    const uint32_t nty = (nrows_x + I - 1) / I; // Number of tiles y
+    constexpr int sk_group = ggml_cuda_mmq_get_sk_group(type, J, fallback, tiles, prec_src1);
+
+    const uint32_t nty = (nrows_x + sk_group*I - 1) / (sk_group*I); // Number of stream-k partition tiles y
 
     // Initialize the ids for writing back data with just the index.
     // For regular matrix multiplications this is never changed.
@@ -1095,9 +1106,13 @@ static __global__ void mul_mat_q(
     constexpr int ITER_K          = ggml_cuda_mmq_get_K_vram(type, J, fallback, tiles, prec_src1);
     constexpr int blocks_per_iter = ITER_K / qk;
 
+    const uint32_t nparts = gridDim.x / sk_group;
+    const uint32_t part   = blockIdx.x / sk_group;
+    const int      sub    = blockIdx.x % sk_group; // row tile within the partition tile
+
     // kbc == k block continuous, current index in continuous ijk space.
-    int kbc      = int64_t(blockIdx.x)    *(nsamples_y.z*nchannels_y.z*ntx.z*nty*blocks_per_ne00.z) / gridDim.x;
-    int kbc_stop = int64_t(blockIdx.x + 1)*(nsamples_y.z*nchannels_y.z*ntx.z*nty*blocks_per_ne00.z) / gridDim.x;
+    int kbc      = int64_t(part)    *(nsamples_y.z*nchannels_y.z*ntx.z*nty*blocks_per_ne00.z) / nparts;
+    int kbc_stop = int64_t(part + 1)*(nsamples_y.z*nchannels_y.z*ntx.z*nty*blocks_per_ne00.z) / nparts;
 
     kbc      -= fastmodulo(kbc,      blocks_per_ne00) % blocks_per_iter;
     kbc_stop -= fastmodulo(kbc_stop, blocks_per_ne00) % blocks_per_iter;
@@ -1115,7 +1130,7 @@ static __global__ void mul_mat_q(
         tmp = tmp2.x;
         tmp2 = fast_div_modulo(tmp, nsamples_y);
         const int wt = tmp2.y;
-        const int it = tmp2.x;
+        const int it = tmp2.x*sk_group + sub;
 
         // Defaults for regular matrix multiplication:
         int col_low    = 0;
@@ -1204,7 +1219,7 @@ static __global__ void mul_mat_q(
     tmp = tmp2.x;
     tmp2 = fast_div_modulo(tmp, nsamples_y);
     const int wt = tmp2.y;
-    const int it = tmp2.x;
+    const int it = tmp2.x*sk_group + sub;
 
     // Defaults for regular matrix multiplication:
     int col_low    = 0;
@@ -1284,15 +1299,19 @@ static __global__ void mul_mat_q_stream_k_fixup(
     constexpr int blocks_per_iter = ITER_K / qk;
 
     float sum[J / nwarps] = {0.0f};
+    constexpr int sk_group        = ggml_cuda_mmq_get_sk_group(type, J, fallback, tiles, prec_src1);
+
     const int i = blockIdx.y*warp_size + threadIdx.x;
 
-    const int nty = (nrows_x + I - 1) / I;
+    const int nty = (nrows_x + sk_group*I - 1) / (sk_group*I);
 
-    const int bidx0 = blockIdx.x;
+    const int nparts = gridDim.x / sk_group;
+    const int bidx0  = blockIdx.x / sk_group;
+    const int sub    = blockIdx.x % sk_group;
 
     // kbc == k block continuous, current index in continuous ijk space.
-    int kbc0      = int64_t(blockIdx.x)    *(nsamples_y.z*nchannels_y.z*ntx.z*nty*blocks_per_ne00.z) / gridDim.x;
-    int kbc0_stop = int64_t(blockIdx.x + 1)*(nsamples_y.z*nchannels_y.z*ntx.z*nty*blocks_per_ne00.z) / gridDim.x;
+    int kbc0      = int64_t(bidx0)    *(nsamples_y.z*nchannels_y.z*ntx.z*nty*blocks_per_ne00.z) / nparts;
+    int kbc0_stop = int64_t(bidx0 + 1)*(nsamples_y.z*nchannels_y.z*ntx.z*nty*blocks_per_ne00.z) / nparts;
 
     kbc0      -= fastmodulo(kbc0,      blocks_per_ne00) % blocks_per_iter;
     kbc0_stop -= fastmodulo(kbc0_stop, blocks_per_ne00) % blocks_per_iter;
@@ -1311,7 +1330,7 @@ static __global__ void mul_mat_q_stream_k_fixup(
     int bidx = bidx0 - 1;
     int kbc_stop = kbc0;
     while(true) {
-        int kbc = int64_t(bidx)*(nsamples_y.z*nchannels_y.z*ntx.z*nty*blocks_per_ne00.z) / gridDim.x;
+        int kbc = int64_t(bidx)*(nsamples_y.z*nchannels_y.z*ntx.z*nty*blocks_per_ne00.z) / nparts;
         kbc -= fastmodulo(kbc, blocks_per_ne00) % blocks_per_iter;
 
         if (kbc == kbc_stop) { // Did not have any data.
@@ -1327,7 +1346,7 @@ static __global__ void mul_mat_q_stream_k_fixup(
         for (int j0 = 0; j0 < J; j0 += nwarps) {
             const int j = j0 + threadIdx.y;
 
-            sum[j0/nwarps] += tmp_last_tile[bidx*(J*I) + j*I + i];
+            sum[j0/nwarps] += tmp_last_tile[(bidx*sk_group + sub)*(J*I) + j*I + i];
         }
 
         // If this block started in a previous tile we are done and don't need to combine additional partial results.
@@ -1351,7 +1370,7 @@ static __global__ void mul_mat_q_stream_k_fixup(
     tmp = tmp2.x;
     tmp2 = fast_div_modulo(tmp, nsamples_y);
     const int wt = tmp2.y;
-    const int it = tmp2.x;
+    const int it = tmp2.x*sk_group + sub;
 
     if (!ids_dst) {
         const int offset_dst = wt*stride_sample_dst + zt*stride_channel_dst + jt*J*stride_col_dst + it*I;
@@ -1430,6 +1449,33 @@ static bool mmq_tiling_efficient(const int ntiles, const int nsm) {
     return 100 * ntiles / (nsm*nwaves) >= 90;
 }
 
+// Stream-k launch geometry, shared by the launcher and the small-I selector so that both judge the same partition.
+// ntiles counts partition tiles (default-tile units, see ggml_cuda_mmq_get_sk_group); a plan with nparts == ntiles is plain tiling.
+struct mmq_stream_k_plan {
+    int group;
+    int ntiles;
+    int nparts;
+    bool fixup() const { return ntiles % nparts != 0; }
+    int  blocks() const { return nparts*group; }
+};
+
+static mmq_stream_k_plan mmq_get_stream_k_plan(
+        const mmq_args & args, const ggml_cuda_mmq_config & config, const ggml_cuda_mmq_config & config_default, const int cc, const int nsm) {
+    mmq_stream_k_plan plan;
+    plan.group = config_default.I > config.I ? config_default.I / config.I : 1;
+    if (plan.group > 1) {
+        GGML_ASSERT(config_default.I % config.I == 0 && config_default.K_vram == config.K_vram && config_default.J == config.J);
+        GGML_ASSERT(plan.group <= config.occupancy);
+        GGML_ASSERT(args.nrows_x % config_default.I == 0);
+    }
+    const int nty = (args.nrows_x   + plan.group*config.I - 1) / (plan.group*config.I);
+    const int ntx = (args.ncols_max + config.J - 1) / config.J;
+    plan.ntiles = nty * ntx * args.nchannels_y * args.nsamples_y;
+    // With one block per tile the stream-k kernel is plain tiling: worthwhile if the last wave is nearly full and the fixup kernel is skipped.
+    plan.nparts = GGML_CUDA_CC_IS_NVIDIA(cc) && mmq_tiling_efficient(plan.ntiles, nsm) ? plan.ntiles : nsm;
+    return plan;
+}
+
 template <ggml_type type, int J, bool fallback, ggml_cuda_mmq_tiles tiles, ggml_prec prec_src1 = GGML_PREC_Q8>
 static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream) {
     const int id = ggml_cuda_get_device();
@@ -1476,12 +1522,13 @@ static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & a
 
     // For the stream-k kernel it is possible to run it with tiling by setting the number of CUDA blocks equal to the number of tiles.
     // This is worthwhile if the efficiency of tiling is high and skipping the fixup kernel is more important.
-    const int ntiles_dst = ntx * nty * ntzw;
-    const dim3 block_nums_stream_k(GGML_CUDA_CC_IS_NVIDIA(cc) && mmq_tiling_efficient(ntiles_dst, nsm) ? ntiles_dst : nsm, 1, 1);
+    const mmq_stream_k_plan plan = mmq_get_stream_k_plan(args, config,
+        ggml_cuda_mmq_get_config(type, J, fallback, GGML_CUDA_MMQ_TILES_DEFAULT, cc, prec_src1), cc, nsm);
+    const dim3 block_nums_stream_k(plan.blocks(), 1, 1);
 
-    GGML_ASSERT(ntiles_dst * blocks_per_ne00_fd.z < (1 << 30)); // Assert that variable kbc will not overflow.
+    GGML_ASSERT(plan.ntiles * blocks_per_ne00_fd.z < (1 << 30)); // Assert that variable kbc will not overflow.
 
-    const bool fixup_needed = ntiles_dst % block_nums_stream_k.x != 0;
+    const bool fixup_needed = plan.fixup();
 
     ggml_cuda_pool & pool = ctx.pool(id);
     ggml_cuda_pool_alloc<float> tmp_fixup(pool);
@@ -1514,9 +1561,9 @@ static constexpr bool ggml_cuda_mmq_has_small_i(const ggml_type type) {
     return ggml_cuda_mmq_get_config_blackwell_small_i(type, 16, false, GGML_CUDA_CC_BLACKWELL).type != GGML_TYPE_COUNT;
 }
 
-// SMALL_I tiles beat the default tile only when their grid launches as plain tiling with full waves (sm_120: gate/up and lm_head
-// matmuls faster, every smaller grid slower, up to +35 % on the long-k down projection), so a launch whose grid does not fill the
-// waves keeps the default tile.
+// SMALL_I tiles beat the default tile when the launch is plain tiling with full waves (sm_120: gate/up and lm_head matmuls faster).
+// A launch that needs the stream-k fixup keeps the default tile. The plan is the launcher's, in default-tile units, so the output
+// is bitwise the one of the default tile.
 template <ggml_type type, bool fallback, ggml_prec prec_src1>
 static bool ggml_cuda_mmq_use_small_i(const mmq_args & args, const int J) {
     const int    id    = ggml_cuda_get_device();
@@ -1529,9 +1576,12 @@ static bool ggml_cuda_mmq_use_small_i(const mmq_args & args, const int J) {
         return false;
     }
 
-    const int ntiles = ((args.nrows_x + config.I - 1) / config.I) * ((args.ncols_max + config.J - 1) / config.J) *
-        args.nchannels_y * args.nsamples_y;
-    return mmq_tiling_efficient(ntiles, nsm);
+    const ggml_cuda_mmq_config config_default = ggml_cuda_mmq_get_config(type, J, fallback, GGML_CUDA_MMQ_TILES_DEFAULT, cc, prec_src1);
+    if (args.nrows_x % config_default.I != 0) {
+        return false;
+    }
+    const mmq_stream_k_plan plan = mmq_get_stream_k_plan(args, config, config_default, cc, nsm);
+    return plan.nparts == plan.ntiles;
 }
 
 template <ggml_type type, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>
