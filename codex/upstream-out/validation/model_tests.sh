@@ -114,6 +114,7 @@ t = t.replace('params_spec.mtp_chain && params.n_parallel == 1 &&', 'params_spec
 p.write_text(t)
 PY
         rebuild np2-mutant
+        compile_probe bw-np2-driver 1
         set +e
         LLAMA_MTP_CHAIN=1 LLAMA_MTP_CHAIN_DUMP="$out/np2-mutant.dump" \
             bash "$gate" "$build/bin/bw-np2-driver" "$model" "$out/np2-mutant.json" 0 2 1729 16 > "$out/np2-mutant.log" 2>&1
@@ -121,11 +122,24 @@ PY
         set -e
         printf '%s\n' "$rc" > "$out/np2-mutant.rc"
         cp "$out/fixed-speculative.cpp" common/speculative.cpp
-        if [[ $rc == 0 ]] && cmp -s "$out/np2-0.json" "$out/np2-mutant.json" && cmp -s "$out/np2-0.dump" "$out/np2-mutant.dump"; then
-            echo 'np2 mutant escaped'; exit 1
+        [[ $rc != 75 && $rc != 124 ]] || exit "$rc"
+        if [[ $rc == 0 ]]; then
+            python3 - "$root/validation/check_model_results.py" "$out" <<'PY'
+import runpy
+import sys
+from pathlib import Path
+checker, directory = sys.argv[1:]
+sys.argv = [checker, 'chain', directory]
+check = runpy.run_path(checker)
+p = Path(directory)
+same_output = (p / 'np2-0.json').read_bytes() == (p / 'np2-mutant.json').read_bytes() and (p / 'np2-0.dump').read_bytes() == (p / 'np2-mutant.dump').read_bytes()
+same_shapes = check['decode_shapes']((p / 'np2-0.log').read_text()) == check['decode_shapes']((p / 'np2-mutant.log').read_text())
+assert not (same_output and same_shapes), 'np2 mutant escaped'
+PY
         fi
         git restore src/llama-context.cpp
         rebuild restored-final
+        compile_probe bw-np2-driver 1
         ;;
     72-*)
         if [[ ${PACK_LOCAL_APPLIED:-0} != 1 ]]; then

@@ -1,6 +1,15 @@
 import json
+import re
 import sys
 from pathlib import Path
+
+
+def decode_shapes(log):
+    # Other log writers can prepend text without a newline to a shape record.
+    records = re.findall(r'PACK_SHAPE type=\d+ tokens=\d+ seqs=\d+ outputs=\d+', log)
+    assert len(records) == log.count('PACK_SHAPE '), 'malformed decode shape record'
+    return records
+
 
 mode, directory = sys.argv[1:]
 assert mode == 'chain'
@@ -18,7 +27,7 @@ for np in (1, 2):
     if np == 2:
         assert (p / 'np2-0.dump').read_bytes() == (p / 'np2-1.dump').read_bytes()
         assert 'MTP chain: k=' not in (p / 'np2-1.log').read_text()
-        shapes = [[line for line in (p / f'np2-{arm}.log').read_text().splitlines() if line.startswith('PACK_SHAPE ')] for arm in (0, 1)]
+        shapes = [decode_shapes((p / f'np2-{arm}.log').read_text()) for arm in (0, 1)]
         assert shapes[0] and shapes[0] == shapes[1], 'np2 decode shapes differ'
         assert any('type=1' in line and 'seqs=1' in line for line in shapes[0]), 'idle-peer draft path absent'
         assert any('type=1' in line and 'seqs=2' in line for line in shapes[0]), 'two-slot draft path absent'

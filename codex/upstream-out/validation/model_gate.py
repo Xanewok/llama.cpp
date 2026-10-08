@@ -13,6 +13,8 @@ model = name not in ('cmake', 'c++', 'test-sampling', 'test-alloc', 'chain-capac
 lock = Path(__file__).resolve().parents[1] / 'model.lock'
 owned = False
 child = None
+wait_deadline = time.monotonic() + int(os.environ.get('PACK_GATE_WAIT_SECONDS', '600'))
+min_free = float(os.environ.get('PACK_GATE_MIN_FREE_GIB', '4')) * 1024**3
 
 
 def stop(signum, frame):
@@ -26,6 +28,9 @@ signal.signal(signal.SIGTERM, stop)
 signal.signal(signal.SIGINT, stop)
 try:
     while True:
+        if time.monotonic() >= wait_deadline:
+            print('SKIP: RAM or CPU model gate wait exceeded', flush=True)
+            sys.exit(75)
         if model and not owned:
             try:
                 lock.mkdir()
@@ -44,7 +49,7 @@ try:
             'test-sampling-prefilter', 'test-backend-sampler', 'upstream-model-probe',
             'test-recurrent-state-rollback', 'test-grammar-backend-sampling', 'bw-cand-driver',
             'llama-perplexity') for p in names)
-        if total * fraction >= 4 * 1024**3 and not busy:
+        if total * fraction >= min_free and not busy:
             break
         print('WAIT: RAM or another CPU model:', pressure.strip(), flush=True)
         time.sleep(20)
