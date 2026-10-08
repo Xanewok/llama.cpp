@@ -67,10 +67,16 @@ S10_KEEP_GOING=0 stage 10 cpu-build build
 
 CHEAP_ORDER=(ops p55 k7 k6 k2 k10 k9 k8 k11b base gdn4)
 MODEL_ORDER=(p55 k7 k4 base k11a)
-want() { [[ -z ${S10_ONLY:-} || " $S10_ONLY " == *" $1 "* ]]; }
+# the words "cheap" and "model" in S10_ONLY select a phase, the others select components (none: all). macOS bash is 3.2: no empty arrays.
+only_comps=' ' only_phase=''
+for w in ${S10_ONLY:-}; do
+    case $w in cheap|model) only_phase=$w ;; *) only_comps="$only_comps$w " ;; esac
+done
+want() { [[ $only_comps == ' ' || $only_comps == *" $1 "* ]]; }
 run_phase() {
     local phase=$1 comp
     shift
+    [[ -z $only_phase || $only_phase == "$phase" ]] || return 0
     for comp in "$@"; do
         want "$comp" || continue
         mkdir -p "$OUT/$comp"
