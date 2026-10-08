@@ -1,0 +1,55 @@
+id = "bw-fa-q8-bounded"
+title = "bounded-scratch q8_0 K/V flash attention: CUDA build, SASS gate, FA op, mutant and windowed-vs-one-pass NMSE gates, freeze, np1 depth item check, np2 reserve boots, window-size perf ABBA; no CPU source change"
+kind = "filler"
+priority = 18
+host_sensitive = false
+preemptible = false
+# G: 6600 s; D: 16200 s cap includes compilation, the full FLASH_ATTN_EXT op runs, 5+5 mutant runs, 4 reserve boots and 16 perf runs.
+est_s = 6600
+budget_s = 16200
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-fa-q8-bounded: FAIL" }]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/bw-fa-q8-bounded.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/window/fa-q8-bounded-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0", GPUQ_BUILD_WINDOW = "1" }
+ports = "dynamic"
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/bw-fa-q8-bounded.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/window/fa-q8-bounded-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/window/fa-q8-bounded-a{attempt}/payload.log"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "stages", "controls"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/bw-fa-q8-bounded.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/bw-fa-q8-bounded.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/sass_gate.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/fa-window.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/fa_window_perf.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/render_fa_q8_bounded_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/gpu_stack10.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/gpu_stack9.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/items/fa-q8-bounded-depth-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/codex/REPORT-fa-q8-bounded.md",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/ggml/src/ggml-cuda/fattn-common.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/ggml/src/ggml-cuda/fattn.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fa-q8-bounded/tests/test-backend-ops.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10c-fafix/codex/stack10-evidence/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-index.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/RECIPE.txt"
+]

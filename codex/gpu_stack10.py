@@ -81,9 +81,9 @@ def fixture_checks():
     from harness import lib, mkitem
     root = Path(__file__).resolve().parent
     with tempfile.TemporaryDirectory(dir=root.parent) as tmp:
-        for source in (root/'items').glob('s10c-*.toml.in'):
+        for source in (root/'items').glob('fa-q8-bounded-*.toml.in'):
             p = Path(tmp)/source.name.removesuffix('.in')
-            p.write_text(source.read_text().replace('@STACK10_SHA@', '0'*40))
+            p.write_text(source.read_text().replace('@BASE_SHA@', '0'*40).replace('@BND_SHA@', '1'*40))
             x = lib.read_experiment(p)
             assert type(x['priority']) is int and len(x['canary']['plan']) == 1
             assert x['budget']['canary_s'] <= 600
@@ -97,8 +97,8 @@ def fixture_checks():
                     re.compile(pattern)
             record = (base.REAL/'server.log').read_text()
             # A recorded GPU boot without the new kernels must fail the candidate proof.
-            for marker in (r'alpha_gate_fusion: device=0 width=[1-9]\d* rows=[1-9]\d*',
-                           r'fattn_q8_decode: device=0 dk=256 gqa=6 seqs=2\b', 'persistent rotations backend='):
+            for marker in (r'alpha_gate_fusion: device=0 width=[1-9]\d* rows=[1-9]\d*', r'fattn_kv_window: window 1/[2-9]',
+                           'persistent rotations backend='):
                 try:
                     lib.verify_log_patterns(record, [marker], 'absent stack10 proof')
                 except lib.Fail as e:
@@ -130,8 +130,8 @@ def fixture_checks():
     assert counter_match(runs, ['up','patch'])[0]
     runs[1]['streams'][0]['timings']['draft_n_accepted'] += 1
     assert not counter_match(runs, ['up','patch'])[0], 'real-record counter mutation escaped'
-    window = tomllib.loads((root/'bw-stack10-cand.toml').read_text())
-    assert window['kind'] == 'filler' and window['priority'] == 19
+    window = tomllib.loads((root/'bw-fa-q8-bounded.toml').read_text())
+    assert window['kind'] == 'filler' and window['priority'] == 18
     assert window['host_sensitive'] is False and window['preemptible'] is False
     assert window['run']['env']['CUDA_VISIBLE_DEVICES'].startswith('GPU-')
     print('stack10 recorded parsers, engagement negative controls, item structure PASS')
