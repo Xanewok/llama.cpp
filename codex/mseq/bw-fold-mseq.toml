@@ -1,5 +1,5 @@
 id = "bw-fold-mseq"
-title = "Build window: Mac-validated multi-sequence MTP catch-up fold; CUDA freeze and GPU item checks only"
+title = "Build window: require Mac fold gates, then CUDA freeze and GPU item checks only"
 priority = 18
 kind = "filler"
 host_sensitive = false

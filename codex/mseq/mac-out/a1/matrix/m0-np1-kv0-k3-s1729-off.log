@@ -1,0 +1,1 @@
+skipped: RAM (8 GiB available, other model process: no) for: /Users/builder/qwen38-fold-mseq/a1/src/build-cpu/bin/bw-np2-driver /Users/builder/qwen38-stack7/models/Qwen3.5-4B-UD-Q4_K_XL.gguf /Users/builder/qwen38-fold-mseq/a1/out/matrix/m0-np1-kv0-k3-s1729-off.json 0 1 1729 64
