@@ -1617,6 +1617,19 @@ struct test_case {
             return true;
         }
 
+        // GGML_TEST_PERF_COLD_MB=N: rotate the weights of a MUL_MAT over >= N MiB of independent copies so the timed
+        // launches read them from DRAM instead of L2
+        std::vector<ggml_tensor *> perf_outputs = {out};
+        if (const char * cold_mb = getenv("GGML_TEST_PERF_COLD_MB")) {
+            GGML_ASSERT(out->op == GGML_OP_MUL_MAT);
+            const size_t weight_bytes = ggml_nbytes(out->src[0]);
+            const size_t copies = (size_t) atoi(cold_mb) * 1024*1024 / weight_bytes + 2;
+            for (size_t i = 1; i < copies; ++i) {
+                ggml_tensor * a = ggml_dup_tensor(ctx.get(), out->src[0]);
+                perf_outputs.push_back(ggml_mul_mat(ctx.get(), a, out->src[1]));
+            }
+        }
+
         ggml_backend_buffer_ptr buf_weights(nullptr);
         if (ctx_weights) {
             buf_weights.reset(ggml_backend_alloc_ctx_tensors(ctx_weights.get(), backend));
@@ -1643,7 +1656,9 @@ struct test_case {
 
         // build graph
         ggml_cgraph * gf = ggml_new_graph_custom(ctx.get(), graph_nodes, false);
-        ggml_build_forward_expand(gf, out);
+        for (ggml_tensor * perf_out : perf_outputs) {
+            ggml_build_forward_expand(gf, perf_out);
+        }
 
         // warmup run
         ggml_status status = ggml_backend_graph_compute(backend, gf);
@@ -1652,7 +1667,11 @@ struct test_case {
             return false;
         }
 
-        const std::vector<ggml_tensor *> repeat_nodes = perf_nodes(out);
+        std::vector<ggml_tensor *> repeat_nodes;
+        for (ggml_tensor * perf_out : perf_outputs) {
+            const std::vector<ggml_tensor *> nodes = perf_nodes(perf_out);
+            repeat_nodes.insert(repeat_nodes.end(), nodes.begin(), nodes.end());
+        }
         GGML_ASSERT(!repeat_nodes.empty());
         const int64_t node_slack = (ggml_graph_size(gf) - ggml_graph_n_nodes(gf)) / (int64_t) repeat_nodes.size();
 
@@ -1683,7 +1702,7 @@ struct test_case {
         }
 
         // calculate memory
-        size_t mem = n_runs * op_size(out);
+        size_t mem = n_runs * perf_outputs.size() * op_size(out);
         auto tensor_op_size = [](ggml_tensor * t) {
             size_t size = ggml_nbytes(t);
             // add source tensors
@@ -1695,7 +1714,8 @@ struct test_case {
             return size;
         };
         for (int i = 0; i < ggml_graph_n_nodes(gf); ++i) {
-            if (ggml_is_view_op(ggml_graph_node(gf, i)->op) || ggml_graph_node(gf, i) == out) {
+            if (ggml_is_view_op(ggml_graph_node(gf, i)->op) ||
+                    std::find(perf_outputs.begin(), perf_outputs.end(), ggml_graph_node(gf, i)) != perf_outputs.end()) {
                 continue;
             }
             mem += tensor_op_size(ggml_graph_node(gf, i));
@@ -1716,7 +1736,7 @@ struct test_case {
 
             total_time_us += end_time - start_time;
             total_mem += mem;
-            total_runs += n_runs;
+            total_runs += n_runs * perf_outputs.size();
 
             // re-draw any data-dependent inputs (expert ids) outside the timed region
             reinit_perf_iter(ctx.get());
