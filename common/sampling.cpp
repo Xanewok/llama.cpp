@@ -585,7 +585,7 @@ struct common_sampler * common_sampler_init(
     const bool    bias_bans   = !prefilter_dup_bias && std::all_of(prefilter_bias.begin(), prefilter_bias.end(),
             [](const llama_logit_bias & lb) { return lb.bias == -INFINITY; });
     const int32_t n_ban       = bias_bans ? (int32_t) prefilter_bias.size() : 0;
-    const bool use_candidates = params.backend_sampling && candidate_k > 0 && bias_bans && candidate_k + n_ban < 256;
+    const bool use_candidates = params.backend_sampling && candidate_k > 0 && candidate_k < 256 && bias_bans && n_ban < 256 - candidate_k;
 
     if (grmr && params.backend_sampling && !use_candidates) {
         LOG_WRN("%s: backend sampling is not compatible with grammar, disabling\n", __func__);

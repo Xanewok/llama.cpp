@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
+#include <limits>
 #include <numeric>
 #include <random>
 #include <regex>
@@ -1093,6 +1094,17 @@ static bool test_banned_candidates(const llama_model * model, const size_t seed)
     }
 
     int n_tie = 0, n_unique = 0, n_caught = 0, n_accept_all = 0, n_reject = 0;
+    {
+        params.top_k = std::numeric_limits<int32_t>::max();
+        params.logit_bias = { { 5, -INFINITY } };
+        params.backend_sampling = true;
+        common_sampler_ptr probe(common_sampler_init(model, params));
+        if (common_sampler_get_backend(probe.get()) != common_sampler_get(probe.get())) {
+            LOG_ERR("%s: oversized top-k did not keep the full sampler chain\n", __func__);
+            ok = false;
+        }
+        params.top_k = k;
+    }
     for (int t = 0; t < n_trial && ok; ++t) {
         const float step = t % 3 == 0 ? 0.0f : t % 3 == 1 ? 0.5f : 0.125f;
         std::vector<fake_row> rows(n_rows);
