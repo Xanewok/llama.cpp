@@ -1473,6 +1473,10 @@ static mmq_stream_k_plan mmq_get_stream_k_plan(
     plan.ntiles = nty * ntx * args.nchannels_y * args.nsamples_y;
     // With one block per tile the stream-k kernel is plain tiling: worthwhile if the last wave is nearly full and the fixup kernel is skipped.
     plan.nparts = GGML_CUDA_CC_IS_NVIDIA(cc) && mmq_tiling_efficient(plan.ntiles, nsm) ? plan.ntiles : nsm;
+    static const bool sk_mutant = getenv("GGML_CUDA_MMQ_SK_MUTANT") != nullptr;
+    if (sk_mutant && plan.group > 1 && plan.nparts != plan.ntiles) {
+        plan.nparts = nsm + 1;
+    }
     return plan;
 }
 
@@ -1561,9 +1565,11 @@ static constexpr bool ggml_cuda_mmq_has_small_i(const ggml_type type) {
     return ggml_cuda_mmq_get_config_blackwell_small_i(type, 16, false, GGML_CUDA_CC_BLACKWELL).type != GGML_TYPE_COUNT;
 }
 
-// Local A/B switch: GGML_CUDA_MMQ_TILES = default (never SMALL_I) | small (SMALL_I wherever a table entry exists, any grid) |
-// auto-drop (auto, but SMALL_I launches are skipped: negative control, outputs must fail) | unset or auto.
-enum { MMQ_TILES_AUTO, MMQ_TILES_DEFAULT_ONLY, MMQ_TILES_SMALL_ALWAYS, MMQ_TILES_AUTO_DROP };
+// Local A/B switch: GGML_CUDA_MMQ_TILES = default (never SMALL_I) | auto-l1 (SMALL_I only on plain-tiling launches: the L1 policy) |
+// auto-drop (auto, but SMALL_I launches are skipped: negative control, outputs must fail) | auto or small (SMALL_I wherever a table
+// entry exists) | unset = auto. GGML_CUDA_MMQ_SK_MUTANT=1 shifts the SMALL_I stream-k partition off the default tile's: negative control,
+// outputs must stop matching the default tile bit for bit.
+enum { MMQ_TILES_AUTO, MMQ_TILES_DEFAULT_ONLY, MMQ_TILES_SMALL_ALWAYS, MMQ_TILES_AUTO_DROP, MMQ_TILES_PLAIN_ONLY };
 static int ggml_cuda_mmq_tiles_mode() {
     static const int mode = [] {
         const char * env = getenv("GGML_CUDA_MMQ_TILES");
@@ -1571,6 +1577,7 @@ static int ggml_cuda_mmq_tiles_mode() {
         if (strcmp(env, "default") == 0)                { return (int) MMQ_TILES_DEFAULT_ONLY; }
         if (strcmp(env, "small") == 0)                  { return (int) MMQ_TILES_SMALL_ALWAYS; }
         if (strcmp(env, "auto-drop") == 0)              { return (int) MMQ_TILES_AUTO_DROP; }
+        if (strcmp(env, "auto-l1") == 0)                { return (int) MMQ_TILES_PLAIN_ONLY; }
         GGML_ABORT("bad GGML_CUDA_MMQ_TILES");
     }();
     return mode;
@@ -1601,12 +1608,13 @@ static bool ggml_cuda_mmq_use_small_i(const mmq_args & args, const int J) {
     }
     const mmq_stream_k_plan plan = mmq_get_stream_k_plan(args, config, config_default, cc, nsm);
     const int  ntiles = plan.ntiles*plan.group;
-    const bool use = true;
+    const bool use = mode != MMQ_TILES_PLAIN_ONLY || plan.nparts == plan.ntiles;
 
     static const bool log = getenv("GGML_CUDA_MMQ_TILES_LOG") != nullptr;
     if (log) {
-        fprintf(stderr, "mmq_tiles: type=%s m=%lld cols=%lld z=%lld J=%d ntiles=%d nsm=%d small_i=%d\n", ggml_type_name(type),
-                (long long) args.nrows_x, (long long) args.ncols_max, (long long) (args.nchannels_y*args.nsamples_y), J, ntiles, nsm, (int) use);
+        fprintf(stderr, "mmq_tiles: type=%s m=%lld cols=%lld z=%lld J=%d ntiles=%d nsm=%d small_i=%d units=%d parts=%d blocks=%d\n", ggml_type_name(type),
+                (long long) args.nrows_x, (long long) args.ncols_max, (long long) (args.nchannels_y*args.nsamples_y), J, ntiles, nsm, (int) use,
+                plan.ntiles, plan.nparts, plan.blocks());
     }
     return use;
 }
