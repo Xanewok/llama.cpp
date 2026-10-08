@@ -314,9 +314,11 @@ static test_status test_multi_seq_split_replay(const common_params & params, lla
 // Counts gated delta net nodes by how they read their state (row ids or a gathered copy) and the recurrent state rows
 // that get_rows copies.
 struct gdn_probe {
-    int     n_indexed  = 0;
-    int     n_plain    = 0;
-    int64_t n_gathered = 0;
+    int     n_indexed       = 0;
+    int     n_plain         = 0;
+    int     n_indexed_multi = 0;
+    int     n_plain_single  = 0;
+    int64_t n_gathered      = 0;
 };
 
 static bool gdn_probe_cb(ggml_tensor * t, bool ask, void * user_data) {
@@ -326,6 +328,12 @@ static bool gdn_probe_cb(ggml_tensor * t, bool ask, void * user_data) {
     auto * probe = (gdn_probe *) user_data;
     if (t->op == GGML_OP_GATED_DELTA_NET) {
         (t->src[6] ? probe->n_indexed : probe->n_plain)++;
+        if (t->src[6] && t->src[2]->ne[3] > 1) {
+            ++probe->n_indexed_multi;
+        }
+        if (!t->src[6] && t->src[2]->ne[3] == 1) {
+            ++probe->n_plain_single;
+        }
     }
     const ggml_tensor * src = t->op == GGML_OP_GET_ROWS ? t->src[0] : nullptr;
     if (src && src->view_src) {
@@ -468,17 +476,24 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
             }
 
             ++phase_id;
-            const form expect = gathered_multi && ph.streams.size() > 1 ? form::GATHERED : ph.expect;
             n_gdn += probe.n_indexed + probe.n_plain;
             if (probe.n_indexed + probe.n_plain == 0) {
                 continue;
             }
-            if (expect == form::BY_ID && (probe.n_indexed == 0 || probe.n_plain != 0 || probe.n_gathered != 0)) {
+            // A phase with several streams can split into single-sequence ubatches.
+            if (gathered_multi) {
+                if (probe.n_indexed_multi != 0 || probe.n_plain_single != 0 || (probe.n_plain == 0 && probe.n_gathered != 0)) {
+                    LOG_ERR("%s: %s: %s: control must gather only for multi-sequence ubatches\n", __func__, sc.name, ph.name);
+                    return test_status::FAIL;
+                }
+                continue;
+            }
+            if (ph.expect == form::BY_ID && (probe.n_indexed == 0 || probe.n_plain != 0 || probe.n_gathered != 0)) {
                 LOG_ERR("%s: %s: %s: ubatches without extra states must read the state by id and gather none\n",
                         __func__, sc.name, ph.name);
                 return test_status::FAIL;
             }
-            if (expect == form::GATHERED && (probe.n_plain == 0 || probe.n_indexed != 0)) {
+            if (ph.expect == form::GATHERED && (probe.n_plain == 0 || probe.n_indexed != 0)) {
                 LOG_ERR("%s: %s: %s: ubatches with extra states must keep the gathered state\n", __func__, sc.name, ph.name);
                 return test_status::FAIL;
             }
