@@ -1,0 +1,60 @@
+id = "bw-s9-gdn4"
+title = "stack9 + #30087 GDN four columns per warp: CUDA build, test-backend-ops on both GPUs with must-fail mutants, spill gate, kernel perf vs stack9, freeze stack9-gdn4; Mac CPU gates required"
+kind = "filler"
+priority = 18
+host_sensitive = false
+preemptible = false
+# G: build ~25 min (ccache warm), test build + 5 one-TU variants ~25 min, correctness ~5 min, perf 2 GPUs x 4 ABBA rounds ~10 min, freeze ~1 min, item render ~1 min.
+# D: budget = estimate x 2. The payload stops itself at 8000 s.
+est_s = 4500
+budget_s = 9000
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "insufficient_data", regex = "mutant passed|not caught by" },
+  { class = "timeout", regex = "budget expired|hung \\(900 s\\)" },
+  { class = "deterministic", regex = "bw-s9-gdn4: FAIL" },
+]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/bw-s9-gdn4.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/window/s9-gdn4-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0", GPUQ_BUILD_WINDOW = "1" }
+ports = []
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/bw-s9-gdn4.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/window/s9-gdn4-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/window/s9-gdn4-a{attempt}/payload.log"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "stages", "controls"]
+
+# The kernel and the test harness are edited and restored inside the window (mutant and base variants), so they are not pinned;
+# the preflight checks them against the Mac evidence hash instead.
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/bw-s9-gdn4.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/bw-s9-gdn4.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/s9gdn4/check_ops.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/s9gdn4/resource_usage.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/s9gdn4/perf_summary.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/s9gdn4/render_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/items/s9gdn4-depth-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/items/s9gdn4-np2-real-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/gpu_stack9.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s9-gdn4/codex/s9gdn4/mac-evidence/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-index.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9/build/bin/libggml-cuda.so.0.25.3",
+]
