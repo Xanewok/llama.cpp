@@ -1,0 +1,43 @@
+id = "bw-k10"
+title = "K10 batched top-k: CUDA build, canonical-order and engagement gates, negative controls and perf arms on both GPUs; Mac CPU gates required"
+kind = "filler"
+priority = 18
+host_sensitive = false
+preemptible = false
+# G: 1800 s; D: 7200 s cap includes compilation, 2 GPUs x (test, 7 controls, 6 perf runs).
+est_s = 1800
+budget_s = 7200
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-k10: FAIL" }]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k10/codex/k10/bw-k10.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k10/codex/window/k10-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k10"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0", GPUQ_BUILD_WINDOW = "1" }
+ports = []
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k10/codex/k10/bw-k10.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k10/codex/window/k10-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k10/codex/window/k10-a{attempt}/payload.log"]
+
+[fix]
+editable = []
+protected = ["budget", "stages", "controls"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k10/codex/k10/bw-k10.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k10/codex/k10/bw-k10.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k10/codex/k10/k10_perf.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k10/codex/k10/evidence/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k10/codex/k10/REPORT-K10.md",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k10/ggml/src/ggml-cuda/top-k.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k10/ggml/src/ggml-cuda/top-k-batched.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k10/tests/test-backend-ops.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+]
