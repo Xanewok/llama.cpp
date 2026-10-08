@@ -98,9 +98,11 @@ def fixture_checks():
     assert 'LLAMA_ROUND_TRACE' not in env and not extra
     from harness import mkitem
     with tempfile.TemporaryDirectory(dir=evidence.parent) as temporary:
-        for source in (Path(__file__).resolve().parent / 'items').glob('stack9-*.toml.in'):
+        sources = sorted((Path(__file__).resolve().parent / 'items').glob('s9p55-*.toml.in'))
+        assert [q.name for q in sources] == ['s9p55-depth-iq4.toml.in', 's9p55-depth-j5q.toml.in', 's9p55-duo-soak-iq4.toml.in', 's9p55-np2-real-iq4.toml.in']
+        for source in sources:
             path = Path(temporary) / source.name.removesuffix('.in')
-            path.write_text(source.read_text().replace('@STACK9_SHA@', '0'*40))
+            path.write_text(source.read_text().replace('@S9P55_SHA@', '0'*40))
             x = lib.read_experiment(path)
             assert type(x['priority']) is int and len(x['canary']['plan']) == 1
             assert set(x['canary']['plan']) <= x['arms'].keys()
@@ -113,10 +115,9 @@ def fixture_checks():
             for arm in x['arms'].values():
                 for pattern in arm['canary_log']:
                     re.compile(pattern)
-    window = tomllib.loads((Path(__file__).resolve().parent / 'bw-stack9.toml').read_text())
-    assert window['kind'] == 'filler' and window['priority'] == 19
+    window = tomllib.loads((Path(__file__).resolve().parent / 'bw-stack9-p55.toml').read_text())
+    assert window['kind'] == 'filler' and window['priority'] == 20
     assert window['host_sensitive'] is False and window['preemptible'] is False
-    assert window['run']['env']['S7_ONLY'] == '40 41 42 43'
     print('recorded parsers, proof mutants, experiment structures and window fields PASS')
     return 0
 
