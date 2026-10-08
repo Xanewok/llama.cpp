@@ -13,7 +13,7 @@ VISIBLE=${CUDA_VISIBLE_DEVICES:-}
 export CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1
 export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 export BUILDGATE_MIN_GIB=10 CPUGATE_MIN_GIB=10
-export PATH="$HOME/.local/bin:$PATH" CUDA_HOME=/usr/local/cuda-13.2
+export PATH="$HOME/.local/bin:$PATH:/usr/local/cuda-13.2/bin" CUDA_HOME=/usr/local/cuda-13.2
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 W=$HOME/repos/qwen38-eval-worktrees
