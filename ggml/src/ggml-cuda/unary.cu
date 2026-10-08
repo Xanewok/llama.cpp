@@ -706,7 +706,7 @@ void ggml_cuda_op_leaky_relu(ggml_backend_cuda_context & ctx, ggml_tensor * dst)
 
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
 static __global__ void add_softplus_mul_f32(const float * x, const float * bias, const float * scale,
-        float * dst, int64_t n, int64_t width, int64_t bias_width, int64_t scale_width) {
+        float * dst, int64_t n, int64_t width, int64_t bias_width, int64_t scale_width, bool mutant) {
     ggml_cuda_pdl_lc();
     const int64_t i = int64_t(blockIdx.x)*blockDim.x + threadIdx.x;
     ggml_cuda_pdl_sync();
@@ -716,6 +716,9 @@ static __global__ void add_softplus_mul_f32(const float * x, const float * bias,
         const float a = __fadd_rn(x[i], bias[col % bias_width]);
         const float b = op_softplus(a);
         dst[i] = __fmul_rn(b, scale[col % scale_width]);
+        if (mutant) {
+            dst[i] += 1.0f;
+        }
     }
 }
 
@@ -734,7 +737,7 @@ void ggml_cuda_op_add_softplus_mul(ggml_backend_cuda_context & ctx, ggml_tensor 
     const dim3 blocks((n + threads - 1)/threads);
     const auto params = ggml_cuda_kernel_launch_params(blocks, threads, 0, ctx.stream());
     ggml_cuda_kernel_launch(add_softplus_mul_f32, params, (const float *) x->data, (const float *) bias->data,
-        (const float *) scale->data, (float *) mul->data, n, x->ne[0], bias->ne[0], scale->ne[0]);
+        (const float *) scale->data, (float *) mul->data, n, x->ne[0], bias->ne[0], scale->ne[0], getenv("GGML_CUDA_ALPHA_GATE_MUTANT") != nullptr);
 #endif
 }
 
