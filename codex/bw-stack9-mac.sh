@@ -119,13 +119,14 @@ old = "                case GGML_TYPE_Q4_K:\n                case GGML_TYPE_IQ4_
 assert s.count(old) == 1
 Path(sys.argv[2]).write_text(s.replace(old, "                case GGML_TYPE_Q4_K:\n                    return 1;\n"))
 PY
-    c++ -std=c++17 -O0 -I ggml/include -o "$d/test-mmvq-params-mutant" "$d/tests/test-mmvq-params.cpp"
+    c++ -std=c++17 -O0 -I ggml/include -o "$d/test-mmvq-params-mutant" "$d/tests/test-mmvq-params.cpp" -L build-cpu/bin -lggml-base -Wl,-rpath,"$PWD/build-cpu/bin"
     "$d/test-mmvq-params-mutant" > "$d/run.log" 2>&1 || rc=$?
     echo "mutant rc=$rc"
-    [[ $rc != 0 ]]
+    [[ $rc == 134 ]] # SIGABRT from require(): a compile or link failure must not pass as a caught mutant
 }
 
 stage 20 cpu-build build
+stage 36 mmvq-table-mutant mmvq_mutant
 stage 21 unit-tests units
 stage 23 np1-chain-identity chain
 stage 24 fold-mseq-identity fold
@@ -135,7 +136,6 @@ stage 32 np2-old-negative-control old_control
 stage 33 cand-cpu-identity candidates
 stage 34 cand-mutant bash codex/check-cand-mutant.sh "$OUT/cand-mutant"
 stage 35 np2-getter getter
-stage 36 mmvq-table-mutant mmvq_mutant
 python3 - "$OUT" <<'PY'
 import json, sys
 from pathlib import Path
