@@ -12855,7 +12855,7 @@ static int mmq_tiles_hash(const char * dev_name, int64_t max_rows) {
     // The same stream-k shapes through the expert path: 4 experts (channels), 2 used per token, so 24 and 48 tokens are 12 and 24 columns per expert.
     const int     n_mats = 4;
     const int     n_used = 2;
-    const int64_t k_id   = 1536;
+    const int64_t k_id   = 1024;
     for (ggml_type type : { GGML_TYPE_IQ4_XS, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K }) {
         for (int64_t m : { 3072, 5120, 8704 }) {
             if (m > max_rows) {
