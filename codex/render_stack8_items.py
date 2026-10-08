@@ -51,6 +51,15 @@ def main():
             new = 'cmd = ' + json.dumps(['bash', str(W / 'work/aa-load/ccx01.sh'), *item[stage]['cmd']])
             assert text.count(old) == 1
             text = text.replace(old, new)
+        # gpuq treats every .py/.sh beside the entry as its library: pin gpu_ab.sh's siblings too.
+        entry_dir = (ROOT / 'codex/gpu_ab.sh').resolve().parent
+        have = set(tomllib.loads(text)['pins']['files'])
+        siblings = sorted(str(q) for q in entry_dir.iterdir() if q.suffix in ('.py', '.sh') and q.is_file()
+                          and not q.name.startswith(('gen_', 'test_', '.gpuq-')) and str(q) not in have)
+        if siblings:
+            head, sep, tail = text.partition('[pins]\nfiles = [\n')
+            assert sep, 'pins.files is not a multi-line array'
+            text = head + sep + ''.join(f'  {json.dumps(q)},\n' for q in siblings) + tail
         parsed = tomllib.loads(text)
         assert parsed['canary']['timeout_s'] <= 600
         assert str(W / 'work/aa-load/ccx01.sh') in parsed['pins']['files']
