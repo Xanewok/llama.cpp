@@ -1,0 +1,23 @@
+HEAD=3457b9794a733faee0d45250becafa47722f7314
+HOST=Igors-Mac-mini.local
+PAYLOAD=codex/bw-k4-mac.sh
+START=2026-10-08T21:26:12+02:00
+BW_BUILDGATE=/Users/builder/qwen38-bw/s10-k4-a5/3457b9794a733faee0d45250becafa47722f7314/run.3y9ZDR/gate.sh
+BW_CCACHE=ON
+BW_CPU_EXTRA=-DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod -DGGML_METAL=OFF -DGGML_BLAS=OFF -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DFETCHCONTENT_UPDATES_DISCONNECTED=ON
+BW_CPU_ONLY=1
+BW_GATE=/Users/builder/qwen38-bw/s10-k4-a5/3457b9794a733faee0d45250becafa47722f7314/run.3y9ZDR/gate.sh
+BW_JOBS=4
+BW_MODEL=/Users/builder/qwen38-stack7/models/Qwen3.5-4B-UD-Q4_K_XL.gguf
+CMAKE_GENERATOR=Ninja
+CUDA_VISIBLE_DEVICES=
+GIT_NO_LAZY_FETCH=1
+GPUQ_BUILD_WINDOW=1
+MKL_NUM_THREADS=4
+OMP_NUM_THREADS=4
+OPENBLAS_NUM_THREADS=4
+PATH=/Users/builder/qwen38-tools/bin:/opt/homebrew/bin:/Users/builder/Library/Android/sdk/cmdline-tools/latest/bin:/Users/builder/Library/Android/sdk/emulator:/Users/builder/Library/Android/sdk/platform-tools:/Users/builder/.local/bin:/Users/builder/.local/share/mise/shims:/opt/homebrew/sbin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+PYTHONDONTWRITEBYTECODE=1
+VECLIB_MAXIMUM_THREADS=4
+END=2026-10-08T21:35:07+02:00
+EXIT_CODE=0
