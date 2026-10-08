@@ -45,7 +45,7 @@ flags=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER_FORCED=ON -DCMAKE_CUDA_C
     cp build-cuda/bin/llama-server build-cuda/bin/round-trace
     n=$(strings build-cuda/bin/libggml-cuda.so | grep -c DeviceTopK)
     [[ $n == 25 ]]
-    strings build-cuda/bin/libllama.so | grep -q 'mtp_fold_decode: engaged n_seq='
+    strings build-cuda/bin/libllama.so | grep -c 'mtp_fold_decode: engaged n_seq=' > /dev/null
     "$W/bin/wt" freeze "$ROOT" fold-mseq --build build-cuda --desc 'stack7 + multi-sequence MTP catch-up fold; default on; exact layout fallback; local A/B controls'
     {
         printf 'commit %s\n' "$SHA"
