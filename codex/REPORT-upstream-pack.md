@@ -4,6 +4,8 @@ Labels: M = measured/observed, D = derived, G = guess. Revisions, counts of conf
 
 ## Conclusion
 
+Packaging complete; Mac model validation incomplete for 21 and 72. The serialized continuation remains queued behind foreign CPU model work.
+
 Proposed packages are in `codex/upstream-out/patches/upstream/llama.cpp/`; proposed main-repository edits are `codex/upstream-out/docs.diff`. The diff applies to the clean `main` documents read from `~/repos/qwen38-eval` (M). `docs-base-sha256.txt` records the document inputs. Nothing was written to the evaluation repository, other Linux worktrees, frozen builds, canonical scripts, or a remote service.
 
 `69-ssm-out-proj-2d` is the cleanest independent feature. `68-backend-candidates-neginf` is distinct from package 01 and extends 16/04/12; it is not package 22's grammar/backend-draw mechanism. Package 21 replaces its old prototype, includes the lifetime np2 fallback, and has a small standalone gain. Host trims are two independent packages. The NH1 planner defect is isolated from the folding feature. Package 67 receives evidence only.
@@ -58,15 +60,17 @@ Mac root: `/Users/builder/qwen38-upstream-pack/20261008`. The CPU recipe is in `
 
 M: generated and Mac-applied root tree IDs match for every new/replaced series (`mac-evidence/final/tree-proof.txt`).
 
+Compact raw log excerpts and SHA256 hashes are in `mac-evidence/final/excerpts.txt`; full `.log` files remain in the Mac run directory (repository ignore rules exclude them from commits).
+
 Evidence snapshot: `codex/upstream-out/mac-evidence/final/{68,69,70,71,73}/`. Per-package Mac logs live in `<slug>/logs/`; candidate logs are at the Mac root `logs/`. `21-mtp-draft-chain/logs/chain-capacity-final.log` records the capacity contract. Generated source paths and original commits are listed in package NOTES.md; locations refer to the rebased tree identified by apply.txt, not the stack7 checkout.
 
-Remaining gated commands:
+The current serialized pipeline runs the following commands. Do not launch a duplicate while its recorded PID is alive:
 
 ```
-bash validation/model_tests.sh "$PWD" 72-mtp-fold-catchup
+PACK_LOCAL_APPLIED=1 bash validation/model_tests.sh "$PWD" 72-mtp-fold-catchup
 bash validation/model_tests.sh "$PWD" 21-mtp-draft-chain
 ```
 
-Candidate runner completed; remaining pipeline PID is in `model-final-v2.pid`. Progress is in `model-locked-v2.log`. They remain queued behind the Mac's other model work; this report does not turn a queued command into a passed test. Collect final logs and update EVIDENCE.md/apply.txt after completion. Failed controls must be diagnosed, not waived.
+Candidate runner completed; remaining pipeline PID is 89257 (M, recorded in `model-final-v2.pid`), eligibility gate PID 89843 (M). The gate has waited over 30 minutes (M) behind foreign CPU model work. The initial eligibility fixture aborted because it omitted `load_mtp`; the flag is now corrected and rebuilt, but the corrected run has not acquired the slot. Progress is in `model-locked-v2.log`. They remain queued behind the Mac's other model work; this report does not turn a queued command into a passed test. Collect final logs and update EVIDENCE.md/apply.txt after completion. Failed controls must be diagnosed, not waived.
 
-GCC 13 and CUDA builds were not run under the Mac-only rule. No new GPU queue item was authored, submitted or run; the existing stack7 GPU entry was left untouched. New GPU validation must use freshly frozen rebased binaries and the harness contract before filing. Duplicate checks remain pending (no network).
+GCC 13 and CUDA builds were not run under the Mac-only rule; `gcc-13`/`g++-13` are not available on the configured Mac PATH (M). No new GPU queue item was authored, submitted or run; the existing stack7 GPU entry was left untouched. New GPU validation must use freshly frozen rebased binaries and the harness contract before filing. Duplicate checks remain pending (no network).

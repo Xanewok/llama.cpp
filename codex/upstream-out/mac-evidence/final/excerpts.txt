@@ -1,0 +1,135 @@
+M, mini-builder 2026-10-08: selected raw log excerpts. Full logs remain at the Mac run root.
+
+68/68-backend-candidates-neginf-tp42.log; SHA256 d244c8ca2d85f12f2239f7e57eb79b722c527fb1000898fac1a44d96262a45ed
+test_tp_sampling: devices CPU, CPU
+test_tp_sampling: verify candidates and deferred logits, 64 seeds x 4 rows: OK
+test_tp_sampling: banned ids (13, 16 among the candidates): draws, candidate arrays and verify verdicts over 64 seeds x 4 rows (0 full accepts): OK
+test_tp_sampling: banned ids (13, 14 among the candidates), unextended chain caught: draws, candidate arrays and verify verdicts over 64 seeds x 4 rows (0 full accepts): OK
+test_tp_sampling: fallback logits across two ubatches: OK
+test_tp_sampling: top-k candidates, 4 rows: OK
+test_tp_sampling: top-k + greedy, 4 rows: OK
+test_tp_sampling: top-k + top-p + min-p + temp + dist, 4 rows: OK
+test_tp_sampling: top-k + temp + dist distribution, 4000 draws, TV 0.037: OK
+test_tp_sampling: vocab slice smaller than top-k: sampler refused, OK
+test_tp_sampling: OK
+
+68/68-backend-candidates-neginf-tp1729.log; SHA256 793c297914382d97cf2fa88bb74f84c2c9ecd498b364e213fa0c79e6ae3a3c27
+test_tp_sampling: devices CPU, CPU
+test_tp_sampling: verify candidates and deferred logits, 64 seeds x 4 rows: OK
+test_tp_sampling: banned ids (14, 23 among the candidates): draws, candidate arrays and verify verdicts over 64 seeds x 4 rows (0 full accepts): OK
+test_tp_sampling: banned ids (14, 20 among the candidates), unextended chain caught: draws, candidate arrays and verify verdicts over 64 seeds x 4 rows (0 full accepts): OK
+test_tp_sampling: fallback logits across two ubatches: OK
+test_tp_sampling: top-k candidates, 4 rows: OK
+test_tp_sampling: top-k + greedy, 4 rows: OK
+test_tp_sampling: top-k + top-p + min-p + temp + dist, 4 rows: OK
+test_tp_sampling: top-k + temp + dist distribution, 4000 draws, TV 0.027: OK
+test_tp_sampling: vocab slice smaller than top-k: sampler refused, OK
+test_tp_sampling: OK
+
+68/68-backend-candidates-neginf-mutant.log; SHA256 78f42bb0dd69cd3ff26c60eb8cf2856f58c1b8946cccc0fbca45f422164407c4
+test_tp_sampling: devices CPU, CPU
+test_tp_sampling: verify candidates and deferred logits, 64 seeds x 4 rows: OK
+test_tp_sampling: banned ids (13, 4 among the candidates): draws, candidate arrays and verify verdicts over 64 seeds x 4 rows (0 full accepts): FAIL
+test_tp_sampling: fallback logits across two ubatches: OK
+test_tp_sampling: top-k candidates, 4 rows: FAIL
+test_tp_sampling: FAIL
+
+69/model-tests/base.log; SHA256 9c00987c00bed9526ea38070de06a08f68514ba1bfa58194ca05f53a5d61fdad
+outproj_graph: nodes=408 batched=408 n_seqs=2
+
+69/model-tests/patch.log; SHA256 e669ade9f89b613c176f06fd3d45103755e0e9b8708bd8a06e5fc1604a4e07ec
+outproj_graph: nodes=408 batched=0 n_seqs=2
+
+70/70-kv-seq-rm-indexed-seq-rm.log; SHA256 b38e614ec1e63901401a8800667c3a0b2d1c1acbd73cf9f628eff09a926a2be6
+
+70/70-kv-seq-rm-indexed-bound.log; SHA256 49222cf16656674e0cb05482c79ee9bcf252eac21c2e84fdfdf0fba3d9a3124f
+encountered runtime error: seq_rm position differs from scan
+
+70/70-kv-seq-rm-indexed-head.log; SHA256 3c6a1bf61b3d40dfe2288f06e364298a9cb2f6edece6a7069c41878aab71d349
+encountered runtime error: seq_rm did not select the lowest freed cell
+
+70/70-kv-seq-rm-indexed-restored.log; SHA256 d5c6a61c3adc9e0e254a197c4d79da513b2432cdc8e9c048632714da16fd9380
+
+73/73-meta-host-view-plan-alloc.log; SHA256 3a609c66bd4669efeecb41e0a38f0f7eccab7993068e1df832e4763ea1070fa1
+test_graph_optimize_alloc_dep PASSED
+test_buft_alloc_buffer_n_single_buffer PASSED
+test_buft_alloc_buffer_n_multi_buffer PASSED
+test_buft_alloc_buffer_n_zero_size PASSED
+test_buft_alloc_buffer_n_already_allocated PASSED
+test_buft_alloc_buffer_n_views PASSED
+test_alloc_ctx_tensors_from_buft_size_matches PASSED
+test_buft_alloc_buffer_n_custom_override PASSED
+test_buft_get_alloc_size_n_single_buffer PASSED
+test_buft_get_alloc_size_n_multi_buffer PASSED
+test_buft_get_alloc_size_n_single_tensor_exceeds_max PASSED
+test_buft_get_alloc_size_n_zero_size PASSED
+test_buft_get_alloc_size_n_already_allocated PASSED
+test_buft_get_alloc_size_n_views PASSED
+test_buft_get_alloc_size_n_n_tensors_zero PASSED
+test_buft_get_alloc_size_n_alignment PASSED
+test_buft_get_alloc_size_n_custom_override PASSED
+test_buft_get_alloc_size_n_custom_override_ctx_size PASSED
+test_buft_get_alloc_size_n_does_not_allocate PASSED
+test_meta_host_view(mirrored) PASSED
+test_meta_host_view(split) PASSED
+test_meta_host_cpy(mirrored) PASSED
+test_meta_host_cpy(split) PASSED
+test_meta_host_set_rows(mirrored) PASSED
+test_meta_host_set_rows(split) PASSED
+
+73/73-meta-host-view-plan-planner.log; SHA256 bf007ccea746a24917f03bf9eea4752a35a3f5ef8c1e18e4d0e768dabdd2b59f
+test_merge_free_block(SIZE_MAX) PASSED
+test_prefer_already_allocated_memory PASSED
+test_multiple_buffer_types PASSED
+test_buffer_size_zero PASSED
+test_reallocation PASSED
+test_graph_optimize_alloc_dep PASSED
+test_buft_alloc_buffer_n_single_buffer PASSED
+test_buft_alloc_buffer_n_multi_buffer PASSED
+test_buft_alloc_buffer_n_zero_size PASSED
+test_buft_alloc_buffer_n_already_allocated PASSED
+test_buft_alloc_buffer_n_views PASSED
+test_alloc_ctx_tensors_from_buft_size_matches PASSED
+test_buft_alloc_buffer_n_custom_override PASSED
+test_buft_get_alloc_size_n_single_buffer PASSED
+test_buft_get_alloc_size_n_multi_buffer PASSED
+test_buft_get_alloc_size_n_single_tensor_exceeds_max PASSED
+test_buft_get_alloc_size_n_zero_size PASSED
+test_buft_get_alloc_size_n_already_allocated PASSED
+test_buft_get_alloc_size_n_views PASSED
+test_buft_get_alloc_size_n_n_tensors_zero PASSED
+test_buft_get_alloc_size_n_alignment PASSED
+test_buft_get_alloc_size_n_custom_override PASSED
+test_buft_get_alloc_size_n_custom_override_ctx_size PASSED
+test_buft_get_alloc_size_n_does_not_allocate PASSED
+test_meta_host_view(mirrored) /Users/builder/qwen38-upstream-pack/20261008/73-meta-host-view-plan/src/ggml/src/ggml-backend-meta.cpp:2235: GGML_ASSERT(i_start == cgraph->n_nodes) failed
+
+73/73-meta-host-view-plan-restored.log; SHA256 3a609c66bd4669efeecb41e0a38f0f7eccab7993068e1df832e4763ea1070fa1
+test_graph_optimize_alloc_dep PASSED
+test_buft_alloc_buffer_n_single_buffer PASSED
+test_buft_alloc_buffer_n_multi_buffer PASSED
+test_buft_alloc_buffer_n_zero_size PASSED
+test_buft_alloc_buffer_n_already_allocated PASSED
+test_buft_alloc_buffer_n_views PASSED
+test_alloc_ctx_tensors_from_buft_size_matches PASSED
+test_buft_alloc_buffer_n_custom_override PASSED
+test_buft_get_alloc_size_n_single_buffer PASSED
+test_buft_get_alloc_size_n_multi_buffer PASSED
+test_buft_get_alloc_size_n_single_tensor_exceeds_max PASSED
+test_buft_get_alloc_size_n_zero_size PASSED
+test_buft_get_alloc_size_n_already_allocated PASSED
+test_buft_get_alloc_size_n_views PASSED
+test_buft_get_alloc_size_n_n_tensors_zero PASSED
+test_buft_get_alloc_size_n_alignment PASSED
+test_buft_get_alloc_size_n_custom_override PASSED
+test_buft_get_alloc_size_n_custom_override_ctx_size PASSED
+test_buft_get_alloc_size_n_does_not_allocate PASSED
+test_meta_host_view(mirrored) PASSED
+test_meta_host_view(split) PASSED
+test_meta_host_cpy(mirrored) PASSED
+test_meta_host_cpy(split) PASSED
+test_meta_host_set_rows(mirrored) PASSED
+test_meta_host_set_rows(split) PASSED
+
+21/chain-capacity-final.log; SHA256 cdfb4145d65324929fd48fcfa8a298d4fb4c887421edab58ba31b2c28e542a84
+M: chain capacity contract PASS (7 configurations)

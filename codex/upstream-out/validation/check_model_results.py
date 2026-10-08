@@ -21,7 +21,7 @@ for np in (1, 2):
         shapes = [[line for line in (p / f'np2-{arm}.log').read_text().splitlines() if line.startswith('PACK_SHAPE ')] for arm in (0, 1)]
         assert shapes[0] and shapes[0] == shapes[1], 'np2 decode shapes differ'
         assert any('type=1' in line and 'seqs=1' in line for line in shapes[0]), 'idle-peer draft path absent'
-        assert any('type=1' in line and 'seqs=2' in line for line in shapes[0]), 'two-slot draft path absent' 
+        assert any('type=1' in line and 'seqs=2' in line for line in shapes[0]), 'two-slot draft path absent'
     else:
         assert 'MTP chain: k=3' in (p / 'np1-1.log').read_text()
     print(f'M: np{np} identity PASS, draft rows={len(a)}, max_abs_dq={dq}')
