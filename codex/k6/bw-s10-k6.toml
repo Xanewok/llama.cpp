@@ -34,6 +34,7 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/codex/k6/bw-s10-k6.toml",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/codex/k6/bw-s10-k6.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/codex/k6/evidence/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/codex/REPORT-K6.md",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/ggml/src/ggml-cuda/ggml-cuda.cu",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/ggml/src/ggml-cuda/mmq.cu",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/ggml/src/ggml-cuda/mmvq.cu",
