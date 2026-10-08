@@ -1412,7 +1412,6 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     bool    is_mem_shared = false;   // gemma4
     bool    chain_heads   = false;   // derived in the ctor: n_mtp_layers > 1 && !is_mem_shared
 
-    // env LLAMA_MTP_FOLD_C=1: the target's decode stores the catch-up K/V itself (llama_mtp_fold_init), one sequence only.
     // pending_h must not be reallocated while armed: the target reads it during its next decode.
     bool    fold          = false;
 
@@ -1438,7 +1437,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     // Per-sequence cross-batch carryover: pair (h_p, x_{p+1}) at MTP pos p+1.
     // The last h-row of one process() call needs the first token of the NEXT
     // call to pair with, so it's stashed here until that next call fires.
-    std::vector<std::vector<float>> pending_h;   // [n_seq][n_embd]
+    std::vector<float> pending_h;   // [n_seq][n_embd]
 
     std::vector<int32_t> i_batch_beg;
     std::vector<int32_t> i_batch_end;
@@ -1552,7 +1551,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         }
         this->n_max = this->params.n_max;
 
-        pending_h.assign(n_seq, std::vector<float>(n_embd, 0.0f));
+        pending_h.assign((size_t) n_seq * n_embd, 0.0f);
 
         mtp_chain_seqs.resize(n_seq);
         mtp_chain_zeros.assign(n_embd, 0.0f);
@@ -1567,14 +1566,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         verify_h.assign(n_seq, {});
         verify_h_rows.assign(n_seq, 0);
 
-        if (const char * e = getenv("LLAMA_MTP_FOLD_C"); e && atoi(e) != 0) {
-            if (n_seq != 1 || is_mem_shared || chain_heads) {
-                SPC_WRN("LLAMA_MTP_FOLD_C ignored: needs one sequence, a separate MTP KV cache and one MTP head "
-                        "(n_seq = %d, mem_shared = %d, chain_heads = %d)\n", (int) n_seq, (int) is_mem_shared, (int) chain_heads);
-            } else {
-                fold = llama_mtp_fold_init(ctx_tgt, ctx_dft);
-            }
-            LOG_INF("MTP fold: %s\n", fold ? "on" : "off");
+        if (!is_mem_shared && !chain_heads) {
+            fold = llama_mtp_fold_init(ctx_tgt, ctx_dft);
         }
 
         if (const char * path = std::getenv("LLAMA_MTP_DRAFT_DUMP")) {
@@ -1693,7 +1686,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 const int32_t idx = batch.add(batch_in.tokens[k].id, batch_in.tokens[k].pos[0], seq_id, false);
 
                 const float * h_row = k == i_batch_beg[seq_id]
-                    ? pending_h[seq_id].data()
+                    ? pending_h.data() + (size_t) seq_id * n_embd
                     : h_tgt + (size_t) (k - 1) * n_embd;
 
                 batch.set_embd(idx, { h_row, 1, (size_t) n_embd });
@@ -1785,13 +1778,13 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 }
             }
 
-            std::memcpy(pending_h[seq_id].data(),
+            std::memcpy(pending_h.data() + (size_t) seq_id * n_embd,
                     verify_h[seq_id].data() + (size_t) (n_rows - 1) * n_embd, row_bytes);
         }
 
         // read at the next target decode, after accept() has updated pending_h in place
         if (fold) {
-            llama_mtp_fold_arm(ctx_tgt, pending_h[0].data());
+            llama_mtp_fold_arm(ctx_tgt, pending_h.data(), n_seq);
         }
 
         return true;
@@ -1898,7 +1891,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         batch.clear();
         for (int32_t s = 0; s < k; ++s) {
             const int32_t idx = batch.add(dp.id_last, dp.pos0 + s, seq_id, true);
-            batch.set_embd(idx, { s == 0 ? pending_h[seq_id].data() : mtp_chain_zeros.data(), 1, (size_t) n_embd });
+            batch.set_embd(idx, { s == 0 ? pending_h.data() + (size_t) seq_id * n_embd : mtp_chain_zeros.data(), 1, (size_t) n_embd });
         }
 
         if (!llama_set_mtp_chain(ctx_dft, k)) {
@@ -1980,12 +1973,12 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             }
 
             const int32_t idx = batch.add(dp.id_last, dp.pos0, seq_id, true);
-            batch.set_embd(idx, { pending_h[seq_id].data(), 1, (size_t) n_embd });
+            batch.set_embd(idx, { pending_h.data() + (size_t) seq_id * n_embd, 1, (size_t) n_embd });
 
             i_last[seq_id] = idx;
 
             if (chain_heads) {
-                chain_h[seq_id].assign(pending_h[seq_id].begin(), pending_h[seq_id].end());
+                chain_h[seq_id].assign(pending_h.data() + (size_t) seq_id * n_embd, pending_h.data() + (size_t) (seq_id + 1) * n_embd);
             }
         }
 
@@ -2131,7 +2124,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         const int32_t i_h = std::min<int32_t>(n_accepted, n_rows - 1);
         const size_t row_bytes = (size_t) n_embd * sizeof(float);
-        std::memcpy(pending_h[seq_id].data(), verify_h[seq_id].data() + (size_t) i_h * n_embd, row_bytes);
+        std::memcpy(pending_h.data() + (size_t) seq_id * n_embd, verify_h[seq_id].data() + (size_t) i_h * n_embd, row_bytes);
     }
 };
 

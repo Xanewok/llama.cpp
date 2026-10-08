@@ -361,7 +361,7 @@ public:
 };
 
 // MTP fold (llama_mtp_fold_init): the target graph also stores the draft block's K/V for its rows.
-// Pairing contract of the catch-up decode it replaces: row 0 takes h_prev, row i > 0 the target's nextn row i-1.
+// Each sequence starts with its own h_prev; other rows take the preceding target nextn row.
 class llm_graph_input_mtp_fold : public llm_graph_input_i {
 public:
     llm_graph_input_mtp_fold(std::unique_ptr<llm_graph_input_attn_kv> kv, const float * h_prev_src) :
@@ -372,7 +372,8 @@ public:
 
     bool can_reuse(const llm_graph_params & params) override;
 
-    ggml_tensor * h_prev = nullptr; // F32 [n_embd, 1]
+    ggml_tensor * h_prev = nullptr; // F32 [n_embd, n_seqs_unq]
+    ggml_tensor * h_idxs = nullptr; // I32 [n_tokens]
 
     // over the draft cache; only the store indices are built, never a mask
     std::unique_ptr<llm_graph_input_attn_kv> kv;

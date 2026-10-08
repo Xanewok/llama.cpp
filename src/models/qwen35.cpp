@@ -275,18 +275,16 @@ void llama_model_qwen35::graph::build_mtp_fold(
 
     auto inp = std::make_unique<llm_graph_input_mtp_fold>(std::move(kv), fold_h_prev);
 
-    inp->h_prev = ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, hparams.n_embd, 1);
+    inp->h_prev = ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, hparams.n_embd, ubatch.n_seqs_unq);
     ggml_set_input(inp->h_prev);
     ggml_set_name(inp->h_prev, "mtp_fold_h_prev");
 
-    // test only: LLAMA_MTP_FOLD_DEBUG_MUTANT=1 pairs row i with nextn row i, which identity tests must catch
-    static const size_t mutant_rows = getenv("LLAMA_MTP_FOLD_DEBUG_MUTANT") && atoi(getenv("LLAMA_MTP_FOLD_DEBUG_MUTANT")) ? 1 : 0;
+    inp->h_idxs = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, n_tokens);
+    ggml_set_input(inp->h_idxs);
+    ggml_set_name(inp->h_idxs, "mtp_fold_h_idxs");
 
-    ggml_tensor * h_embd = inp->h_prev;
-    if (n_tokens > 1) {
-        ggml_tensor * h_shift = ggml_view_2d(ctx0, h_nextn, hparams.n_embd, n_tokens - 1, h_nextn->nb[1], mutant_rows * h_nextn->nb[1]);
-        h_embd = ggml_concat(ctx0, h_embd, h_shift, 1);
-    }
+    ggml_tensor * h_all = ggml_concat(ctx0, inp->h_prev, h_nextn, 1);
+    ggml_tensor * h_embd = ggml_get_rows(ctx0, h_all, inp->h_idxs);
     cb(h_embd, "mtp_fold_h", il);
 
     ggml_tensor * tok_embd_w = layer.nextn.embed_tokens ? layer.nextn.embed_tokens : model.tok_embd;
