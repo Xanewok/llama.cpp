@@ -3754,6 +3754,38 @@ static bool ggml_cuda_can_fuse(const struct ggml_cgraph *                cgraph,
         return true;
     }
 
+    if (ops.size() == 3 && ops.begin()[0] == GGML_OP_ADD && ops.begin()[1] == GGML_OP_UNARY && ops.begin()[2] == GGML_OP_MUL
+            && unary_ops.size() == 1 && unary_ops.begin()[0] == GGML_UNARY_OP_SOFTPLUS) {
+#if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
+        return false;
+#endif
+        const auto * add = cgraph->nodes[node_idx];
+        const auto * unary = cgraph->nodes[node_idx + 1];
+        const auto * mul = cgraph->nodes[node_idx + 2];
+        if (unary->src[0] != add || ggml_get_unary_op(unary) != GGML_UNARY_OP_SOFTPLUS || mul->src[0] != unary) {
+            return false;
+        }
+        const auto * x = add->src[0];
+        const auto * bias = add->src[1];
+        const auto * scale = mul->src[1];
+        for (const auto * t : { x, bias, scale, add, unary, mul }) {
+            if (t->type != GGML_TYPE_F32 || !ggml_is_contiguous(t)) {
+                return false;
+            }
+        }
+        if (!ggml_are_same_shape(x, mul) || bias->ne[1] != 1 || bias->ne[2] != 1 || bias->ne[3] != 1 ||
+                scale->ne[1] != 1 || scale->ne[2] != 1 || scale->ne[3] != 1) {
+            return false;
+        }
+        // The shared range check skips leaf sources; broadcast reads cannot alias output writes.
+        if (ggml_ssm_conv_overlaps(mul, bias) || ggml_ssm_conv_overlaps(mul, scale) ||
+                (ggml_ssm_conv_overlaps(mul, x) && mul->data != x->data)) {
+            return false;
+        }
+        const int outputs[] = { node_idx + 2 };
+        return ggml_cuda_check_fusion_memory_ranges(cgraph, node_idx, 3, outputs, 1);
+    }
+
     if (ops.size() == 2 && ops.begin()[0] == GGML_OP_UNARY && ops.begin()[1] == GGML_OP_MUL
      && unary_ops.size() == 1 && (unary_ops.begin()[0] == GGML_UNARY_OP_SILU || unary_ops.begin()[0] == GGML_UNARY_OP_SIGMOID || unary_ops.begin()[0] == GGML_UNARY_OP_SOFTPLUS)) {
         const ggml_tensor * unary = cgraph->nodes[node_idx];
@@ -4649,6 +4681,11 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
     if (ggml_cuda_can_fuse(cgraph, i, { GGML_OP_SSM_CONV, GGML_OP_UNARY }, { GGML_UNARY_OP_SILU })) {
         ggml_cuda_op_ssm_conv(*cuda_ctx, node, /*bias_add_node=*/ nullptr, cgraph->nodes[i + 1]);
         return 1;
+    }
+
+    if (ggml_cuda_can_fuse(cgraph, i, { GGML_OP_ADD, GGML_OP_UNARY, GGML_OP_MUL }, { GGML_UNARY_OP_SOFTPLUS })) {
+        ggml_cuda_op_add_softplus_mul(*cuda_ctx, node, cgraph->nodes[i + 2]);
+        return 2;
     }
 
     if (ggml_cuda_can_fuse(cgraph, i, { GGML_OP_UNARY, GGML_OP_MUL }, { GGML_UNARY_OP_SILU }) ||
