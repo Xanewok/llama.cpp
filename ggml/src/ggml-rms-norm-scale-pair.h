@@ -48,22 +48,20 @@ static inline bool ggml_match_rms_norm_scale_pair(const ggml_cgraph * graph, int
         return false;
     }
 
-    static const bool alias_mutant = getenv("GGML_RMS_NORM_SCALE_PAIR_ALIAS_MUTANT") != nullptr;
-    if (alias_mutant) {
-        i_b = j;
-        return true;
-    }
+    // negative controls, bit mask: 1 = drop the a-output/b-input check, 2 = drop the b-output/a-input check,
+    // 4 = drop the output/output check, 8 = drop the dependency check
+    static const int mutant = getenv("GGML_RMS_NORM_SCALE_PAIR_ALIAS_MUTANT") ? atoi(getenv("GGML_RMS_NORM_SCALE_PAIR_ALIAS_MUTANT")) : 0;
 
     const ggml_tensor * root_b = x[1];
     while (root_b->view_src) {
         root_b = root_b->view_src;
     }
-    if (root_b == graph->nodes[i] || root_b == scale[0]) {
+    if (!(mutant & 8) && (root_b == graph->nodes[i] || root_b == scale[0])) {
         return false;
     }
 
-    if (ggml_ssm_conv_overlaps(scale[0], x[1]) || ggml_ssm_conv_overlaps(scale[1], x[0]) ||
-            ggml_ssm_conv_overlaps(scale[0], scale[1])) {
+    if ((!(mutant & 1) && ggml_ssm_conv_overlaps(scale[0], x[1])) || (!(mutant & 2) && ggml_ssm_conv_overlaps(scale[1], x[0])) ||
+            (!(mutant & 4) && ggml_ssm_conv_overlaps(scale[0], scale[1]))) {
         return false;
     }
 

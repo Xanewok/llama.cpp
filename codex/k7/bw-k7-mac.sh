@@ -35,12 +35,21 @@ units() {
     "$GATE" build-cpu/bin/test-backend-ops test -b CPU -o RMS_NORM -j 1 > "$OUT/rms-norm.log" 2>&1
     "$GATE" build-cpu/bin/test-backend-ops test -b CPU -o SCALE -j 1 > "$OUT/scale.log" 2>&1
 }
-# The guards must be what rejects the unsafe layouts: with them removed the test has to fail.
+# Each guard must be what rejects its unsafe layout: with it removed the test has to fail with its own message.
 mutants() {
-    if "$GATE" env GGML_RMS_NORM_SCALE_PAIR_ALIAS_MUTANT=1 build-cpu/bin/test-backend-ops test -b CPU -o RMS_NORM_SCALE_PAIR -j 1 > "$OUT/alias-mutant.log" 2>&1; then
-        echo 'FAIL alias-guard mutant escaped'; return 1
-    fi
-    grep -c 'FAIL RMS_NORM_SCALE_PAIR matcher' "$OUT/alias-mutant.log" > /dev/null
+    local mask msg
+    for mask in 1 2 4 8; do
+        case $mask in
+            1) msg='first output over the second input' ;;
+            2) msg='second output over the first input' ;;
+            4) msg='outputs overlap' ;;
+            8) msg='second input is a view of the first output' ;;
+        esac
+        if "$GATE" env GGML_RMS_NORM_SCALE_PAIR_ALIAS_MUTANT=$mask build-cpu/bin/test-backend-ops test -b CPU -o RMS_NORM_SCALE_PAIR -j 1 > "$OUT/alias-mutant-$mask.log" 2>&1; then
+            echo "FAIL alias-guard mutant $mask escaped"; return 1
+        fi
+        grep -c "FAIL RMS_NORM_SCALE_PAIR matcher accepted: $msg" "$OUT/alias-mutant-$mask.log" > /dev/null
+    done
 }
 # Real qwen35 graph: the q and k chains must be adjacent for the matcher (sched debug lists non-view nodes).
 graph() {
