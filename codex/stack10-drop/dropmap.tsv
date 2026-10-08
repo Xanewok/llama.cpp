@@ -1,0 +1,31 @@
+p55	cuda : bind MMVQ launch dimensions to kernel parameters
+p55	cuda : use one-row MMVQ blocks for partial tails
+p55	cuda : reject unavailable MMVQ parameter tables
+p55	cuda : select Blackwell MMVQ launch parameters by quant type
+k7	cuda : run paired RMS norm and scale chains in one launch
+k7	local: K7 paired RMS norm and scale switch, mutants, engagement log
+k4	ggml: GGML_OP_SSM_CONV_RS, indexed conv-state read with snapshot writes (CPU, CUDA, Meta)
+k4	llama: read the recurrent conv state by id through ggml_ssm_conv_rs, gathered fallback
+k4	local: K4 SSM_CONV_RS off switch, mutants, engagement log
+k6a	cuda : reuse shared matmul activations of up to 16 rows within a graph
+k6a	local: K6a shared-activation reuse switch, engagement log, stale-cache mutant
+k6b	cuda : fuse residual add with RMS normalization of up to 16 rows
+k6b	local: K6b residual add + RMS norm fusion switch, engagement log, numerical mutant
+k2	cuda : scan the flash-attention mask once per graph evaluation
+k2	local: K2 shared KV-max scan off switch and negative controls
+k10	cuda : batch top-k over rows in one launch set with a deterministic order
+k10	local: K10 top-k batching off switch, engagement log, negative-control mutants
+k9	cuda : launch the MMQ kernel and its stream-k fixup with PDL
+k9	cuda : launch the MMQ q8_1 quantize kernel with PDL
+k9	tests : add an MMQ producer/consumer chain with byte hashes and replay checks
+k9	local: K9 MMQ PDL off switch, wait-removal mutants, engagement log
+k8	cuda : shape-gated small-I MMQ tiles for 16 and 24 columns on Blackwell
+k8	tests : cover MMQ small-column tile selection
+k8	cuda : MMQ stream-k partitions in default-tile units for narrow tiles
+k8	cuda : take SMALL_I MMQ tiles on stream-k launches too
+k8	tests : cover MMQ small-I tiles on stream-k shapes
+k8	local: K8/L1 MMQ tile A/B switch, auto-drop and stream-k partition mutants, mmq-hash tool
+k11a	llama : skip getter synchronize() when no device work is pending
+k11a	local: K11a getter sync elision switch, debug check, mutants
+k11b	meta : stage mirrored host inputs once and upload slowest link first
+k11b	local: K11b input staging A/B controls and negative-control mutants
