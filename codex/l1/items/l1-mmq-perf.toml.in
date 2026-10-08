@@ -1,0 +1,55 @@
+id = "l1-mmq-perf"
+title = "L1 small-I MMQ tiles kernel timing on both RTX 5060 Ti: test-backend-ops perf, hot and cold weights, default tiles vs auto policy vs auto-drop null control, A/A default spread"
+# Canary (G ~3 min): one q6_K m=8704 12-column case, hot-readable SQL row, small-I engaged.
+# Run (G ~55 min): GPU0 hot 2 reps x (default, auto, auto-drop, default), cold (default, auto, default, auto-drop), GPU1 hot (default, auto, default).
+# Expected (D from the spike per-shape data): auto - default -3..-11 us at m=8704 k=5120 (IQ4_XS, Q4_K, Q5_K, Q6_K) and about -80 us at Q6_K 124160;
+# 0 at m=3072/5120/6144 and Q8_0 (gate rejects, same stock kernel); auto-drop - default within the default A/A spread everywhere.
+priority = 29
+after = ["l1-mmq-cuda-checks"]
+kind = "measure"
+host_sensitive = false
+budget_s = 7800
+est_s = 3600
+ab = false
+retry = "fresh"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "integrity", regex = "frozen bytes changed|unresolved libraries|resolve outside the frozen dir|not the L1 build|is not an RTX 5060 Ti|engagement: " },
+  { class = "insufficient_data", regex = "not deterministic run to run" },
+  { class = "timeout", regex = "budget expired|hung \\(" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "@ROOT@/codex/l1/gpu/l1-gpu.sh", "perf", "--run"]
+cwd = "@ROOT@"
+env = { COMMIT = "@COMMIT@", BUDGET_S = "7200", OUT = "/home/xanewok/repos/qwen38-eval/results/@DATE@-l1-mmq-perf/a{attempt}" }
+ports = []
+
+[preflight]
+cmd = ["bash", "@ROOT@/codex/l1/gpu/l1-gpu.sh", "perf", "--preflight"]
+env = { COMMIT = "@COMMIT@", OUT = "/home/xanewok/repos/qwen38-eval/results/@DATE@-l1-mmq-perf/preflight" }
+timeout_s = 120
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "@ROOT@/codex/l1/gpu/l1-gpu.sh", "perf", "--canary"]
+env = { COMMIT = "@COMMIT@", BUDGET_S = "500", OUT = "/home/xanewok/repos/qwen38-eval/results/@DATE@-l1-mmq-perf/canary-a{attempt}" }
+timeout_s = 600
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval/results/@DATE@-l1-mmq-perf/a{attempt}"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "@ROOT@/codex/l1/gpu/l1-gpu.sh",
+  "@ROOT@/codex/l1/gpu/perf_summary.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/l1-mmq-smallj/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/l1-mmq-smallj/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/l1-mmq-smallj/build/bin/test-backend-ops",
+@LIB_PINS@
+]
