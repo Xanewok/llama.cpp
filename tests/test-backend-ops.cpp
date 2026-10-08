@@ -5332,6 +5332,39 @@ struct test_mul_mat : public test_case {
     }
 };
 
+struct test_mul_mat_shared : public test_case {
+    const ggml_type type;
+    const int64_t rows;
+    const bool strided;
+    const bool overwrite;
+
+    test_mul_mat_shared(ggml_type type, int64_t rows, bool strided, bool overwrite) :
+        type(type), rows(rows), strided(strided), overwrite(overwrite) {}
+
+    std::string vars() override { return VARS_TO_STR4(type, rows, strided, overwrite); }
+    std::string op_desc(ggml_tensor *) override { return "MUL_MAT_SHARED"; }
+    bool run_whole_graph() override { return true; }
+    double max_nmse_err() override { return 5e-4; }
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        // 768 is three quantization blocks and 257 output rows end mid-tile: both exercise odd tails.
+        ggml_tensor * storage = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, strided ? 1024 : 768, rows);
+        ggml_tensor * input = strided ? ggml_view_2d(ctx, storage, 768, rows, storage->nb[1], 0) : storage;
+        ggml_tensor * outputs[3];
+        for (int i = 0; i < 3; ++i) {
+            if (overwrite && i == 2) {
+                ggml_tensor * replacement = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 768, rows);
+                ggml_build_forward_expand(gf, ggml_cpy(ctx, replacement, input));
+            }
+            // The middle weight can take a different quantizer path at six or eight rows.
+            ggml_tensor * weight = ggml_new_tensor_2d(ctx, i == 1 ? GGML_TYPE_Q6_K : type, 768, 257);
+            outputs[i] = ggml_mul_mat(ctx, weight, input);
+            ggml_build_forward_expand(gf, outputs[i]);
+        }
+        return ggml_concat(ctx, ggml_concat(ctx, outputs[0], outputs[1], 0), outputs[2], 0);
+    }
+};
+
 // GGML_HINT_SRC0_IS_HADAMARD
 struct test_mul_mat_hadamard : public test_mul_mat {
     test_mul_mat_hadamard(ggml_type type_a = GGML_TYPE_F32, ggml_type type_b = GGML_TYPE_F32,
@@ -10469,6 +10502,16 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_mul_mat_id_w4a8(GGML_TYPE_MXFP4, GGML_TYPE_F32, 8, 2, false, 32, 32, 256));
     test_cases.emplace_back(new test_mul_mat_id_w4a4(GGML_TYPE_MXFP4, GGML_TYPE_F32, 8, 2, false, 32, 32, 256));
 
+    for (ggml_type type : {GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_IQ4_XS, GGML_TYPE_Q8_0}) {
+        for (int64_t rows : {1, 6, 8, 12, 16, 17}) {
+            for (bool strided : {false, true}) {
+                for (bool overwrite : {false, true}) {
+                    test_cases.emplace_back(new test_mul_mat_shared(type, rows, strided, overwrite));
+                }
+            }
+        }
+    }
+
 #if 0
     // > 4GB A matrix. Too slow to be enabled by default.
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F16, GGML_TYPE_F16,  900000,  3, 2592, {1, 1}, {1, 1}));
@@ -12456,6 +12499,129 @@ static bool run_alpha_gate_identity(ggml_backend_t backend, const char * filter)
     return true;
 }
 
+// Deterministic data with magnitudes that make rounding differences visible; no inf or NaN.
+static void fill_identity_data(std::vector<float> & v, uint32_t seed, float amplitude) {
+    uint32_t state = seed*2654435761u + 12345u;
+    for (float & f : v) {
+        state = state*1664525u + 1013904223u;
+        f = ((int32_t) (state >> 8) - (1 << 23))*(amplitude/(1 << 23));
+    }
+}
+
+// Matmuls that share one input tensor may share one activation quantization, so each shared consumer is compared
+// with a consumer of a private copy of the same data. The private copies never share an identity, so they are
+// the unshared reference on the same backend.
+static bool run_shared_activation_identity(ggml_backend_t backend, const char * filter) {
+    if (filter && std::string(filter).find("MUL_MAT_SHARED") == std::string::npos) {
+        return true;
+    }
+    const int64_t k = 768, n = 257;
+    int cases = 0;
+    bool control_done = false;
+    for (ggml_type type : { GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_IQ4_XS, GGML_TYPE_Q8_0 }) {
+        for (int64_t rows : { 1, 2, 6, 8, 9, 12, 16, 17 }) {
+            for (bool strided : { false, true }) {
+                for (bool overwrite : { false, true }) {
+                    ggml_init_params params = { 96*ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true };
+                    ggml_context_ptr ctx(ggml_init(params));
+                    const int64_t stride_k = strided ? 1024 : k;
+                    // 0 is the shared input; 1..3 are the private copies, one per consumer.
+                    ggml_tensor * storage[4];
+                    ggml_tensor * input[4];
+                    for (int b = 0; b < 4; ++b) {
+                        storage[b] = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, stride_k, rows);
+                        input[b] = strided ? ggml_view_2d(ctx.get(), storage[b], k, rows, storage[b]->nb[1], 0) : storage[b];
+                    }
+                    ggml_tensor * replacement = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, k, rows);
+                    ggml_tensor * weight[3];
+                    ggml_tensor * shared[3];
+                    ggml_tensor * priv[3];
+                    ggml_cgraph * graph = ggml_new_graph(ctx.get());
+                    for (int i = 0; i < 3; ++i) {
+                        weight[i] = ggml_new_tensor_2d(ctx.get(), i == 1 ? GGML_TYPE_Q6_K : type, k, n);
+                        if (overwrite && i == 2) {
+                            ggml_build_forward_expand(graph, ggml_cpy(ctx.get(), replacement, input[0]));
+                            ggml_build_forward_expand(graph, ggml_cpy(ctx.get(), replacement, input[3]));
+                        }
+                        shared[i] = ggml_mul_mat(ctx.get(), weight[i], input[0]);
+                        priv[i] = ggml_mul_mat(ctx.get(), weight[i], input[1 + i]);
+                        ggml_set_output(shared[i]);
+                        ggml_set_output(priv[i]);
+                        ggml_build_forward_expand(graph, shared[i]);
+                        ggml_build_forward_expand(graph, priv[i]);
+                    }
+                    for (int i = 0; i < ggml_graph_n_nodes(graph); ++i) {
+                        if (!ggml_backend_supports_op(backend, ggml_graph_node(graph, i))) {
+                            return true;
+                        }
+                    }
+                    ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors(ctx.get(), backend));
+                    if (!buffer) {
+                        return false;
+                    }
+                    for (int i = 0; i < 3; ++i) {
+                        init_tensor_uniform(weight[i]);
+                    }
+                    std::vector<float> data(stride_k*rows), repl(k*rows), a(n*rows), b(n*rows);
+                    const auto mismatch = [&](int consumer, int replay) {
+                        ggml_backend_tensor_get(shared[consumer], a.data(), 0, ggml_nbytes(shared[consumer]));
+                        ggml_backend_tensor_get(priv[consumer], b.data(), 0, ggml_nbytes(priv[consumer]));
+                        const bool differ = memcmp(a.data(), b.data(), ggml_nbytes(shared[consumer])) != 0;
+                        if (differ && replay >= 0) {
+                            printf("  MUL_MAT_SHARED: type=%s rows=%lld strided=%d overwrite=%d consumer=%d replay=%d differ\n",
+                                ggml_type_name(type), (long long) rows, strided, overwrite, consumer, replay);
+                        }
+                        return differ;
+                    };
+                    // Changing inputs run the same graph again, which is the CUDA graph replay case.
+                    for (int replay = 0; replay < 4; ++replay) {
+                        fill_identity_data(data, 17 + replay, 4.0f);
+                        fill_identity_data(repl, 91 + replay, 4.0f);
+                        for (int bi = 0; bi < 4; ++bi) {
+                            ggml_backend_tensor_set(storage[bi], data.data(), 0, ggml_nbytes(storage[bi]));
+                        }
+                        ggml_backend_tensor_set(replacement, repl.data(), 0, ggml_nbytes(replacement));
+                        if (ggml_backend_graph_compute(backend, graph) != GGML_STATUS_SUCCESS) {
+                            return false;
+                        }
+                        bool nonzero = false;
+                        for (int i = 0; i < 3; ++i) {
+                            if (mismatch(i, replay)) {
+                                printf("  FAIL MUL_MAT_SHARED byte identity\n");
+                                return false;
+                            }
+                            for (float f : a) {
+                                nonzero = nonzero || f != 0.0f;
+                            }
+                        }
+                        if (!nonzero) {
+                            printf("  FAIL MUL_MAT_SHARED all outputs are zero\n");
+                            return false;
+                        }
+                    }
+                    // The comparison must be able to fail: one changed element in a private copy must show.
+                    if (!control_done && !overwrite) {
+                        fill_identity_data(data, 17, 4.0f);
+                        data[0] += 1.0f;
+                        ggml_backend_tensor_set(storage[1], data.data(), 0, ggml_nbytes(storage[1]));
+                        if (ggml_backend_graph_compute(backend, graph) != GGML_STATUS_SUCCESS) {
+                            return false;
+                        }
+                        if (!mismatch(0, -1)) {
+                            printf("  FAIL MUL_MAT_SHARED comparison control did not detect a changed input\n");
+                            return false;
+                        }
+                        control_done = true;
+                    }
+                    ++cases;
+                }
+            }
+        }
+    }
+    printf("  MUL_MAT_SHARED: same-backend byte identity and changing-input replay PASS cases=%d\n", cases);
+    return true;
+}
+
 static bool run_fa_vec_slice(ggml_backend_t backend, ggml_backend_t backend_cpu, const char * op_names_filter) {
     const char * LLAMA_TEST_FA_VEC_DISABLE = getenv("LLAMA_TEST_FA_VEC_DISABLE");
     if (LLAMA_TEST_FA_VEC_DISABLE) {
@@ -12653,6 +12819,10 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
 
         output_printer->print_summary(test_summary_info(n_ok, tests_run, false));
         output_printer->print_failed_tests(failed_tests);
+
+        if (!run_shared_activation_identity(backend, op_names_filter)) {
+            return false;
+        }
 
         const bool slice_ok = run_fa_vec_slice(backend, backend_cpu.get(), op_names_filter);
 
