@@ -83,6 +83,7 @@ int main(int argc, char ** argv) {
     }
     server_context server;
     require(server.load_model(params), "model load failed");
+    const auto logit_bias_eog = server.get_meta().logit_bias_eog;
 
     // slot 0: short prompt, slot 1: long prompt, so slot 1 prefills in several batches while slot 0 already drafts
     // (mixed prompt/decode batches). Phase 1 starts cold; phase 2 repeats the prompts and so takes the prefix-reuse
@@ -120,6 +121,8 @@ int main(int argc, char ** argv) {
                 task.params.sampling.top_p = 0.95f;
                 task.params.sampling.min_p = 0.05f;
                 task.params.sampling.ignore_eos = true;
+                // Direct tasks must apply the EOG biases normally added by the request schema.
+                task.params.sampling.logit_bias = logit_bias_eog;
                 task.params.sampling.backend_sampling = true;
                 tasks.push_back(std::move(task));
             }
