@@ -106,7 +106,7 @@ arm() {
     local dev=$1 name=$2 expect=$3 ref=$4
     shift 4
     local cmp=(--getter-logits "$OUT/model/$dev-$name.bin")
-    [[ -z $ref ]] || cmp+=(--getter-reference "$OUT/model/$dev-$ref.bin")
+    [[ -z $ref ]] || cmp=(--getter-reference "$OUT/model/$dev-$ref.bin")
     RC=0
     env CUDA_VISIBLE_DEVICES="$VISIBLE" "$@" timeout 900 nice -n 19 build-cuda/bin/test-recurrent-state-rollback --getter-gate "${cmp[@]}" \
         --conv-expect "$expect" -m "$MODEL" -c 4096 -t 4 -ngl 99 -dev "$dev" -lv 5 > "$OUT/model/$dev-$name.log" 2>&1 || RC=$?
@@ -119,7 +119,6 @@ model() {
         [[ $RC == 0 ]]
         arm "$dev" rs rs gathered GGML_SSM_CONV_RS_LOG=1
         [[ $RC == 0 ]]
-        cmp "$OUT/model/$dev-gathered.bin" "$OUT/model/$dev-rs.bin"
         grep -aq 'ssm_conv_rs engaged' "$OUT/model/$dev-rs.log"
         for m in 1 2; do
             arm "$dev" mutant$m rs gathered GGML_SSM_CONV_RS_MUTANT=$m

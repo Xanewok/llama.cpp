@@ -48,12 +48,12 @@ ops_mutants() {
         grep -aq 'FAIL SSM_CONV_RS byte identity' "$OUT/ops-mutant$m.txt"
     done
 }
-# arm NAME RS_SEQ EXPECT ENV...: writes $OUT/model/NAME.bin; with REF set compares against that file.
+# arm NAME RS_SEQ EXPECT REF ENV...: writes $OUT/model/NAME.bin, or with REF compares in-process, byte for byte, against REF.bin.
 arm() {
     local name=$1 rs_seq=$2 expect=$3 ref=$4
     shift 4
     local cmp=(--getter-logits "$OUT/model/$name.bin")
-    [[ -z $ref ]] || cmp+=(--getter-reference "$OUT/model/$ref.bin")
+    [[ -z $ref ]] || cmp=(--getter-reference "$OUT/model/$ref.bin")
     "$GATE" env "$@" build-cpu/bin/test-recurrent-state-rollback --getter-gate "${cmp[@]}" --conv-expect "$expect" \
         --getter-rs-seq "$rs_seq" -m "$MODEL" -c 4096 -t 4 -ngl 0 -lv 5 > "$OUT/model/$name.log" 2>&1
 }
@@ -61,10 +61,8 @@ model() {
     mkdir -p "$OUT/model"
     arm gathered8 8 gathered '' GGML_SSM_CONV_RS_OFF=1
     arm rs8 8 rs gathered8 GGML_SSM_CONV_RS_LOG=0
-    cmp "$OUT/model/gathered8.bin" "$OUT/model/rs8.bin"
     arm gathered0 0 gathered '' GGML_SSM_CONV_RS_OFF=1
     arm rs0 0 rs gathered0 GGML_SSM_CONV_RS_LOG=0
-    cmp "$OUT/model/gathered0.bin" "$OUT/model/rs0.bin"
     local m
     for m in 1 2; do
         if arm mutant$m 8 rs gathered8 GGML_SSM_CONV_RS_MUTANT=$m; then
