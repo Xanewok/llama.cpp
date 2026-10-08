@@ -4,7 +4,7 @@ Status: code, tests, Mac payload and CUDA window written and statically checked.
 
 ## Commits (base 0cfc0723e)
 - `7d4b96143` cuda : batch top-k over rows in one launch set with a deterministic order (general)
-- `0d4306a1b`-successor `local: add top-k batching off switch, engagement log and negative-control mutants` (hash: `git log`; env controls + mutants + test hooks)
+- `db3d71782` `local: add top-k batching off switch, engagement log and negative-control mutants` (env controls + mutants + test hooks)
 - codex commit: payload, window, this report.
 
 Source changes (general): `ggml/src/ggml-cuda/top-k-batched.cuh` (new), `top-k.cu` (dispatch before the CUB branch), `tests/test-topk-batched.cpp` (new), `tests/CMakeLists.txt`, `tests/test-backend-ops.cpp` (test_top_k: `special`/`canonical` modes, `supports_backend` harness hook, new cases and perf shapes). No incidental compile fixes.
