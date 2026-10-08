@@ -1291,6 +1291,8 @@ struct test_case {
     }
 
     virtual bool run_whole_graph() { return false; }
+    // false: the case checks behaviour only some backends promise; it is reported as not supported there
+    virtual bool supports_backend(ggml_backend_t backend) { GGML_UNUSED(backend); return true; }
     virtual std::vector<ggml_tensor *> fusion_test_nodes() { return {}; }
     virtual bool use_weight_context() { return false; }
 
@@ -1427,6 +1429,11 @@ struct test_case {
                     }
                 }
             }
+        }
+
+        if (supported && !supports_backend(backend1)) {
+            supported       = false;
+            unsupported_str = ggml_backend_name(backend1);
         }
 
         if (!supported) {
@@ -7131,24 +7138,47 @@ struct test_top_k : public test_case {
     const std::array<int64_t, 4> ne;
     const int k;
     const bool ties;
+    // special: the rows draw from {-inf, +inf, -0, +0, small integers}, so banned logits and ties at the k-th place occur.
+    // canonical: the CUDA batched path promises key descending, column ascending (top-k-batched.cuh); other backends
+    // promise no order and report the case as not supported.
+    const bool special;
+    const bool canonical;
     ggml_tensor * input {};
 
     std::string vars() override {
-        return VARS_TO_STR4(type, ne, k, ties);
+        std::string v = VARS_TO_STR4(type, ne, k, ties);
+        if (special) {
+            v += ",special=1";
+        }
+        if (canonical) {
+            v += ",canonical=1";
+        }
+        return v;
     }
 
     test_top_k(ggml_type type = GGML_TYPE_F32,
             std::array<int64_t, 4> ne = {16, 10, 10, 10},
-            int k = 4, bool ties = false)
-        : type(type), ne(ne), k(k), ties(ties) {}
+            int k = 4, bool ties = false, bool special = false, bool canonical = false)
+        : type(type), ne(ne), k(k), ties(ties), special(special), canonical(canonical) {}
 
     double max_err() override {
         return 0.0;
     }
 
+    bool supports_backend(ggml_backend_t backend) override {
+        return !canonical || std::string(ggml_backend_name(backend)).rfind("CUDA", 0) == 0;
+    }
+
     // When there are ties, only validate the final result.
     // The logic in err can't handle the sentinel tensors.
-    bool run_whole_graph() override { return ties; }
+    bool run_whole_graph() override { return ties || special || canonical; }
+
+    // IEEE bit pattern order, the order the CUDA kernels select by
+    static uint32_t order_key(float v) {
+        uint32_t b;
+        memcpy(&b, &v, sizeof(b));
+        return b ^ ((b >> 31) ? 0xFFFFFFFFu : 0x80000000u);
+    }
 
     double err(const float * a, const float * b, size_t n) override {
         // When there are no ties, we expect the exact same set of indices,
@@ -7156,7 +7186,7 @@ struct test_top_k : public test_case {
         // can be different but the input values they correspond to should be
         // the same. The logic for ties could work for non-ties, but only for
         // the output tensor, not for the sentinel tensors.
-        if (ties) {
+        if (ties || special || canonical) {
             std::vector<float> src(ggml_nelements(input));
 
             ggml_backend_tensor_get(input, src.data(), 0, ggml_nelements(input) * ggml_type_size(type));
@@ -7181,6 +7211,24 @@ struct test_top_k : public test_case {
                     bsrc[c] = src[r * cols + ib[c]];
                 }
                 diff += jdst(asrc.data(), bsrc.data(), k);
+                if (canonical) {
+                    // a is the tested backend: exactly the first k of (key descending, column ascending)
+                    std::vector<int32_t> order(cols);
+                    for (int64_t c = 0; c < cols; c++) {
+                        order[c] = (int32_t) c;
+                    }
+                    const float * row = src.data() + r * cols;
+                    std::partial_sort(order.begin(), order.begin() + k, order.end(), [&](int32_t x, int32_t y) {
+                        const uint32_t kx = order_key(row[x]);
+                        const uint32_t ky = order_key(row[y]);
+                        return kx > ky || (kx == ky && x < y);
+                    });
+                    for (int64_t c = 0; c < k; c++) {
+                        if ((int32_t) a[r * k + c] != order[c]) {
+                            diff += 1;
+                        }
+                    }
+                }
                 // There should be no duplicate indices
                 std::sort(ia.begin(), ia.end());
                 std::sort(ib.begin(), ib.end());
@@ -7232,14 +7280,20 @@ struct test_top_k : public test_case {
             for (int64_t r = 0; r < ggml_nrows(t); r++) {
                 std::vector<float> data(t->ne[0]);
                 for (int i = 0; i < t->ne[0]; i++) {
-                    if (ties) {
+                    if (special) {
+                        static const float palette[] = { -INFINITY, INFINITY, -0.0f, 0.0f, 1.0f, 2.0f, 3.0f, -1.0f };
+                        // mostly distinct finite values so that some rows have no tie at the k-th place
+                        data[i] = rng() % 4 == 0 ? palette[rng() % 8] : (float) (rng() % 100000) * 1e-3f;
+                    } else if (ties) {
                         // integer division to introduce duplicates
                         data[i] = i / tie_denom;
                     } else {
                         data[i] = i;
                     }
                 }
-                std::shuffle(data.begin(), data.end(), rng);
+                if (!special) {
+                    std::shuffle(data.begin(), data.end(), rng);
+                }
                 ggml_backend_tensor_set(t, data.data(), r * t->nb[1], t->ne[0] * sizeof(float));
             }
         }
@@ -11389,6 +11443,28 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         }
     }
 
+    // batched CUDA path: exact (key descending, column ascending) order with banned logits, infinities and ties
+    for (int k : {1, 5, 21, 64}) {
+        for (int nrows : {1, 2, 13}) {
+            for (int ncols : {64, 300, 1000, 8192}) {
+                if (k <= ncols) {
+                    test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {ncols, nrows, 1, 1}, k, true, true, true));
+                    test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {ncols, nrows, 1, 1}, k, false, false, true));
+                }
+            }
+        }
+    }
+    for (int k : {1, 21, 64, 1024}) {
+        for (int nrows : {2, 6, 13}) {
+            for (int ncols : {8193, 33024, 124160, 248320}) {
+                test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {ncols, nrows, 1, 1}, k, true, true, true));
+                test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {ncols, nrows, 1, 1}, k, false, false, true));
+            }
+        }
+    }
+    // k above the batched limit and a single wide row stay on the per-row path
+    test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {33024, 3, 1, 1}, 1025, true, true));
+    test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {248320, 1, 1, 1}, 21, true, true));
     for (int k : {1, 2, 3, 7, 15}) {
         test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {16, 10, 10, 10}, k));
         test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {60, 10, 10, 10}, k));
@@ -12429,6 +12505,19 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     // backend sampler: one row of the vocab (llama-sampler.cpp top_k)
     for (auto k : {20, 40}) {
         test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {151936, 1, 1, 1}, k));
+    }
+    // backend sampler rows per round: verify block (6 or 12 rows) and draft steps (1 or 2 rows), full vocab and a
+    // two-way vocab slice, plus the narrow candidate rows of the per-sequence top-k
+    for (auto cols : {248320, 124160}) {
+        for (auto nrows : {1, 2, 6, 12, 13}) {
+            for (auto k : {21, 41}) {
+                test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {cols, nrows, 1, 1}, k));
+            }
+        }
+    }
+    for (auto nrows : {1, 2, 6, 12}) {
+        test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {42, nrows, 1, 1}, 21));
+        test_cases.emplace_back(new test_top_k(GGML_TYPE_F32, {1024, nrows, 1, 1}, 21));
     }
 
     // short rows, many of them: MoE routing and group selection. The opposite corner from
