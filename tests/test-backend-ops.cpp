@@ -11541,6 +11541,35 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 1024, 4, true, false, 0, 10.0f, GGML_PREC_F32,
                                                     GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}));
 
+    // prefill batches with q8_0 K/V as llama.cpp lays out the cache (K/V heads of a cell adjacent, one or two KV streams):
+    // CUDA dequantizes q8_0 tiles in the MMA kernel for GQA >= 2, head sizes 128 and 256, up to a number of query tiles
+    // (GQA 1 and other batches convert K/V to f16). Rows of 34 byte blocks are 8 byte aligned only at head size 128.
+    for (int hs : { 128, 256 }) {
+        for (int gqa : { 1, 2, 4, 6, 8 }) {
+            for (int nb : { 3, 9, 64, 128, 512 }) {
+                for (int seqs : { 1, 2 }) {
+                    test_cases.emplace_back(new test_flash_attn_ext(hs, hs, 2, {gqa, seqs}, 8192, nb, true, gqa == 6, 0, 0, GGML_PREC_F32,
+                                                                    GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}, true, false, 0, seqs == 2));
+                }
+            }
+        }
+    }
+    for (int64_t kv : { 32768, 90112 }) {
+        for (int nb : { 64, 128, 512 }) {
+            for (int seqs : { 1, 2 }) {
+                test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, seqs}, kv, nb, true, false, 0, 0, GGML_PREC_F32,
+                                                                GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}, true, false, 0, seqs == 2));
+            }
+        }
+    }
+    // K/V length that is no multiple of the K/V pass, ALiBi and a mask-less call take the other tiles
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, 8192 + 128, 128, true, false, 0, 0, GGML_PREC_F32,
+                                                    GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}));
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, 8192, 128, true, false, 8.0f, 0, GGML_PREC_F32,
+                                                    GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}));
+    test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, 8192, 128, false, false, 0, 0, GGML_PREC_F32,
+                                                    GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}));
+
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1},   512, 512, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1},  4096,  64, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1},  4096,  16, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));

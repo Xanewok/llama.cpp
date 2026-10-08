@@ -111,11 +111,15 @@ for ncols in [8, 16, 32, 64]:
                 head_size_v = HEAD_SIZES_V_OVERRIDE.get(head_size_kq, head_size_kq)
                 f.write(SOURCE_FATTN_MMA_CASE.format(ncols1=ncols1, ncols2=ncols2, head_size_kq=head_size_kq, head_size_v=head_size_v))
 
-# q8_0 K/V dequantized per tile, see ggml_cuda_flash_attn_ext_mma_q8_0_instance:
-for ncols1 in [4, 8]:
-    with open(f"fattn-mma-f16-instance-q8_0-ncols1_{ncols1}-ncols2_8.cu", "w") as f:
-        f.write(SOURCE_FATTN_MMA_START)
-        f.write(SOURCE_FATTN_MMA_Q8_0_CASE.format(ncols1=ncols1, ncols2=8, head_size_kq=256, head_size_v=256))
+# q8_0 K/V dequantized per tile, several queries per K/V head, see ggml_cuda_flash_attn_ext_mma_q8_0_instance:
+# 32 and 64 columns per tile for ncols2 = 2, 4, 8, head sizes 128 and 256.
+for ncols2 in [2, 4, 8]:
+    for ncols in [32, 64]:
+        ncols1 = ncols // ncols2
+        with open(f"fattn-mma-f16-instance-q8_0-ncols1_{ncols1}-ncols2_{ncols2}.cu", "w") as f:
+            f.write(SOURCE_FATTN_MMA_START)
+            for head_size in [128, 256]:
+                f.write(SOURCE_FATTN_MMA_Q8_0_CASE.format(ncols1=ncols1, ncols2=ncols2, head_size_kq=head_size, head_size_v=head_size))
 Q8_0_DECODE_CASES = {(1, 8): [(64, 64), (96, 96), (128, 128), (256, 256), (512, 512), (192, 128)], (1, 16): [(192, 128), (576, 512)], (1, 32): [(320, 256)], (4, 4): [(576, 512)]}
 
 for (ncols1, ncols2), heads in Q8_0_DECODE_CASES.items():

@@ -497,12 +497,16 @@ static __device__ __forceinline__ void flash_attn_ext_f16_load_tile(
 
 // q8_0 K/V tiles are dequantized in shared memory to avoid a full f16 copy in global memory.
 //
-// Two kinds of q8_0 instances exist. The multi-query verify instances (a few queries per K/V head, rows of the K/V view
-// 16 byte aligned, strides in half2 units) stage whole rows with cp.async and need the multi-stage pipeline. All other
-// instances serve one query row per K/V head and handle any row alignment, partial tiles and byte strides ("one_row").
-// The one-row code must stay out of the verify instances: it costs registers, local memory and branches there.
+// Two kinds of q8_0 instances exist. The multi-query instances (several queries per K/V head: verify and prefill batches,
+// rows of the K/V view 8 byte aligned, strides in half2 units) stage whole rows with cp.async and need the multi-stage
+// pipeline, hence ncols2 >= 2. All other instances serve one query row per K/V head and handle any row alignment, partial
+// tiles and byte strides ("one_row"). The one-row code must stay out of the multi-query instances: it costs registers,
+// local memory and branches there.
+// Per ncols2 there are two tile widths, 32 and 64 columns: the query-row count of a call picks the narrower one only if it
+// covers all rows (a single row never uses these instances).
 static constexpr __host__ __device__ bool ggml_cuda_flash_attn_ext_mma_q8_0_instance(const int DKQ, const int DV, const int ncols1, const int ncols2) {
-    return DKQ == 256 && DV == 256 && ncols2 == 8 && (ncols1 == 4 || ncols1 == 8);
+    return DKQ == DV && (DKQ == 128 || DKQ == 256) && (ncols2 == 2 || ncols2 == 4 || ncols2 == 8) &&
+           (ncols1*ncols2 == 32 || ncols1*ncols2 == 64);
 }
 
 template<int DKQ, int DV, int ncols1, int ncols2, ggml_type type_KV>
@@ -547,9 +551,11 @@ static __device__ __forceinline__ void flash_attn_ext_f16_load_tile_q8_0(
             }
         }
     } else {
-        constexpr int chunks_per_row = row_bytes/16;
+        // 16 byte copies if the whole row is a multiple of 16 bytes (D % 256 == 0), otherwise 8 byte copies (D % 64 == 0)
+        constexpr int chunk_bytes    = row_bytes % 16 == 0 ? 16 : 8;
+        constexpr int chunks_per_row = row_bytes/chunk_bytes;
         constexpr int nchunks        = nbatch_fa*chunks_per_row;
-        static_assert(row_bytes % 16 == 0, "q8_0 rows must be whole 16 byte chunks");
+        static_assert(row_bytes % chunk_bytes == 0, "q8_0 rows must be whole 8 byte chunks");
 
         const unsigned int tile_q8_32 = ggml_cuda_cvta_generic_to_shared(tile_q8);
         const int64_t stride_KV_bytes = stride_KV*sizeof(half2);
@@ -562,7 +568,11 @@ static __device__ __forceinline__ void flash_attn_ext_f16_load_tile_q8_0(
             }
             const int i = c / chunks_per_row;
             const int k = c % chunks_per_row;
-            cp_async_cg_16<64>(tile_q8_32 + i*row_bytes + k*16, KV + (k_VKQ_0 + i)*stride_KV_bytes + k*16);
+            if constexpr (chunk_bytes == 16) {
+                cp_async_cg_16<64>(tile_q8_32 + i*row_bytes + k*16, KV + (k_VKQ_0 + i)*stride_KV_bytes + k*16);
+            } else {
+                cp_async_ca_8(tile_q8_32 + i*row_bytes + k*8, KV + (k_VKQ_0 + i)*stride_KV_bytes + k*8);
+            }
         }
     }
 #else
@@ -2424,9 +2434,19 @@ extern DECL_FATTN_MMA_F16_CASE(512, 512,  2,  8);
 extern DECL_FATTN_MMA_F16_CASE(512, 512,  4,  8);
 extern DECL_FATTN_MMA_F16_CASE(512, 512,  8,  8);
 
-// q8_0 K/V without the f16 copy, for small batches of GQA models with head size 256 (Qwen 3.5+ MTP verify batches):
-extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 4, 8);
-extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 8, 8);
+// q8_0 K/V without the f16 copy, for batches of GQA models with head size 128 or 256 (Qwen 3.5+ MTP verify batches, prefill):
+extern DECL_FATTN_MMA_Q8_0_CASE(128, 128, 16, 2);
+extern DECL_FATTN_MMA_Q8_0_CASE(128, 128, 32, 2);
+extern DECL_FATTN_MMA_Q8_0_CASE(128, 128,  8, 4);
+extern DECL_FATTN_MMA_Q8_0_CASE(128, 128, 16, 4);
+extern DECL_FATTN_MMA_Q8_0_CASE(128, 128,  4, 8);
+extern DECL_FATTN_MMA_Q8_0_CASE(128, 128,  8, 8);
+extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 16, 2);
+extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 32, 2);
+extern DECL_FATTN_MMA_Q8_0_CASE(256, 256,  8, 4);
+extern DECL_FATTN_MMA_Q8_0_CASE(256, 256, 16, 4);
+extern DECL_FATTN_MMA_Q8_0_CASE(256, 256,  4, 8);
+extern DECL_FATTN_MMA_Q8_0_CASE(256, 256,  8, 8);
 
 extern DECL_FATTN_MMA_Q8_0_CASE(64, 64, 1, 8);
 extern DECL_FATTN_MMA_Q8_0_CASE(96, 96, 1, 8);

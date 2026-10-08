@@ -246,19 +246,72 @@ static bool ggml_cuda_flash_attn_ext_mma_q8_0_decode_supported(const int cc, con
 #endif // defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
 }
 
-// Small batches with q8_0 K/V: dequantizing tiles in the kernel reads half the bytes of the f16 copy that otherwise has to
-// be written first, and that copy of the whole K/V view costs more than the attention itself. Larger batches amortize it.
-// Only called for the ncols2 == 8 dispatch, the ncols1 of the instances covers 3-8 queries.
+// The GQA-optimized tiles need a mask and a K/V length that is a multiple of FATTN_KQ_STRIDE; the K/V rows must be 16 byte
+// aligned, except for quantized K/V which is staged or converted by the kernel itself.
+static bool ggml_cuda_flash_attn_ext_mma_f16_use_gqa_opt(const ggml_tensor * dst) {
+    const ggml_tensor * Q    = dst->src[0];
+    const ggml_tensor * K    = dst->src[1];
+    const ggml_tensor * V    = dst->src[2];
+    const ggml_tensor * mask = dst->src[3];
+
+    float max_bias = 0.0f;
+    memcpy(&max_bias, (const float *) dst->op_params + 1, sizeof(float));
+
+    bool use_gqa_opt = mask && max_bias == 0.0f && K->ne[1] % FATTN_KQ_STRIDE == 0;
+    for (const ggml_tensor * t : {Q, K, V, mask}) {
+        if (t == nullptr || ggml_is_quantized(t->type)) {
+            continue;
+        }
+        for (size_t i = 1; i < GGML_MAX_DIMS; ++i) {
+            if (t->nb[i] % 16 != 0) {
+                use_gqa_opt = false;
+                break;
+            }
+        }
+    }
+    return use_gqa_opt;
+}
+
+// ncols2 of ggml_cuda_flash_attn_ext_mma_f16_switch_ncols2 on NVIDIA GPUs with tensor cores newer than Volta.
+static int ggml_cuda_flash_attn_ext_mma_f16_get_ncols2(const ggml_tensor * dst) {
+    const ggml_tensor * Q = dst->src[0];
+    const ggml_tensor * K = dst->src[1];
+
+    GGML_ASSERT(Q->ne[2] % K->ne[2] == 0);
+    const int gqa_ratio = Q->ne[2] / K->ne[2];
+    if (!ggml_cuda_flash_attn_ext_mma_f16_use_gqa_opt(dst)) {
+        return 1;
+    }
+    return gqa_ratio > 4 ? 8 : gqa_ratio > 2 ? 4 : gqa_ratio > 1 ? 2 : 1;
+}
+
+// Dequantizing q8_0 K/V tiles in the kernel reads half the bytes of the f16 copy, and the copy of the whole K/V view costs
+// more than the attention itself for small batches. Every query tile dequantizes the K/V view again, the copy is made once, so
+// the copy wins from some number of query tiles on.
+// This count must not shrink below the largest batch of a context if the f16 scratch of the graph reserve is to go away:
+// ggml_cuda_flash_attn_ext_get_alloc_size skips the scratch for exactly the calls that this function accepts.
+static int64_t ggml_cuda_flash_attn_ext_mma_q8_0_max_query_tiles() {
+    return 16; // G: set from the measured crossover of the in-kernel dequantization and the copy
+}
+
+// q8_0 K/V with several queries per K/V head: the MMA kernel stages raw q8_0 rows and dequantizes them in shared memory
+// (instances: ggml_cuda_flash_attn_ext_mma_q8_0_instance). Used by the dispatch and by the allocation size, which must agree.
+// The allocation size of a graph reserved for the largest batch also has to cover every smaller batch of that graph, so for
+// the shapes accepted here no batch size may need the f16 copy: 3 rows and more are accepted up to the tile cap, one row
+// goes to the single-query MMA instances or the vector kernel, and two rows go to the vector kernel on Ada and newer. Older
+// GPUs send two rows to the MMA kernel, hence the lower bound of 2.
 static bool ggml_cuda_flash_attn_ext_mma_q8_0_supported(const int cc, const ggml_tensor * dst) {
 #if defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
     GGML_UNUSED_VARS(cc, dst);
     return false;
 #else
-    const ggml_tensor * Q = dst->src[0];
-    const ggml_tensor * K = dst->src[1];
-    const ggml_tensor * V = dst->src[2];
+    const ggml_tensor * Q    = dst->src[0];
+    const ggml_tensor * K    = dst->src[1];
+    const ggml_tensor * V    = dst->src[2];
+    const ggml_tensor * mask = dst->src[3];
 
-    float logit_softcap;
+    float max_bias, logit_softcap;
+    memcpy(&max_bias,      (const float *) dst->op_params + 1, sizeof(float));
     memcpy(&logit_softcap, (const float *) dst->op_params + 2, sizeof(float));
 
     // DO NOT MERGE: A/B knob, GGML_CUDA_FA_MMA_Q8_0=0 restores the f16 copy
@@ -272,21 +325,40 @@ static bool ggml_cuda_flash_attn_ext_mma_q8_0_supported(const int cc, const ggml
     if (!GGML_CUDA_CC_IS_NVIDIA(cc) || !turing_mma_available(cc) || !cp_async_available(cc)) {
         return false;
     }
-    if (K->type != GGML_TYPE_Q8_0 || V->type != GGML_TYPE_Q8_0 || K->ne[0] != 256 || V->ne[0] != 256) {
+    if (K->type != GGML_TYPE_Q8_0 || V->type != GGML_TYPE_Q8_0 || K->ne[0] != V->ne[0] || mask == nullptr ||
+            max_bias != 0.0f || logit_softcap != 0.0f || Q->ne[1] < 2) {
         return false;
     }
-    if (Q->ne[1] < 3 || Q->ne[1] > 8 || logit_softcap != 0.0f) {
+
+    // ncols2 >= 2 implies the GQA-optimized tiles (mask, padded K/V length)
+    const int ncols2 = ggml_cuda_flash_attn_ext_mma_f16_get_ncols2(dst);
+    const int ncols1_narrow = 32/ncols2;
+    const int ncols1_wide   = 64/ncols2;
+    if (!ggml_cuda_flash_attn_ext_mma_q8_0_instance(K->ne[0], V->ne[0], ncols1_narrow, ncols2) ||
+        !ggml_cuda_flash_attn_ext_mma_q8_0_instance(K->ne[0], V->ne[0], ncols1_wide,   ncols2)) {
         return false;
     }
-    // the kernel stages raw rows with 16 byte copies
+
+    const int ncols1 = Q->ne[1] <= ncols1_narrow ? ncols1_narrow : ncols1_wide;
+    if ((Q->ne[1] + ncols1 - 1)/ncols1 > ggml_cuda_flash_attn_ext_mma_q8_0_max_query_tiles()) {
+        return false;
+    }
+
+    // the kernel stages raw rows with 16 byte copies, or 8 byte copies if the row is no multiple of 16 bytes
     for (const ggml_tensor * t : { K, V }) {
-        if ((uintptr_t) t->data % 16 != 0 || t->nb[1] % 16 != 0 || t->nb[2] % 16 != 0 || t->nb[3] % 16 != 0) {
+        const size_t chunk = ggml_row_size(t->type, t->ne[0]) % 16 == 0 ? 16 : 8;
+        if (t->nb[0] != sizeof(block_q8_0) || (uintptr_t) t->data % chunk != 0 || t->nb[1] % chunk != 0 || t->nb[2] % chunk != 0 || t->nb[3] % chunk != 0) {
             return false;
         }
     }
     // the sparse variants gather f16 rows
-    return !ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(cc, dst, 1, 8) &&
-           !ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(cc, dst, 8, 8);
+    for (const int n : { 1, ncols1_wide }) {
+        if (ggml_cuda_flash_attn_ext_mma_f16_may_use_sparse(K->ne[0], V->ne[0], n, ncols2) &&
+                ggml_cuda_flash_attn_ext_mma_f16_shall_use_sparse(cc, dst, n, ncols2)) {
+            return false;
+        }
+    }
+    return true;
 #endif // defined(GGML_USE_HIP) || defined(GGML_USE_MUSA)
 }
 
@@ -296,13 +368,16 @@ static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_con
     const ggml_tensor * Q = dst->src[0];
 
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
-    if constexpr (ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, 4, ncols2) &&
-                  ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, 8, ncols2)) {
+    constexpr int ncols1_narrow = 32/ncols2;
+    constexpr int ncols1_wide   = 64/ncols2;
+    if constexpr (ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, ncols1_narrow, ncols2) &&
+                  ggml_cuda_flash_attn_ext_mma_q8_0_instance(DKQ, DV, ncols1_wide,   ncols2)) {
         if (ggml_cuda_flash_attn_ext_mma_q8_0_supported(cc, dst)) {
-            if (Q->ne[1] <= 4) {
-                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 4, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
+            GGML_ASSERT(ncols2 == ggml_cuda_flash_attn_ext_mma_f16_get_ncols2(dst));
+            if (Q->ne[1] <= ncols1_narrow) {
+                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, ncols1_narrow, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
             } else {
-                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, 8, ncols2, GGML_TYPE_Q8_0>(ctx, dst);
+                ggml_cuda_flash_attn_ext_mma_f16_case<DKQ, DV, ncols1_wide,   ncols2, GGML_TYPE_Q8_0>(ctx, dst);
             }
             return;
         }
@@ -344,29 +419,12 @@ static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols1(ggml_backend_cuda_con
 template <int DKQ, int DV>
 static void ggml_cuda_flash_attn_ext_mma_f16_switch_ncols2(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
-    const ggml_tensor * KQV  = dst;
-    const ggml_tensor * Q    = dst->src[0];
-    const ggml_tensor * K    = dst->src[1];
-    const ggml_tensor * V    = dst->src[2];
-    const ggml_tensor * mask = dst->src[3];
-
-    float max_bias = 0.0f;
-    memcpy(&max_bias, (const float *) KQV->op_params + 1, sizeof(float));
+    const ggml_tensor * Q = dst->src[0];
+    const ggml_tensor * K = dst->src[1];
 
     // Edge cases like no mask, ALiBi, unpadded K/V, or misaligned addresses for large data transfers
     //     are put into the template specialization without GQA optimizations.
-    bool use_gqa_opt = mask && max_bias == 0.0f && K->ne[1] % FATTN_KQ_STRIDE == 0;
-    for (const ggml_tensor * t : {Q, K, V, mask}) {
-        if (t == nullptr || ggml_is_quantized(t->type)) {
-            continue;
-        }
-        for (size_t i = 1; i < GGML_MAX_DIMS; ++i) {
-            if (t->nb[i] % 16 != 0) {
-                use_gqa_opt = false;
-                break;
-            }
-        }
-    }
+    const bool use_gqa_opt = ggml_cuda_flash_attn_ext_mma_f16_use_gqa_opt(dst);
 
     GGML_ASSERT(Q->ne[2] % K->ne[2] == 0);
     const int gqa_ratio = Q->ne[2] / K->ne[2];
@@ -936,7 +994,12 @@ size_t ggml_cuda_flash_attn_ext_get_alloc_size(int device, const ggml_tensor * d
     switch (kernel) {
         case BEST_FATTN_KERNEL_TILE:
         case BEST_FATTN_KERNEL_MMA_F16:
-            need_f16_K = need_f16_V = !ggml_cuda_flash_attn_ext_mma_q8_0_decode_supported(ggml_cuda_info().devices[device].cc, dst);
+            // the in-kernel q8_0 paths read the K/V view directly, so no scratch for the f16 copy
+            if (ggml_cuda_flash_attn_ext_mma_q8_0_decode_supported(ggml_cuda_info().devices[device].cc, dst) ||
+                    (kernel == BEST_FATTN_KERNEL_MMA_F16 && ggml_cuda_flash_attn_ext_mma_q8_0_supported(ggml_cuda_info().devices[device].cc, dst))) {
+                break;
+            }
+            need_f16_K = need_f16_V = true;
             break;
         case BEST_FATTN_KERNEL_VEC: {
             const bool f16_fallback = ggml_cuda_get_fattn_vec_case(Q->ne[0], K->type, V->type) == nullptr;

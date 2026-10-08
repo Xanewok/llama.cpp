@@ -17,7 +17,7 @@ static __device__ __forceinline__ unsigned int ggml_cuda_cvta_generic_to_shared(
 // Both the src and dst pointers must be aligned to 16 bit.
 // Shared memory uses 32 bit addressing, the pointer is passed as unsigned int.
 // Generic pointers can be converted to 32 bit shared memory pointers using __cvta_generic_to_shared.
-// Only the 16 bit copy is exposed because 4 and 8 bit copies did not yield performance improvements.
+// Only the 16 byte cg copy is exposed for ordinary data because 4 and 8 byte copies did not yield performance improvements.
 template <int preload>
 static __device__ __forceinline__ void cp_async_cg_16(const unsigned int dst, const void * src) {
     static_assert(preload == 0 || preload == 64 || preload == 128 || preload == 256, "bad preload");
@@ -38,6 +38,19 @@ static __device__ __forceinline__ void cp_async_cg_16(const unsigned int dst, co
         asm volatile("cp.async.cg.shared.global [%0], [%1], 16;"
             : : "r"(dst), "l"(src));
     }
+#else
+    GGML_UNUSED(dst);
+    GGML_UNUSED(src);
+    NO_DEVICE_CODE;
+#endif // CP_ASYNC_AVAILABLE
+}
+
+// 8 byte copy through L1/L2 (cache all), for data that is 8 but not 16 byte aligned (q8_0 rows of 34 byte blocks).
+// Both the src and dst pointers must be aligned to 8 bytes.
+static __device__ __forceinline__ void cp_async_ca_8(const unsigned int dst, const void * src) {
+#ifdef CP_ASYNC_AVAILABLE
+    asm volatile("cp.async.ca.shared.global [%0], [%1], 8;"
+        : : "r"(dst), "l"(src));
 #else
     GGML_UNUSED(dst);
     GGML_UNUSED(src);
