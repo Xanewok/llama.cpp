@@ -53,7 +53,7 @@ avail_bytes() {
 # One model job at a time; wait at most 10 min for 4 GiB, then stop with rc 75.
 ram_wait() {
     local t0=$SECONDS
-    until (( $(avail_bytes) >= 4*1024*1024*1024 )) && ! ps -axo comm | awk '
+    until (( $(avail_bytes) >= 4*1024*1024*1024 )) && ! ps -axo comm | awk '  # shlint: ok awk exits only in END, after draining ps
         /(^|\/)(bw-np2-driver|test-recurrent-state-rollback|llama-cli|round-trace|llama-server)$/ {busy=1}
         END {exit !busy}'; do
         (( SECONDS - t0 < 600 )) || { log "skipped: RAM or model busy before $1 ($(( $(avail_bytes) >> 20 )) MiB free after 10 min)"; exit 75; }

@@ -30,7 +30,7 @@ verify_frozen() {
     strings -a "$BIN/libggml-cuda.so" | grep -c 'gdn_joint_mutant: engaged' > /dev/null || die 6 "libggml-cuda lacks the joint kernel mutant switch"
 }
 guard() {
-    if journalctl -k -b --since "$CUTOFF" --no-pager 2>/dev/null | grep -Eq '\bXid\b|fallen off the bus'; then die 3 "Xid since $CUTOFF"; fi
+    if journalctl -k -b --since "$CUTOFF" --no-pager 2>/dev/null | grep -Ec '\bXid\b|fallen off the bus' > /dev/null; then die 3 "Xid since $CUTOFF"; fi
     (( SECONDS - START < BUDGET_S )) || die 7 "budget expired"
 }
 check_gpu() {
