@@ -1,0 +1,18 @@
+/Users/builder/qwen38-bw/s9-gdn4/cc8ee996356bd7e9b138e46f8e40cb895ef75656/run.SJZ3MI/out/perf-new.log: 16 perf rows
+[1/2] Building CXX object tests/CMakeFiles/test-backend-ops.dir/test-backend-ops.cpp.o
+[2/2] Linking CXX executable bin/test-backend-ops
+/Users/builder/qwen38-bw/s9-gdn4/cc8ee996356bd7e9b138e46f8e40cb895ef75656/run.SJZ3MI/out/perf-old.log: 16 perf rows
+case	old_us	new_us	new/old
+GATED_DELTA_NET(type=f32,head_count=24,head_size=128,n_seq_tokens=1,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=1)	127.6	128.1	1.00
+GATED_DELTA_NET(type=f32,head_count=24,head_size=128,n_seq_tokens=1,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=1)	148.1	261.9	1.77
+GATED_DELTA_NET(type=f32,head_count=24,head_size=128,n_seq_tokens=6,n_seqs=1,v_repeat=1,permuted=0,kda=0,K=1)	594.0	477.9	0.80
+GATED_DELTA_NET(type=f32,head_count=24,head_size=128,n_seq_tokens=6,n_seqs=2,v_repeat=1,permuted=0,kda=0,K=1)	813.8	640.5	0.79
+GATED_DELTA_NET_CACHE_FUSION(type=f32,head_count=24,head_size=128,n_seq_tokens=1,n_seqs=1,K=6)	1.2	185.7	160.06
+GATED_DELTA_NET_CACHE_FUSION(type=f32,head_count=24,head_size=128,n_seq_tokens=1,n_seqs=2,K=6)	1.4	389.7	268.74
+GATED_DELTA_NET_CACHE_FUSION(type=f32,head_count=24,head_size=128,n_seq_tokens=6,n_seqs=1,K=6)	4.9	966.4	197.63
+GATED_DELTA_NET_CACHE_FUSION(type=f32,head_count=24,head_size=128,n_seq_tokens=6,n_seqs=2,K=6)	20.2	1605.2	79.50
+GATED_DELTA_NET_INDEXED_CACHE_FUSION(type=f32,head_count=24,head_size=128,n_seq_tokens=1,n_seqs=1,K=6,indexed=1)	1.0	198.5	196.51
+GATED_DELTA_NET_INDEXED_CACHE_FUSION(type=f32,head_count=24,head_size=128,n_seq_tokens=1,n_seqs=2,K=6,indexed=1)	1.8	320.1	181.86
+GATED_DELTA_NET_INDEXED_CACHE_FUSION(type=f32,head_count=24,head_size=128,n_seq_tokens=6,n_seqs=1,K=6,indexed=1)	8.0	1107.0	138.73
+GATED_DELTA_NET_INDEXED_CACHE_FUSION(type=f32,head_count=24,head_size=128,n_seq_tokens=6,n_seqs=2,K=6,indexed=1)	18.8	2031.8	108.07
+fusion rows with 6 tokens grew 79.50..197.63x (old rows timed ggml_sum)

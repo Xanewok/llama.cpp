@@ -1,0 +1,30 @@
+{
+  "result": "PASS",
+  "commit": "cc8ee996356bd7e9b138e46f8e40cb895ef75656",
+  "source_files": [
+    "ggml/src/ggml-cuda/gated_delta_net.cu",
+    "tests/test-backend-ops.cpp"
+  ],
+  "source_sha256": "c9b4befa6f919080da1a486444b2a7daff20c41f1e49c0b10dd165e3f0bd6361",
+  "gdn_cases": 82,
+  "stages": [
+    {
+      "code": 20,
+      "name": "cpu-build",
+      "rc": 0,
+      "wall_s_M": 67
+    },
+    {
+      "code": 21,
+      "name": "gdn-cases",
+      "rc": 0,
+      "wall_s_M": 4
+    },
+    {
+      "code": 22,
+      "name": "perf-repeats-the-pair",
+      "rc": 0,
+      "wall_s_M": 54
+    }
+  ]
+}
