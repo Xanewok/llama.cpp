@@ -7074,7 +7074,8 @@ struct test_top_k : public test_case {
     }
 
     bool supports_backend(ggml_backend_t backend) override {
-        return !canonical || std::string(ggml_backend_name(backend)).rfind("CUDA", 0) == 0;
+        // local: TOPK_CANONICAL_ANY=1 runs the cases on any backend, so the CPU order must fail them (negative control)
+        return !canonical || getenv("TOPK_CANONICAL_ANY") != nullptr || std::string(ggml_backend_name(backend)).rfind("CUDA", 0) == 0;
     }
 
     // When there are ties, only validate the final result.
