@@ -214,7 +214,7 @@ static std::vector<fa_case> cases(const std::string & group) {
             list.push_back({"verify", 256, 256, 2, {16, 1}, 2048, nb, true, q8, kvc, false, false});
         }
     } else if (group == "other") {
-        for (int64_t nb : {1, 2, 9, 16, 64}) {
+        for (int64_t nb : {2, 9, 16, 64}) { // nb=1 is the grouped decode path: group decode
             list.push_back({"other", 256, 256, 4, {6, 1}, 2048, nb, false, q8, kvc, false, false});
         }
         for (int64_t nb : {1, 4, 8, 64}) {
