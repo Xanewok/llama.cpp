@@ -1,6 +1,6 @@
-purpose: wave-2 stack: stack10-cand2 + p55 + K components
-base: def4a4e20 (frozen/stack10-cand2 source)
+purpose: validation of stack10 window and item renderer: gdn4 kernel commit 07b7febb4 dropped here only; never queued
+base: 9e89520369e2968ae7f6d500845c8ca07714137d
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack10
-created: 2026-10-09T00:36:41+02:00
+branch: topic/stack10-pf2
+created: 2026-10-09T01:32:45+02:00
 creator: xanewok
