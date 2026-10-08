@@ -12,6 +12,14 @@ set -uo pipefail
 export CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1
 ROOT=$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)
 cd "$ROOT" || exit 8
+if [[ ${1:-} == --preflight ]]; then
+    for p in "${BW_BUILDGATE:-$HOME/repos/qwen38-eval-worktrees/bin/buildgate}" "${BW_GATE:-$HOME/repos/qwen38-eval-worktrees/bin/cpugate}" \
+             "${BW_MODEL:-/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf}" codex/np2/cpu-gate.sh; do
+        [[ -e $p ]] || { echo "gate-diag: preflight missing $p"; exit 8; }
+    done
+    [[ -z $(git status --porcelain --untracked-files=no) ]] || { echo "gate-diag: preflight: tracked changes present"; exit 8; }
+    exit 0
+fi
 OUT=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${1:?output}")
 mkdir -p "$OUT"
 W=$HOME/repos/qwen38-eval-worktrees
