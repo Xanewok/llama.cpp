@@ -362,7 +362,9 @@ llama_kv_cache::llama_kv_cache(
     }
 
     // A shared leaf stays on its owner backend. Mixed layer placements keep graph inputs.
-    if (!hparams.no_alloc && !attn_rot_hadamard.empty() && !layers.empty()) {
+    const char * persist_env = getenv("LLAMA_KV_ROT_PERSIST");
+    const bool persist = !persist_env || atoi(persist_env) != 0;
+    if (persist && !hparams.no_alloc && !attn_rot_hadamard.empty() && !layers.empty()) {
         const auto buft = ggml_backend_buffer_get_type(layers.front().k->buffer);
         const bool same_buft = std::all_of(layers.begin(), layers.end(), [&](const kv_layer & l) {
             return ggml_backend_buffer_get_type(l.k->buffer) == buft &&
@@ -378,8 +380,15 @@ llama_kv_cache::llama_kv_cache(
                     ggml_format_name(t, "attn_rot_%d", (int) n);
                     attn_rot_tensors.emplace(n, t);
                 }
-                buf_rot.reset(ggml_backend_alloc_ctx_tensors_from_buft(ctx_rot.get(), buft));
+                if (!getenv("LLAMA_KV_ROT_ALLOC_FAIL")) {
+                    buf_rot.reset(ggml_backend_alloc_ctx_tensors_from_buft(ctx_rot.get(), buft));
+                }
                 if (buf_rot) {
+                    if (getenv("LLAMA_KV_ROT_MUTANT")) {
+                        for (auto & entry : attn_rot_hadamard) {
+                            std::fill(entry.second.begin(), entry.second.end(), 0.0f);
+                        }
+                    }
                     for (const auto & entry : attn_rot_tensors) {
                         ggml_backend_tensor_set(entry.second, attn_rot_hadamard.at(entry.first).data(), 0, ggml_nbytes(entry.second));
                     }

@@ -4569,7 +4569,10 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
         return 1;
     }
 
-    if (ggml_cuda_can_fuse(cgraph, i, { GGML_OP_ADD, GGML_OP_UNARY, GGML_OP_MUL }, { GGML_UNARY_OP_SOFTPLUS })) {
+    static const bool alpha_gate = !getenv("GGML_CUDA_ALPHA_GATE") || atoi(getenv("GGML_CUDA_ALPHA_GATE")) != 0;
+    if (alpha_gate && ggml_cuda_can_fuse(cgraph, i, { GGML_OP_ADD, GGML_OP_UNARY, GGML_OP_MUL }, { GGML_UNARY_OP_SOFTPLUS })) {
+        GGML_LOG_DEBUG("alpha_gate_fusion: device=%d width=%lld rows=%lld\n", cuda_ctx->device,
+            (long long) node->ne[0], (long long) ggml_nrows(node));
         ggml_cuda_op_add_softplus_mul(*cuda_ctx, node, cgraph->nodes[i + 2]);
         return 2;
     }

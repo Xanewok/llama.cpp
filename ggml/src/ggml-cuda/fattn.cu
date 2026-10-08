@@ -184,6 +184,10 @@ static bool ggml_cuda_flash_attn_ext_mma_q8_0_decode_supported(const int cc, con
     GGML_UNUSED_VARS(cc, dst);
     return false;
 #else
+    static const bool enabled = !getenv("GGML_CUDA_Q8_DECODE") || atoi(getenv("GGML_CUDA_Q8_DECODE")) != 0;
+    if (!enabled) {
+        return false;
+    }
     const ggml_tensor * Q = dst->src[0];
     const ggml_tensor * K = dst->src[1];
     const ggml_tensor * V = dst->src[2];
@@ -443,6 +447,7 @@ static void ggml_cuda_flash_attn_ext_mma_f16(ggml_backend_cuda_context & ctx, gg
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
     if (ggml_cuda_flash_attn_ext_mma_q8_0_decode_supported(cc, dst)) {
         const int gqa_ratio = Q->ne[2] / K->ne[2];
+        GGML_LOG_DEBUG("fattn_q8_decode: device=%d dk=%lld gqa=%d seqs=%lld\n", ctx.device, (long long) K->ne[0], gqa_ratio, (long long) Q->ne[3]);
         switch (Q->ne[0]) {
             case 64:
                 ggml_cuda_flash_attn_ext_mma_f16_case<64, 64, 1, 8, GGML_TYPE_Q8_0>(ctx, dst);
