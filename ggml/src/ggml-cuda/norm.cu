@@ -214,7 +214,7 @@ static __global__ void rms_norm_scale_pair_f32(const rms_norm_scale_pair_args ar
 
 template <int block_size>
 static __global__ void add_rms_norm_f32(const float * x, const float * y, float * residual, float * dst,
-                                      const float * weight, const int ncols, const float eps) {
+                                      const float * weight, const int ncols, const float eps, const bool mutant) {
     ggml_cuda_pdl_lc();
     const int64_t offset = (int64_t) blockIdx.x * ncols;
     x += offset;
@@ -236,6 +236,9 @@ static __global__ void add_rms_norm_f32(const float * x, const float * y, float 
     const float scale = rsqrtf(mean + eps);
     for (int col = tid; col < ncols; col += block_size) {
         dst[col] = scale * residual[col] * weight[col];
+        if (mutant) {
+            dst[col] += 1.0f;
+        }
     }
 }
 
@@ -866,12 +869,13 @@ void ggml_cuda_op_add_rms_norm(ggml_backend_cuda_context & ctx, ggml_tensor * ad
     const float eps = ggml_get_op_params_f32(norm, 0);
     GGML_ASSERT(eps >= 0.0f);
     const int block_size = ncols < 1024 ? 256 : 1024;
+    const bool mutant = getenv("GGML_CUDA_ADD_RMS_NORM_MUTANT") != nullptr;
     const ggml_cuda_kernel_launch_params params = {grid, dim3(block_size, 1, 1), 32 * sizeof(float), ctx.stream()};
     if (block_size == 256) {
         ggml_cuda_kernel_launch(add_rms_norm_f32<256>, params, (const float *) add->src[0]->data, (const float *) add->src[1]->data,
-                               (float *) add->data, (float *) mul->data, (const float *) mul->src[1]->data, ncols, eps);
+                               (float *) add->data, (float *) mul->data, (const float *) mul->src[1]->data, ncols, eps, mutant);
     } else {
         ggml_cuda_kernel_launch(add_rms_norm_f32<1024>, params, (const float *) add->src[0]->data, (const float *) add->src[1]->data,
-                               (float *) add->data, (float *) mul->data, (const float *) mul->src[1]->data, ncols, eps);
+                               (float *) add->data, (float *) mul->data, (const float *) mul->src[1]->data, ncols, eps, mutant);
     }
 }
