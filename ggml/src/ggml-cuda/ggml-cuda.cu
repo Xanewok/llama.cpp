@@ -4075,8 +4075,8 @@ static bool ggml_cuda_can_fuse(const struct ggml_cgraph *                cgraph,
             return false;
         }
         // The shared range check skips leaf sources; broadcast reads cannot alias output writes.
-        if (ggml_ssm_conv_overlaps(mul, bias) || ggml_ssm_conv_overlaps(mul, scale) ||
-                (ggml_ssm_conv_overlaps(mul, x) && mul->data != x->data)) {
+        if (!getenv("GGML_CUDA_ALPHA_ALIAS_MUTANT") && (ggml_ssm_conv_overlaps(mul, bias) || ggml_ssm_conv_overlaps(mul, scale) ||
+                (ggml_ssm_conv_overlaps(mul, x) && mul->data != x->data))) {
             return false;
         }
         const int outputs[] = { node_idx + 2 };
