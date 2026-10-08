@@ -157,6 +157,9 @@ static void check(const char * name, const std::vector<float> & x, int nrows, in
                 printf("FAIL %s ncols=%d nrows=%d k=%d row=%d slot=%d got=%d want=%d\n", name, ncols, nrows, k, r, i,
                        dst[(size_t) r * k + i], ref[i]);
                 ++g_fail;
+                if (getenv("TOPK_FAILFAST")) {
+                    exit(1);  // local: negative controls stop at the first mismatch
+                }
                 return;
             }
         }
@@ -285,6 +288,9 @@ static void run_all() {
 }
 
 int main() {
+    if (const char * m = getenv("TOPK_MUTANT")) {
+        topk_mutant = atoi(m);  // local: negative controls, see top-k-batched.cuh
+    }
     g_pool = new emu_pool();
     run_all();
     delete g_pool;
