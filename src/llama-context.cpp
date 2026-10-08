@@ -26,7 +26,8 @@
 
 namespace {
 // local: LLAMA_SYNC_ELIDE=0 disables the elision, LLAMA_SYNC_ELIDE_DEBUG=1 runs the real sync after every skipped one,
-// LLAMA_SYNC_ELIDE_MUTANT=1 stops graph_compute marking pending work (and drops the n_queued_tokens guard), =2 stops device-to-host copies marking it (negative controls).
+// LLAMA_SYNC_ELIDE_MUTANT=1 stops graph_compute marking pending work, =2 stops device-to-host copies marking it, =3 clears the flag after every enqueue
+// (=1 and =3 also drop the n_queued_tokens guard). Negative controls.
 struct sync_elide_flags {
     bool on     = true;
     bool debug  = false;
@@ -823,7 +824,7 @@ void llama_context::synchronize(bool force) {
     // Contract: backend_pending is set before every enqueue of device work on this context's backends and cleared only here,
     // after a real sync. A drained context has nothing to wait for. With several scheduler copies the sync also rewinds
     // next_copy, so that case always syncs.
-    if (!force && !backend_pending && (n_queued_tokens == 0 || sync_elide_env().mutant == 1) && ggml_backend_sched_get_n_copies(sched.get()) == 1 && sync_elide_env().on) {
+    if (!force && !backend_pending && (n_queued_tokens == 0 || sync_elide_env().mutant == 1 || sync_elide_env().mutant == 3) && ggml_backend_sched_get_n_copies(sched.get()) == 1 && sync_elide_env().on) {
         if (!sync_elide_env().debug) {
             n_sync_elided++;
             return;
@@ -977,6 +978,7 @@ enum llama_pooling_type llama_context::pooling_type() const {
 void llama_context::tensor_get_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
     if (sync_elide_env().mutant != 2) { backend_pending = true; }
     ggml_backend_tensor_get_async(backend, tensor, data, offset, size);
+    if (sync_elide_env().mutant == 3) { backend_pending = false; }
 }
 
 void llama_context::logits_deferred_fetch() {
@@ -3028,6 +3030,7 @@ ggml_status llama_context::graph_compute(
 
     if (sync_elide_env().mutant != 1) { backend_pending = true; }
     auto status = ggml_backend_sched_graph_compute_async(get_sched_graph(), gf);
+    if (sync_elide_env().mutant == 3) { backend_pending = false; }
     if (status != GGML_STATUS_SUCCESS) {
         LLAMA_LOG_ERROR("%s: ggml_backend_sched_graph_compute_async failed with error %d\n", __func__, status);
     }
