@@ -165,7 +165,7 @@ depths = [8192]
 proofs = []
 
 [canary.env]
-LLAMA_ARG_LOG_VERBOSITY = "4"
+LLAMA_ARG_LOG_VERBOSITY = "5"  # engagement proof is LLAMA_LOG_DEBUG
 LLAMA_HOST_TRIMS_PROOF = "1"
 LLAMA_STACK7_PROOF = "1"
 
