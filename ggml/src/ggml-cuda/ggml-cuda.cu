@@ -29,6 +29,7 @@
 #include "ggml-cuda/diagmask.cuh"
 #include "ggml-cuda/diag.cuh"
 #include "ggml-cuda/fattn.cuh"
+#include "ggml-cuda/fattn-kv-max-cache.h"
 #include "ggml-cuda/fwht.cuh"
 #include "ggml-cuda/getrows.cuh"
 #include "ggml-cuda/im2col.cuh"
@@ -4647,6 +4648,10 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
     bool graph_evaluated_or_captured = false;
     ggml_cuda_q8_cache q8_cache;
     ggml_cuda_pool_alloc<char> q8_scratch(cuda_ctx->pool());
+    ggml_cuda_fattn_kv_max_cache fattn_kv_max;
+    // Allocated before the node loop and freed after it: the pool frees in reverse order of allocation, so
+    // declare and allocate this after any other evaluation-scope scratch.
+    ggml_cuda_pool_alloc<int> fattn_kv_max_scratch(cuda_ctx->pool());
 
     // flag used to determine whether it is an integrated_gpu
     const bool integrated            = ggml_cuda_info().devices[cuda_ctx->device].integrated;
@@ -4800,6 +4805,21 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                 }
             }
 
+            // Concurrent streams are excluded: the scan and its readers must be ordered on one stream.
+            if (stream_ctx.concurrent_events.empty()) {
+                for (int i = 0; i < cgraph->n_nodes; ++i) {
+                    const ggml_tensor * node = cgraph->nodes[i];
+                    if (node->op == GGML_OP_FLASH_ATTN_EXT && (node->flags & GGML_TENSOR_FLAG_COMPUTE)) {
+                        fattn_kv_max.add(node);
+                    }
+                }
+                const size_t n_ints = fattn_kv_max.reserve();
+                if (n_ints > 0) {
+                    fattn_kv_max.data = fattn_kv_max_scratch.alloc(n_ints);
+                    cuda_ctx->fattn_kv_max_cache = &fattn_kv_max;
+                }
+            }
+
             for (int i = 0; i < cgraph->n_nodes; i++) {
                 ggml_tensor * node = cgraph->nodes[i];
                 if (is_concurrent_event_active) {
@@ -4864,6 +4884,13 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                             }
                         }
                     }
+                    if (cuda_ctx->fattn_kv_max_cache) {
+                        for (int j = i; j <= i + nodes_to_skip; ++j) {
+                            if (!ggml_cuda_is_view_or_noop(cgraph->nodes[j])) {
+                                fattn_kv_max.invalidate(cgraph->nodes[j]);
+                            }
+                        }
+                    }
                     i += nodes_to_skip;
                     continue;
                 }
@@ -4892,12 +4919,16 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                 if (cuda_ctx->q8_cache) {
                     q8_cache.invalidate(node);
                 }
+                if (cuda_ctx->fattn_kv_max_cache) {
+                    fattn_kv_max.invalidate(node);
+                }
 
                 if (!is_concurrent_event_active) {
                     try_launch_concurrent_event(node);
                }
             }
             cuda_ctx->q8_cache = nullptr;
+            cuda_ctx->fattn_kv_max_cache = nullptr;
             if (debug_gdn_fusion && gdn_count > 0) {
                 GGML_LOG_INFO("gdn_cache_fusion: graph device=%d graph=%" PRIu64 " tokens=%" PRId64 " seqs=%" PRId64 " indexed=%d gdn=%d fused=%d\n",
                               cuda_ctx->device, cgraph->uid, gdn_tokens, gdn_seqs, gdn_indexed, gdn_count, gdn_fused);
@@ -6357,6 +6388,11 @@ static ggml_backend_feature * ggml_backend_cuda_get_features(ggml_backend_reg_t 
     GGML_UNUSED(reg);
 }
 
+static void ggml_backend_cuda_fattn_kv_max_counts(uint64_t * scans, uint64_t * reused) {
+    *scans  = ggml_cuda_fattn_kv_max_scans.load(std::memory_order_relaxed);
+    *reused = ggml_cuda_fattn_kv_max_reused.load(std::memory_order_relaxed);
+}
+
 static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, const char * name) {
     GGML_UNUSED(reg);
     if (strcmp(name, "ggml_backend_comm_init") == 0) {
@@ -6376,6 +6412,9 @@ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, con
     }
     if (strcmp(name, "ggml_backend_get_features") == 0) {
         return (void *)ggml_backend_cuda_get_features;
+    }
+    if (strcmp(name, "ggml_backend_cuda_fattn_kv_max_counts") == 0) {
+        return (void *)ggml_backend_cuda_fattn_kv_max_counts;
     }
     return nullptr;
 }
