@@ -1,5 +1,6 @@
 #include "gated_delta_net.cuh"
 #include "ggml-cuda/common.cuh"
+#include <cstdlib>
 
 // NS > 1: one block runs every sequence (n_seqs <= NS) of its (head, column) slice and reads all their states before it
 // writes a snapshot. With state row ids and the cache write fused in, a sequence may read a row that another one
@@ -354,7 +355,20 @@ static void ggml_cuda_op_gated_delta_net_impl(
         state_slot_stride = cache->slot_stride;
     }
 
-    const bool joint = cache != nullptr && state_indices != nullptr && n_seqs > 1;
+    // indexed rows written back into the same cache: see gated_delta_net_cuda for why all sequences share a block
+    // test-only negative control: GGML_CUDA_GDN_JOINT_MUTANT=1 keeps one block per sequence (the racy layout)
+    static const bool joint_mutant = [] {
+        const char * v = getenv("GGML_CUDA_GDN_JOINT_MUTANT");
+        return v != nullptr && atoi(v) != 0;
+    }();
+    const bool joint = cache != nullptr && state_indices != nullptr && n_seqs > 1 && !joint_mutant;
+    if (joint_mutant && cache != nullptr && state_indices != nullptr && n_seqs > 1) {
+        static bool logged = false;
+        if (!logged) {
+            logged = true;
+            GGML_LOG_WARN("gdn_joint_mutant: engaged, %d indexed sequences fused in per-sequence blocks\n", (int) n_seqs);
+        }
+    }
     if (joint && n_seqs == 2) {
         dispatch_gated_delta_net<2>(kda, keep_rs, q_d, k_d, v_d, g_d, b_d, s_d, state_indices, state_rows, dst_d, state_d,
                 S_v, H, n_tokens, n_seqs, sq1, sq2, sq3, sv1, sv2, sv3,
