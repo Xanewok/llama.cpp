@@ -53,7 +53,7 @@ flags=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER_FORCED=ON -DCMAKE_CUDA_C
     -DGGML_CUDA_CCCL_VERSION=v3.4.3 -DFETCHCONTENT_SOURCE_DIR_CCCL="$CCCL"
     -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DFETCHCONTENT_UPDATES_DISCONNECTED=ON -DGGML_CCACHE=ON)
 cuda_build() {
-    nice -n 19 "$W/bin/buildgate" cmake -S codex/p55-test -B build-cuda "${flags[@]}"
+    nice -n 19 "$W/bin/buildgate" cmake -S . -B build-cuda "${flags[@]}"
     nice -n 19 "$W/bin/buildgate" cmake --build build-cuda --target llama-server test-backend-ops -j4
     cp build-cuda/bin/llama-server build-cuda/bin/round-trace
 }
@@ -94,7 +94,7 @@ freeze() {
     [[ $(git rev-parse HEAD) == "$SHA" && -z $(git status --porcelain --untracked-files=no) ]]
     "$W/bin/wt" freeze "$ROOT" stack7-p55 --build build-cuda --desc 'stack7 + package 55 per-type MMVQ; CUDA MUL_MAT and MUL_MAT_ID gates passed on both GPUs; CUDA 13.2 120a CCCL343 NCCL OFF'
     [[ $(head -n 1 "$W/frozen/stack7-p55/SOURCE") == "$SHA" ]]
-    printf 'commit %s\nconfigure: cmake -S codex/p55-test -B build-cuda ' "$SHA" > "$OUT/RECIPE.txt"
+    printf 'commit %s\nconfigure: cmake -S . -B build-cuda ' "$SHA" > "$OUT/RECIPE.txt"
     printf '%q ' "${flags[@]}" >> "$OUT/RECIPE.txt"
     printf '\nbuild: nice -n 19 bin/buildgate cmake --build build-cuda --target llama-server test-backend-ops -j4\n' >> "$OUT/RECIPE.txt"
     cp "$OUT/RECIPE.txt" "$W/frozen/stack7-p55/RECIPE.txt"
