@@ -7,6 +7,8 @@ set -euo pipefail
 export GIT_NO_LAZY_FETCH=1
 FZ=/home/xanewok/repos/qwen38-eval-worktrees/frozen/l1-mmq-smallj
 BIN=$FZ/build/bin
+STOCK=/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack8/build/bin   # L1 base 41d2954a2, same libggml soname
+EXE=$BIN
 HERE=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 GPUS=(GPU-ee9a3956-297c-604b-b4c1-f07930d27e46 GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f)
 KIND=${1:?usage: l1-gpu.sh checks|perf --preflight|--canary|--run}
@@ -57,7 +59,7 @@ tbo() { # TAG GPU_INDEX TIMEOUT [ENV=VAL ...] -- ARGS...   stdout and stderr -> 
     guard
     RC=0
     env CUDA_VISIBLE_DEVICES="$gpu" "${envs[@]}" \
-        timeout "$tmo" nice -n 5 "$BIN/test-backend-ops" "$@" > "$OUT/$tag.out" 2> "$OUT/$tag.err" || RC=$?
+        timeout "$tmo" nice -n 5 "$EXE/test-backend-ops" "$@" > "$OUT/$tag.out" 2> "$OUT/$tag.err" || RC=$?
     cat "$OUT/$tag.out" "$OUT/$tag.err" > "$OUT/$tag.log"
     (( RC != 124 )) || die 8 "$tag hung ($tmo s)"
     printf '%s\t%s\n' "$tag" "$RC" >> "$OUT/runs.tsv"
@@ -86,7 +88,7 @@ ENG_OFF=('mmq_tiles: type=q6_K m=3072 cols=12 z=1 J=16 ntiles=48 nsm=36 small_i=
          'mmq_tiles: type=q4_K m=3072 cols=24 z=1 J=24 ntiles=48 nsm=36 small_i=0')
 P_MM='type_a=(iq4_xs|q4_K|q5_K|q6_K|q8_0),type_b=f32,m=(3072|8704|9216|124160),n=(9|12|16|17|24|25),k=(1024|256),'
 P_ID='type_a=(iq4_xs|q4_K|q5_K|q6_K|q8_0),type_b=f32,n_mats=4,n_used=2,b=0,m=8704,n=(12|24),k=512,'
-MIN_MM=100   # 5 types x (3 m x 6 n + 2 n at m=124160)
+MIN_MM=100   # 5 types x (3 m x 6 n + 2 n at m=124160); the binary has no m=11520 MUL_MAT case, so the regex needs no 11520
 MIN_ID=10
 
 eval_pair() { # TAG GPU_INDEX [ENV...]: the new MUL_MAT and MUL_MAT_ID cases
@@ -95,6 +97,45 @@ eval_pair() { # TAG GPU_INDEX [ENV...]: the new MUL_MAT and MUL_MAT_ID cases
     passed "$tag-mm" "$MIN_MM" || die 8 "$tag MUL_MAT cases fail or fewer than $MIN_MM ran (see $OUT/$tag-mm.log)"
     tbo "$tag-id" "$g" 900 "$@" -- -b CUDA0 -o MUL_MAT_ID -p "$P_ID"
     passed "$tag-id" "$MIN_ID" || die 8 "$tag MUL_MAT_ID cases fail or fewer than $MIN_ID ran (see $OUT/$tag-id.log)"
+}
+
+must_fail() { # TAG: negative control, MUL_MAT_Q cases ran and some failed; q8_0 (no small-I tile) never launches a dropped kernel
+    local ran failed
+    read -r ran failed < <(awk '/^ +[0-9]+\/[0-9]+ tests passed/ {split($1, a, "/"); print a[2], a[2] - a[1]; exit}' "$OUT/$1.log") || true
+    (( ${ran:-0} >= MIN_MM )) || die 5 "negative control void: $1 ran ${ran:-0} cases, fewer than $MIN_MM (see $OUT/$1.log)"
+    (( ${failed:-0} > 0 )) || die 5 "negative control void: $1 dropped the small-I launches and nothing failed"
+    ! grep -Eq '^ +MUL_MAT\(type_a=q8_0.*FAIL' "$OUT/$1.log" || die 5 "negative control void: $1 fails q8_0 cases, which never take a dropped launch"
+    note "$1: ${failed} of $ran cases fail with small-I launches dropped, as required"
+}
+hash_keys() { cut -d' ' -f1-4 "$1"; }
+hash_diff() { # A B: "type m k n" whose hash differs in B
+    awk 'NR == FNR {h[$1" "$2" "$3" "$4] = $5; next} h[$1" "$2" "$3" "$4] != $5 {print $1, $2, $3, $4}' "$1" "$2" | sort
+}
+hash_gates() { # G
+    local g=$1 d=$OUT/hash-g$1 mode
+    for mode in default-2 auto auto-drop small; do
+        cmp -s <(hash_keys "$d-default.out") <(hash_keys "$d-$mode.out") || die 8 "g$g: $mode hashes cover different cases than default"
+    done
+    cmp -s "$d-default.out" "$d-default-2.out" || die 5 "g$g: default tiles not deterministic run to run; hash comparison void"
+    hash_diff "$d-default.out" "$d-auto.out" > "$d-auto.keys"
+    hash_diff "$d-default.out" "$d-auto-drop.out" > "$d-auto-drop.keys"
+    [[ -s $d-auto-drop.keys ]] || die 5 "g$g: negative control void: auto-drop equals default bitwise"
+    [[ -z $(comm -23 "$d-auto.keys" "$d-auto-drop.keys") ]] || die 8 "g$g: auto differs from default where auto-drop does not (see $d-auto.keys, $d-auto-drop.keys)"
+}
+stock_setup() { # copy of the L1 test binary beside symlinks to the stack8 libs: same code, stock MMQ
+    local d=$OUT/stock-bin f
+    (cd "$STOCK" && grep -a ' libggml' SHA256SUMS | sha256sum -c --quiet) || die 6 "stack8 libggml bytes changed"
+    [[ $(head -1 "$STOCK/../../SOURCE" | cut -d' ' -f1) == 41d2954a21106c9a65c8dd2a0697e7d33ae4f22f ]] || die 6 "stack8 is not 41d2954a2"
+    rm -rf "$d"; mkdir -p "$d"
+    cp "$BIN/test-backend-ops" "$d/"
+    for f in "$STOCK"/libggml*.so*; do ln -s "$(readlink -f "$f")" "$d/$(basename "$f")"; done
+    local libs stray
+    libs=$(ldd "$d/test-backend-ops")
+    [[ -z $(grep 'not found' <<< "$libs" || true) ]] || die 5 "stock arm: unresolved libraries in $d"
+    [[ $(grep -c "libggml.* => $d/" <<< "$libs" || true) == 4 ]] || die 5 "stock arm: the 4 libggml* do not all resolve to $d"
+    stray=$(awk '/libggml/ {print $3}' <<< "$libs" | grep -v "^$d/" || true)
+    [[ -z $stray ]] || die 5 "stock arm: ggml libs resolve outside $d: $stray"
+    STOCK_EXE=$d
 }
 
 mode_checks() {
@@ -129,15 +170,22 @@ mode_checks() {
         note "g$g correctness pass: $(grep -Eh 'tests passed' "$OUT"/g$g-{auto,small,default}-{mm,id}.log | tr -s ' ' | tr '\n' ';')"
     done
 
-    # 4. bitwise comparison per (type, m, k, n) across settings; auto-drop picks the small path in the log but launches stock tiles
+    # 4. bitwise comparison per (type, m, k, n) across settings; auto-drop skips the small-I launch (dst unwritten): the control
+    stock_setup
     for g in 0 1; do
         for mode in default default auto auto-drop small; do
             tag="hash-g$g-$mode"; [[ -e $OUT/$tag.out ]] && tag=$tag-2
             tbo "$tag" "$g" 1500 GGML_CUDA_MMQ_TILES=$mode -- mmq-hash CUDA0
             [[ $RC == 0 && -s $OUT/$tag.out ]] || die 8 "$tag failed (see $OUT/$tag.log)"
         done
-        cmp -s "$OUT/hash-g$g-default.out" "$OUT/hash-g$g-default-2.out" || die 5 "g$g: default tiles not deterministic run to run; hash comparison void"
-        cmp -s "$OUT/hash-g$g-default.out" "$OUT/hash-g$g-auto-drop.out" || die 8 "g$g: auto-drop (stock launches) differs from default"
+        hash_gates "$g"
+        EXE=$STOCK_EXE
+        tbo "hash-g$g-stock" "$g" 1500 -- mmq-hash CUDA0
+        EXE=$BIN
+        [[ $RC == 0 && -s $OUT/hash-g$g-stock.out ]] || die 8 "hash-g$g-stock failed (see $OUT/hash-g$g-stock.log)"
+        cmp -s "$OUT/hash-g$g-default.out" "$OUT/hash-g$g-stock.out" || die 8 "g$g: L1 default path differs from stock MMQ (see hash-g$g-stock.out)"
+        tbo "g$g-drop-mm" "$g" 900 GGML_CUDA_MMQ_TILES=auto-drop -- -b CUDA0 -o MUL_MAT -p "$P_MM"
+        must_fail "g$g-drop-mm"
         for mode in auto small; do
             diff "$OUT/hash-g$g-default.out" "$OUT/hash-g$g-$mode.out" | grep -c '^>' > "$OUT/hash-g$g-$mode.ndiff" || true
             diff "$OUT/hash-g$g-default.out" "$OUT/hash-g$g-$mode.out" | grep '^>' > "$OUT/hash-g$g-$mode.diff" || true
@@ -173,7 +221,7 @@ mode_perf() {
     local base=(perf -b CUDA0 -o MUL_MAT -j 1 --output sql)
     local hot='type_a=(iq4_xs|q4_K|q5_K|q6_K|q8_0),type_b=f32,m=(3072|5120|6144|8704|9216|17408|124160),n=(12|24),k=(5120|8704),'
     local cold='type_a=(iq4_xs|q4_K|q5_K|q6_K|q8_0),type_b=f32,m=(3072|5120|6144|8704|9216|17408|124160),n=12,k=(5120|8704),'
-    # A, B, C, A again per repetition: default tiles / auto policy / auto-drop (log picks small, stock launch = null control) / default
+    # A, B, C, A again per repetition: default tiles / auto policy / auto-drop (no GEMM at gated shapes: floor, not a null) / default
     local order=(default auto auto-drop default)
     for rep in 1 2; do
         check_gpu "${GPUS[0]}"

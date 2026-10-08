@@ -1,7 +1,8 @@
 """perf_summary.py OUT canary|run: test-backend-ops --output sql files of l1-gpu.sh perf -> TSV on stdout.
 
-Run mode: one row per (gpu, hot|cold, type, m, k, n) with the median time_us per setting (default tiles, auto policy, auto-drop null
-control), the auto-default delta, the spread between the two default runs (A/A noise) and the auto-drop-default delta.
+Run mode: one row per (gpu, hot|cold, type, m, k, n) with the median time_us per setting (default tiles, auto policy, auto-drop),
+the auto-default delta, the spread between the two default runs (A/A noise) and the auto-drop-default delta.
+auto-drop skips the GEMM at gated shapes (a no-GEMM floor there, not a null control) and equals default elsewhere.
 """
 import math
 import re
