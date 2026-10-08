@@ -26,6 +26,7 @@
 #include <atomic>
 #include <array>
 #include <cfloat>
+#include <chrono>
 #include <cinttypes>
 #include <cstdarg>
 #include <cstdint>
@@ -13617,8 +13618,173 @@ static void usage(char ** argv) {
     printf("  %s perf -o 'MUL_MAT.*'\n", argv[0]);
 }
 
+// `test-backend-ops mmq-chain DEVICE hash|perf [ITERS] [quick] [corrupt]`: two quantized MUL_MATs (quantize -> MMQ -> stream-k fixup) chained
+// with rms_norm/mul/add, so that every producer/consumer pair around MMQ is exercised. The graph is allocated once and recomputed
+// ITERS times with two alternating inputs, which includes CUDA graph replay.
+// hash: one FNV-1a hash of the output bits per (type, m1, n) and input on stdout, comparable between binaries; exit 1 if any
+//       recompute differs from the first one with the same input, so a launch-ordering race fails the run.
+// perf: minimum and median microseconds per graph over repetitions of enqueued recomputes.
+// corrupt: flips one bit of the fourth recompute's readback; the run must then fail (control for the comparison itself).
+static uint64_t mmq_chain_fnv1a(uint64_t h, const void * data, size_t n) {
+    const uint8_t * p = (const uint8_t *) data;
+    for (size_t i = 0; i < n; ++i) {
+        h = (h ^ p[i]) * 1099511628211ull;
+    }
+    return h;
+}
+
+static int mmq_chain(const char * dev_name, const char * kind, int iters, bool quick, bool corrupt) {
+    const bool perf = strcmp(kind, "perf") == 0;
+    if (!perf && strcmp(kind, "hash") != 0) {
+        fprintf(stderr, "mmq-chain: kind must be hash or perf\n");
+        return 2;
+    }
+    ggml_backend_load_all();
+    ggml_backend_dev_t dev = ggml_backend_dev_by_name(dev_name);
+    if (!dev) {
+        fprintf(stderr, "no device %s\n", dev_name);
+        return 2;
+    }
+    ggml_backend_ptr backend(ggml_backend_dev_init(dev, nullptr));
+    if (!backend) {
+        return 2;
+    }
+    ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(backend.get());
+
+    const int64_t k = 5120;
+    std::vector<ggml_type> types = { GGML_TYPE_IQ4_XS, GGML_TYPE_Q4_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0 };
+    std::vector<int64_t> m1s = { 3072, 6144, 8704 };
+    std::vector<int64_t> ns = { 12, 17, 24 };
+    if (quick) {
+        types = { GGML_TYPE_Q4_K, GGML_TYPE_Q8_0 };
+        m1s = { 3072 };
+        ns = { 12 };
+    }
+    const int64_t m1_max = *std::max_element(m1s.begin(), m1s.end());
+
+    std::mt19937 rng(1);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+    std::vector<float> wf(m1_max*k);
+    for (float & v : wf) { v = dist(rng); }
+    std::vector<float> xs[2];
+    for (auto & x : xs) {
+        x.resize(k*ns.back());
+        for (float & v : x) { v = dist(rng); }
+    }
+    std::vector<float> w1(k), w2(m1_max);
+    for (float & v : w1) { v = 0.5f + dist(rng)*dist(rng); }
+    for (float & v : w2) { v = 0.5f + dist(rng)*dist(rng); }
+
+    int64_t bad_total = 0;
+    for (ggml_type type : types) {
+        for (int64_t m1 : m1s) {
+            ggml_context_ptr ctx_w(ggml_init({ ggml_tensor_overhead()*4, nullptr, true }));
+            ggml_tensor * A1 = ggml_new_tensor_2d(ctx_w.get(), type, k, m1);
+            ggml_tensor * A2 = ggml_new_tensor_2d(ctx_w.get(), type, m1, k);
+            ggml_backend_buffer_ptr buf_w(ggml_backend_alloc_ctx_tensors_from_buft(ctx_w.get(), buft));
+            if (!buf_w) {
+                fprintf(stderr, "alloc failed\n");
+                return 2;
+            }
+            for (ggml_tensor * A : { A1, A2 }) {
+                std::vector<uint8_t> wq(ggml_nbytes(A));
+                ggml_quantize_chunk(type, wf.data(), wq.data(), 0, A->ne[1], A->ne[0], nullptr);
+                ggml_backend_tensor_set(A, wq.data(), 0, wq.size());
+            }
+
+            for (int64_t n : ns) {
+                ggml_context_ptr ctx(ggml_init({ ggml_tensor_overhead()*32 + ggml_graph_overhead(), nullptr, true }));
+                ggml_tensor * x  = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, k, n);
+                ggml_tensor * t1 = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, k);
+                ggml_tensor * t2 = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, m1);
+                ggml_set_input(x);
+                ggml_set_input(t1);
+                ggml_set_input(t2);
+                ggml_tensor * y1  = ggml_mul_mat(ctx.get(), A1, ggml_mul(ctx.get(), ggml_rms_norm(ctx.get(), x, 1e-6f), t1));
+                ggml_tensor * y2  = ggml_mul_mat(ctx.get(), A2, ggml_mul(ctx.get(), ggml_rms_norm(ctx.get(), y1, 1e-6f), t2));
+                ggml_tensor * out = ggml_add(ctx.get(), y2, x);
+                ggml_set_output(y1);
+                ggml_set_output(out);
+                ggml_cgraph * gf = ggml_new_graph(ctx.get());
+                ggml_build_forward_expand(gf, out);
+                ggml_gallocr_t galloc = ggml_gallocr_new(buft);
+                GGML_ASSERT(ggml_gallocr_alloc_graph(galloc, gf));
+                ggml_backend_tensor_set(t1, w1.data(), 0, ggml_nbytes(t1));
+                ggml_backend_tensor_set(t2, w2.data(), 0, ggml_nbytes(t2));
+
+                int status = GGML_STATUS_SUCCESS;
+                if (perf) {
+                    ggml_backend_tensor_set(x, xs[0].data(), 0, ggml_nbytes(x));
+                    for (int i = 0; i < 30; ++i) {
+                        status |= ggml_backend_graph_compute_async(backend.get(), gf);
+                    }
+                    ggml_backend_synchronize(backend.get());
+                    std::vector<double> us;
+                    for (int rep = 0; rep < 9; ++rep) {
+                        const auto t0 = std::chrono::steady_clock::now();
+                        for (int i = 0; i < iters; ++i) {
+                            status |= ggml_backend_graph_compute_async(backend.get(), gf);
+                        }
+                        ggml_backend_synchronize(backend.get());
+                        us.push_back(std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count()/iters);
+                    }
+                    std::sort(us.begin(), us.end());
+                    printf("perf %s m1=%lld n=%lld min_us=%.3f median_us=%.3f\n", ggml_type_name(type), (long long) m1, (long long) n,
+                           us.front(), us[us.size()/2]);
+                } else {
+                    std::vector<float> r1(m1*n), ro(k*n);
+                    uint64_t ref[2] = { 0, 0 };
+                    bool have[2] = { false, false };
+                    int64_t bad = 0;
+                    for (int i = 0; i < iters; ++i) {
+                        const int p = i & 1;
+                        ggml_backend_tensor_set(x, xs[p].data(), 0, ggml_nbytes(x));
+                        status |= ggml_backend_graph_compute(backend.get(), gf);
+                        ggml_backend_tensor_get(y1, r1.data(), 0, ggml_nbytes(y1));
+                        ggml_backend_tensor_get(out, ro.data(), 0, ggml_nbytes(out));
+                        if (corrupt && i == 3) {
+                            ro[0] = -ro[0] - 1.0f;
+                        }
+                        uint64_t h = mmq_chain_fnv1a(1469598103934665603ull, r1.data(), r1.size()*sizeof(float));
+                        h = mmq_chain_fnv1a(h, ro.data(), ro.size()*sizeof(float));
+                        if (!have[p]) {
+                            ref[p] = h;
+                            have[p] = true;
+                        } else if (h != ref[p]) {
+                            ++bad;
+                        }
+                    }
+                    printf("chain %s m1=%lld n=%lld %016llx %016llx\n", ggml_type_name(type), (long long) m1, (long long) n,
+                           (unsigned long long) ref[0], (unsigned long long) ref[1]);
+                    fprintf(stderr, "mmq-chain: %s m1=%lld n=%lld recompute mismatches %lld of %d\n", ggml_type_name(type),
+                            (long long) m1, (long long) n, (long long) bad, iters);
+                    bad_total += bad;
+                }
+                ggml_gallocr_free(galloc);
+                if (status != GGML_STATUS_SUCCESS) {
+                    fprintf(stderr, "compute failed\n");
+                    return 2;
+                }
+            }
+        }
+    }
+    if (bad_total > 0) {
+        fprintf(stderr, "mmq-chain: FAIL %lld recomputes differ\n", (long long) bad_total);
+        return 1;
+    }
+    return 0;
+}
+
 int main(int argc, char ** argv) {
     test_mode mode = MODE_TEST;
+    if (argc >= 4 && argc <= 7 && strcmp(argv[1], "mmq-chain") == 0) {
+        bool quick = false, corrupt = false;
+        for (int i = 5; i < argc; ++i) {
+            quick   |= strcmp(argv[i], "quick") == 0;
+            corrupt |= strcmp(argv[i], "corrupt") == 0;
+        }
+        return mmq_chain(argv[2], argv[3], argc >= 5 ? atoi(argv[4]) : 200, quick, corrupt);
+    }
     output_formats output_format = CONSOLE;
     const char * op_names_filter = nullptr;
     const char * backend_filter = nullptr;
