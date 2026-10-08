@@ -11,7 +11,7 @@ export HARNESS_CODE_ROOT="$code" HARNESS_DATA_ROOT="$data" PYTHONPATH="$code:$da
 case " $* " in
     *' --preflight '*|*' --capture '*|*' --fixtures '*)
         export CUDA_VISIBLE_DEVICES=''
-        exec nice -n 19 python3 -P "$ROOT/codex/gpu_stack8.py" "$@" ;;
+        exec nice -n 19 python3 -P "$ROOT/codex/gpu_stack9.py" "$@" ;;
 esac
 [[ ${GPUQ_ACTIVE:-0} == 1 ]] || { echo 'GPU entry requires gpuq'; exit 8; }
-exec python3 -P "$ROOT/codex/gpu_stack8.py" "$@"
+exec python3 -P "$ROOT/codex/gpu_stack9.py" "$@"

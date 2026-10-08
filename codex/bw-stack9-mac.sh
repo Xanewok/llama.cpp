@@ -46,7 +46,7 @@ units() {
     done
 }
 chain() {
-    "$BW_GATE" python3 codex/chain_cpu_identity.py --out "$OUT/chain"
+    "$BW_GATE" python3 codex/chain_cpu_identity.py --n-predict 32 --out "$OUT/chain"
     "$BW_GATE" python3 codex/check-chain.py "$OUT/chain"
 }
 np2() {

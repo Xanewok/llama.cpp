@@ -1,0 +1,57 @@
+id = "bw-stack9"
+title = "stack9 CUDA build, CCCL343 check, freeze, and render/check GPU items; Mac CPU gates required"
+kind = "filler"
+priority = 19
+host_sensitive = false
+preemptible = false
+# G: 1200 s; D: budget = estimate x 2. No GPU binary runs.
+est_s = 1200
+budget_s = 2400
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-run: FAIL" }]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/bw-stack9.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/window/stack9-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0", S7_ONLY = "40 41 42 43" }
+ports = []
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/bw-stack9.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/window/stack9-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/window/stack9-a{attempt}/payload.log"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "stages", "controls"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/bw-stack9.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/bw-stack9.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/render_stack9_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/gpu_stack9.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/stack9-evidence/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/REPORT-stack9.md",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/common/speculative.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/ggml/src/ggml-cuda/gated_delta_net.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/src/models/delta-net-base.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/common/sampling.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/tests/test-llama-archs.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/mmq.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-index.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/items/stack9-depth-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/items/stack9-np2-real-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9/codex/items/stack9-duo-soak-j5q.toml.in",
+]
