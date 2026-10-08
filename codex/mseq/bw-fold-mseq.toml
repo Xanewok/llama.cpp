@@ -31,6 +31,7 @@ protected = ["budget"]
 
 [pins]
 files = ["/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fold-mseq/codex/mseq/mac-out/a5/matrix/summary.json",
   "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/mmq.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/fold-mseq/codex/mseq/bw-fold-mseq.sh",

@@ -7,7 +7,7 @@ W=$HOME/repos/qwen38-eval-worktrees
 ROOT=$(cd "$(dirname "$(readlink -f "$0")")/../.." && pwd)
 cd "$ROOT"
 CCCL=/home/xanewok/repos/qwen38-weekend/deps/cccl-v3.4.3
-MAC=${BW_MAC_SUMMARY:-$ROOT/codex/mseq/mac-out/a2/matrix/summary.json}
+MAC=${BW_MAC_SUMMARY:-$ROOT/codex/mseq/mac-out/a5/matrix/summary.json}
 if [[ ${1:-} == --preflight ]]; then
     for f in "$W/bin/buildgate" "$W/bin/wt" "$CCCL" "$W/work/aa-load/ccx01.sh" \
              "$W/work/build-window-1007/mmq.sh" "$W/frozen/stack7/build/bin/round-trace" "$MAC"; do

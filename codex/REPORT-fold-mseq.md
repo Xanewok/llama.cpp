@@ -58,3 +58,62 @@ Before the parent queues the window: obtain passing Mac gates, pin that immutabl
 Expected np2 saving is about 0.2 ms per eligible round (D), scaled from the spike's measured np1 fold savings of 0.23/0.19/0.22 ms (M, historical). Both slots already share the catch-up decode, so the saving does not double. The new gather/input overhead and eligible-round fraction are unmeasured (G); no GPU speed claim is made.
 
 Open gates: all model identities, both negative controls, mixed-round proof, final fixture compilation, CUDA build, positive GPU engagement and GPU A/B. Unequal sequence lengths, reordered rows, split batches, coupled sequences, adapters and unsupported context/model pairs retain catch-up; this can reduce engagement. The experimental `llama-ext.h` arm signature now includes `n_seq`; out-of-tree callers must update. This change does not resolve unrelated stack graph-cache or Meta lifetime concerns documented in the background review.
+
+## a3
+
+### Cause and fixes
+
+Observed regression in root `629a725dd`, not a judge/counter or A/B-switch defect: `src/llama-context.cpp:2048` added `ubatch.n_pos == 1`. Qwen3.5 uses M-RoPE, so `src/llama-hparams.cpp:285` returns `GGML_MROPE_SECTIONS` (4, D) even for text tokens. `src/llama-batch.cpp:829` broadcasts each text token's scalar position across those sections. The old stack7 fold had no one-axis guard. Consequently, the new guard rejected every eligible Qwen3.5 token batch before `mtp_fold_prepare()`.
+
+Root fix `e61e6bb31`, `llama : allow M-RoPE token batches in MTP fold`, removes only that guard. Token-only input, one target ubatch, original row order, valid sequence ids, contiguous sequence blocks and draft-cache position checks remain. The folded graph consumes the same broadcast `inp_pos` as the target (`src/models/qwen35.cpp:324`); the separate catch-up's token batch receives the same broadcast from the allocator. No sampling operation, default-on policy, root environment switch or fallback changes.
+
+The a2 trace is the negative control for this regression: fold off/on each have 35 catch-up decodes (M), zero fold events (M), and identical tokens/dumps; `matrix.py:61` fails with `no catch-up saved`. At `e61e6bb31`, a3's same cell has 35/1 catch-up decodes off/on (M), 34 folds (M), and identical tokens/dumps. Its first np2 cell has 50/5 catch-up decodes (M), 45 folds (M), and joint `engaged n_seq=2` plus identity.
+
+a3 built successfully and passed all four plain-CPU np1 pairs and the first np2 pair (M). It stopped in `m0-np2-kv0-k3-s2718-off`: the driver requires 80 output tokens (D), but slot 1 stopped on EOS after 55 tokens (M), then threw `short completion`. Remaining cells and controls did not run. Evidence: `mac-out/a3/matrix.log`, `matrix/summary.json`, and `matrix/m0-np2-kv0-k3-s2718-off.log:9179`. This failure occurs with folding disabled.
+
+Fixture commits `fe34c623a` and `186e41a52` apply the fixed-length workload's EOS constraint. a4 showed that setting only `sampling.ignore_eos` is insufficient for direct `server_task` construction: it bypasses the schema's EOG-bias handler (`tools/server/server-schema.cpp:475`). The driver now copies the model-derived `server.get_meta().logit_bias_eog` into each task's `sampling.logit_bias` (`codex/bw-np2-driver.cpp:86`, `:125`), as that handler does. No hardcoded token ids. a4's original failure evidence is preserved. Full rerun: `CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 nice -n 19 bash codex/mseq/run-mac.sh a5`, snapshot `186e41a52`.
+
+### Full Mac result (a5)
+
+PASS, rc 0 (M). All 24 identity pairs and all controls passed across 52 model processes (M), sequentially on `mini-builder`. Evidence: `codex/mseq/mac-out/a5/{COMMIT,cmake.log,build.log,matrix.log,parser-replay.log,matrix/summary.json}` and each cell's JSON, draft dump, trace and log. Tested fold source digest: `059dd4c58ba348e0e954760dd8d6878f04cadbdec5f34e1acac2368de3fc7a06`.
+
+Each cell runs cold and repeated-prefix requests in one loaded model, with context 4096 (D), four threads (D), Qwen3.5-4B Q4, q8_0 target KV, probabilistic MTP and rejection verify, chain disabled. `m0` is plain CPU; `m1` is Meta(CPU,CPU). `kv0` is per-stream; `kv1` is unified. Counts below are measured per model process, including prefill and both request phases; they are not steady-round timings. Every PASS includes identical per-slot output tokens, draft/acceptance counters and complete draft dumps, positive fold counts, fewer separate catch-ups, and the required joint-sequence engagement marker.
+
+| Cell | Catch-up off (M) | Catch-up on (M) | Folds on (M) | Result |
+|---|---:|---:|---:|---|
+| m0-np1-kv0-k3-s1729 | 35 | 1 | 34 | PASS |
+| m0-np1-kv0-k3-s2718 | 38 | 1 | 37 | PASS |
+| m0-np1-kv0-k5-s1729 | 28 | 1 | 27 | PASS |
+| m0-np1-kv0-k5-s2718 | 34 | 1 | 33 | PASS |
+| m0-np2-kv0-k3-s1729 | 50 | 5 | 45 | PASS |
+| m0-np2-kv0-k3-s2718 | 55 | 5 | 50 | PASS |
+| m0-np2-kv0-k5-s1729 | 43 | 8 | 35 | PASS |
+| m0-np2-kv0-k5-s2718 | 50 | 6 | 44 | PASS |
+| m0-np2-kv1-k3-s1729 | 54 | 9 | 45 | PASS |
+| m0-np2-kv1-k3-s2718 | 60 | 9 | 51 | PASS |
+| m0-np2-kv1-k5-s1729 | 54 | 14 | 40 | PASS |
+| m0-np2-kv1-k5-s2718 | 55 | 12 | 43 | PASS |
+| m1-np1-kv0-k3-s1729 | 37 | 1 | 36 | PASS |
+| m1-np1-kv0-k3-s2718 | 45 | 1 | 44 | PASS |
+| m1-np1-kv0-k5-s1729 | 29 | 1 | 28 | PASS |
+| m1-np1-kv0-k5-s2718 | 34 | 1 | 33 | PASS |
+| m1-np2-kv0-k3-s1729 | 50 | 8 | 42 | PASS |
+| m1-np2-kv0-k3-s2718 | 58 | 6 | 52 | PASS |
+| m1-np2-kv0-k5-s1729 | 45 | 8 | 37 | PASS |
+| m1-np2-kv0-k5-s2718 | 47 | 9 | 38 | PASS |
+| m1-np2-kv1-k3-s1729 | 54 | 12 | 42 | PASS |
+| m1-np2-kv1-k3-s2718 | 60 | 9 | 51 | PASS |
+| m1-np2-kv1-k5-s1729 | 56 | 14 | 42 | PASS |
+| m1-np2-kv1-k5-s2718 | 52 | 14 | 38 | PASS |
+
+Controls (M): `mutant-swap` engaged and changed 2 output token ids relative to `m0-np2-kv0-k3-s1729-off`; `forced-layout` preserved output/dumps and all 50 separate catch-ups, with 45 refusal events and zero folds; `mixed-off/on` preserved output/dumps, drafted only slot 0, contained 2 five-row verify phases, and reduced catch-up count from 36 to 4 with 32 folds. Assertions: `codex/mseq/matrix.py:80` through the mixed-round checks.
+
+Recorded GPU parser replay passed (M) at the final tested snapshot, using the Mac copies of real `orchestration/gpuq/fixtures/` and recorded stack6/getter/chain artifacts. It checks SSE/native token identity, overlap, memory CSV and kernel-journal parsing, malformed/short records and absent np1/np2 fold markers. No GPU binary ran. Summed model-job elapsed time was 1328.22 seconds (D); individual timings in `summary.json` include loading, warmup and verbose logging and are not a performance A/B.
+
+This clears the model identities, joint engagement, negative controls and mixed-round gates previously left open. CUDA compilation, positive real-GPU canary engagement and GPU performance remain unmeasured. No Linux compile, test, model run or GPU operation was performed. The owner's `codex/PROMPT.md` and `codex/PURPOSE` edits remain untouched; they still need resolution before the window's clean-tree guard can pass.
+
+### Window and item checks
+
+The window now defaults to `mac-out/a5/matrix/summary.json` and pins that passing evidence. `CUDA_VISIBLE_DEVICES='' nice -n 19 gpuq submit --check codex/mseq/bw-fold-mseq.toml` passed (M); log: `mac-out/a5/window-contract.log`.
+
+`CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1 nice -n 19 python3 codex/mseq/make_items.py 186e41a52 codex/mseq/mac-out/a5/matrix/summary.json codex/mseq/dry-items/a5 --dry` rendered both np1/np2 items and their `gpuq submit --check` calls passed (M). Logs: `dry-items/a5/*-contract.log`. These remain contract-only renders with stack7 in the patch arm, because no fold-mseq CUDA freeze exists. The parent window must freeze this branch and render the real items before queuing the canary. Nothing was submitted or executed on the GPUs.
