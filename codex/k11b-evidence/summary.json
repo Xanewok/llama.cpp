@@ -1,1 +1,16 @@
-{}
+{
+  "result": "PASS",
+  "local_mutant_stage": "PASS",
+  "source_head": "c6cc71a48da1887fc25491a543fb1a924665b6d4",
+  "ggml_tree": "26e074bf7e5f5d296efbec5a883cb80f87b5ce8e",
+  "tests_tree": "ec2a3d71d79ce849c6d2b4dcfbfcef36abbed1d0",
+  "mac": "mini-builder M4 arm64 CPU only, ASan+UBSan for cuda-sim",
+  "stage_wall_s": {
+    "cpu_build": 68,
+    "units": 2,
+    "glue_mutant": 0,
+    "cuda_sim": 4,
+    "cuda_sim_mutants": 19
+  },
+  "out_dir": "build-bw-mac-results/s10-k11b-mac-mac-a2 (untracked)"
+}
