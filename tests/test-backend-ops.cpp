@@ -12656,7 +12656,8 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
 
         const bool slice_ok = run_fa_vec_slice(backend, backend_cpu.get(), op_names_filter);
 
-        return n_ok == tests_run && slice_ok && run_alpha_gate_identity(backend, op_names_filter);
+        const bool alpha_ok = run_alpha_gate_identity(backend, op_names_filter);
+        return n_ok == tests_run && slice_ok && alpha_ok;
     }
 
     if (mode == MODE_GRAD) {
