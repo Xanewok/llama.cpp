@@ -1,0 +1,52 @@
+id = "bw-s10-k6"
+title = "K6 CUDA build, byte-identity gates, must-fail mutants and memcheck on both GPUs; Mac CPU gates required"
+kind = "filler"
+priority = 18
+host_sensitive = false
+preemptible = false
+# G: 3600 s; D: 10800 s cap includes compilation, both-device operation gates and one memcheck pass.
+est_s = 3600
+budget_s = 10800
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-s10-k6: FAIL" }]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/codex/k6/bw-s10-k6.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/codex/k6/window/k6-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0", GPUQ_BUILD_WINDOW = "1" }
+ports = []
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/codex/k6/bw-s10-k6.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/codex/k6/window/k6-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/codex/k6/window/k6-a{attempt}/payload.log"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "stages", "controls"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/codex/k6/bw-s10-k6.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/codex/k6/bw-s10-k6.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/codex/k6/evidence/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/codex/REPORT-K6.md",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/ggml/src/ggml-cuda/ggml-cuda.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/ggml/src/ggml-cuda/mmq.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/ggml/src/ggml-cuda/mmvq.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/ggml/src/ggml-cuda/norm.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/ggml/src/ggml-cuda/norm.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/ggml/src/ggml-cuda/common.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/ggml/src/ggml-cuda/q8-cache.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/ggml/src/ggml-cuda/add-rms-norm.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k6/tests/test-backend-ops.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/RECIPE.txt",
+]
