@@ -10779,11 +10779,12 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         }
     }
 
-    // CUDA MMQ picks its tile from the launch shape: small-I tiles for 9..24 columns only when their grid fills the SM waves.
-    // The rows straddle that gate on common SM counts (3072: partial wave, 8704 and 9216: full waves, 124160: many waves),
-    // Q8_0 has no small-I tile.
+    // CUDA MMQ picks its tile from the launch shape: small-I tiles for 9..24 columns, partitioned like the default tile.
+    // The rows cover plain tiling and stream-k on common SM counts (3072, 5120, 6144: partial waves with the stream-k fixup,
+    // 8704 and 9216: full waves, 124160: many waves), Q8_0 has no small-I tile. MUL_MAT_ID: 24 and 48 tokens over 4 experts
+    // give 12 and 24 columns per expert.
     for (ggml_type type_a : { GGML_TYPE_IQ4_XS, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0 }) {
-        for (int64_t m : {3072, 8704, 9216}) {
+        for (int64_t m : {3072, 5120, 6144, 8704, 9216}) {
             for (int64_t n : {9, 12, 16, 17, 24, 25}) {
                 test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, m, n, 1024, { 1, 1 }, { 1, 1 }));
             }
@@ -10791,6 +10792,11 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         for (int64_t n : {12, 24}) {
             test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 124160, n, 256, { 1, 1 }, { 1, 1 }));
             test_cases.emplace_back(new test_mul_mat_id(type_a, GGML_TYPE_F32, 4, 2, false, 8704, n, 512));
+        }
+        for (int64_t m : {3072, 5120}) {
+            for (int64_t n : {24, 48}) {
+                test_cases.emplace_back(new test_mul_mat_id(type_a, GGML_TYPE_F32, 4, 2, false, m, n, 1024));
+            }
         }
     }
 
