@@ -17,11 +17,37 @@
 
 #include <cinttypes>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+
+namespace {
+// local: LLAMA_SYNC_ELIDE=0 disables the elision, LLAMA_SYNC_ELIDE_DEBUG=1 runs the real sync after every skipped one,
+// LLAMA_SYNC_ELIDE_MUTANT=1 stops graph_compute marking pending work, =2 stops device-to-host copies marking it, =3 clears the flag after every enqueue
+// (=1 and =3 also drop the n_queued_tokens guard). Negative controls.
+struct sync_elide_flags {
+    bool on     = true;
+    bool debug  = false;
+    int  debug_us = 20; // LLAMA_SYNC_ELIDE_DEBUG=N with N > 1 sets the threshold; scheduler noise on a loaded CPU host exceeds 20 us
+    int  mutant = 0;
+    sync_elide_flags() {
+        const char * e = getenv("LLAMA_SYNC_ELIDE");
+        const char * d = getenv("LLAMA_SYNC_ELIDE_DEBUG");
+        const char * m = getenv("LLAMA_SYNC_ELIDE_MUTANT");
+        on     = !e || atoi(e) != 0;
+        debug  = d && atoi(d) != 0;
+        if (d && atoi(d) > 1) { debug_us = atoi(d); }
+        mutant = m ? atoi(m) : 0;
+    }
+};
+const sync_elide_flags & sync_elide_env() {
+    static const sync_elide_flags flags;
+    return flags;
+}
+} // namespace
 
 // per-device candidates for backend sampling under tensor split are n_devices * k; keep the gather small
 #define LLAMA_TP_SAMPLING_TOP_K_MAX     256
@@ -499,6 +525,9 @@ llama_context::llama_context(
 }
 
 llama_context::~llama_context() {
+    if (sync_elide_env().debug) {
+        LLAMA_LOG_INFO("%s: sync_elide: elided=%lld missed=%lld\n", __func__, (long long) n_sync_elided, (long long) n_sync_missed);
+    }
     // wait for any pending asynchronous copies into the output buffers before they are freed
     synchronize(true);
 
@@ -797,7 +826,22 @@ void llama_context::synchronize(bool force) {
     // Contract: backend_pending is set before every enqueue of device work on this context's backends and cleared only here,
     // after a real sync. A drained context has nothing to wait for. With several scheduler copies the sync also rewinds
     // next_copy, so that case always syncs.
-    if (!force && !backend_pending && n_queued_tokens == 0 && ggml_backend_sched_get_n_copies(sched.get()) == 1) {
+    if (!force && !backend_pending && (n_queued_tokens == 0 || sync_elide_env().mutant == 1 || sync_elide_env().mutant == 3) && ggml_backend_sched_get_n_copies(sched.get()) == 1 && sync_elide_env().on) {
+        if (!sync_elide_env().debug) {
+            n_sync_elided++;
+            return;
+        }
+        // local: the elision claims the stream is drained; prove it by syncing for real and timing the wait
+        const int64_t t0 = ggml_time_us();
+        ggml_backend_sched_synchronize(sched.get());
+        const int64_t waited = ggml_time_us() - t0;
+        if (n_sync_elided++ == 0) {
+            LLAMA_LOG_INFO("%s: sync_elide: debug check engaged\n", __func__);
+        }
+        if (waited > sync_elide_env().debug_us) {
+            n_sync_missed++;
+            LLAMA_LOG_ERROR("%s: sync_elide: skipped sync waited %lld us (> %d us; a device enqueue was not tracked)\n", __func__, (long long) waited, sync_elide_env().debug_us);
+        }
         return;
     }
 
@@ -934,8 +978,9 @@ enum llama_pooling_type llama_context::pooling_type() const {
 }
 
 void llama_context::tensor_get_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
-    backend_pending = true;
+    if (sync_elide_env().mutant != 2) { backend_pending = true; }
     ggml_backend_tensor_get_async(backend, tensor, data, offset, size);
+    if (sync_elide_env().mutant == 3) { backend_pending = false; }
 }
 
 void llama_context::logits_deferred_fetch() {
@@ -1864,7 +1909,7 @@ static void copy_tensor_async_rows(
 
         ggml_backend_t backend = ggml_backend_sched_get_tensor_backend(sched, tensor);
         T * row_ptr = dst.data + (size_t) row * stride;
-        backend_pending = true;
+        if (sync_elide_env().mutant != 2) { backend_pending = true; }
         ggml_backend_tensor_get_async(backend, tensor, row_ptr, 0, ggml_nbytes(tensor));
 
         if (counts) {
@@ -2985,8 +3030,9 @@ ggml_status llama_context::graph_compute(
         set_n_threads_fn.second(set_n_threads_fn.first, n_threads);
     }
 
-    backend_pending = true;
+    if (sync_elide_env().mutant != 1) { backend_pending = true; }
     auto status = ggml_backend_sched_graph_compute_async(get_sched_graph(), gf);
+    if (sync_elide_env().mutant == 3) { backend_pending = false; }
     if (status != GGML_STATUS_SUCCESS) {
         LLAMA_LOG_ERROR("%s: ggml_backend_sched_graph_compute_async failed with error %d\n", __func__, status);
     }
