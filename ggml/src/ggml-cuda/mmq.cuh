@@ -1514,6 +1514,21 @@ static constexpr bool ggml_cuda_mmq_has_small_i(const ggml_type type) {
     return ggml_cuda_mmq_get_config_blackwell_small_i(type, 16, false, GGML_CUDA_CC_BLACKWELL).type != GGML_TYPE_COUNT;
 }
 
+// Local A/B switch: GGML_CUDA_MMQ_TILES = default (never SMALL_I) | small (SMALL_I wherever a table entry exists, any grid) |
+// auto-drop (auto, but SMALL_I launches are skipped: negative control, outputs must fail) | unset or auto.
+enum { MMQ_TILES_AUTO, MMQ_TILES_DEFAULT_ONLY, MMQ_TILES_SMALL_ALWAYS, MMQ_TILES_AUTO_DROP };
+static int ggml_cuda_mmq_tiles_mode() {
+    static const int mode = [] {
+        const char * env = getenv("GGML_CUDA_MMQ_TILES");
+        if (env == nullptr || strcmp(env, "auto") == 0) { return (int) MMQ_TILES_AUTO; }
+        if (strcmp(env, "default") == 0)                { return (int) MMQ_TILES_DEFAULT_ONLY; }
+        if (strcmp(env, "small") == 0)                  { return (int) MMQ_TILES_SMALL_ALWAYS; }
+        if (strcmp(env, "auto-drop") == 0)              { return (int) MMQ_TILES_AUTO_DROP; }
+        GGML_ABORT("bad GGML_CUDA_MMQ_TILES");
+    }();
+    return mode;
+}
+
 // SMALL_I tiles beat the default tile only when their grid launches as plain tiling with full waves (sm_120: gate/up and lm_head
 // matmuls faster, every smaller grid slower, up to +35 % on the long-k down projection), so a launch whose grid does not fill the
 // waves keeps the default tile.
@@ -1529,9 +1544,21 @@ static bool ggml_cuda_mmq_use_small_i(const mmq_args & args, const int J) {
         return false;
     }
 
+    const int mode = ggml_cuda_mmq_tiles_mode();
+    if (mode == MMQ_TILES_DEFAULT_ONLY) {
+        return false;
+    }
+
     const int ntiles = ((args.nrows_x + config.I - 1) / config.I) * ((args.ncols_max + config.J - 1) / config.J) *
         args.nchannels_y * args.nsamples_y;
-    return mmq_tiling_efficient(ntiles, nsm);
+    const bool use = mode == MMQ_TILES_SMALL_ALWAYS || mmq_tiling_efficient(ntiles, nsm);
+
+    static const bool log = getenv("GGML_CUDA_MMQ_TILES_LOG") != nullptr;
+    if (log) {
+        fprintf(stderr, "mmq_tiles: type=%s m=%lld cols=%lld z=%lld J=%d ntiles=%d nsm=%d small_i=%d\n", ggml_type_name(type),
+                (long long) args.nrows_x, (long long) args.ncols_max, (long long) (args.nchannels_y*args.nsamples_y), J, ntiles, nsm, (int) use);
+    }
+    return use;
 }
 
 template <ggml_type type, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>
@@ -1563,6 +1590,9 @@ void mul_mat_q_switch_J(ggml_backend_cuda_context & ctx, const mmq_args & args, 
 
     if (ggml_cuda_mmq_use_small_i<type, fallback, prec_src1>(args, J_best)) {
         if constexpr (ggml_cuda_mmq_has_small_i(type)) {
+            if (ggml_cuda_mmq_tiles_mode() == MMQ_TILES_AUTO_DROP) {
+                return;
+            }
             switch (J_best) {
                 case 16:
                     launch_mul_mat_q<type, 16, fallback, GGML_CUDA_MMQ_TILES_SMALL_I, prec_src1>(ctx, args, stream);

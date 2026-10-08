@@ -1604,6 +1604,19 @@ struct test_case {
             return true;
         }
 
+        // GGML_TEST_PERF_COLD_MB=N: rotate the weights of a MUL_MAT over >= N MiB of independent copies so the timed
+        // launches read them from DRAM instead of L2
+        std::vector<ggml_tensor *> perf_outputs = {out};
+        if (const char * cold_mb = getenv("GGML_TEST_PERF_COLD_MB")) {
+            GGML_ASSERT(out->op == GGML_OP_MUL_MAT);
+            const size_t weight_bytes = ggml_nbytes(out->src[0]);
+            const size_t copies = (size_t) atoi(cold_mb) * 1024*1024 / weight_bytes + 2;
+            for (size_t i = 1; i < copies; ++i) {
+                ggml_tensor * a = ggml_dup_tensor(ctx.get(), out->src[0]);
+                perf_outputs.push_back(ggml_mul_mat(ctx.get(), a, out->src[1]));
+            }
+        }
+
         ggml_backend_buffer_ptr buf_weights(nullptr);
         if (ctx_weights) {
             buf_weights.reset(ggml_backend_alloc_ctx_tensors(ctx_weights.get(), backend));
@@ -1630,7 +1643,9 @@ struct test_case {
 
         // build graph
         ggml_cgraph * gf = ggml_new_graph_custom(ctx.get(), graph_nodes, false);
-        ggml_build_forward_expand(gf, out);
+        for (ggml_tensor * perf_out : perf_outputs) {
+            ggml_build_forward_expand(gf, perf_out);
+        }
 
         // warmup run
         ggml_status status = ggml_backend_graph_compute(backend, gf);
@@ -1658,13 +1673,17 @@ struct test_case {
             n_runs = (int)std::min<int64_t>(ggml_graph_size(gf) - ggml_graph_n_nodes(gf), target_size / op_size(out)) + 1;
         }
 
+        n_runs = std::max(1, n_runs / (int) perf_outputs.size());
+
         // duplicate the op
         for (int i = 1; i < n_runs; i++) {
-            ggml_graph_add_node(gf, out);
+            for (ggml_tensor * perf_out : perf_outputs) {
+                ggml_graph_add_node(gf, perf_out);
+            }
         }
 
         // calculate memory
-        size_t mem = n_runs * op_size(out);
+        size_t mem = n_runs * perf_outputs.size() * op_size(out);
         auto tensor_op_size = [](ggml_tensor * t) {
             size_t size = ggml_nbytes(t);
             // add source tensors
@@ -1676,7 +1695,8 @@ struct test_case {
             return size;
         };
         for (int i = 0; i < ggml_graph_n_nodes(gf); ++i) {
-            if (ggml_is_view_op(ggml_graph_node(gf, i)->op) || ggml_graph_node(gf, i) == out) {
+            if (ggml_is_view_op(ggml_graph_node(gf, i)->op) ||
+                    std::find(perf_outputs.begin(), perf_outputs.end(), ggml_graph_node(gf, i)) != perf_outputs.end()) {
                 continue;
             }
             mem += tensor_op_size(ggml_graph_node(gf, i));
@@ -1697,7 +1717,7 @@ struct test_case {
 
             total_time_us += end_time - start_time;
             total_mem += mem;
-            total_runs += n_runs;
+            total_runs += n_runs * perf_outputs.size();
 
             // re-draw any data-dependent inputs (expert ids) outside the timed region
             reinit_perf_iter(ctx.get());
@@ -12739,8 +12759,98 @@ static void usage(char ** argv) {
     printf("  %s perf -o 'MUL_MAT.*'\n", argv[0]);
 }
 
+// `test-backend-ops mmq-hash DEVICE`: one FNV-1a hash of the MUL_MAT output bits per (type, m, k, n), so runs with different
+// GGML_CUDA_MMQ_TILES settings can be compared bit for bit.
+struct mmq_hash_shape { ggml_type type; int64_t m, k; };
+
+static uint64_t mmq_hash_fnv1a(const void * data, size_t n) {
+    uint64_t h = 1469598103934665603ull;
+    const uint8_t * p = (const uint8_t *) data;
+    for (size_t i = 0; i < n; ++i) {
+        h = (h ^ p[i]) * 1099511628211ull;
+    }
+    return h;
+}
+
+static int mmq_tiles_hash(const char * dev_name) {
+    ggml_backend_load_all();
+    ggml_backend_dev_t dev = ggml_backend_dev_by_name(dev_name);
+    if (!dev) {
+        fprintf(stderr, "no device %s\n", dev_name);
+        return 2;
+    }
+    ggml_backend_ptr backend(ggml_backend_dev_init(dev, nullptr));
+    if (!backend) {
+        return 2;
+    }
+
+    std::vector<mmq_hash_shape> shapes;
+    for (ggml_type t : { GGML_TYPE_IQ4_XS, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0 }) {
+        for (int64_t m : { 3072, 5120, 6144, 8704, 9216, 11520, 17408 }) {
+            shapes.push_back({ t, m, 5120 });
+        }
+        shapes.push_back({ t, 8704, 8704 });
+        shapes.push_back({ t, 5120, 8704 });
+    }
+    shapes.push_back({ GGML_TYPE_Q6_K, 124160, 512 });
+
+    std::mt19937 rng(1);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+    for (const mmq_hash_shape & s : shapes) {
+        ggml_init_params ipa = { 1u << 20, nullptr, true };
+        ggml_context_ptr ctx_a(ggml_init(ipa));
+        ggml_tensor * a = ggml_new_tensor_2d(ctx_a.get(), s.type, s.k, s.m);
+        ggml_backend_buffer_ptr buf_a(ggml_backend_alloc_ctx_tensors(ctx_a.get(), backend.get()));
+        if (!buf_a) {
+            fprintf(stderr, "alloc failed\n");
+            return 2;
+        }
+        {
+            std::vector<float> wf(s.m*s.k);
+            for (float & v : wf) { v = dist(rng); }
+            std::vector<uint8_t> wq(ggml_nbytes(a));
+            ggml_quantize_chunk(s.type, wf.data(), wq.data(), 0, s.m, s.k, nullptr);
+            ggml_backend_tensor_set(a, wq.data(), 0, wq.size());
+        }
+
+        for (int64_t n : { 6, 8, 9, 12, 16, 17, 24, 25 }) {
+            if (s.m == 124160 && n != 12 && n != 24) {
+                continue;
+            }
+            ggml_init_params ip = { 1u << 20, nullptr, true };
+            ggml_context_ptr ctx(ggml_init(ip));
+            ggml_tensor * b = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, s.k, n);
+            ggml_tensor * out = ggml_mul_mat(ctx.get(), a, b);
+            ggml_cgraph * gf = ggml_new_graph(ctx.get());
+            ggml_build_forward_expand(gf, out);
+            ggml_backend_buffer_ptr buf(ggml_backend_alloc_ctx_tensors(ctx.get(), backend.get()));
+            if (!buf) {
+                fprintf(stderr, "alloc failed\n");
+                return 2;
+            }
+            std::vector<float> bf(s.k*n);
+            for (float & v : bf) { v = dist(rng); }
+            ggml_backend_tensor_set(b, bf.data(), 0, ggml_nbytes(b));
+
+            if (ggml_backend_graph_compute(backend.get(), gf) != GGML_STATUS_SUCCESS) {
+                fprintf(stderr, "compute failed\n");
+                return 2;
+            }
+            std::vector<float> res(s.m*n);
+            ggml_backend_tensor_get(out, res.data(), 0, res.size()*sizeof(float));
+            printf("%s m=%lld k=%lld n=%lld %016llx\n", ggml_type_name(s.type), (long long) s.m, (long long) s.k, (long long) n,
+                   (unsigned long long) mmq_hash_fnv1a(res.data(), res.size()*sizeof(float)));
+        }
+    }
+    return 0;
+}
+
 int main(int argc, char ** argv) {
     test_mode mode = MODE_TEST;
+    if (argc == 3 && strcmp(argv[1], "mmq-hash") == 0) {
+        return mmq_tiles_hash(argv[2]);
+    }
+
     output_formats output_format = CONSOLE;
     const char * op_names_filter = nullptr;
     const char * backend_filter = nullptr;
