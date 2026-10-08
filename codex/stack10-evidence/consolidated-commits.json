@@ -8,15 +8,27 @@
     "subject": "llama : retain attention rotations on the cache backend"
   },
   {
-    "hash": "7f0cb45158152e3155d1b993513c509cb4a87784",
+    "hash": "3ebadf53ac9024a8837828e404a6ea53ea19840f",
     "subject": "cuda : fuse F32 add softplus and broadcast multiply"
   },
   {
-    "hash": "efb8115e91748eb993ff0a9de9100618762f2071",
+    "hash": "bd251ce1b18f7ee2f4dd19039f257a2868271fad",
     "subject": "local: add stack10 component controls"
   },
   {
-    "hash": "a74a42c7716839ccdb8af4a172756f171e858d55",
+    "hash": "0a0e2e0a0a31a1c2400857ccd03bc573b3738f1d",
     "subject": "codex : prepare stack10 CPU gates and GPU window"
+  },
+  {
+    "hash": "7e4e8d6616e8067cf18dd4633e53968c057a3edd",
+    "subject": "codex : record stack10 CPU evidence and validation limits"
+  },
+  {
+    "hash": "421d429e3495767aa394b3017a710bdde2ba8445",
+    "subject": "codex : seal the final stack10 payload evidence"
+  },
+  {
+    "hash": "f8a54c2435cae548befc7f3318410b146444213c",
+    "subject": "local: add the stack10 alpha alias negative control"
   }
 ]

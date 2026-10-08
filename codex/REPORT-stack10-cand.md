@@ -14,11 +14,12 @@ Base: `cd776e104dbd516c7b74506992d2e8efd7600155`, the source of `frozen/stack9`.
 |---|---|---|
 | `a1fff47fc` | `cuda : add grouped one-row q8_0 flash attention` | Package 54 / K1, including multi-stream tests. |
 | `758c93a1c` | `llama : retain attention rotations on the cache backend` | K3, allocation fallback and matrix-byte probe. |
-| `7f0cb4515` | `cuda : fuse F32 add softplus and broadcast multiply` | K5, NVIDIA guard and same-backend byte test. |
-| `efb8115e9` | `local: add stack10 component controls` | Independent off switches, numerical mutants and CUDA engagement logs. |
-| `a74a42c77` | `codex : prepare stack10 CPU gates and GPU window` | Mac gates, harness snapshot, window and item templates. |
+| `3ebadf53a` | `cuda : fuse F32 add softplus and broadcast multiply` | K5, NVIDIA guard and same-backend byte test. |
+| `bd251ce1b` | `local: add stack10 component controls` | Independent off switches, numerical mutants and CUDA engagement logs. |
+| `0a0e2e0a0` | `codex : prepare stack10 CPU gates and GPU window` | Mac gates, harness snapshot, window and item templates. |
+| `f8a54c243` | `local: add the stack10 alpha alias negative control` | Independent leaf-alias mutant and its CUDA window gate. |
 
-Evidence/report commits follow these. Only this topic branch was consolidated. Git tree equality preserved the tested final tree; `git diff 239f830af HEAD -- src ggml tests common` is empty. The Mac witness commits retain their original hashes in the evidence, rather than being relabelled as executions of the consolidated history. No attribution trailers were added.
+Evidence/report commits follow these. Only this topic branch was consolidated; the alpha leaf-alias correction was folded into the K5 component. The final complete Mac run tested `f8a54c243`; subsequent changes are evidence/report files only. `git diff f8a54c243 HEAD -- src ggml tests common` is empty. Historical witness hashes remain in their records. No attribution trailers were added.
 
 ## Design, exactness and conflict resolution
 
@@ -30,7 +31,7 @@ Draft KV quantization changes proposal probabilities and can change acceptance a
 
 Raw same-batch logits are byte-identical under persistence, graph inputs and simulated allocation failure, with both cache-fill patterns and the inherited rollback/swap/extra-state scenarios. Plain and Meta(CPU,CPU) np2 tokens/counters also match. CPU uses an FWHT shortcut that ignores matrix bytes, so numerical identity alone cannot validate an upload. The added probe checks the allocated matrix against the Hadamard reference (`tests/test-recurrent-state-rollback.cpp:328`, `:469`); zeroed uploads fail that check. GPU lifetime, replay and matrix consumption still require the queued validation. D: a head width of 256 retains 344064 bytes per cache/backend slice because the precomputed 64, 128 and 256 matrices are all retained; this is not a measured VRAM delta.
 
-**K5.** Only the alpha chain is fused. The matcher accepts contiguous F32 inputs with row-broadcast bias and scale, checks graph consumers and output memory ranges, and preserves the unfused graph for other layouts/types and HIP/MUSA (`ggml/src/ggml-cuda/ggml-cuda.cu:3653`). The kernel uses the existing `op_softplus`, `__fadd_rn` and `__fmul_rn`, preserving the add and multiply rounding boundaries (`ggml/src/ggml-cuda/unary.cu:663`). Beta and GDN reductions are unchanged. The native operation test compares fused and output-flagged unfused branches on the same backend, byte for byte, while changing inputs across repeated evaluations (`tests/test-backend-ops.cpp:12373`). D: 24 graph configurations and 96 evaluations cover broadcast widths, multi-dimensional rows, zero/threshold neighbours, infinities and underflow. The CPU gate validates the test/reference paths; it does not prove CUDA fusion exactness. The window requires the CUDA byte test and an engaged numerical mutant failure on both devices before freeze.
+**K5.** Only the alpha chain is fused. The matcher accepts contiguous F32 inputs with row-broadcast bias and scale, checks graph consumers and output memory ranges, rejects output overlap with bias/scale leaves or shifted x storage, and preserves the unfused graph for other layouts/types and HIP/MUSA (`ggml/src/ggml-cuda/ggml-cuda.cu:3653`). The kernel uses the existing `op_softplus`, `__fadd_rn` and `__fmul_rn`, preserving the add and multiply rounding boundaries (`ggml/src/ggml-cuda/unary.cu:663`). Beta and GDN reductions are unchanged. The native operation test compares fused and output-flagged unfused branches on the same backend, byte for byte, while changing inputs across repeated evaluations (`tests/test-backend-ops.cpp:12373`). M: 128 graph configurations passed; D: 512 evaluations cover broadcast widths, multi-dimensional rows, in-place chains, leaf-bias output aliasing, shifted-x output aliasing, zero/threshold neighbours, infinities and underflow. The explicit leaf checks are necessary because the shared fusion-range helper skips `GGML_OP_NONE` sources. The CPU gate validates the test/reference paths; it does not prove CUDA fusion exactness. The window requires the CUDA byte test, an engaged numerical mutant failure and an alias-guard mutant failure in layout 2 or 3 on both devices before freeze. Neither CUDA mutant has been executed here.
 
 **Withheld components.** These are unresolved implementations, not claims that the optimizations are impossible.
 
@@ -46,9 +47,9 @@ Raw same-batch logits are byte-identical under persistence, graph inputs and sim
 - Four new instance files: `fattn-mma-f16-instance-q8_0-ncols1_1-ncols2_{8,16,32}.cu` and `fattn-mma-f16-instance-q8_0-ncols1_4-ncols2_4.cu`.
 - `src/llama-kv-cache.h`, `.cpp`: rotation owners/leaves, uniform-buffer allocation, both builder/setter paths, fallback and local off/failure/zero-matrix controls.
 - `ggml/src/ggml-backend-meta.cpp`: child-allocation failure cleanup needed by K3 fallback.
-- `ggml/src/ggml-cuda/ggml-cuda.cu`: guarded alpha matcher/dispatch, alias checks, local off switch and marker.
+- `ggml/src/ggml-cuda/ggml-cuda.cu`: guarded alpha matcher/dispatch, alias checks, local off/alias-mutant switches and marker.
 - `ggml/src/ggml-cuda/unary.cu`, `.cuh`: rounded alpha kernel/launcher/declaration, NVIDIA-only intrinsic guard, local numerical mutant.
-- `tests/test-backend-ops.cpp`: package q8 cases, two-sequence/cache-stream cases, same-backend alpha byte/replay check and hook.
+- `tests/test-backend-ops.cpp`: package q8 cases, two-sequence/cache-stream cases, same-backend alpha byte/replay check with independent reference inputs and four alias layouts, and its hook.
 - `tests/test-recurrent-state-rollback.cpp`: matrix-byte probe and quantized-KV engagement requirement. The incidental compile fix reads the matmul hint with `memcpy` from `op_params + 1`; the initially used internal accessor was undeclared.
 - `docs/ops.md`: documents the alpha fusion and fallback.
 
@@ -56,7 +57,7 @@ Other edits are confined to `codex/`: supplied prompt/purpose, GPU entry, bounde
 
 ## Mac evidence
 
-Primary witness: `239f830af2d6833189fb0e3f98fbf82aa5f2c1a0`, `build-bw-mac-results/stack10-cand-mac-a4/`. Recorded-parser follow-up: `bf2926e72b22812b6801452fc249be9ff41e24df`, `build-bw-mac-results/stack10-cand-static-mac-a2/`. Final payload witness: `594675edd98c8bbcca18a59e09e98c6629476ae3`, `build-bw-mac-results/stack10-cand-static-mac-a3/`. It has the same production-source digest and records the final payload hash in `codex/stack10-evidence/summary.json`.
+Final source/payload witness: `f8a54c2435cae548befc7f3318410b146444213c`, `build-bw-mac-results/stack10-cand-mac-a5/`. This complete run includes the alpha leaf-alias correction and all recorded-parser/shell gates. Its source and payload digests are sealed in `codex/stack10-evidence/summary.json`. Earlier static-only follow-ups remain historical evidence; the final complete run supersedes their payload witness.
 
 ```sh
 CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 BW_MAC_OUTPUT_BASE="$PWD/build-bw-mac-results" ~/repos/qwen38-eval-worktrees/bin/bw-mac "$PWD" codex/bw-stack10-cand-mac.sh stack10-cand
@@ -67,12 +68,10 @@ CPU build: Clang, CUDA/Metal/BLAS/Accelerate/repack/llamafile off, native off, `
 
 | Stage | Wall seconds (M) | Result |
 |---|---:|---|
-| 20 CPU build | 54 | PASS |
+| 20 CPU build | 73 | PASS |
 | 21 sampling, allocation, alpha and q8 operation tests | 5 | PASS |
-| 22 rotation identity/fallback/negative control | 270 | PASS |
-| 31 primary recorded parser controls | 1 | PASS |
-| 31 dtype/proof/counter/parser follow-up | 1 | PASS |
-| 31 final payload replay and shell lint | 1 | PASS |
+| 22 rotation identity/fallback/negative control | 294 | PASS |
+| 31 recorded parser controls and shell lint | 1 | PASS |
 
 M: 18 q8 attention cases passed, including two sequences and a non-unified cache view. M: each raw-logit artifact is 123169696 bytes; comparison is streaming and no artifact over 200 MB was loaded. M: zeroed persistent matrices fail; off/on/allocation-failure raw logits match; all three arms' complete np2 token/counter JSON matches for plain and Meta. Logs and source provenance are in `codex/stack10-evidence/`.
 
@@ -90,4 +89,4 @@ Renderer: `codex/render_stack10_items.py`. It creates/checks `codex/items/render
 | `codex/items/s10c-q8dkv-np2-real-j5q.toml.in` | 26 | One binary, f16/q8_0 draft KV flags only, ABBA, same real depths. Reports acceptance and D tokens/round as well as time. G: q8 helps at depth only if acceptance and request time compensate for quantization. A tokens/round drop above G: 3 percent, or no net request-time gain, falsifies adoption. |
 | `codex/items/s10c-depth-j5q.toml.in` | 26 | Stack9 vs stack10 np1 ABBA, f16 draft KV and grouped q8 explicitly disabled in the candidate. Cross-arm tokens/counters must match. Any mismatch falsifies this integration's identity claim. |
 
-The harness retains untrimmed counter-derived periods and exclusion reasons, with no median-based trim. Boot spread is the uncertainty unit. K1's grouped off control and K5's numerical control are queued, not observed GPU evidence. K3's extra resident bytes, true device-allocation failure, CUDA capture/replay, GPU engagement/performance and all withheld components remain open.
+The harness retains untrimmed counter-derived periods and exclusion reasons, with no median-based trim. Boot spread is the uncertainty unit. K1's grouped off control and K5's numerical/alias controls are prepared for the parent window, not observed GPU evidence. K3's extra resident bytes, true device-allocation failure, CUDA capture/replay, GPU engagement/performance and all withheld components remain open.

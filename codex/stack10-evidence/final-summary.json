@@ -1,6 +1,6 @@
 {
   "result": "PASS",
-  "commit": "594675edd98c8bbcca18a59e09e98c6629476ae3",
+  "commit": "f8a54c2435cae548befc7f3318410b146444213c",
   "source_files": [
     "common/CMakeLists.txt",
     "common/arg.cpp",
@@ -1838,7 +1838,7 @@
     "tests/test-unicode.cpp",
     "tests/testing.h"
   ],
-  "source_sha256": "e6459ceb330ca403894eeed1c753fb57a73f2efcb070042c2a04496c13a7b24a",
+  "source_sha256": "be9058cecfb1578d726a734c68f3d1ad16541ddd63dc3d1947cc5ab45f2c8011",
   "payload_files": [
     "codex/bw-stack10-cand-mac.sh",
     "codex/bw-stack10-cand-static-mac.sh",
@@ -1864,8 +1864,26 @@
     "codex/shlint/gpuq/__init__.py",
     "codex/shlint/gpuq/shlint.py"
   ],
-  "payload_sha256": "f50ddd4d45d9daeb0b4e1d0627593f4fe5996a623b997a78571b93f00cc9f6ce",
+  "payload_sha256": "2bedd3a08c1248f9d60dae6d1decb0493aaf8946cb54bbdd53948fd204ec3e45",
   "stages": [
+    {
+      "code": 20,
+      "name": "cpu-build",
+      "rc": 0,
+      "wall_s_M": 73
+    },
+    {
+      "code": 21,
+      "name": "unit-tests",
+      "rc": 0,
+      "wall_s_M": 5
+    },
+    {
+      "code": 22,
+      "name": "rotation-identity",
+      "rc": 0,
+      "wall_s_M": 294
+    },
     {
       "code": 31,
       "name": "recorded-parser-controls",

@@ -1,2 +1,2 @@
-HEAD=594675edd98c8bbcca18a59e09e98c6629476ae3
-REMOTE=/Users/builder/qwen38-bw/stack10-cand-static/594675edd98c8bbcca18a59e09e98c6629476ae3/run.Hd0In3
+HEAD=f8a54c2435cae548befc7f3318410b146444213c
+REMOTE=/Users/builder/qwen38-bw/stack10-cand/f8a54c2435cae548befc7f3318410b146444213c/run.NikXlB
