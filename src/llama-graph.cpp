@@ -575,6 +575,15 @@ void llm_graph_input_mtp_fold::set_input(const llama_ubatch * ubatch) {
         idxs[i] = i == 0 || seq != ubatch->seq_id[i - 1][0]
             ? ubatch->seq_idx[seq] : (int32_t) ubatch->n_seqs_unq + i - 1;
     }
+    if (std::getenv("LLAMA_MTP_FOLD_DEBUG_SWAP_SEQ") && ubatch->n_seqs_unq > 1) {
+        for (uint32_t i = 0; i < ubatch->n_tokens; ++i) {
+            if (idxs[i] < (int32_t) ubatch->n_seqs_unq) {
+                idxs[i] = (idxs[i] + 1) % ubatch->n_seqs_unq;
+            }
+        }
+        static const bool once = [] { LLAMA_LOG_INFO("mtp_fold_mutant: wrong sequence engaged\n"); return true; }();
+        (void) once;
+    }
     ggml_backend_tensor_set(h_idxs, idxs.data(), 0, ggml_nbytes(h_idxs));
 
     kv->set_input(ubatch);
