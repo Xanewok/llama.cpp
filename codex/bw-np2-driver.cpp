@@ -55,9 +55,10 @@ int main(int argc, char ** argv) {
     if (std::getenv("HOST_KV_Q8")) {
         params.cache_type_k = params.cache_type_v = GGML_TYPE_Q8_0;
     }
-    params.cpuparams.n_threads = params.cpuparams_batch.n_threads = meta ? 4 : 8;
+    params.cpuparams.n_threads = params.cpuparams_batch.n_threads = std::getenv("NP2_THREADS") ? std::atoi(std::getenv("NP2_THREADS")) : meta ? 4 : 8;
     params.speculative.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
-    params.speculative.draft.n_max = 3;
+    params.speculative.draft.n_max = std::getenv("NP2_N_MAX") ? std::atoi(std::getenv("NP2_N_MAX")) : 3;
+    params.kv_unified = std::getenv("NP2_KV_UNIFIED") && std::atoi(std::getenv("NP2_KV_UNIFIED"));
     params.speculative.draft.n_min = 0;
     params.speculative.draft.p_min = 0;
     params.speculative.draft.probabilistic = true;
@@ -109,6 +110,10 @@ int main(int argc, char ** argv) {
                 task.cli_prompt = prompts[slot];
                 task.params.n_predict = std::atoi(argv[6]) + 16 * slot;
                 task.params.return_tokens = true;
+                if (slot == 1 && std::getenv("NP2_SLOT1_N_MAX")) {
+                    task.params.speculative = params.speculative;
+                    task.params.speculative.draft.n_max = std::atoi(std::getenv("NP2_SLOT1_N_MAX"));
+                }
                 task.params.cache_prompt = true;
                 task.params.stream = true;
                 task.params.sampling.seed = std::strtoul(argv[5], nullptr, 10) + slot;
@@ -135,7 +140,7 @@ int main(int argc, char ** argv) {
                     ids.insert(ids.end(), partial->tokens.begin(), partial->tokens.end());
                 }
                 if (auto * final = dynamic_cast<server_task_result_cmpl_final *>(result.get())) {
-                    require(final->stats.n_draft_tokens > 0 && final->stats.n_draft_verif_steps > 0, "MTP did not engage");
+                    require((final->index == 1 && std::getenv("NP2_SLOT1_N_MAX")) || (final->stats.n_draft_tokens > 0 && final->stats.n_draft_verif_steps > 0), "MTP did not engage");
                     require(final->index >= 0 && final->index < np && !seen[final->index], "bad or duplicate result index");
                     seen[final->index] = true;
                     by_slot[final->index] = json{{"slot", final->index}, {"draft", final->stats.n_draft_tokens},
