@@ -1,6 +1,6 @@
-purpose: pkg54 q8 FA: restore stack9 SASS for multi-query verify instances
-base: 0cfc0723e7e991600ca01004efa7cd377400c37b
+purpose: wave-2 stack: stack10-cand2 + p55 + K components
+base: def4a4e20 (frozen/stack10-cand2 source)
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/s10c-fafix
-created: 2026-10-08T22:27:18+02:00
+branch: topic/stack10
+created: 2026-10-09T00:36:41+02:00
 creator: xanewok

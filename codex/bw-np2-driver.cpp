@@ -5,10 +5,15 @@
 #include "../ggml/src/ggml-backend-impl.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <fstream>
+#include <functional>
 #include <stdexcept>
 #include <thread>
+#include <unordered_map>
 
 static void require(bool ok, const char * message) {
     if (!ok) {
@@ -27,9 +32,61 @@ static bool owned_cpu(ggml_backend_t, const ggml_backend_tensor_transfer * trans
     return true;
 }
 
+// HOST_DEFER=1: the CPU backend behaves like a stream. Graph computes and device-to-host copies queue per backend and run only
+// at synchronize(), so a getter that reads a buffer before a real sync sees stale data (as on CUDA). A non-empty queue at a sync
+// simulates a 100 us device wait, so the sync-elision debug threshold (20 us) applies.
+static std::unordered_map<ggml_backend_t, std::deque<std::function<void()>>> g_queues;
+static ggml_status (*cpu_compute)(ggml_backend_t, ggml_cgraph *);
+static void (*cpu_free)(ggml_backend_t);
+static size_t g_sync_calls, g_sync_busy;
+
+static ggml_status deferred_compute(ggml_backend_t backend, ggml_cgraph * graph) {
+    g_queues[backend].push_back([=] {
+        require(cpu_compute(backend, graph) == GGML_STATUS_SUCCESS, "deferred graph failed");
+    });
+    return GGML_STATUS_SUCCESS;
+}
+
+static void deferred_get(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
+    g_queues[backend].push_back([=] { ggml_backend_tensor_get(tensor, data, offset, size); });
+}
+
+static void deferred_sync(ggml_backend_t backend) {
+    auto & q = g_queues[backend];
+    ++g_sync_calls;
+    if (q.empty()) {
+        return;
+    }
+    ++g_sync_busy;
+    const auto t0 = std::chrono::steady_clock::now();
+    while (!q.empty()) {
+        auto job = std::move(q.front());
+        q.pop_front();
+        job();
+    }
+    while (std::chrono::steady_clock::now() - t0 < std::chrono::microseconds(100)) {
+    }
+}
+
+static void deferred_free(ggml_backend_t backend) {
+    deferred_sync(backend);
+    g_queues.erase(backend);
+    cpu_free(backend);
+}
+
 static ggml_backend_t init_owned_cpu(ggml_backend_dev_t dev, const char * params) {
     auto * backend = cpu_init(dev, params);
-    backend->iface.set_tensor_batch_owned = owned_cpu;
+    if (std::getenv("HOST_INPUT_COUNT")) {
+        backend->iface.set_tensor_batch_owned = owned_cpu;
+    }
+    if (std::getenv("HOST_DEFER")) {
+        cpu_compute = backend->iface.graph_compute;
+        cpu_free = backend->iface.free;
+        backend->iface.graph_compute = deferred_compute;
+        backend->iface.get_tensor_async = deferred_get;
+        backend->iface.synchronize = deferred_sync;
+        backend->iface.free = deferred_free;
+    }
     return backend;
 }
 
@@ -42,7 +99,7 @@ int main(int argc, char ** argv) {
     llama_backend_init();
     common_log_set_verbosity_thold(5);
     auto * cpu_dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
-    if (std::getenv("HOST_INPUT_COUNT")) {
+    if (std::getenv("HOST_INPUT_COUNT") || std::getenv("HOST_DEFER")) {
         cpu_init = cpu_dev->iface.init_backend;
         cpu_dev->iface.init_backend = init_owned_cpu;
     }
@@ -183,4 +240,7 @@ int main(int argc, char ** argv) {
     out << json{{"phases", phases}}.dump(2) << '\n';
     require(bool(out), "output write failed");
     ggml_round_trace_flush();
+    if (std::getenv("HOST_DEFER")) {
+        std::fprintf(stderr, "defer: sync_calls=%zu busy=%zu\n", g_sync_calls, g_sync_busy);
+    }
 }
