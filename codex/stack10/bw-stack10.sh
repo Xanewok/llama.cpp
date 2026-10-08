@@ -43,7 +43,7 @@ preflight() {
     for word in $COMPONENTS; do
         [[ " $ALL_COMPONENTS " == *" $word "* ]] || { echo "unknown component $word"; return 1; }
     done
-    [[ $(git branch --show-current) == topic/stack10 ]] || { echo 'branch is not topic/stack10'; return 1; }
+    case $(git branch --show-current) in topic/stack10|topic/stack10-*) ;; *) echo 'branch is not topic/stack10[-*]'; return 1 ;; esac
     [[ -z $(git status --porcelain --untracked-files=no) ]] || { echo 'tracked tree is dirty'; return 1; }
     [[ ! -e $W/frozen/stack10 ]] || { echo 'frozen/stack10 exists'; return 1; }
     for tool in cmake git python3 nice gpuq ccache strings timeout patchelf flock taskset g++ cuobjdump nsys compute-sanitizer nvidia-smi \
