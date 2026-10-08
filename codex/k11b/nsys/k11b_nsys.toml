@@ -1,0 +1,59 @@
+id = "k11b-nsys"
+priority = 18
+host_sensitive = false
+note = "why: K11b single staging copy, slowest link first: does the GPU1 start lag at V->C0 and D5->V (x2: 75.7/73.1 us) fall below 40 us and the block span shrink by >= 40 us | expect: shared and sharedfwd remove the second host memcpy (memcpy gap before MB1 ~0), shared also starts GPU1's chain first (D, G) | falsifier: lag stays > 40 us, or span does not shrink >= 40 us; base2 vs base gives the same-arm spread | answers: whether pkg K11b engages and moves the big boundaries on stack10-cand"
+title = "K11b: s10-k11b CUDA build (stack10-cand + shared staging copy), Swift 1.5 IQ4_XS np2 serving -duo shape (-np 2, -c 204800, ub 512, chain and fold C off), decode-8k with both slots decoding, nsys CUDA trace, five arms booted in turn: base (per-rank copies), shared (one copy, measured slowest link first), sharedfwd (one copy, rank 0 first), s1rev (per-rank copies, last rank first), base2 (repeat of base); within-trace boundary metrics, mechanism capture, no timing verdict"
+kind = "measure"
+budget_s = 2500
+est_s = 700
+ab = false
+retry = "fresh"
+startup_grace_s = 600
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "integrity", regex = "frozen corpus/template/client changed|draft vocab changed|model missing or wrong size|no CUDA build|build-cuda does not match|kv_pad proof failed|ub proof failed|AR dual-stream proof failed|cand-neginf proof failed|CPU sampler warning|chain/fold engaged at np2|K11b env proof failed|K11b engagement proof failed|K11b order proof failed|proof response" },
+  { class = "insufficient_data", regex = "window did not close|request ended before the window|a slot never produced a token|no report|no runs.json" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11b/codex/nsys/k11b_nsys.sh"]
+cwd = "/home/xanewok/repos/attrib-pack"
+env = { DRY_RUN = "0", CANARY = "0", ITEM = "k11b-nsys", NP = "2", XID_SINCE = "2026-10-06 21:32:17", BUDGET_S = "1500", OUT = "/mnt/scratch/work/k11b-nsys/full-a{attempt}", PORT = "{port}" }
+ports = "dynamic"
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11b/codex/nsys/k11b_nsys.sh"]
+timeout_s = 120
+env = { DRY_RUN = "1", CUDA_VISIBLE_DEVICES = "", ITEM = "k11b-nsys", NP = "2", XID_SINCE = "2026-10-06 21:32:17", OUT = "/mnt/scratch/work/k11b-nsys/preflight" }
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11b/codex/nsys/k11b_nsys.sh"]
+cwd = "/home/xanewok/repos/attrib-pack"
+timeout_s = 900
+env = { DRY_RUN = "0", CANARY = "1", ITEM = "k11b-nsys", NP = "2", XID_SINCE = "2026-10-06 21:32:17", BUDGET_S = "850", OUT = "/mnt/scratch/work/k11b-nsys/canary-a{attempt}", PORT = "{port}" }
+
+[outputs]
+paths = ["/mnt/scratch/work/k11b-nsys"]
+
+[fix]
+editable = []
+protected = ["proof", "min_rounds", "cold", "SHA256SUMS", "min-samples"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11b/codex/nsys/k11b_nsys.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11b/codex/nsys/drive_np2.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11b/codex/nsys/k11b_analyze.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/attrib-pack/gpu/llama_drive.py",
+  "/home/xanewok/repos/attrib-pack/gpu/make_manifest.py",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs.sha256",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs/agg.py",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs/corpus.txt",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs/chat-template.jinja",
+  "/home/xanewok/repos/attrib-pack/attrib_pack.py",
+  "/home/xanewok/repos/attrib-pack/runs/hqgap8-analysis/an.py",
+  "/home/xanewok/repos/attrib-pack/models/llama-swift15-iq4xs.json",
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf",
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json",
+]
