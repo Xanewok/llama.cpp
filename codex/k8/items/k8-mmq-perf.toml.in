@@ -1,0 +1,55 @@
+id = "k8-mmq-perf"
+title = "K8 MMQ small-I tiles partitioned like the default tile: kernel timing on both RTX 5060 Ti, test-backend-ops perf, hot and cold weights, default tile vs L1 policy (auto-l1) vs K8 policy (auto) vs auto-drop floor, A/A default spread"
+# Canary (G ~3 min): one q6_K m=3072 12-column case at k=5120, stream-k small-I launch engaged (72 blocks), hot-readable SQL row.
+# Run (G ~80 min): GPU0 hot 2 reps x (default, auto-l1, auto, auto-drop, default), cold (default, auto-l1, auto, default, auto-drop), GPU1 hot (default, auto-l1, auto, default).
+# Question: does the narrow tile, with the stream-k partition of the default tile, beat the default tile on the stream-k shapes (m = 3072/5120/6144 at 12/24 columns)?
+# Expected (G, no data): auto - auto-l1 between -6 % and 0 % there (L1 measured -6 % on the plain-tiling gate/up shapes); 0 where both launch the same kernel (m = 8704, 9216, 17408,
+# 124160 and Q8_0). Falsifier: auto - default >= -2 % or inside 2x the A/A default spread on m = 3072/5120/6144 for IQ4_XS and Q6_K -> keep the L1 policy (drop the selector commit).
+priority = 29
+kind = "measure"
+host_sensitive = false
+budget_s = 9600
+est_s = 4800
+ab = false
+retry = "fresh"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "integrity", regex = "build bytes changed|unresolved libraries|resolve outside|not the K8 build|is not an RTX 5060 Ti|engagement: " },
+  { class = "insufficient_data", regex = "not deterministic run to run" },
+  { class = "timeout", regex = "budget expired|hung \\(" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "@ROOT@/codex/k8/gpu/k8-gpu.sh", "perf", "--run"]
+cwd = "@ROOT@"
+env = { COMMIT = "@COMMIT@", BUDGET_S = "9000", OUT = "/home/xanewok/repos/qwen38-eval/results/@DATE@-k8-mmq-perf/a{attempt}" }
+ports = []
+
+[preflight]
+cmd = ["bash", "@ROOT@/codex/k8/gpu/k8-gpu.sh", "perf", "--preflight"]
+env = { COMMIT = "@COMMIT@", OUT = "/home/xanewok/repos/qwen38-eval/results/@DATE@-k8-mmq-perf/preflight" }
+timeout_s = 120
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "@ROOT@/codex/k8/gpu/k8-gpu.sh", "perf", "--canary"]
+env = { COMMIT = "@COMMIT@", BUDGET_S = "500", OUT = "/home/xanewok/repos/qwen38-eval/results/@DATE@-k8-mmq-perf/canary-a{attempt}" }
+timeout_s = 600
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval/results/@DATE@-k8-mmq-perf/a{attempt}"]
+
+[fix]
+editable = []
+protected = ["build", "budget"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "@ROOT@/codex/k8/gpu/k8-gpu.sh",
+  "@ROOT@/codex/k8/gpu/perf_summary.py",
+  "@ROOT@/k8-bin/SOURCE",
+  "@ROOT@/k8-bin/SHA256SUMS",
+  "@ROOT@/k8-bin/test-backend-ops",
+@LIB_PINS@
+]
