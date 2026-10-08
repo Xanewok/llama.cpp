@@ -47,7 +47,7 @@ def run(tag, meta, np, kv, k, seed, fold, extra=None):
         for c in ph['counters']:
             counts[c['kind']] = counts.get(c['kind'], 0) + c['count']
     result = dict(data=data, dump=dump, counts=counts, c=sum(p['phase'] == 'C' for p in phases),
-                  log=(out / f'{tag}.log').read_text())
+                  log=(out / f'{tag}.log').read_text(), phases=phases)
     summary[tag] = dict(elapsed_s_M=elapsed, counters=counts, catchup_decodes_M=result['c'], dump_rows_M=len(dump))
     return result
 
@@ -79,7 +79,7 @@ try:
     base = refs[base_tag][0]
     mutant = run('mutant-swap', 0, 2, 0, 3, 1729, 1, {'LLAMA_MTP_FOLD_DEBUG_SWAP_SEQ': '1'})
     assert 'mtp_fold_mutant: wrong sequence engaged' in mutant['log'], 'mutant did not engage'
-    assert base['data'] != mutant['data'], 'wrong-sequence mutant did not change outputs'
+    assert [ph['tokens'] for ph in base['data']['phases']] != [ph['tokens'] for ph in mutant['data']['phases']], 'wrong-sequence mutant did not change output tokens'
     forced = run('forced-layout', 0, 2, 0, 3, 1729, 1, {'LLAMA_MTP_FOLD_DEBUG_LAYOUT': '1'})
     assert base['data'] == forced['data'] and base['dump'] == forced['dump'], 'layout fallback differs'
     assert forced['counts'].get('mtp_fold_layout_fallback', 0) > 0 and not forced['counts'].get('mtp_fold', 0)
@@ -91,6 +91,7 @@ try:
     assert {int(row.split()[1]) for row in b['dump']} == {0}, 'mixed control drafted slot 1'
     assert all(ph['stats'][1]['draft'] == 0 for ph in b['data']['phases']), 'mixed slot draft counters'
     assert b['counts'].get('mtp_fold', 0) > 0, 'mixed never folded'
+    assert any(ph['phase'] == 'V' and ph['n_tokens'] == 5 for ph in b['phases']), 'mixed verify did not contain one anchor plus one k3 draft'
     summary['rc'] = 0
 except SystemExit as exc:
     summary['rc'] = exc.code

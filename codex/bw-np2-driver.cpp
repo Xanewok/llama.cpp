@@ -109,7 +109,7 @@ int main(int argc, char ** argv) {
                 task.cli = true;
                 const bool mixed = slot == 1 && std::getenv("NP2_MIXED");
                 task.cli_prompt = mixed ? "Continue the letters a, b, c, d:" : prompts[slot];
-                task.params.n_predict = mixed ? 1 : std::atoi(argv[6]) + 16 * slot;
+                task.params.n_predict = mixed ? 2 : std::atoi(argv[6]) + 16 * slot;
                 task.params.return_tokens = true;
 
                 task.params.cache_prompt = true;
@@ -154,7 +154,7 @@ int main(int argc, char ** argv) {
             }
             json token_rows = json::array();
             for (int slot = 0; slot < np; ++slot) {
-                require(tokens[slot].size() == (size_t) (slot == 1 && std::getenv("NP2_MIXED") ? 1 : std::atoi(argv[6]) + 16 * slot), "short completion");
+                require(tokens[slot].size() == (size_t) (slot == 1 && std::getenv("NP2_MIXED") ? 2 : std::atoi(argv[6]) + 16 * slot), "short completion");
                 json row = json::array();
                 for (llama_token token : tokens[slot]) {
                     row.push_back(token);
