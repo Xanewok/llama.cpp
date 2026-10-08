@@ -612,6 +612,14 @@ void ggml_cuda_op_rms_norm_scale_pair_fused(
         GGML_ASSERT(c.eps >= 0.0f);
     }
 
+    // numerical mutants: 1 = chain b scaled one ulp high, 2 = chain b reads chain a's input
+    static const int mutant = getenv("GGML_CUDA_RMS_NORM_SCALE_PAIR_MUTANT") ? atoi(getenv("GGML_CUDA_RMS_NORM_SCALE_PAIR_MUTANT")) : 0;
+    if (mutant == 1) {
+        args.chain[1].scale_out = nextafterf(args.chain[1].scale_out, INFINITY);
+    } else if (mutant == 2) {
+        args.chain[1].x = args.chain[0].x;
+    }
+
     const ggml_tensor * src0 = rms_a->src[0];
     const int ncols = src0->ne[0];
     const dim3 blocks_num(src0->ne[1], src0->ne[2], 2*src0->ne[3]);
