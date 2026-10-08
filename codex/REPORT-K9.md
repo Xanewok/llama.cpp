@@ -1,7 +1,7 @@
 # K9: PDL for MMQ
 
 Tree `wt/s10-k9`, branch `topic/s10-k9`, base `0cfc0723e` (stack10-cand). Labels: M measured, D derived, G guess.
-Nothing CUDA was compiled or run: no CUDA on this host. Mac results are in the section "Mac results".
+Nothing CUDA was compiled or run: no CUDA on this host. Mac CPU results are in the section "Mac results".
 
 ## Commits
 
@@ -57,4 +57,12 @@ Falsifiers: (1) k9-base inside the A/A spread or positive on a 12/24-column shap
 
 ## Mac results
 
-(see below; filled after the Mac stage)
+Run `bw-mac ... codex/bw-k9-mac.sh k9` on `mini-builder` at HEAD `72ab2e59b` (out `work/build-window-1007/k9-mac-a2`, sealed in `codex/k9-evidence/summary.json`), CPU build `-DGGML_NATIVE=OFF`, ccache, -j4:
+
+| Stage | Wall s (M) | Result |
+|---|---:|---|
+| 20 CPU build of `test-backend-ops` | 38 | PASS (the new `mmq-chain` code compiles) |
+| 21 chain harness on the CPU backend | 8 | PASS: two runs byte-identical, 2 cases with distinct hashes for the two inputs, `0 of 8` recompute mismatches, `corrupt` run exits 1 with `mmq-chain: FAIL 2 recomputes differ`, perf mode prints 2 rows |
+| 31 bash -n, py_compile, shlint | 0 | PASS |
+
+An earlier attempt (`k9-mac-a1`, 554 s) failed at stage 21 because the Mac model gate prints `WAIT` lines on stdout while other workers run, which polluted the hash files; the payload now keeps only `chain`/`perf` lines (`72ab2e59b`). No source file needed a fix. These gates validate the harness only; PDL, MMQ and the CUDA edits remain uncompiled until the window.

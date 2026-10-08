@@ -1,0 +1,25 @@
+{
+  "result": "PASS",
+  "commit": "72ab2e59bfde4c6a7ed1623570e0c9a3681194d7",
+  "source_sha256": "d93f6970368362f594bfa85e8a55454814ec9ca1ad5f400cedd813b1e6bff60d",
+  "stages": [
+    {
+      "code": 20,
+      "name": "cpu-build",
+      "rc": 0,
+      "wall_s_M": 38
+    },
+    {
+      "code": 21,
+      "name": "chain-harness",
+      "rc": 0,
+      "wall_s_M": 8
+    },
+    {
+      "code": 31,
+      "name": "static-checks",
+      "rc": 0,
+      "wall_s_M": 0
+    }
+  ]
+}
