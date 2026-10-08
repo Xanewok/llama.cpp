@@ -1897,6 +1897,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
 
     // an armed fold applies to this decode only, whatever its outcome
     const float * fold_h = mtp_fold_h;
+    const int32_t fold_n_seq = mtp_fold_n_seq;
     mtp_fold_h     = nullptr;
     mtp_fold_n_tok = 0;
 
@@ -2054,14 +2055,21 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
         llama_sampler_backend_begin(entry.second);
     }
 
-    // MTP fold: one ubatch, one sequence, tokens only; every other batch keeps the draft's catch-up decode
+    // The fold must preserve the row order of both the target batch and the draft catch-up decode.
     llama_memory_context_ptr mctx_fold;
     // (adapters would differ between the two contexts' MTP block)
     if (fold_h && mtp_fold_dft && cparams.embeddings_nextn && !cparams.embeddings_nextn_masked && loras->empty()) {
         const auto & ubatch = mctx->get_ubatch();
         if (ubatch.n_tokens == n_tokens_all && ubatch.n_tokens <= mtp_fold_max_tokens &&
-                ubatch.token && !ubatch.embd && ubatch.n_seqs_unq == 1) {
-            mctx_fold = mtp_fold_dft->mtp_fold_prepare(ubatch);
+                ubatch.token && !ubatch.embd && ubatch.data) {
+            bool same_order = true;
+            for (uint32_t i = 0; i < ubatch.n_tokens; ++i) {
+                same_order = same_order && ubatch.data->batch_idxs[i] == (int32_t) i &&
+                    ubatch.n_seq_id[i] == 1 && ubatch.seq_id[i][0] >= 0 && ubatch.seq_id[i][0] < fold_n_seq;
+            }
+            if (same_order) {
+                mctx_fold = mtp_fold_dft->mtp_fold_prepare(ubatch);
+            }
         }
     }
 
@@ -2276,6 +2284,12 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
     if (mctx_fold) {
         mtp_fold_n_tok = (int32_t) n_tokens_all;
         ggml_round_trace_count("mtp_fold");
+        const uint32_t n_seq = mctx_fold->get_ubatch().n_seqs_unq;
+        const uint64_t bit = uint64_t(1) << (n_seq - 1);
+        if (!(mtp_fold_logged & bit)) {
+            LLAMA_LOG_DEBUG("mtp_fold_decode: engaged n_seq=%u\n", n_seq);
+            mtp_fold_logged |= bit;
+        }
     }
 
     // set to total number of outputs in the batch, for use in llama_get_logits_ith
@@ -2359,8 +2373,7 @@ bool llama_context::mtp_fold_init(llama_context * ctx_dft) {
         ok = ggml_backend_get_device(backends[i].get()) == ggml_backend_get_device(ctx_dft->backends[i].get());
     }
 
-    const auto * kv = dynamic_cast<const llama_kv_cache *>(ctx_dft->memory.get());
-    ok = ok && kv && kv->get_n_stream() == 1;
+    ok = ok && dynamic_cast<const llama_kv_cache *>(ctx_dft->memory.get());
 
     if (ok) {
         mtp_fold_dft = ctx_dft;
@@ -2369,8 +2382,9 @@ bool llama_context::mtp_fold_init(llama_context * ctx_dft) {
     return ok;
 }
 
-void llama_context::mtp_fold_arm(const float * h_prev) {
-    mtp_fold_h = mtp_fold_dft ? h_prev : nullptr;
+void llama_context::mtp_fold_arm(const float * h_prev, int32_t n_seq) {
+    mtp_fold_h = mtp_fold_dft && n_seq > 0 ? h_prev : nullptr;
+    mtp_fold_n_seq = n_seq;
 }
 
 int32_t llama_context::mtp_fold_n_last() const {
@@ -2379,7 +2393,7 @@ int32_t llama_context::mtp_fold_n_last() const {
 
 llama_memory_context_ptr llama_context::mtp_fold_prepare(const llama_ubatch & ubatch) {
     auto * kv = dynamic_cast<llama_kv_cache *>(memory.get());
-    if (!kv || ubatch.n_tokens > cparams.n_ubatch || ubatch.n_seqs_unq != 1 || !loras->empty()) {
+    if (!kv || ubatch.n_tokens > cparams.n_ubatch || ubatch.n_seqs_unq == 0 || !loras->empty()) {
         return nullptr;
     }
 
@@ -2387,13 +2401,31 @@ llama_memory_context_ptr llama_context::mtp_fold_prepare(const llama_ubatch & ub
     logits_deferred = {};
     memory_update(false);
 
-    // decode() would place exactly this single ubatch (split_simple, one stream) only for Y = X + 1 and consecutive
-    // positions; anything else stays on the catch-up decode, which also reproduces its errors
-    const llama_pos p0 = kv->seq_pos_max(ubatch.seq_id_unq[0]) + 1;
-    for (uint32_t i = 0; i < ubatch.n_tokens; ++i) {
-        if (ubatch.pos[i] != p0 + (llama_pos) i) {
+    // A sequence must occupy one block. Per-stream split_equal also requires equal counts and consecutive ids.
+    uint32_t begin = 0;
+    uint32_t n_rows = 0;
+    llama_seq_id last_seq = -1;
+    std::vector<bool> seen(cparams.n_seq_max, false);
+    while (begin < ubatch.n_tokens) {
+        const llama_seq_id seq = ubatch.seq_id[begin][0];
+        if (ubatch.n_seq_id[begin] != 1 || seq < 0 || seq >= (llama_seq_id) seen.size() || seen[seq]) {
             return nullptr;
         }
+        seen[seq] = true;
+        const llama_pos p0 = kv->seq_pos_max(seq) + 1;
+        uint32_t end = begin;
+        while (end < ubatch.n_tokens && ubatch.n_seq_id[end] == 1 && ubatch.seq_id[end][0] == seq) {
+            if (ubatch.pos[end] != p0 + (llama_pos) (end - begin)) {
+                return nullptr;
+            }
+            ++end;
+        }
+        if (kv->get_n_stream() > 1 && begin > 0 && (seq != last_seq + 1 || end - begin != n_rows)) {
+            return nullptr;
+        }
+        n_rows = end - begin;
+        last_seq = seq;
+        begin = end;
     }
 
     std::vector<llama_ubatch> ubatches = { ubatch };
@@ -4470,8 +4502,8 @@ bool llama_mtp_fold_init(llama_context * ctx_tgt, llama_context * ctx_dft) {
     return ctx_tgt->mtp_fold_init(ctx_dft);
 }
 
-void llama_mtp_fold_arm(llama_context * ctx_tgt, const float * h_prev) {
-    ctx_tgt->mtp_fold_arm(h_prev);
+void llama_mtp_fold_arm(llama_context * ctx_tgt, const float * h_prev, int32_t n_seq) {
+    ctx_tgt->mtp_fold_arm(h_prev, n_seq);
 }
 
 int32_t llama_mtp_fold_n_last(const llama_context * ctx_tgt) {
