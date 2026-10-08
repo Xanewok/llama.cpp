@@ -1,4 +1,5 @@
 """Same-binary fold identity and negative controls. One model process at a time, each bounded to 60 min."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,7 +13,12 @@ out.mkdir(parents=True, exist_ok=True)
 model = os.environ['BW_MODEL']
 bin_path = root / 'build-cpu/bin/bw-np2-driver'
 gate = root / 'codex/mseq/gate.sh'
-summary = {}
+sources = ('common/speculative.cpp', 'src/llama-context.cpp', 'src/llama-context.h', 'src/llama-ext.h',
+           'src/llama-graph.cpp', 'src/llama-graph.h', 'src/models/qwen35.cpp')
+source_digest = hashlib.sha256()
+for name in sources:
+    source_digest.update(name.encode() + b'\0' + (root / name).read_bytes())
+summary = {'source_sha256': source_digest.hexdigest()}
 
 
 def run(tag, meta, np, kv, k, seed, fold, extra=None):
@@ -79,13 +85,17 @@ try:
     assert forced['counts'].get('mtp_fold_layout_fallback', 0) > 0 and not forced['counts'].get('mtp_fold', 0)
     assert forced['c'] == base['c'], 'layout fallback did not take separate catch-up'
     # Slot 1 generates without drafting, while slot 0 drafts in the same request batch.
-    a = run('mixed-off', 0, 2, 1, 3, 1729, 0, {'NP2_SLOT1_N_MAX': '0'})
-    b = run('mixed-on', 0, 2, 1, 3, 1729, 1, {'NP2_SLOT1_N_MAX': '0'})
+    a = run('mixed-off', 0, 2, 1, 3, 1729, 0, {'NP2_MIXED': '1'})
+    b = run('mixed-on', 0, 2, 1, 3, 1729, 1, {'NP2_MIXED': '1'})
     assert a['data'] == b['data'] and a['dump'] == b['dump'], 'mixed identity'
     assert {int(row.split()[1]) for row in b['dump']} == {0}, 'mixed control drafted slot 1'
     assert all(ph['stats'][1]['draft'] == 0 for ph in b['data']['phases']), 'mixed slot draft counters'
     assert b['counts'].get('mtp_fold', 0) > 0, 'mixed never folded'
     summary['rc'] = 0
+except SystemExit as exc:
+    summary['rc'] = exc.code
+    summary['failure'] = 'model gate skipped' if exc.code == 75 else 'model process failed'
+    raise
 except Exception as exc:
     summary['rc'] = 2
     summary['failure'] = str(exc)

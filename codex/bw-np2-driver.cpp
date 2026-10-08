@@ -107,13 +107,11 @@ int main(int argc, char ** argv) {
                 task.id = reader.get_new_id();
                 task.id_slot = slot;
                 task.cli = true;
-                task.cli_prompt = prompts[slot];
-                task.params.n_predict = std::atoi(argv[6]) + 16 * slot;
+                const bool mixed = slot == 1 && std::getenv("NP2_MIXED");
+                task.cli_prompt = mixed ? "Continue the letters a, b, c, d:" : prompts[slot];
+                task.params.n_predict = mixed ? 1 : std::atoi(argv[6]) + 16 * slot;
                 task.params.return_tokens = true;
-                if (slot == 1 && std::getenv("NP2_SLOT1_N_MAX")) {
-                    task.params.speculative = params.speculative;
-                    task.params.speculative.draft.n_max = std::atoi(std::getenv("NP2_SLOT1_N_MAX"));
-                }
+
                 task.params.cache_prompt = true;
                 task.params.stream = true;
                 task.params.sampling.seed = std::strtoul(argv[5], nullptr, 10) + slot;
@@ -140,7 +138,7 @@ int main(int argc, char ** argv) {
                     ids.insert(ids.end(), partial->tokens.begin(), partial->tokens.end());
                 }
                 if (auto * final = dynamic_cast<server_task_result_cmpl_final *>(result.get())) {
-                    require((final->index == 1 && std::getenv("NP2_SLOT1_N_MAX")) || (final->stats.n_draft_tokens > 0 && final->stats.n_draft_verif_steps > 0), "MTP did not engage");
+                    require((final->index == 1 && std::getenv("NP2_MIXED")) || (final->stats.n_draft_tokens > 0 && final->stats.n_draft_verif_steps > 0), "MTP did not engage");
                     require(final->index >= 0 && final->index < np && !seen[final->index], "bad or duplicate result index");
                     seen[final->index] = true;
                     by_slot[final->index] = json{{"slot", final->index}, {"draft", final->stats.n_draft_tokens},
@@ -156,7 +154,7 @@ int main(int argc, char ** argv) {
             }
             json token_rows = json::array();
             for (int slot = 0; slot < np; ++slot) {
-                require(tokens[slot].size() == (size_t) (std::atoi(argv[6]) + 16 * slot), "short completion");
+                require(tokens[slot].size() == (size_t) (slot == 1 && std::getenv("NP2_MIXED") ? 1 : std::atoi(argv[6]) + 16 * slot), "short completion");
                 json row = json::array();
                 for (llama_token token : tokens[slot]) {
                     row.push_back(token);

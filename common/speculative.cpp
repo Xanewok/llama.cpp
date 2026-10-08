@@ -1415,7 +1415,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     // pending_h must not be reallocated while armed: the target reads it during its next decode.
     bool    fold          = false;
 
-    // test only, LLAMA_MTP_DRAFT_DUMP=path: one line per sampled draft token, "round step id cand_ids[10] probs[10]"
+    // test only, LLAMA_MTP_DRAFT_DUMP=path: one line per sampled draft token, "round seq step id cand_ids[10] probs[10]"
     FILE * draft_dump  = nullptr;
     int    draft_round = 0;
 
@@ -1460,7 +1460,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     };
     std::vector<mtp_chain_seq> mtp_chain_seqs;
 
-    // LLAMA_MTP_CHAIN_DUMP=path: one line per drafted token, "round step id cand_ids[10] probs[10]", chain or not
+    // LLAMA_MTP_CHAIN_DUMP=path: one line per drafted token, "round seq step id cand_ids[10] probs[10]", chain or not
     FILE * mtp_chain_dump = nullptr;
     int    mtp_chain_round = 0;
 
