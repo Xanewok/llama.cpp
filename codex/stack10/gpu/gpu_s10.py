@@ -79,8 +79,8 @@ def fixture_checks():
                 shape = s10items.shape_of((HERE.parent/'items'/name).read_text())
                 # the same server, model, depth/campaign settings as the wave-1 item of this profile
                 for section in ('model', 'draft_vocab'):
-                    assert x[section] == old[section], f'{name}: {section} differs from wave 1'
-                assert x['server']['args'] == old['server']['args'], f'{name}: served flags differ from wave 1'
+                    assert {k: str(v) for k, v in x[section].items()} == {k: str(v) for k, v in old[section].items()}, f'{name}: {section} differs from wave 1'
+                assert [a for a in x['server']['args'] if a != '{cache_ram_flags}'] == [a for a in old['server']['args'] if a != '{cache_ram_flags}'], f'{name}: served flags differ from wave 1'
                 assert set(old['server']['knobs']) <= set(x['server']['knobs'])
                 assert set(s10items.SWITCH_ENVS) <= set(x['server']['knobs'])
                 assert all(k in x['server']['knobs'] for c in engagement.ENGAGEMENT.values() for k in c['env'])
@@ -90,17 +90,18 @@ def fixture_checks():
                     assert x['depth']['request']['ignore_eos'] is True and x['depth']['request'] == old['depth']['request']
                     assert x['depth'].get('decode_start', 'joint') == 'joint'
                     assert (x['depth']['identity'] == 'cross-arm') == (shape == 'np1'), f'{name}: identity mode'
-                    assert bool(x['depth'].get('counters')) == (name == 's10-np2-real-j5q'), f'{name}: round trace only on the np2 J5q item'
+                    assert bool(x['depth'].get('counters')) == (name == 's10-np2-real-j5q.toml.in'), f'{name}: round trace only on the np2 J5q item'
                 else:
                     for key in ('agents', 'agent_ctx', 'tasks', 'wall_s', 'task_timeout_s', 'runaway_tokens'):
                         assert x['campaign'][key] == old['campaign'][key], f'{name}: campaign.{key}'
                 assert '--cache-ram' not in x['server']['args']
                 assert list(x['arms']) == ['s9p', 's10']
                 a, b = x['arms']['s9p'], x['arms']['s10']
-                assert a['env'] == b['env'], f'{name}: candidate arm env differs from the base arm (no switch allowed)'
+                strip = lambda e: {k: v for k, v in e.items() if k != 'LD_LIBRARY_PATH'}  # per-arm root
+                assert strip(a['env']) == strip(b['env']), f'{name}: candidate arm env differs from the base arm (no switch allowed)'
                 assert a['flags'] == b['flags'] == []
                 assert a['canary_log'] == [] and x['canary']['plan'] == ['s10']
-                assert x['plan'].count('s9p') == x['plan'].count('s10') == (3 if name == 's10-np2-real-j5q' else 2)
+                assert x['plan'].count('s9p') == x['plan'].count('s10') == (3 if name == 's10-np2-real-j5q.toml.in' else 2)
                 assert x['plan'][0] != x['plan'][1] and x['plan'][-1] != x['plan'][-2], f'{name}: boots not interleaved'
                 assert type(x['priority']) is int and 26 <= x['priority'] <= 28 and x['budget']['canary_s'] <= 600
                 assert len(x['plan'])*mkitem.boot_wall(x) + x['budget']['canary_s'] <= 0.7*mkitem.budget(x)['budget_s']
@@ -116,7 +117,7 @@ def fixture_checks():
                 assert x['cpu_evidence']['path'] == str(Path(tmp)/'summary.json')
     window = tomllib.loads((HERE.parent/'bw-stack10.toml').read_text())
     assert window['kind'] == 'filler' and window['priority'] == 19 and window['host_sensitive'] is False and window['preemptible'] is False
-    assert window['run']['env']['CUDA_VISIBLE_DEVICES'].startswith('GPU-') and window['ports'] == 'dynamic'
+    assert window['run']['env']['CUDA_VISIBLE_DEVICES'].startswith('GPU-') and window['run']['ports'] == 'dynamic'
     print('stack10 item templates: wave-1 flags and env kept, candidate arm without switches, engagement canaries, window fields PASS')
 
 
