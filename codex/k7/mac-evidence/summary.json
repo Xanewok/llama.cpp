@@ -1,0 +1,38 @@
+{
+  "result": "PASS",
+  "commit": "0ba65e053fbeb35b05438cbc727dc48f516ca288",
+  "stages": [
+    {
+      "code": 20,
+      "name": "cpu-build",
+      "rc": 0,
+      "wall_s_M": 122
+    },
+    {
+      "code": 21,
+      "name": "pair-and-neighbour-op-tests",
+      "rc": 0,
+      "wall_s_M": 622
+    },
+    {
+      "code": 22,
+      "name": "alias-guard-mutant",
+      "rc": 0,
+      "wall_s_M": 2
+    },
+    {
+      "code": 23,
+      "name": "real-graph-adjacency",
+      "rc": 0,
+      "wall_s_M": 3
+    }
+  ],
+  "source_files": [
+    "ggml/src/ggml-cuda/ggml-cuda.cu",
+    "ggml/src/ggml-cuda/norm.cu",
+    "ggml/src/ggml-cuda/norm.cuh",
+    "ggml/src/ggml-rms-norm-scale-pair.h",
+    "tests/test-backend-ops.cpp"
+  ],
+  "source_sha256": "f574dc0bce4b09e6ea896e3262a8c12f633938698fc9f487be1629a529a84521"
+}
