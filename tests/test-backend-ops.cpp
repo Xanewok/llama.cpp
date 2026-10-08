@@ -11465,6 +11465,32 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         test_cases.emplace_back(new test_flash_attn_ext(576, 512, 1, {gqa, 1}, 2048, 1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 1, 2, 3}, true, true));
     }
 
+    // q8_0 K/V prompt batches over long KV views: the CUDA backend converts such a view to f16 in windows of at most
+    // 8192 cells and merges the windows; one window (8192), a short second window (8448), a KV size that is not a multiple
+    // of the FATTN_KQ_STRIDE of 256 (20113), several windows (32768, 90112), K/V cache layout, one and two sequences
+    {
+        auto add_kv_windows = [&](int hs, int nh, int gqa, int nseq, int kv, int nb, bool sinks, float max_bias, float softcap, bool stream_view) {
+            test_cases.emplace_back(new test_flash_attn_ext(hs, hs, nh, {gqa, nseq}, kv, nb, true, sinks, max_bias, softcap, GGML_PREC_F32,
+                GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}, true, false, 0, stream_view));
+        };
+        for (int kv : { 8192, 8448, 32768 }) {
+            add_kv_windows(256, 2, 6, 1, kv, 512, false, 0.0f, 0.0f, false);
+        }
+        add_kv_windows(256, 2, 6, 1, 20113, 128, true,  0.0f, 0.0f, false);
+        add_kv_windows(256, 4, 6, 1, 90112, 128, false, 0.0f, 0.0f, false);
+        for (bool stream_view : { false, true }) {
+            add_kv_windows(256, 2, 6, 2, 32768, 64, false, 0.0f, 0.0f, stream_view);
+        }
+        add_kv_windows(256, 2, 6, 2, 90112, 64,  true,  0.0f, 0.0f, true);
+        for (int gqa : { 1, 4, 8 }) {
+            add_kv_windows(128, 2, gqa, 1, 32768, 128, false, 0.0f, 0.0f, false);
+        }
+        add_kv_windows(256, 2, 4, 1, 32768, 128, false, 0.0f, 0.0f, false);
+        add_kv_windows(256, 2, 8, 1, 32768, 128, false, 0.0f, 0.0f, false);
+        add_kv_windows(128, 2, 4, 1, 16384, 64, false, 8.0f, 0.0f, false);
+        add_kv_windows(128, 2, 4, 1, 16384, 64, false, 0.0f, 10.0f, false);
+    }
+
     // MLA shape: the V cache is a sub-view of the K cache, with quantized KV
     test_cases.emplace_back(new test_flash_attn_ext(576, 512, 1, {8, 1},  113,   1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 1, 2, 3}, true, true));
     test_cases.emplace_back(new test_flash_attn_ext(576, 512, 1, {8, 1}, 1024,   1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 1, 2, 3}, true, true));
@@ -12065,6 +12091,20 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 65536, 512, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 131072, 1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, 131072, 512, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_F16, GGML_TYPE_F16));
+
+    // q8_0 K/V prompt batches over long KV views (J5q serving shape: 4 KV heads, GQA 6, head size 256), one and two sequences
+    for (int kv : { 8192, 32768, 90112 }) {
+        for (int nb : { 64, 128, 512 }) {
+            test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 1}, kv, nb, true, false, 0, 0, GGML_PREC_F32,
+                                                            GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}, true));
+            test_cases.emplace_back(new test_flash_attn_ext(256, 256, 4, {6, 2}, kv, nb, true, false, 0, 0, GGML_PREC_F32,
+                                                            GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}, true, false, 0, true));
+        }
+    }
+    for (int gqa : { 1, 4, 8 }) {
+        test_cases.emplace_back(new test_flash_attn_ext(128, 128, 4, {gqa, 1}, 32768, 512, true, false, 0, 0, GGML_PREC_F32,
+                                                        GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}, true));
+    }
 
     // speculative decoding verify batches on one GPU of a two-way tensor split (2 KV heads, GQA 6, head size 256),
     // K/V laid out like the KV cache

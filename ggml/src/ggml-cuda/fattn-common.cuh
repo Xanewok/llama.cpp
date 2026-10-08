@@ -4,6 +4,7 @@
 #include "convert.cuh"
 #include "vecdotq.cuh"
 
+#include <algorithm>
 #include <cstdint>
 
 #define FATTN_KQ_STRIDE       256
@@ -76,8 +77,50 @@ static inline bool ggml_cuda_fa_dense_per_stream(const ggml_tensor * t) {
     return t->nb[3] >= expect && t->nb[3] % 16 == 0 && (uintptr_t) t->data % 16 == 0;
 }
 
+// Converting a quantized K/V view to f16 needs scratch the size of the whole view. For long contexts the MMA kernel instead
+// converts the view in windows of at most GGML_CUDA_FATTN_KV_WINDOW cells (a multiple of FATTN_KQ_STRIDE), one window at a time
+// in the same scratch, and merges the windows' partial results by their softmax maxima and row sums (launch_fattn).
+// The windows are even in units of FATTN_KQ_STRIDE cells, each at least 2 units long, and start at multiples of it.
+#define GGML_CUDA_FATTN_KV_WINDOW 8192
+
+static inline int64_t ggml_cuda_fattn_kv_window_cells() {
+    return GGML_CUDA_FATTN_KV_WINDOW;
+}
+
+static inline int ggml_cuda_fattn_kv_n_windows(const int64_t n_kv) {
+    const int64_t units_max = ggml_cuda_fattn_kv_window_cells() / FATTN_KQ_STRIDE;
+    const int64_t units     = (n_kv + FATTN_KQ_STRIDE - 1) / FATTN_KQ_STRIDE;
+    return units_max < 4 || units <= units_max ? 1 : (int) ((units + units_max - 1) / units_max);
+}
+
+// Window iw of n_windows over n_kv cells: [begin, end).
+static inline void ggml_cuda_fattn_kv_window(const int64_t n_kv, const int n_windows, const int iw, int64_t & begin, int64_t & end) {
+    const int64_t units = (n_kv + FATTN_KQ_STRIDE - 1) / FATTN_KQ_STRIDE;
+    const int64_t q = units / n_windows;
+    const int64_t r = units % n_windows;
+    begin = (iw*q + std::min<int64_t>(iw, r)) * FATTN_KQ_STRIDE;
+    end   = std::min<int64_t>(n_kv, ((iw + 1)*q + std::min<int64_t>(iw + 1, r)) * FATTN_KQ_STRIDE);
+}
+
+// Number of cells of the largest window, the f16 scratch holds this many cells of K and of V.
+static inline int64_t ggml_cuda_fattn_kv_window_max_cells(const int64_t n_kv) {
+    const int n_windows = ggml_cuda_fattn_kv_n_windows(n_kv);
+    if (n_windows == 1) {
+        return n_kv;
+    }
+    const int64_t units = (n_kv + FATTN_KQ_STRIDE - 1) / FATTN_KQ_STRIDE;
+    return std::min<int64_t>(n_kv, (units + n_windows - 1) / n_windows * FATTN_KQ_STRIDE);
+}
+
+// The sparse variants gather rows of the whole converted view, they are not windowed.
+static inline bool ggml_cuda_flash_attn_ext_kv_windowable(const ggml_tensor * dst, const bool need_f16_K, const bool need_f16_V) {
+    return ggml_get_op_params_i32(dst, 4) == 0 &&
+        ((need_f16_K && dst->src[1]->type != GGML_TYPE_F16) || (need_f16_V && dst->src[2]->type != GGML_TYPE_F16));
+}
+
+// windowed: the scratch only holds the largest window, see ggml_cuda_fattn_kv_window_max_cells.
 static inline ggml_cuda_flash_attn_ext_f16_extra_data ggml_cuda_flash_attn_ext_get_f16_extra_data(
-        const ggml_tensor * dst, const bool need_f16_K, const bool need_f16_V) {
+        const ggml_tensor * dst, const bool need_f16_K, const bool need_f16_V, const bool windowed = false) {
     GGML_ASSERT(dst->op == GGML_OP_FLASH_ATTN_EXT);
 
     const ggml_tensor * K = dst->src[1];
@@ -88,13 +131,15 @@ static inline ggml_cuda_flash_attn_ext_f16_extra_data ggml_cuda_flash_attn_ext_g
 
     const bool V_is_K_view = V->view_src && (V->view_src == K || (V->view_src == K->view_src && V->view_offs == K->view_offs));
 
+    const int64_t n_cells = windowed ? ggml_cuda_fattn_kv_window_max_cells(K->ne[1]) : K->ne[1];
+
     ggml_cuda_flash_attn_ext_f16_extra_data data = {};
     data.end = (uintptr_t) dst->data + ggml_nbytes(dst);
 
     if (need_f16_K && K->type != GGML_TYPE_F16) {
         data.end = GGML_PAD(data.end, 128);
         data.K   = data.end;
-        data.end += ggml_nelements(K)*ggml_type_size(GGML_TYPE_F16);
+        data.end += K->ne[0]*n_cells*K->ne[2]*K->ne[3]*ggml_type_size(GGML_TYPE_F16);
     }
 
     if (need_f16_V && V->type != GGML_TYPE_F16) {
@@ -103,7 +148,7 @@ static inline ggml_cuda_flash_attn_ext_f16_extra_data ggml_cuda_flash_attn_ext_g
         } else {
             data.end = GGML_PAD(data.end, 128);
             data.V   = data.end;
-            data.end += ggml_nelements(V)*ggml_type_size(GGML_TYPE_F16);
+            data.end += V->ne[0]*n_cells*V->ne[2]*V->ne[3]*ggml_type_size(GGML_TYPE_F16);
         }
     }
 
@@ -836,7 +881,12 @@ static __global__ void flash_attn_stream_k_fixup_uniform(
 
 // General fixup kernel for the case where the number of blocks per tile is not uniform across tiles
 // (blocks_num.x not a multiple of ntiles_dst)
-template <int D, int ncols1, int ncols2> // D == head size
+//
+// windowed: dst_ptr is the partial result of one K/V window with every tile split over several blocks, which is
+//     unnormalized (rescaled to the tile's softmax maximum). It is merged with the result of the previous windows in
+//     acc_ptr/acc_meta_ptr (one float2 (max, rowsum) per row). window_pos: bit 0 first window, bit 1 last window; the
+//     last window normalizes.
+template <int D, int ncols1, int ncols2, bool windowed> // D == head size
 __launch_bounds__(D, 1)
 static __global__ void flash_attn_stream_k_fixup_general(
         float * dst_ptr,
@@ -847,7 +897,10 @@ static __global__ void flash_attn_stream_k_fixup_general(
         const uint3 fd_iter_k_j_z_ne12,
         const uint3 fd_iter_k_j_z,
         const uint3 fd_iter_k_j,
-        const uint3 fd_iter_k) {
+        const uint3 fd_iter_k,
+        float * acc_ptr,
+        float2 * acc_meta_ptr,
+        const int window_pos) {
     float        * GGML_CUDA_RESTRICT dst       = dst_ptr;
     const float2 * GGML_CUDA_RESTRICT dst_fixup = dst_fixup_ptr;
     constexpr int ncols = ncols1*ncols2;
@@ -941,8 +994,44 @@ static __global__ void flash_attn_stream_k_fixup_general(
         kbc_stop = kbc;
     }
 
-    // Write back final result:
-    *dst = dst_val / rowsum;
+    if constexpr (windowed) {
+        float  * acc      = acc_ptr + (dst - dst_ptr);
+        float2 * acc_meta = acc_meta_ptr + (dst - dst_ptr - tid) / D;
+
+        if (!(window_pos & 1)) {
+            // Combine with the result of the previous windows.
+            const float2 prev     = *acc_meta;
+            const float  acc_prev = *acc;
+
+            const float max_val_new = fmaxf(max_val, prev.x);
+
+            const float diff_val  = max_val - max_val_new;
+            const float diff_prev = prev.x  - max_val_new;
+
+            const float scale_val  = diff_val  >= SOFTMAX_FTZ_THRESHOLD ? expf(diff_val)  : 0.0f;
+            const float scale_prev = diff_prev >= SOFTMAX_FTZ_THRESHOLD ? expf(diff_prev) : 0.0f;
+
+            dst_val = scale_val*dst_val + scale_prev*acc_prev;
+            rowsum  = scale_val*rowsum  + scale_prev*prev.y;
+
+            max_val = max_val_new;
+        }
+
+        if (window_pos & 2) {
+            *acc = dst_val / rowsum;
+        } else {
+            *acc = dst_val;
+            __syncthreads(); // All threads have read the old meta data.
+            if (tid == 0) {
+                *acc_meta = make_float2(max_val, rowsum);
+            }
+        }
+    } else {
+        GGML_UNUSED_VARS(acc_ptr, acc_meta_ptr, window_pos);
+
+        // Write back final result:
+        *dst = dst_val / rowsum;
+    }
 }
 
 template<int D> // D == head size
@@ -1037,19 +1126,83 @@ void launch_fattn(
     const int cc  = ggml_cuda_info().devices[id].cc;
     const int nsm = ggml_cuda_info().devices[id].nsm;
 
+    // With a K/V view that has to be converted to f16, the KV range is processed in windows that are converted one at a
+    // time. The kernel splits every tile over several blocks, the fixup kernel merges the blocks and the windows.
+    const bool windowed = stream_k && !use_sparse && ggml_cuda_flash_attn_ext_kv_windowable(KQV, need_f16_K, need_f16_V);
+    const int  n_windows = windowed ? ggml_cuda_fattn_kv_n_windows(K->ne[1]) : 1;
+
     const ggml_cuda_flash_attn_ext_f16_extra_data f16_extra =
-        ggml_cuda_flash_attn_ext_get_f16_extra_data(KQV, need_f16_K, need_f16_V);
+        ggml_cuda_flash_attn_ext_get_f16_extra_data(KQV, need_f16_K, need_f16_V, windowed);
+
+    // Result of the current window, the running result over all windows is in KQV.
+    ggml_cuda_pool_alloc<float>  window_part(pool);
+    ggml_cuda_pool_alloc<float2> window_meta(pool);
+    if (n_windows > 1) {
+        window_part.alloc(ggml_nelements(KQV));
+        window_meta.alloc(ggml_nrows(KQV));
+    }
+
+    float scale         = 1.0f;
+    float max_bias      = 0.0f;
+    float logit_softcap = 0.0f;
+
+    memcpy(&scale,         (const float *) KQV->op_params + 0, sizeof(float));
+    memcpy(&max_bias,      (const float *) KQV->op_params + 1, sizeof(float));
+    memcpy(&logit_softcap, (const float *) KQV->op_params + 2, sizeof(float));
+
+    if (logit_softcap != 0.0f) {
+        scale /= logit_softcap;
+    }
+
+    const uint32_t n_head      = Q->ne[2];
+    const uint32_t n_head_log2 = 1u << uint32_t(floorf(log2f(float(n_head))));
+
+    const float m0 = powf(2.0f, -(max_bias       ) / n_head_log2);
+    const float m1 = powf(2.0f, -(max_bias / 2.0f) / n_head_log2);
+
+    // TODO other tensor dimensions after removal of WMMA kernel:
+    const uint3 ne01 = init_fastdiv_values(Q->ne[1]);
+
+    const int ntiles_x     = ((Q->ne[1] + ncols1 - 1) / ncols1);
+    const int gqa_ratio    = Q->ne[2] / K->ne[2];
+    const int ntiles_z_gqa = ((gqa_ratio + ncols2 - 1) / ncols2);
+    const int ntiles_dst   = ntiles_x * ntiles_z_gqa * K->ne[2] * Q->ne[3];
+
+    const dim3 block_dim(warp_size, nwarps, 1);
+    int max_blocks_per_sm = 1; // Max. number of active blocks limited by occupancy.
+    CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&max_blocks_per_sm, fattn_kernel, block_dim.x * block_dim.y * block_dim.z, nbytes_shared));
+    GGML_ASSERT(max_blocks_per_sm > 0);
+
+    GGML_ASSERT(block_dim.x % warp_size == 0);
+
+    for (int iw = 0; iw < n_windows; ++iw) {
+    int64_t kv_begin = 0;
+    int64_t kv_end   = K->ne[1];
+    if (n_windows > 1) {
+        ggml_cuda_fattn_kv_window(K->ne[1], n_windows, iw, kv_begin, kv_end);
+    }
+    const int64_t n_kv_win = kv_end - kv_begin;
+
+    // The part of K and V in this window, it is all of them if there is only one window.
+    ggml_tensor K_win = *K;
+    ggml_tensor V_win = *V;
+    K_win.ne[1] = n_kv_win;
+    V_win.ne[1] = n_kv_win;
+    K_win.data  = (char *) K->data + kv_begin*K->nb[1];
+    V_win.data  = (char *) V->data + kv_begin*V->nb[1];
+
+    const char * mask_data = mask ? (const char *) mask->data + kv_begin*sizeof(half) : nullptr;
 
     ggml_cuda_pool_alloc<int>    KV_max(pool);
     ggml_cuda_pool_alloc<float>  dst_tmp(pool);
     ggml_cuda_pool_alloc<float2> dst_tmp_meta(pool);
 
-    const char * K_data = (const char *) K->data;
+    const char * K_data = (const char *) K_win.data;
     size_t nb11 = K->nb[1];
     size_t nb12 = K->nb[2];
     size_t nb13 = K->nb[3];
 
-    const char * V_data = (const char *) V->data;
+    const char * V_data = (const char *) V_win.data;
     size_t nb21 = V->nb[1];
     size_t nb22 = V->nb[2];
     size_t nb23 = V->nb[3];
@@ -1060,16 +1213,16 @@ void launch_fattn(
 
         GGML_ASSERT(f16_extra.K != 0);
         half * K_f16 = (half *) f16_extra.K;
-        if (ggml_is_contiguously_allocated(K)) {
+        if (ggml_is_contiguously_allocated(&K_win)) {
             to_fp16_cuda_t to_fp16 = ggml_get_to_fp16_cuda(K->type);
-            to_fp16(K_data, K_f16, ggml_nelements(K), main_stream);
+            to_fp16(K_data, K_f16, ggml_nelements(&K_win), main_stream);
 
             nb11 = nb11*bs*sizeof(half)/ts;
             nb12 = nb12*bs*sizeof(half)/ts;
             nb13 = nb13*bs*sizeof(half)/ts;
-        } else if (ggml_cuda_fa_dense_per_stream(K)) {
+        } else if (ggml_cuda_fa_dense_per_stream(&K_win)) {
             to_fp16_cuda_t to_fp16 = ggml_get_to_fp16_cuda(K->type);
-            const int64_t ne_s = K->ne[0]*K->ne[1]*K->ne[2];
+            const int64_t ne_s = K_win.ne[0]*K_win.ne[1]*K_win.ne[2];
             for (int64_t i3 = 0; i3 < K->ne[3]; ++i3) {
                 to_fp16(K_data + i3*nb13, K_f16 + i3*ne_s, ne_s, main_stream);
             }
@@ -1083,10 +1236,10 @@ void launch_fattn(
             const int64_t s01 = nb11 / ts;
             const int64_t s02 = nb12 / ts;
             const int64_t s03 = nb13 / ts;
-            to_fp16(K_data, K_f16, K->ne[0], K->ne[1], K->ne[2], K->ne[3], s01, s02, s03, main_stream);
+            to_fp16(K_data, K_f16, K->ne[0], n_kv_win, K->ne[2], K->ne[3], s01, s02, s03, main_stream);
 
             nb11 = K->ne[0] * sizeof(half);
-            nb12 = K->ne[1] * nb11;
+            nb12 = n_kv_win * nb11;
             nb13 = K->ne[2] * nb12;
         }
         K_data = (char *) K_f16;
@@ -1104,17 +1257,17 @@ void launch_fattn(
 
             GGML_ASSERT(f16_extra.V != 0);
             half * V_f16 = (half *) f16_extra.V;
-            if (ggml_is_contiguously_allocated(V)) {
+            if (ggml_is_contiguously_allocated(&V_win)) {
                 to_fp16_cuda_t to_fp16 = ggml_get_to_fp16_cuda(V->type);
-                to_fp16(V_data, V_f16, ggml_nelements(V), main_stream);
+                to_fp16(V_data, V_f16, ggml_nelements(&V_win), main_stream);
                 V_data = (char *) V_f16;
 
                 nb21 = nb21*bs*sizeof(half)/ts;
                 nb22 = nb22*bs*sizeof(half)/ts;
                 nb23 = nb23*bs*sizeof(half)/ts;
-            } else if (ggml_cuda_fa_dense_per_stream(V)) {
+            } else if (ggml_cuda_fa_dense_per_stream(&V_win)) {
                 to_fp16_cuda_t to_fp16 = ggml_get_to_fp16_cuda(V->type);
-                const int64_t ne_s = V->ne[0]*V->ne[1]*V->ne[2];
+                const int64_t ne_s = V_win.ne[0]*V_win.ne[1]*V_win.ne[2];
                 for (int64_t i3 = 0; i3 < V->ne[3]; ++i3) {
                     to_fp16(V_data + i3*nb23, V_f16 + i3*ne_s, ne_s, main_stream);
                 }
@@ -1128,20 +1281,15 @@ void launch_fattn(
                 const int64_t s01 = nb21 / ts;
                 const int64_t s02 = nb22 / ts;
                 const int64_t s03 = nb23 / ts;
-                to_fp16(V_data, V_f16, V->ne[0], V->ne[1], V->ne[2], V->ne[3], s01, s02, s03, main_stream);
+                to_fp16(V_data, V_f16, V->ne[0], n_kv_win, V->ne[2], V->ne[3], s01, s02, s03, main_stream);
 
                 nb21 = V->ne[0] * sizeof(half);
-                nb22 = V->ne[1] * nb21;
+                nb22 = n_kv_win * nb21;
                 nb23 = V->ne[2] * nb22;
             }
             V_data = (char *) V_f16;
         }
     }
-
-    const int ntiles_x     = ((Q->ne[1] + ncols1 - 1) / ncols1);
-    const int gqa_ratio    = Q->ne[2] / K->ne[2];
-    const int ntiles_z_gqa = ((gqa_ratio + ncols2 - 1) / ncols2);
-    const int ntiles_dst   = ntiles_x * ntiles_z_gqa * K->ne[2] * Q->ne[3];
 
     // sparse: a query tile of ncols1 queries shares one index list, the union of the queries' visible columns
     int32_t n_kv_max = 0;
@@ -1160,7 +1308,7 @@ void launch_fattn(
     // Optional optimization where the mask is scanned to determine whether part of the calculation can be skipped.
     // Only worth the overhead if there is at lease one FATTN_KQ_STRIDE x FATTN_KQ_STRIDE square to be skipped or
     //     multiple sequences of possibly different lengths.
-    if (!use_sparse && mask && K->ne[1] % FATTN_KQ_STRIDE == 0 && (Q->ne[1] >= 1024 || Q->ne[3] > 1)) {
+    if (!use_sparse && mask && n_kv_win % FATTN_KQ_STRIDE == 0 && (Q->ne[1] >= 1024 || Q->ne[3] > 1)) {
         const int64_t s31 = mask->nb[1] / sizeof(half2);
         const int64_t s33 = mask->nb[3] / sizeof(half2);
 
@@ -1168,22 +1316,18 @@ void launch_fattn(
         const dim3 block_dim_KV_max(FATTN_KQ_STRIDE/2, 1, 1);
 
         const int ne_KV_max = blocks_num_KV_max.x*blocks_num_KV_max.y;
-        const int iter_k = K->ne[1] / FATTN_KQ_STRIDE;
+        const int iter_k = n_kv_win / FATTN_KQ_STRIDE;
 
         KV_max.alloc(ne_KV_max);
         ggml_cuda_kernel_launch_params launch_params = ggml_cuda_kernel_launch_params(blocks_num_KV_max, block_dim_KV_max, 0, main_stream);
         ggml_cuda_kernel_launch(flash_attn_mask_to_KV_max<ncols1>, launch_params,
-            (const half2 *) mask->data, KV_max.ptr, iter_k, s31, s33);
+            (const half2 *) mask_data, KV_max.ptr, iter_k, s31, s33);
         CUDA_CHECK(cudaGetLastError());
     }
 
-    const dim3 block_dim(warp_size, nwarps, 1);
-    int max_blocks_per_sm = 1; // Max. number of active blocks limited by occupancy.
-    CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&max_blocks_per_sm, fattn_kernel, block_dim.x * block_dim.y * block_dim.z, nbytes_shared));
-    GGML_ASSERT(max_blocks_per_sm > 0);
     int parallel_blocks = max_blocks_per_sm;
 
-    const int64_t n_kv = use_sparse ? n_kv_max : K->ne[1];
+    const int64_t n_kv = use_sparse ? n_kv_max : n_kv_win;
     const int ntiles_KV = (n_kv + nbatch_fa - 1) / nbatch_fa; // Max. number of parallel blocks limited by KV cache length.
 
     dim3 blocks_num;
@@ -1208,7 +1352,14 @@ void launch_fattn(
         blocks_num.y = 1;
         blocks_num.z = 1;
 
-        if(use_stream_k) {
+        if (n_windows > 1) {
+            // A block that covers a whole tile normalizes it, but a window's result must stay unnormalized for the fixup
+            // kernel. Every block therefore gets less than ntiles_KV of the ntiles_KV*ntiles_dst work units: at least
+            // ceil(ntiles_dst*ntiles_KV/(ntiles_KV - 1)) blocks, rounded up to whole waves.
+            GGML_ASSERT(ntiles_KV >= 2);
+            const int nblocks_min = ntiles_dst + (ntiles_dst + ntiles_KV - 2) / (ntiles_KV - 1);
+            blocks_num.x = std::min(((nblocks_min + max_blocks - 1) / max_blocks) * max_blocks, ntiles_KV*ntiles_dst);
+        } else if (use_stream_k) {
             const int nblocks_stream_k_raw = std::min(max_blocks, ntiles_KV*ntiles_dst);
             // Round down to a multiple of ntiles_dst so that each output tile gets the same number of blocks (avoids fixup).
             // Only do this if the occupancy loss from rounding is acceptable.
@@ -1263,38 +1414,15 @@ void launch_fattn(
         }
     }
 
-    float scale         = 1.0f;
-    float max_bias      = 0.0f;
-    float logit_softcap = 0.0f;
-
-    memcpy(&scale,         (const float *) KQV->op_params + 0, sizeof(float));
-    memcpy(&max_bias,      (const float *) KQV->op_params + 1, sizeof(float));
-    memcpy(&logit_softcap, (const float *) KQV->op_params + 2, sizeof(float));
-
-    if (logit_softcap != 0.0f) {
-        scale /= logit_softcap;
-    }
-
-    const uint32_t n_head      = Q->ne[2];
-    const uint32_t n_head_log2 = 1u << uint32_t(floorf(log2f(float(n_head))));
-
-    const float m0 = powf(2.0f, -(max_bias       ) / n_head_log2);
-    const float m1 = powf(2.0f, -(max_bias / 2.0f) / n_head_log2);
-
-    // TODO other tensor dimensions after removal of WMMA kernel:
-    const uint3 ne01 = init_fastdiv_values(Q->ne[1]);
-
-    GGML_ASSERT(block_dim.x % warp_size == 0);
-
     ggml_cuda_kernel_launch_params launch_params = ggml_cuda_kernel_launch_params(blocks_num, block_dim, nbytes_shared, main_stream);
     ggml_cuda_kernel_launch(fattn_kernel, launch_params,
         (const char *) Q->data,
         K_data,
         V_data,
-        mask ? ((const char *) mask->data) : nullptr,
-        sinks ? ((const char *) sinks->data) : nullptr,
+        mask_data,
+        sinks && iw == 0 ? ((const char *) sinks->data) : nullptr, // the sinks are one more key, not one per window
         KV_max.ptr,
-        !stream_k && parallel_blocks > 1 ? dst_tmp.ptr : (float *) KQV->data, dst_tmp_meta.ptr,
+        n_windows > 1 ? window_part.ptr : !stream_k && parallel_blocks > 1 ? dst_tmp.ptr : (float *) KQV->data, dst_tmp_meta.ptr,
         scale, max_bias, m0, m1, n_head_log2, logit_softcap,
         Q->ne[0], ne01,     Q->ne[2], Q->ne[3], Q->nb[1], Q->nb[2], Q->nb[3],
         K->ne[0], n_kv, K->ne[2], K->ne[3], nb11, nb12, nb13,
@@ -1305,7 +1433,26 @@ void launch_fattn(
     CUDA_CHECK(cudaGetLastError());
 
     if (stream_k) {
-        if ((int)blocks_num.x % ntiles_dst == 0 && (int)blocks_num.x > ntiles_dst) {
+        if (n_windows > 1) {
+            const int total_work = ntiles_KV * ntiles_dst;
+
+            const uint3 fd_k_j_z_ne12 = init_fastdiv_values(ntiles_KV * ntiles_x * ntiles_z_gqa * K->ne[2]);
+            const uint3 fd_k_j_z      = init_fastdiv_values(ntiles_KV * ntiles_x * ntiles_z_gqa);
+            const uint3 fd_k_j        = init_fastdiv_values(ntiles_KV * ntiles_x);
+            const uint3 fd_k          = init_fastdiv_values(ntiles_KV);
+
+            const dim3 block_dim_combine(DV, 1, 1);
+            const dim3 blocks_num_combine = {blocks_num.x, ncols1, ncols2};
+
+            const int window_pos = (iw == 0 ? 1 : 0) | (iw == n_windows - 1 ? 2 : 0);
+
+            const ggml_cuda_kernel_launch_params launch_params = ggml_cuda_kernel_launch_params(blocks_num_combine, block_dim_combine, 0, main_stream);
+            ggml_cuda_kernel_launch(flash_attn_stream_k_fixup_general<DV, ncols1, ncols2, true>, launch_params,
+                window_part.ptr, dst_tmp_meta.ptr,
+                 Q->ne[1], Q->ne[2], gqa_ratio, total_work,
+                 fd_k_j_z_ne12, fd_k_j_z, fd_k_j, fd_k,
+                 (float *) KQV->data, window_meta.ptr, window_pos);
+        } else if ((int)blocks_num.x % ntiles_dst == 0 && (int)blocks_num.x > ntiles_dst) {
             // Optimized fixup: nblocks_stream_k is a multiple of ntiles_dst, launch one block per tile.
             const int nblocks_sk  = (int)blocks_num.x;
             const int bpt         = nblocks_sk / ntiles_dst;
@@ -1335,10 +1482,11 @@ void launch_fattn(
             const dim3 blocks_num_combine = {blocks_num.x, ncols1, ncols2};
 
             const ggml_cuda_kernel_launch_params launch_params = ggml_cuda_kernel_launch_params(blocks_num_combine, block_dim_combine, 0, main_stream);
-            ggml_cuda_kernel_launch(flash_attn_stream_k_fixup_general<DV, ncols1, ncols2>, launch_params,
+            ggml_cuda_kernel_launch(flash_attn_stream_k_fixup_general<DV, ncols1, ncols2, false>, launch_params,
                 (float *) KQV->data, dst_tmp_meta.ptr,
                  Q->ne[1], Q->ne[2], gqa_ratio, total_work,
-                 fd_k_j_z_ne12, fd_k_j_z, fd_k_j, fd_k);
+                 fd_k_j_z_ne12, fd_k_j_z, fd_k_j, fd_k,
+                 (float *) nullptr, (float2 *) nullptr, 0);
         }
     } else if (parallel_blocks > 1) {
         const dim3 block_dim_combine(DV, 1, 1);
@@ -1350,4 +1498,5 @@ void launch_fattn(
             dst_tmp.ptr, dst_tmp_meta.ptr, (float *) KQV->data, parallel_blocks);
     }
     CUDA_CHECK(cudaGetLastError());
+    }
 }

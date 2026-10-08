@@ -932,11 +932,13 @@ size_t ggml_cuda_flash_attn_ext_get_alloc_size(int device, const ggml_tensor * d
 
     bool need_f16_K = false;
     bool need_f16_V = false;
+    bool windowed   = false; // launch_fattn converts K/V in windows, the scratch holds one
 
     switch (kernel) {
         case BEST_FATTN_KERNEL_TILE:
         case BEST_FATTN_KERNEL_MMA_F16:
             need_f16_K = need_f16_V = !ggml_cuda_flash_attn_ext_mma_q8_0_decode_supported(ggml_cuda_info().devices[device].cc, dst);
+            windowed   = kernel == BEST_FATTN_KERNEL_MMA_F16 && ggml_cuda_flash_attn_ext_kv_windowable(dst, need_f16_K, need_f16_V);
             break;
         case BEST_FATTN_KERNEL_VEC: {
             const bool f16_fallback = ggml_cuda_get_fattn_vec_case(Q->ne[0], K->type, V->type) == nullptr;
@@ -948,7 +950,7 @@ size_t ggml_cuda_flash_attn_ext_get_alloc_size(int device, const ggml_tensor * d
     }
 
     const ggml_cuda_flash_attn_ext_f16_extra_data f16_extra =
-        ggml_cuda_flash_attn_ext_get_f16_extra_data(dst, need_f16_K, need_f16_V);
+        ggml_cuda_flash_attn_ext_get_f16_extra_data(dst, need_f16_K, need_f16_V, windowed);
 
     return f16_extra.end - (uintptr_t) dst->data;
 }
