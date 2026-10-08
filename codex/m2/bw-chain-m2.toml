@@ -1,7 +1,7 @@
 id = "bw-chain-m2"
 title = "Build window (no GPU use): MTP draft chain for several sequences (M2, np2); GCC CPU gate + mutants, CUDA freeze chain-m2, two GPU items checked not submitted"
 # Payload rc 0 = pass; others -> 8 (2 CPU gate failed, 75 CPU gate skipped, 9 CUDA build/freeze, 10 items). Retry never.
-# Wall (G): CPU build ~10 min, CPU gate ~35 min (4B model, 11 np2 runs), CUDA build ~25 min (ccache warm from stack7), items ~2 min.
+# Wall (G): CPU build ~10 min, CPU gate ~10 min (4B model, 9 np2 runs), CUDA build ~25 min (ccache warm from stack7), items ~2 min.
 priority = 18
 kind = "filler"
 host_sensitive = false
