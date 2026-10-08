@@ -1,0 +1,30 @@
+{
+  "status": "inherited evidence only; stack7 integration NOT built or executed",
+  "source_branch": "topic/cand-neginf-bias",
+  "source_commit": "bd658589d8d6e785521ebcb48d92d8421641d1d6",
+  "production_import": "06266790525301c050a883a8f5d557a07e083500",
+  "test_fixup": "74e70bb95",
+  "artifact_root": "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/cand-neginf-mac-a7",
+  "unit_seeds": [
+    42,
+    1729
+  ],
+  "trials_per_seed_M": 120,
+  "tied_draws_per_seed_M": 1440,
+  "unique_draws_per_seed_M": 480,
+  "missing_width_control_catches_M": [
+    132,
+    136
+  ],
+  "compiled_missing_width_mutant_rc_M": 1,
+  "model_identity_scope": "np1 Qwen3.5-4B CPU and Meta; original tied target head falls back, so synthetic TP rows provide backend proof",
+  "integration_next": [
+    "test-sampling",
+    "test-llama-archs --tp-sampling -s 42 and -s 1729",
+    "compiled missing n_ban width mutant",
+    "oversized top-k full-chain fallback; revert width guard under UBSan as negative control",
+    "np2 token/q identity on stack7 base and patch",
+    "CUDA compile and freeze",
+    "GPU canary before ABBA"
+  ]
+}

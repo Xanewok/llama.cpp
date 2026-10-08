@@ -1,0 +1,18 @@
+{
+  "artifact": "/home/xanewok/repos/attrib-pack/runs/attrib-stack6-duo-iq4/full-a1/decode-8k.sqlite",
+  "rounds_M": 98,
+  "selection": "seven launch blocks between V blocks; skip first 750 ms; no duration trim",
+  "median_M": {
+    "C_gpu_span_us": 730.276,
+    "C_to_D1_gpu_gap_us": 917.029,
+    "C_last_launch_to_D1_first_launch_us": 1478.091,
+    "pre_input_exposed_us": 817.014,
+    "input_to_launch_exposed_us": 73.757,
+    "launch_to_gpu_us": 26.272,
+    "cudaStreamSynchronize_inside_gap_us": 26.651,
+    "cudaEventSynchronize_inside_gap_us": 0.0,
+    "cudaGraphInstantiateWithFlags_inside_gap_us": 0.0,
+    "cudaStreamBeginCapture_inside_gap_us": 0.0,
+    "cudaStreamEndCapture_inside_gap_us": 0.0
+  }
+}

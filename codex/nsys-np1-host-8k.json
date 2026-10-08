@@ -1,0 +1,125 @@
+{
+  "artifact": "/mnt/scratch/work/attrib-stack6-iq4/full-a3/decode-8k.sqlite",
+  "rounds_M": 157,
+  "selection": "seven launch blocks between V blocks; skip first 750 ms; no duration trim",
+  "median_M": {
+    "C_gpu_span_us": 544.292,
+    "C_to_D1_gpu_gap_us": 376.578,
+    "C_last_launch_to_D1_first_launch_us": 762.366,
+    "pre_input_exposed_us": 291.931,
+    "input_to_launch_exposed_us": 60.263,
+    "launch_to_gpu_us": 23.279,
+    "cudaStreamSynchronize_inside_gap_us": 0.0,
+    "cudaEventSynchronize_inside_gap_us": 0.0,
+    "cudaGraphInstantiateWithFlags_inside_gap_us": 0.0,
+    "cudaStreamBeginCapture_inside_gap_us": 0.0,
+    "cudaStreamEndCapture_inside_gap_us": 0.0
+  },
+  "cpu_sampling_M": {
+    "spacing_us": 581.399,
+    "gap_samples": 102,
+    "unit": "sample-count estimate of mean CPU running time per selected C->D1 gap; not exact scopes",
+    "top": [
+      {
+        "symbol": "common_sampler::top_k_select(float const*, int)",
+        "samples": 23,
+        "estimated_us_per_gap": 85.17310191082804
+      },
+      {
+        "symbol": "llama_kv_cache::seq_rm(int, int, int)",
+        "samples": 23,
+        "estimated_us_per_gap": 85.17310191082804
+      },
+      {
+        "symbol": "[libcuda.so.595.84]",
+        "samples": 12,
+        "estimated_us_per_gap": 44.43814012738853
+      },
+      {
+        "symbol": "__memcpy_avx_unaligned_erms",
+        "samples": 6,
+        "estimated_us_per_gap": 22.219070063694264
+      },
+      {
+        "symbol": "[libcupti.so.13.2]",
+        "samples": 3,
+        "estimated_us_per_gap": 11.109535031847132
+      },
+      {
+        "symbol": "_int_malloc",
+        "samples": 3,
+        "estimated_us_per_gap": 11.109535031847132
+      },
+      {
+        "symbol": "[[kernel.kallsyms]]",
+        "samples": 3,
+        "estimated_us_per_gap": 11.109535031847132
+      },
+      {
+        "symbol": "dequantize_row_iq4_xs",
+        "samples": 2,
+        "estimated_us_per_gap": 7.406356687898089
+      },
+      {
+        "symbol": "ggml_backend_cuda_set_tensor_batch_owned(ggml_backend*, ggml_backend_tensor_transfer const*, unsigned long)",
+        "samples": 2,
+        "estimated_us_per_gap": 7.406356687898089
+      },
+      {
+        "symbol": "std::_Rb_tree<std::pair<int, unsigned int>, std::pair<int, unsigned int>, std::_Identity<std::pair<int, unsigned int> >, std::less<std::pair<int, unsigned int> >, std::allocator<std::pair<int, unsigned int> > >::erase(std::pair<int, unsigned int> const&)",
+        "samples": 2,
+        "estimated_us_per_gap": 7.406356687898089
+      },
+      {
+        "symbol": "NSYS_OSRT_pthread_mutex_lock_1",
+        "samples": 1,
+        "estimated_us_per_gap": 3.7031783439490447
+      },
+      {
+        "symbol": "void std::__adjust_heap<__gnu_cxx::__normal_iterator<llama_token_data*, std::vector<llama_token_data, std::allocator<llama_token_data> > >, long, llama_token_data, __gnu_cxx::__ops::_Iter_comp_iter<common_sampler::top_k_select(float const*, int)::{lambda(llama_token_data const&, llama_token_data const&)#1}> >(__gnu_cxx::__normal_iterator<llama_token_data*, std::vector<llama_token_data, std::allocator<llama_token_data> > >, long, __gnu_cxx::__normal_iterator<llama_token_data*, std::vector<llama_token_data, std::allocator<llama_token_data> > >, llama_token_data, __gnu_cxx::__ops::_Iter_comp_iter<common_sampler::top_k_select(float const*, int)::{lambda(llama_token_data const&, llama_token_data const&)#1}>)",
+        "samples": 1,
+        "estimated_us_per_gap": 3.7031783439490447
+      },
+      {
+        "symbol": "llama_context::sched_reserve()",
+        "samples": 1,
+        "estimated_us_per_gap": 3.7031783439490447
+      },
+      {
+        "symbol": "std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::find(char, unsigned long) const",
+        "samples": 1,
+        "estimated_us_per_gap": 3.7031783439490447
+      },
+      {
+        "symbol": "__pthread_rwlock_unlock@GLIBC_2",
+        "samples": 1,
+        "estimated_us_per_gap": 3.7031783439490447
+      },
+      {
+        "symbol": "llama_batch_allocr::init(llama_batch_ext const&, llama_vocab const&, bool)",
+        "samples": 1,
+        "estimated_us_per_gap": 3.7031783439490447
+      },
+      {
+        "symbol": "cudaEventRecord",
+        "samples": 1,
+        "estimated_us_per_gap": 3.7031783439490447
+      },
+      {
+        "symbol": "server_tokens::get_text_tokens() const",
+        "samples": 1,
+        "estimated_us_per_gap": 3.7031783439490447
+      },
+      {
+        "symbol": "[libllama-common.so.0.5.0]",
+        "samples": 1,
+        "estimated_us_per_gap": 3.7031783439490447
+      },
+      {
+        "symbol": "NSYS_OSRT_pthread_rwlock_rdlock_1",
+        "samples": 1,
+        "estimated_us_per_gap": 3.7031783439490447
+      }
+    ]
+  }
+}

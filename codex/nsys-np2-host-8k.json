@@ -1,0 +1,125 @@
+{
+  "artifact": "/mnt/scratch/work/attrib-stack6-duo-iq4/full-a1/decode-8k.sqlite",
+  "rounds_M": 120,
+  "selection": "seven launch blocks between V blocks; skip first 750 ms; no duration trim",
+  "median_M": {
+    "C_gpu_span_us": 731.557,
+    "C_to_D1_gpu_gap_us": 922.261,
+    "C_last_launch_to_D1_first_launch_us": 1499.736,
+    "pre_input_exposed_us": 812.49,
+    "input_to_launch_exposed_us": 78.046,
+    "launch_to_gpu_us": 24.339,
+    "cudaStreamSynchronize_inside_gap_us": 21.952,
+    "cudaEventSynchronize_inside_gap_us": 0.0,
+    "cudaGraphInstantiateWithFlags_inside_gap_us": 0.0,
+    "cudaStreamBeginCapture_inside_gap_us": 0.0,
+    "cudaStreamEndCapture_inside_gap_us": 0.0
+  },
+  "cpu_sampling_M": {
+    "spacing_us": 579.4540000000001,
+    "gap_samples": 194,
+    "unit": "sample-count estimate of mean CPU running time per selected C->D1 gap; not exact scopes",
+    "top": [
+      {
+        "symbol": "common_sampler::top_k_select(float const*, int)",
+        "samples": 78,
+        "estimated_us_per_gap": 376.64509999999996
+      },
+      {
+        "symbol": "llama_kv_cache::seq_rm(int, int, int)",
+        "samples": 32,
+        "estimated_us_per_gap": 154.52106666666668
+      },
+      {
+        "symbol": "[libcuda.so.595.84]",
+        "samples": 20,
+        "estimated_us_per_gap": 96.57566666666668
+      },
+      {
+        "symbol": "_int_malloc",
+        "samples": 8,
+        "estimated_us_per_gap": 38.63026666666667
+      },
+      {
+        "symbol": "__memcpy_avx_unaligned_erms",
+        "samples": 6,
+        "estimated_us_per_gap": 28.972699999999996
+      },
+      {
+        "symbol": "[libcupti.so.13.2]",
+        "samples": 5,
+        "estimated_us_per_gap": 24.14391666666667
+      },
+      {
+        "symbol": "server_tokens::get_text_tokens() const",
+        "samples": 3,
+        "estimated_us_per_gap": 14.486349999999998
+      },
+      {
+        "symbol": "common_speculative_accept(common_speculative*, int, unsigned short)",
+        "samples": 2,
+        "estimated_us_per_gap": 9.657566666666668
+      },
+      {
+        "symbol": "void std::vector<llama_kv_cells, std::allocator<llama_kv_cells> >::_M_realloc_insert<llama_kv_cells>(__gnu_cxx::__normal_iterator<llama_kv_cells*, std::vector<llama_kv_cells, std::allocator<llama_kv_cells> > >, llama_kv_cells&&)",
+        "samples": 2,
+        "estimated_us_per_gap": 9.657566666666668
+      },
+      {
+        "symbol": "[libToolsInjection64.so]",
+        "samples": 2,
+        "estimated_us_per_gap": 9.657566666666668
+      },
+      {
+        "symbol": "__pthread_mutex_trylock@GLIBC_2",
+        "samples": 2,
+        "estimated_us_per_gap": 9.657566666666668
+      },
+      {
+        "symbol": "ggml_backend_meta_buffer_simple_tensor(ggml_tensor const*, unsigned long)",
+        "samples": 2,
+        "estimated_us_per_gap": 9.657566666666668
+      },
+      {
+        "symbol": "std::_Rb_tree<std::pair<int, unsigned int>, std::pair<int, unsigned int>, std::_Identity<std::pair<int, unsigned int> >, std::less<std::pair<int, unsigned int> >, std::allocator<std::pair<int, unsigned int> > >::erase(std::pair<int, unsigned int> const&)",
+        "samples": 2,
+        "estimated_us_per_gap": 9.657566666666668
+      },
+      {
+        "symbol": "llama_batch_allocr::get_n_tokens() const",
+        "samples": 1,
+        "estimated_us_per_gap": 4.828783333333334
+      },
+      {
+        "symbol": "[[kernel.kallsyms]]",
+        "samples": 1,
+        "estimated_us_per_gap": 4.828783333333334
+      },
+      {
+        "symbol": "std::__detail::_Prime_rehash_policy::_M_next_bkt(unsigned long) const",
+        "samples": 1,
+        "estimated_us_per_gap": 4.828783333333334
+      },
+      {
+        "symbol": "__pthread_once@GLIBC_2",
+        "samples": 1,
+        "estimated_us_per_gap": 4.828783333333334
+      },
+      {
+        "symbol": "llama_context::get_sampled_probs_ith(int)",
+        "samples": 1,
+        "estimated_us_per_gap": 4.828783333333334
+      },
+      {
+        "symbol": "std::_Function_handler<void (), server_context_impl::init()::{lambda()#1}>::_M_invoke(std::_Any_data const&)",
+        "samples": 1,
+        "estimated_us_per_gap": 4.828783333333334
+      },
+      {
+        "symbol": "llama_kv_cache::apply_ubatch(llama_kv_cache::slot_info const&, llama_ubatch const&)",
+        "samples": 1,
+        "estimated_us_per_gap": 4.828783333333334
+      }
+    ]
+  }
+}
