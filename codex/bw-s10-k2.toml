@@ -35,7 +35,6 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/codex/bw-s10-k2.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/codex/s10_k2_perf.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/codex/s10-k2-evidence/summary.json",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/codex/REPORT-K2.md",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/ggml/src/ggml-cuda/ggml-cuda.cu",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/ggml/src/ggml-cuda/common.cuh",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/ggml/src/ggml-cuda/fattn-common.cuh",
