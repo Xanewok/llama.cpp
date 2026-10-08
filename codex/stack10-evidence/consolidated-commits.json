@@ -1,0 +1,22 @@
+[
+  {
+    "hash": "a1fff47fc0cc12e7a696420d54582f9ce575cdae",
+    "subject": "cuda : add grouped one-row q8_0 flash attention"
+  },
+  {
+    "hash": "758c93a1c194336d88c1c14cefb0a493764b0efe",
+    "subject": "llama : retain attention rotations on the cache backend"
+  },
+  {
+    "hash": "7f0cb45158152e3155d1b993513c509cb4a87784",
+    "subject": "cuda : fuse F32 add softplus and broadcast multiply"
+  },
+  {
+    "hash": "efb8115e91748eb993ff0a9de9100618762f2071",
+    "subject": "local: add stack10 component controls"
+  },
+  {
+    "hash": "a74a42c7716839ccdb8af4a172756f171e858d55",
+    "subject": "codex : prepare stack10 CPU gates and GPU window"
+  }
+]

@@ -26,6 +26,12 @@ h = hashlib.sha256()
 for name in r['source_files']:
     h.update(name.encode()+b'\0'+Path(name).read_bytes())
 assert h.hexdigest() == r['source_sha256'], 'source differs from Mac CPU gate'
+s = r['static_replay']
+assert s['result'] == 'PASS' and any(t['code'] == 31 and t['rc'] == 0 for t in s['stages'])
+ph = hashlib.sha256()
+for name in s['payload_files']:
+    ph.update(name.encode()+b'\0'+Path(name).read_bytes())
+assert ph.hexdigest() == s['payload_sha256'], 'payload differs from final Mac static replay'
 for tested in Path('codex/parser-harness/harness').glob('*.py'):
     assert tested.read_bytes() == (Path.home()/'repos/qwen38-eval/harness'/tested.name).read_bytes(), 'parent parser changed since Mac replay'
 PY_GATE
@@ -62,6 +68,8 @@ flags=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER_FORCED=ON -DCMAKE_CUDA_C
 build() {
     nice -n 19 "$W/bin/buildgate" cmake -B build-cuda "${flags[@]}"
     nice -n 19 "$W/bin/buildgate" cmake --build build-cuda --target llama-server test-backend-ops -j4
+    grep -F 'set(CMAKE_CXX_COMPILER_ID "GNU")' build-cuda/CMakeFiles/*/CMakeCXXCompiler.cmake >/dev/null
+    grep -E 'set\(CMAKE_CXX_COMPILER_VERSION "13\.' build-cuda/CMakeFiles/*/CMakeCXXCompiler.cmake >/dev/null
     cp build-cuda/bin/llama-server build-cuda/bin/round-trace
 }
 stamps() {

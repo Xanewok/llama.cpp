@@ -1,0 +1,2 @@
+rotation plain/Meta tokens and counters PASS
+rotation raw logits, fallback, negative control PASS

@@ -1,3 +1,5 @@
+Current stack10 candidate results: [REPORT-stack10-cand.md](REPORT-stack10-cand.md).
+
 # stack3
 
 CPU-verified consolidation on `topic/stack3`. Graph retention and prefill pooling default ON; owned input staging defaults OFF. GPU integration identity, speed, and the first-large-prompt latency are unmeasured here. No GPU execution/query, CUDA application, network request, server process named `llama-server`, push, or submission ran.

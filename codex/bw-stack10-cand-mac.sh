@@ -99,5 +99,9 @@ h = hashlib.sha256()
 for name in files:
     h.update(name.encode()+b'\0'+Path(name).read_bytes())
 stages = [dict(code=int(c),name=n,rc=int(rc),wall_s_M=int(t)) for c,n,rc,t in (l.split('\t') for l in (p/'stages.tsv').read_text().splitlines())]
-(p/'summary.json').write_text(json.dumps(dict(result='PASS',commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),source_files=files,source_sha256=h.hexdigest(),stages=stages),indent=2)+'\n')
+payload_files = sorted(set(['codex/bw-stack10-cand-mac.sh','codex/bw-stack10-cand-static-mac.sh','codex/bw-stack10-cand.sh','codex/bw-stack10-cand.toml','codex/gpu_ab.sh','codex/gpu_stack10.py','codex/gpu_stack9.py','codex/render_stack10_items.py','codex/mac-model-gate.sh'] + [str(f) for pattern in ('codex/items/s10c-*.toml.in','codex/parser-harness/harness/*.py','codex/shlint/gpuq/*.py') for f in Path('.').glob(pattern)]))
+ph = hashlib.sha256()
+for name in payload_files:
+    ph.update(name.encode()+b'\0'+Path(name).read_bytes())
+(p/'summary.json').write_text(json.dumps(dict(result='PASS',commit=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),source_files=files,source_sha256=h.hexdigest(),payload_files=payload_files,payload_sha256=ph.hexdigest(),stages=stages),indent=2)+'\n')
 PY_SUMMARY

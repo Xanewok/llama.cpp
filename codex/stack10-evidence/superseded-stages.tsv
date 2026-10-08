@@ -1,0 +1,9 @@
+attempt	code	stage	rc	wall_s_M
+1	20	cpu-build	0	76
+1	21	unit-tests	0	6
+1	22	rotation-identity	1	77
+2	20	cpu-build	1	76
+3	20	cpu-build	0	67
+3	21	unit-tests	0	5
+3	22	rotation-identity	0	265
+3	31	recorded-parser-controls	1	0
