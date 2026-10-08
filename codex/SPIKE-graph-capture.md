@@ -58,7 +58,26 @@ arena sizes and graphs. The same binary serves both arms.
 Payload `codex/graph-capture/cpu-gates.sh` via `bin/bw-mac`. Base = HEAD with the diff reversed. Every touched file hashes
 to its stack7 blob (`stack7-blobs.txt`). Results: `work/build-window-1007/graph-capture-s7-mac-aN/RESULTS.txt`.
 
-@MAC_RESULTS@
+Run `graph-capture-s7-mac-a1` (payload HEAD c368a3ef2, same non-codex tree as HEAD; Darwin arm64, armv8.2-a+dotprod,
+4 threads, Qwen3.5-4B Q4_K_XL, k=3, 48 tokens). **PASS all CPU gates** (M):
+
+- Base tree: every touched file hashes to its stack7 blob. Both builds pass with clang.
+- Planner unit test: all pass. The wrong-expectation negative control fails, as it must.
+- test-alloc and test-sampling pass.
+- Arena: HEAD passes with `GGML_META_AR_NODE` 0 and 1 under libgmalloc. The stack7 base **dies on SIGSEGV** in both modes,
+  so the stale-arena bug is latent in stack7 itself (M).
+- Identity: 8 cases × 4 runs (base, HEAD off, base2, HEAD on), all byte-identical (tokens + final logits).
+  - Meta(CPU,CPU) np1 t0/t1 at two seeds.
+  - np1 with chain+fold. Chain and fold are logged as engaged at t1. The chain+fold streams equal the plain streams at the
+    same seed, which is expected because both are exact.
+  - np2 t0/t1.
+  - Plain CPU.
+- Controls: a one-bit perturbation is rejected. Forced nodes abort in the stub (exit −6). The hook is inert without the env.
+- Would-be plans (CPU dry run): decode/verify graphs fuse 65→1 subgraphs (64 sites). MTP draft graphs fuse 3→1. The
+  4096-row prefill graphs keep their split (0 sites).
+- Caveat: the run took 2 h 40 min because other workers' model jobs held the Mac (one model at a time). a1 still had the
+  old unbounded RAM/busy wait. Commit b5749e407 bounds it to 10 min (rc 4 = skipped: RAM, 5 = skipped: busy). The bounded
+  wait never triggered in this run because a1 predates it.
 
 ## Window and items (not submitted)
 
