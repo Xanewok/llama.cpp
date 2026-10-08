@@ -67,7 +67,7 @@ cuda_stage() {
     [[ $n == 25 ]] || { echo "expected 25 DeviceTopK strings (CCCL v3.4.3)"; return 1; }
     local short; short=$(git rev-parse --short HEAD)
     strings build-cuda/bin/libggml-base.so | grep -x "$short" >/dev/null || { echo "ggml stamp $short not in libggml-base.so"; return 1; }
-    strings build-cuda/bin/libggml-cuda.so | grep -q 'gdn_joint_mutant: engaged' || { echo "joint kernel mutant switch missing"; return 1; }
+    grep -aq 'gdn_joint_mutant: engaged' build-cuda/bin/libggml-cuda.so || { echo "joint kernel mutant switch missing"; return 1; }
     "$W/bin/wt" freeze "$ROOT" "$NAME" --build build-cuda \
         --desc "stack7 48b82b0d1 + GDN state by id at n_seqs > 1 (n_rs == n_seqs) + joint fused GDN kernel; CUDA 13.2, CCCL343, NCCL OFF; round-trace = cp of llama-server" || return 1
     {
