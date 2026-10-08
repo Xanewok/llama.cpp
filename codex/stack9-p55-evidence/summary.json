@@ -1,0 +1,62 @@
+{
+  "result": "PASS",
+  "commit": "18da28f2e25280e509f204aa111fafc983216a02",
+  "source_files": [
+    "codex/bw-cand-driver.cpp",
+    "codex/bw-np2-driver.cpp",
+    "codex/chain-cpu.cpp",
+    "common/sampling.cpp",
+    "common/speculative.cpp",
+    "ggml/src/ggml-cuda/gated_delta_net.cu",
+    "ggml/src/ggml-cuda/gated_delta_net.cuh",
+    "ggml/src/ggml-cuda/ggml-cuda.cu",
+    "ggml/src/ggml-cuda/mmvq-params.h",
+    "ggml/src/ggml-cuda/mmvq.cu",
+    "ggml/src/ggml-cuda/mmvq.cuh",
+    "src/llama-context.cpp",
+    "src/llama-context.h",
+    "src/llama-ext.h",
+    "src/llama-graph.cpp",
+    "src/llama-graph.h",
+    "src/models/delta-net-base.cpp",
+    "src/models/qwen35.cpp",
+    "tests/CMakeLists.txt",
+    "tests/test-backend-ops.cpp",
+    "tests/test-llama-archs.cpp",
+    "tests/test-mmvq-params.cpp",
+    "tests/test-recurrent-state-rollback.cpp"
+  ],
+  "source_sha256": "851812322465be20bacead1cfcae258f400189f5984cbf56ede6b002828d6504",
+  "stages": [
+    {
+      "code": 20,
+      "name": "cpu-build",
+      "rc": 0,
+      "wall_s_M": 149
+    },
+    {
+      "code": 36,
+      "name": "mmvq-table-mutant",
+      "rc": 0,
+      "wall_s_M": 2
+    },
+    {
+      "code": 21,
+      "name": "unit-tests",
+      "rc": 0,
+      "wall_s_M": 541
+    },
+    {
+      "code": 29,
+      "name": "np2-chain-identity",
+      "rc": 0,
+      "wall_s_M": 299
+    },
+    {
+      "code": 31,
+      "name": "recorded-parser-controls",
+      "rc": 0,
+      "wall_s_M": 0
+    }
+  ]
+}
