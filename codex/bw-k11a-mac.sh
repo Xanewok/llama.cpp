@@ -62,7 +62,7 @@ for combo in sys.argv[2:]:
     ref = json.loads((d/f'{t}-off.json').read_text())
     for arm in ('on', 'defer-off', 'defer-debug'):
         assert json.loads((d/f'{t}-{arm}.json').read_text()) == ref, f'{t}: {arm} tokens or counters differ'
-    log = (d/f'{t}-defer-debug.log').read_text()
+    log = (d/f'{t}-defer-debug.log').read_text(errors='replace')
     sums = [(int(a), int(b)) for a, b in re.findall(r'sync_elide: elided=(\d+) missed=(\d+)', log)]
     assert sums and all(m == 0 for _, m in sums) and sum(e for e, _ in sums) > 0, f'{t}: debug check {sums}'
     assert 'skipped sync waited' not in log, f'{t}: skipped sync waited'
@@ -102,7 +102,7 @@ for combo in sys.argv[2:]:
         for dbg in (0, 1):
             name = f'{t}-mut{m}-dbg{dbg}'
             jf, lf = d/f'{name}.json', d/f'{name}.log'
-            log = lf.read_text()
+            log = lf.read_text(errors='replace')
             how = []
             if not jf.exists():
                 how.append('driver failed')
