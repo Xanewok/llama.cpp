@@ -1584,14 +1584,12 @@ static constexpr bool ggml_cuda_mmq_has_small_i(const ggml_type type) {
     return ggml_cuda_mmq_get_config_blackwell_small_i(type, 16, false, GGML_CUDA_CC_BLACKWELL).type != GGML_TYPE_COUNT;
 }
 
-// SMALL_I tiles beat the default tile when the launch is plain tiling with full waves (sm_120: gate/up and lm_head matmuls faster).
-// A launch that needs the stream-k fixup keeps the default tile. The plan is the launcher's, in default-tile units, so the output
-// is bitwise the one of the default tile.
+// SMALL_I tiles take every launch they can partition like the default tile (aligned rows, smem fits): the partition, hence the output,
+// is the default tile's whether the launch is plain tiling or stream-k (see mmq_get_stream_k_plan).
 template <ggml_type type, bool fallback, ggml_prec prec_src1>
 static bool ggml_cuda_mmq_use_small_i(const mmq_args & args, const int J) {
     const int    id    = ggml_cuda_get_device();
     const int    cc    = ggml_cuda_info().devices[id].cc;
-    const int    nsm   = ggml_cuda_info().devices[id].nsm;
     const size_t smpbo = ggml_cuda_info().devices[id].smpbo;
 
     const ggml_cuda_mmq_config config = ggml_cuda_mmq_get_config(type, J, fallback, GGML_CUDA_MMQ_TILES_SMALL_I, cc, prec_src1);
@@ -1600,11 +1598,7 @@ static bool ggml_cuda_mmq_use_small_i(const mmq_args & args, const int J) {
     }
 
     const ggml_cuda_mmq_config config_default = ggml_cuda_mmq_get_config(type, J, fallback, GGML_CUDA_MMQ_TILES_DEFAULT, cc, prec_src1);
-    if (args.nrows_x % config_default.I != 0) {
-        return false;
-    }
-    const mmq_stream_k_plan plan = mmq_get_stream_k_plan(args, config, config_default, cc, nsm);
-    return plan.nparts == plan.ntiles;
+    return args.nrows_x % config_default.I == 0;
 }
 
 template <ggml_type type, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>
