@@ -106,7 +106,7 @@ cuda_stage() {
     [[ $n == 25 ]] || { echo "expected 25 DeviceTopK strings (CCCL v3.4.3)"; return 1; }
     local short; short=$(git rev-parse --short HEAD)
     strings build-cuda/bin/libggml-base.so | grep -x "$short" >/dev/null || { echo "ggml stamp $short not in libggml-base.so"; return 1; }
-    strings build-cuda/bin/libggml-cuda.so | grep -q 'mmvq_mma: device' || { echo "libggml-cuda.so lacks mmvq-mma"; return 1; }
+    grep -aq 'mmvq_mma: device' build-cuda/bin/libggml-cuda.so || { echo "libggml-cuda.so lacks mmvq-mma"; return 1; }
     # registers/stack of the new kernels (launch bound: 128 threads, 4 blocks/SM -> <= 128 registers); report, not a gate
     /usr/local/cuda-13.2/bin/cuobjdump --dump-resource-usage build-cuda/bin/libggml-cuda.so > "$OUT/resource-usage.txt" 2>&1 || return 1
     python3 - "$OUT/resource-usage.txt" > "$OUT/mmvq-mma-resources.txt" <<'EOF' || return 1
