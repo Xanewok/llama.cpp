@@ -31,6 +31,7 @@ namespace {
 struct sync_elide_flags {
     bool on     = true;
     bool debug  = false;
+    int  debug_us = 20; // LLAMA_SYNC_ELIDE_DEBUG=N with N > 1 sets the threshold; scheduler noise on a loaded CPU host exceeds 20 us
     int  mutant = 0;
     sync_elide_flags() {
         const char * e = getenv("LLAMA_SYNC_ELIDE");
@@ -38,6 +39,7 @@ struct sync_elide_flags {
         const char * m = getenv("LLAMA_SYNC_ELIDE_MUTANT");
         on     = !e || atoi(e) != 0;
         debug  = d && atoi(d) != 0;
+        if (d && atoi(d) > 1) { debug_us = atoi(d); }
         mutant = m ? atoi(m) : 0;
     }
 };
@@ -836,9 +838,9 @@ void llama_context::synchronize(bool force) {
         if (n_sync_elided++ == 0) {
             LLAMA_LOG_INFO("%s: sync_elide: debug check engaged\n", __func__);
         }
-        if (waited > 20) {
+        if (waited > sync_elide_env().debug_us) {
             n_sync_missed++;
-            LLAMA_LOG_ERROR("%s: sync_elide: skipped sync waited %lld us (a device enqueue was not tracked)\n", __func__, (long long) waited);
+            LLAMA_LOG_ERROR("%s: sync_elide: skipped sync waited %lld us (> %d us; a device enqueue was not tracked)\n", __func__, (long long) waited, sync_elide_env().debug_us);
         }
         return;
     }
