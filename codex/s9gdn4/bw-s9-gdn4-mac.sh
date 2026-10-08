@@ -8,7 +8,6 @@ cd "$ROOT"
 [[ ${BW_CPU_ONLY:-0} == 1 && $(uname) == Darwin ]] || exit 8
 OUT=${1:?output}
 mkdir -p "$OUT"
-OLD_TESTS=codex/s9gdn4/base-test-backend-ops.cpp.orig  # stack9 cd776e104 tests/test-backend-ops.cpp; the bundle has no history
 T=tests/test-backend-ops.cpp
 CHECK=codex/s9gdn4/check_ops.py
 stage() {
@@ -46,7 +45,9 @@ perf_rows() {
     local shape='head_count=24,head_size=128,n_seq_tokens=6,n_seqs=1,'
     "$BW_GATE" build-cpu/bin/test-backend-ops perf -b CPU -o 'GATED_DELTA_NET.*' -p 'head_count=24,' > "$OUT/perf-new.log" 2>&1
     python3 "$CHECK" perf "$OUT/perf-new.log" 12
-    cp "$OLD_TESTS" "$T"
+    # the old harness: the fusion cases repeat only their output node (ggml_sum)
+    sed -i 's#return { gdn_node, cpy_node };#return { out };#' "$T"
+    [[ $(git diff --numstat -- "$T") == $'1\t1\t'"$T" ]]
     "$BW_BUILDGATE" cmake --build build-cpu --target test-backend-ops -j4
     "$BW_GATE" build-cpu/bin/test-backend-ops perf -b CPU -o 'GATED_DELTA_NET.*' -p 'head_count=24,' > "$OUT/perf-old.log" 2>&1
     python3 "$CHECK" perf "$OUT/perf-old.log" 12
