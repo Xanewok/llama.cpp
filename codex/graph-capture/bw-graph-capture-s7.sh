@@ -72,8 +72,8 @@ cuda_stage() {
     echo "CCCL DeviceTopK strings: $n"
     [[ $n == 25 ]] || { echo "expected 25 DeviceTopK strings (CCCL v3.4.3)"; return 1; }
     strings build-cuda/bin/libggml-base.so | grep -x "$SHORT" > /dev/null || { echo "ggml stamp $SHORT missing"; return 1; }
-    strings build-cuda/bin/libggml-cuda.so | grep -q '^ggml_backend_comm_allreduce_node$' || { echo "AR node proc missing"; return 1; }
-    strings build-cuda/bin/libggml-base.so | grep -q 'meta_ar_node: uid=' || { echo "meta AR node planner missing"; return 1; }
+    strings build-cuda/bin/libggml-cuda.so | grep -c '^ggml_backend_comm_allreduce_node$' > /dev/null || { echo "AR node proc missing"; return 1; }
+    strings build-cuda/bin/libggml-base.so | grep -c 'meta_ar_node: uid=' > /dev/null || { echo "meta AR node planner missing"; return 1; }
     "$W/bin/wt" freeze "$ROOT" "$NAME" --build build-cuda \
         --desc "stack7 48b82b0d1 + AllReduce as CUDA graph nodes (GGML_META_AR_NODE, default off) + meta plan arena fix; CUDA 13.2 120a CCCL343 NCCL OFF" || return 1
     {
