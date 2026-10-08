@@ -35,3 +35,18 @@ static constexpr __host__ __device__ ggml_cuda_mmq_config ggml_cuda_mmq_get_conf
 
     return ggml_cuda_mmq_get_config_ampere(type, J, fallback);
 }
+
+static constexpr __host__ __device__ ggml_cuda_mmq_config ggml_cuda_mmq_get_config_blackwell_small_i(ggml_type type, int J, bool fallback, int cc) {
+    // Only the aligned (no row bounds check) 16 and 24 column tiles. Q8_0 measured neutral, so it keeps the default tile.
+    if (cc == GGML_CUDA_CC_BLACKWELL) {
+        CASE(GGML_TYPE_IQ4_XS, 128, 2, 64, 16, GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_0, MMQ_ITER_K, true, false);
+        CASE(GGML_TYPE_IQ4_XS, 128, 2, 64, 24, GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_0, MMQ_ITER_K, true, false);
+        CASE(GGML_TYPE_Q4_K,   128, 2, 64, 16, GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_1, MMQ_ITER_K, true, false);
+        CASE(GGML_TYPE_Q4_K,   128, 2, 64, 24, GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_1, MMQ_ITER_K, true, false);
+        CASE(GGML_TYPE_Q5_K,   128, 2, 64, 16, GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_1, MMQ_ITER_K, true, false);
+        CASE(GGML_TYPE_Q5_K,   128, 2, 64, 24, GGML_CUDA_MMQ_SRAM_LAYOUT_Q8_1, MMQ_ITER_K, true, false);
+        CASE(GGML_TYPE_Q6_K,   128, 2, 64, 16, GGML_CUDA_MMQ_SRAM_LAYOUT_Q6_K, MMQ_ITER_K, true, false);
+        CASE(GGML_TYPE_Q6_K,   128, 2, 64, 24, GGML_CUDA_MMQ_SRAM_LAYOUT_Q6_K, MMQ_ITER_K, true, false);
+    }
+    return ggml_cuda_mmq_config_none();
+}
