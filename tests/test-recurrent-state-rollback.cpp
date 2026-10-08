@@ -12,6 +12,7 @@
 #include "../src/llama-memory.h"
 
 #include <algorithm>
+#include <cinttypes>
 #include <clocale>
 #include <cmath>
 #include <cstdio>
@@ -310,133 +311,201 @@ static test_status test_multi_seq_split_replay(const common_params & params, lla
     return test_status::PASS;
 }
 
-// Counts gated delta net nodes by how they read their state (row ids or a gathered copy) and by ubatch sequence count.
+// Counts gated delta net nodes by how they read their state (row ids or a gathered copy) and the recurrent state rows
+// that get_rows copies.
 struct gdn_probe {
-    int n_indexed[2] = { 0, 0 }; // [n_seqs > 1]
-    int n_plain[2]   = { 0, 0 };
+    int     n_indexed       = 0;
+    int     n_plain         = 0;
+    int     n_indexed_multi = 0;
+    int     n_plain_single  = 0;
+    int64_t n_gathered      = 0;
 };
 
 static bool gdn_probe_cb(ggml_tensor * t, bool ask, void * user_data) {
-    if (ask && t->op == GGML_OP_GATED_DELTA_NET) {
-        auto * probe = (gdn_probe *) user_data;
-        (t->src[6] ? probe->n_indexed : probe->n_plain)[t->src[2]->ne[3] > 1]++;
+    if (!ask) {
+        return false;
+    }
+    auto * probe = (gdn_probe *) user_data;
+    if (t->op == GGML_OP_GATED_DELTA_NET) {
+        (t->src[6] ? probe->n_indexed : probe->n_plain)++;
+        if (t->src[6] && t->src[2]->ne[3] > 1) {
+            ++probe->n_indexed_multi;
+        }
+        if (!t->src[6] && t->src[2]->ne[3] == 1) {
+            ++probe->n_plain_single;
+        }
+    }
+    const ggml_tensor * src = t->op == GGML_OP_GET_ROWS ? t->src[0] : nullptr;
+    if (src && src->view_src) {
+        src = src->view_src;
+    }
+    if (src && strncmp(src->name, "cache_s_l", 9) == 0) {
+        probe->n_gathered += t->ne[1];
     }
     return false;
 }
 
-// The GDN state getter reads states in place, which the CUDA snapshot fusion cannot cover with several sequences in a
-// ubatch, so those ubatches keep the gather. The graph probe checks which form each ubatch shape built, and the logits
-// of every phase must equal those of a single-sequence context decoding the same stream (a wrong row reads another
-// sequence's state).
-static test_status test_getter_gate(const common_params & params, llama_model * model, uint8_t fill) {
+// Compare getter and gather builds on identical batches; single-sequence batches can use different arithmetic.
+static test_status test_getter_gate(const common_params & params, llama_model * model, uint8_t fill,
+                                   FILE * logits_out = nullptr, FILE * logits_ref = nullptr, bool gathered_multi = false) {
     const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
 
     constexpr uint32_t n_ubatch = 16;
-    constexpr uint32_t n_seqs   = 2;
 
     gdn_probe probe;
-    const auto make_ctx_gate = [&](uint32_t n_seq_max, bool probed) {
+    const auto make_ctx_gate = [&](uint32_t n_seq) {
         auto cparams = common_context_params_to_llama(params);
-        cparams.n_seq_max  = n_seq_max;
+        cparams.n_seq_max  = n_seq;
         cparams.n_rs_seq   = 8;
-        cparams.n_ctx      = 256;
+        cparams.n_ctx      = 256*n_seq;
         cparams.n_batch    = 256;
         cparams.n_ubatch   = n_ubatch;
         cparams.kv_unified = false;
-        if (probed) {
-            cparams.cb_eval           = gdn_probe_cb;
-            cparams.cb_eval_user_data = &probe;
-        }
+        cparams.cb_eval           = gdn_probe_cb;
+        cparams.cb_eval_user_data = &probe;
         return init_ctx(model, cparams, fill);
     };
-
-    llama_context_ptr ctx_gate = make_ctx_gate(n_seqs, true);
-    std::vector<llama_context_ptr> ctx_ref;
-    for (uint32_t s = 0; s < n_seqs; ++s) {
-        ctx_ref.push_back(make_ctx_gate(1, false));
-    }
-    if (!ctx_gate || !ctx_ref[0] || !ctx_ref[1]) {
-        LOG_ERR("%s: failed to init contexts\n", __func__);
-        return test_status::FAIL;
-    }
-    if (llama_n_rs_seq(ctx_gate.get()) == 0) {
-        LOG_INF("%s: skipping because n_rs_seq is disabled\n", __func__);
-        return test_status::SKIP;
-    }
 
     const auto tok = [&](uint32_t seq, llama_pos pos) {
         return (llama_token) ((11*(uint32_t) pos + 29*seq + 3) % (uint32_t) n_vocab);
     };
 
+    enum class form { BY_ID, GATHERED };
     // the streams share one batch in order, tokens from out_from on request logits
     struct phase {
         const char *          name;
         std::vector<uint32_t> streams;
         llama_pos             p0, p1, out_from;
+        form                  expect;
     };
-    const std::vector<phase> phases = {
-        { "prefill seq 0",             { 0 },    0, 19, 18 }, // two ubatches of one sequence
-        { "prefill seq 1",             { 1 },    0, 19, 18 },
-        { "verify batch, both seqs",   { 0, 1 }, 19, 25, 19 }, // n_seqs = 2, several tokens each
-        { "decode, both seqs",         { 0, 1 }, 25, 26, 25 }, // n_seqs = 2, one token each
-        { "decode, both seqs again",   { 0, 1 }, 26, 27, 26 },
-        { "seq 1 beside an idle slot", { 1 },    27, 28, 27 }, // n_seqs = 1, n_rs > n_seqs
+    struct scenario {
+        const char *       name;
+        uint32_t           n_seq;
+        std::vector<phase> phases;
+    };
+    const std::vector<scenario> scenarios = {
+        { "two slots", 2, {
+            { "prefill seq 0",             { 0 },    0, 19, 18, form::BY_ID }, // two ubatches of one sequence
+            { "prefill seq 1",             { 1 },    0, 19, 18, form::BY_ID },
+            { "verify batch, both seqs",   { 0, 1 }, 19, 25, 19, form::BY_ID }, // n_seqs = n_rs = 2, several tokens each
+            { "decode, both seqs",         { 0, 1 }, 25, 26, 25, form::BY_ID }, // one token each
+            { "decode, both seqs again",   { 0, 1 }, 26, 27, 26, form::BY_ID },
+            { "seq 1 beside an idle slot", { 1 },    27, 28, 27, form::BY_ID },
+        } },
+        // seq 1 takes the first cell, so the joint batch swaps the cells: each sequence reads the cell the other writes
+        { "swapped cells", 2, {
+            { "prefill seq 1",             { 1 },    0, 19, 18, form::BY_ID },
+            { "prefill seq 0",             { 0 },    0, 19, 18, form::BY_ID },
+            { "verify batch, both seqs",   { 0, 1 }, 19, 25, 19, form::BY_ID },
+            { "decode, both seqs",         { 0, 1 }, 25, 26, 25, form::BY_ID },
+        } },
+        // both start from the shared zero state in one batch
+        { "joint start", 2, {
+            { "prefill both seqs",         { 0, 1 }, 0, 12, 11, form::BY_ID },
+            { "decode, both seqs",         { 0, 1 }, 12, 13, 12, form::BY_ID },
+        } },
+        // seq 2 takes the cell between seqs 0 and 1, so their joint batch holds its state as an extra state the gather
+        // must move (without a unified KV cache a ubatch joins only consecutive sequence ids)
+        { "extra state", 3, {
+            { "prefill seq 0",              { 0 },    0, 19, 18, form::BY_ID },
+            { "prefill seq 2",              { 2 },    0, 19, 18, form::BY_ID },
+            { "prefill seq 1",              { 1 },    0, 19, 18, form::BY_ID },
+            { "verify batch, seqs 0 and 1", { 0, 1 }, 19, 25, 19, form::GATHERED },
+            { "seq 2 after the move",       { 2 },    19, 25, 19, form::BY_ID },
+            { "decode, seqs 0 and 1",       { 0, 1 }, 25, 26, 25, form::BY_ID },
+        } },
     };
 
-    // batch shape alone moves a real model by up to ~1e-3 (CPU, 4B Q4_K_XL); a wrong state row costs ~0.1
-    constexpr double nmse_eps = 3e-3;
-
-    for (const auto & ph : phases) {
-        common_batch batch(ctx_gate.get());
-        for (uint32_t s : ph.streams) {
-            for (llama_pos pos = ph.p0; pos < ph.p1; ++pos) {
-                batch.add(tok(s, pos), pos, (llama_seq_id) s, pos >= ph.out_from);
-            }
-        }
-        if (llama_process(ctx_gate.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
-            LOG_ERR("%s: %s: decode failed\n", __func__, ph.name);
+    int n_gdn = 0;
+    uint32_t scenario_id = 0;
+    std::vector<float> reference(n_vocab);
+    for (const auto & sc : scenarios) {
+        llama_context_ptr ctx_gate = make_ctx_gate(sc.n_seq);
+        if (!ctx_gate) {
+            LOG_ERR("%s: %s: failed to init context\n", __func__, sc.name);
             return test_status::FAIL;
         }
+        if (llama_n_rs_seq(ctx_gate.get()) == 0) {
+            LOG_INF("%s: skipping because n_rs_seq is disabled\n", __func__);
+            return test_status::SKIP;
+        }
 
-        for (size_t j = 0; j < ph.streams.size(); ++j) {
-            const uint32_t s = ph.streams[j];
-            common_batch batch_ref(ctx_ref[s].get());
-            for (llama_pos pos = ph.p0; pos < ph.p1; ++pos) {
-                batch_ref.add(tok(s, pos), pos, 0, pos >= ph.out_from);
-            }
-            if (llama_process(ctx_ref[s].get(), LLAMA_PROCESS_TYPE_DECODE, batch_ref.get()) != 0) {
-                LOG_ERR("%s: %s: reference decode failed\n", __func__, ph.name);
-                return test_status::FAIL;
-            }
-            const int32_t first = (int32_t) j*(ph.p1 - ph.p0) - ph.p0; // batch index of pos is first + pos
-            for (llama_pos pos = ph.out_from; pos < ph.p1; ++pos) {
-                const float * l_gate = llama_get_logits_ith(ctx_gate.get(), first + pos);
-                const float * l_ref  = llama_get_logits_ith(ctx_ref[s].get(), (int32_t) (pos - ph.p0));
-                const double  err    = l_gate && l_ref ? nmse(l_ref, l_gate, n_vocab) : std::numeric_limits<double>::infinity();
-                if (err > nmse_eps) {
-                    LOG_ERR("%s: %s: seq %u pos %d logits differ from the single-sequence context (nmse %g)\n",
-                            __func__, ph.name, s, (int) pos, err);
-                    return test_status::FAIL;
+        uint32_t phase_id = 0;
+        for (const auto & ph : sc.phases) {
+            probe = {};
+            common_batch batch(ctx_gate.get());
+            for (uint32_t s : ph.streams) {
+                for (llama_pos pos = ph.p0; pos < ph.p1; ++pos) {
+                    batch.add(tok(s, pos), pos, (llama_seq_id) s, pos >= ph.out_from);
                 }
             }
+            if (llama_process(ctx_gate.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+                LOG_ERR("%s: %s: %s: decode failed\n", __func__, sc.name, ph.name);
+                return test_status::FAIL;
+            }
+            llama_synchronize(ctx_gate.get());
+            LOG_INF("%s: %s: %s: gdn nodes %d by id, %d gathered; state rows gathered %" PRId64 "\n", __func__,
+                    sc.name, ph.name, probe.n_indexed, probe.n_plain, probe.n_gathered);
+
+            for (size_t j = 0; j < ph.streams.size(); ++j) {
+                const uint32_t s = ph.streams[j];
+                const int32_t first = (int32_t) j*(ph.p1 - ph.p0) - ph.p0; // batch index of pos is first + pos
+                for (llama_pos pos = ph.out_from; pos < ph.p1; ++pos) {
+                    const float * l_gate = llama_get_logits_ith(ctx_gate.get(), first + pos);
+                    if (!l_gate || !std::all_of(l_gate, l_gate + n_vocab, [](float v) { return std::isfinite(v); })) {
+                        LOG_ERR("%s: %s: %s: seq %u pos %d missing or non-finite logits\n", __func__, sc.name, ph.name, s, (int) pos);
+                        return test_status::FAIL;
+                    }
+                    const uint32_t key[] = { fill, scenario_id, phase_id, s, (uint32_t) pos, (uint32_t) n_vocab };
+                    if (logits_out && (fwrite(key, sizeof(key), 1, logits_out) != 1 ||
+                                       fwrite(l_gate, sizeof(float), n_vocab, logits_out) != (size_t) n_vocab)) {
+                        LOG_ERR("%s: failed to write getter logits\n", __func__);
+                        return test_status::FAIL;
+                    }
+                    if (logits_ref) {
+                        uint32_t key_ref[6];
+                        if (fread(key_ref, sizeof(key_ref), 1, logits_ref) != 1 || memcmp(key, key_ref, sizeof(key)) != 0 ||
+                            fread(reference.data(), sizeof(float), n_vocab, logits_ref) != (size_t) n_vocab ||
+                            memcmp(l_gate, reference.data(), n_vocab*sizeof(float)) != 0) {
+                            LOG_ERR("%s: %s: %s: seq %u pos %d logits differ from the gathered same-batch reference\n",
+                                    __func__, sc.name, ph.name, s, (int) pos);
+                            return test_status::FAIL;
+                        }
+                    }
+                }
+            }
+
+            ++phase_id;
+            n_gdn += probe.n_indexed + probe.n_plain;
+            if (probe.n_indexed + probe.n_plain == 0) {
+                continue;
+            }
+            // A phase with several streams can split into single-sequence ubatches.
+            if (gathered_multi) {
+                if (probe.n_indexed_multi != 0 || probe.n_plain_single != 0 || (probe.n_plain == 0 && probe.n_gathered != 0)) {
+                    LOG_ERR("%s: %s: %s: control must gather only for multi-sequence ubatches\n", __func__, sc.name, ph.name);
+                    return test_status::FAIL;
+                }
+                continue;
+            }
+            if (ph.expect == form::BY_ID && (probe.n_indexed == 0 || probe.n_plain != 0 || probe.n_gathered != 0)) {
+                LOG_ERR("%s: %s: %s: ubatches without extra states must read the state by id and gather none\n",
+                        __func__, sc.name, ph.name);
+                return test_status::FAIL;
+            }
+            if (ph.expect == form::GATHERED && (probe.n_plain == 0 || probe.n_indexed != 0)) {
+                LOG_ERR("%s: %s: %s: ubatches with extra states must keep the gathered state\n", __func__, sc.name, ph.name);
+                return test_status::FAIL;
+            }
         }
+        ++scenario_id;
     }
 
-    LOG_INF("%s: gdn nodes, one sequence: %d by id, %d gathered; several: %d by id, %d gathered\n", __func__,
-            probe.n_indexed[0], probe.n_plain[0], probe.n_indexed[1], probe.n_plain[1]);
-
-    if (probe.n_indexed[0] + probe.n_plain[0] + probe.n_indexed[1] + probe.n_plain[1] == 0) {
+    if (n_gdn == 0) {
         LOG_INF("%s: skipping because the model has no gated delta net\n", __func__);
         return test_status::SKIP;
     }
-    if (probe.n_indexed[0] == 0 || probe.n_plain[0] != 0) {
-        LOG_ERR("%s: single-sequence ubatches must read the state by id\n", __func__);
-        return test_status::FAIL;
-    }
-    if (probe.n_plain[1] == 0 || probe.n_indexed[1] != 0) {
-        LOG_ERR("%s: multi-sequence ubatches must keep the gathered state\n", __func__);
-        return test_status::FAIL;
-    }
+    LOG_INF("%s: all scenarios pass%s\n", __func__, logits_ref ? " with exact same-batch logits" : " structure and finite-logit checks");
     return test_status::PASS;
 }
 
@@ -930,7 +999,7 @@ static void print_usage(int /* argc */, char ** argv) {
     LOG("\n  %s -m your_model.gguf\n", argv[0]);
     LOG("\n  %s --models tests/test-models\n", argv[0]);
     LOG("\n  %s --state-movers -m your_model.gguf\n", argv[0]);
-    LOG("\n  %s --getter-gate -m your_model.gguf\n", argv[0]);
+    LOG("\n  %s --getter-gate [--getter-logits FILE | --getter-reference FILE] [--getter-gathered] -m your_model.gguf\n", argv[0]);
     LOG("\n");
 }
 
@@ -947,6 +1016,8 @@ int main(int argc, char ** argv) {
     std::string models_dir;
     bool state_movers = false;
     bool getter_gate  = false;
+    bool getter_gathered = false;
+    std::string getter_logits, getter_reference;
     std::vector<char *> filtered_argv;
     filtered_argv.push_back(argv[0]);
     for (int i = 1; i < argc; i++) {
@@ -954,6 +1025,15 @@ int main(int argc, char ** argv) {
             state_movers = true;
         } else if (strcmp(argv[i], "--getter-gate") == 0) {
             getter_gate = true;
+        } else if (strcmp(argv[i], "--getter-gathered") == 0) {
+            getter_gathered = true;
+        } else if (strcmp(argv[i], "--getter-logits") == 0 || strcmp(argv[i], "--getter-reference") == 0) {
+            if (i + 1 >= argc) {
+                LOG_ERR("%s: %s requires a file argument\n", __func__, argv[i]);
+                return 1;
+            }
+            (strcmp(argv[i], "--getter-logits") == 0 ? getter_logits : getter_reference) = argv[i + 1];
+            ++i;
         } else if (strcmp(argv[i], "--models") == 0) {
             if (i + 1 >= argc) {
                 LOG_ERR("%s: --models requires a directory argument\n", __func__);
@@ -984,19 +1064,40 @@ int main(int argc, char ** argv) {
         return init->model() && test_state_movers(params, init->model()) == test_status::PASS ? 0 : 1;
     }
 
+    if ((!getter_logits.empty() || !getter_reference.empty() || getter_gathered) && !getter_gate) {
+        LOG_ERR("%s: getter options require --getter-gate\n", __func__);
+        return 1;
+    }
+    if (!getter_logits.empty() && !getter_reference.empty()) {
+        LOG_ERR("%s: select a getter output or a reference file\n", __func__);
+        return 1;
+    }
     if (getter_gate) {
         auto init = common_init_from_params(params, true);
         if (!init->model()) {
             return 1;
         }
+        FILE * out = getter_logits.empty() ? nullptr : fopen(getter_logits.c_str(), "wb");
+        FILE * ref = getter_reference.empty() ? nullptr : fopen(getter_reference.c_str(), "rb");
+        if ((!getter_logits.empty() && !out) || (!getter_reference.empty() && !ref)) {
+            LOG_ERR("%s: failed to open getter logits file\n", __func__);
+            if (out) { fclose(out); }
+            if (ref) { fclose(ref); }
+            return 1;
+        }
         test_status gate = test_status::SKIP;
         for (uint8_t fill : { 0, 0x3e }) {
-            gate = merge_status(gate, test_getter_gate(params, init->model(), fill));
+            gate = merge_status(gate, test_getter_gate(params, init->model(), fill, out, ref, getter_gathered));
             if (gate == test_status::FAIL) {
                 break;
             }
         }
-        return gate == test_status::FAIL ? 1 : 0;
+        if (out && fclose(out) != 0) { gate = test_status::FAIL; }
+        if (ref) {
+            if (fgetc(ref) != EOF || ferror(ref)) { gate = test_status::FAIL; }
+            fclose(ref);
+        }
+        return gate == test_status::PASS ? 0 : 1;
     }
 
     if (!models_dir.empty()) {
