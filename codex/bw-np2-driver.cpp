@@ -119,6 +119,7 @@ int main(int argc, char ** argv) {
                 task.params.sampling.top_k = 20;
                 task.params.sampling.top_p = 0.95f;
                 task.params.sampling.min_p = 0.05f;
+                task.params.sampling.ignore_eos = true;
                 task.params.sampling.backend_sampling = true;
                 tasks.push_back(std::move(task));
             }
