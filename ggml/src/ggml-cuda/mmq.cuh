@@ -1576,9 +1576,8 @@ static int ggml_cuda_mmq_tiles_mode() {
     return mode;
 }
 
-// SMALL_I tiles beat the default tile when the launch is plain tiling with full waves (sm_120: gate/up and lm_head matmuls faster).
-// A launch that needs the stream-k fixup keeps the default tile. The plan is the launcher's, in default-tile units, so the output
-// is bitwise the one of the default tile.
+// SMALL_I tiles take every launch they can partition like the default tile (aligned rows, smem fits): the partition, hence the output,
+// is the default tile's whether the launch is plain tiling or stream-k (see mmq_get_stream_k_plan).
 template <ggml_type type, bool fallback, ggml_prec prec_src1>
 static bool ggml_cuda_mmq_use_small_i(const mmq_args & args, const int J) {
     const int    id    = ggml_cuda_get_device();
@@ -1602,7 +1601,7 @@ static bool ggml_cuda_mmq_use_small_i(const mmq_args & args, const int J) {
     }
     const mmq_stream_k_plan plan = mmq_get_stream_k_plan(args, config, config_default, cc, nsm);
     const int  ntiles = plan.ntiles*plan.group;
-    const bool use = mode == MMQ_TILES_SMALL_ALWAYS || plan.nparts == plan.ntiles;
+    const bool use = true;
 
     static const bool log = getenv("GGML_CUDA_MMQ_TILES_LOG") != nullptr;
     if (log) {
