@@ -1,0 +1,31 @@
+{
+  "result": "PASS",
+  "commit": "d65b293c4f174ee9f9f7d0c708ba1bd879c8994e",
+  "source_sha256": "0e443d84e1790025735c5d8113dc051a4a52757923f26fba7ee71f644b714627",
+  "stages": [
+    {
+      "code": 20,
+      "name": "cpu-build",
+      "rc": 0,
+      "wall_s_M": 47
+    },
+    {
+      "code": 21,
+      "name": "host-contracts-and-mutants",
+      "rc": 0,
+      "wall_s_M": 4
+    },
+    {
+      "code": 22,
+      "name": "cpu-backend-ops",
+      "rc": 0,
+      "wall_s_M": 186
+    },
+    {
+      "code": 31,
+      "name": "payload-lint",
+      "rc": 0,
+      "wall_s_M": 0
+    }
+  ]
+}
