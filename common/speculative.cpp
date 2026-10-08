@@ -1419,11 +1419,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     FILE * draft_dump  = nullptr;
     int    draft_round = 0;
 
-    void draft_dump_step(int step, llama_token id, const llama_token_data_array * cur_p) {
+    void draft_dump_step(llama_seq_id seq_id, int step, llama_token id, const llama_token_data_array * cur_p) {
         if (!draft_dump) {
             return;
         }
-        std::fprintf(draft_dump, "%d %d %d", draft_round, step, id);
+        std::fprintf(draft_dump, "%d %d %d %d", draft_round, seq_id, step, id);
         for (size_t i = 0; i < 10; ++i) {
             std::fprintf(draft_dump, " %d", i < cur_p->size ? cur_p->data[i].id : -1);
         }
@@ -1563,7 +1563,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         verify_h_rows.assign(n_seq, 0);
 
         if (!is_mem_shared && !chain_heads) {
-            fold = llama_mtp_fold_init(ctx_tgt, ctx_dft);
+            const char * enabled = std::getenv("LLAMA_MTP_FOLD_C");
+            fold = (!enabled || std::atoi(enabled) != 0) && llama_mtp_fold_init(ctx_tgt, ctx_dft);
         }
 
         if (const char * path = std::getenv("LLAMA_MTP_DRAFT_DUMP")) {
@@ -2033,7 +2034,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 const llama_token id = dparams.at(seq_id).result_q ? id_sampled : cur_p->data[0].id;
 
                 mtp_chain_dump_step(i, id, cur_p);
-                draft_dump_step(i, id, cur_p);
+                draft_dump_step(seq_id, i, id, cur_p);
 
                 // only collect very high-confidence draft tokens
                 if (cur_p->data[0].p < params.p_min) {

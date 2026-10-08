@@ -2051,6 +2051,10 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
                 same_order = same_order && ubatch.data->batch_idxs[i] == (int32_t) i &&
                     ubatch.n_seq_id[i] == 1 && ubatch.seq_id[i][0] >= 0 && ubatch.seq_id[i][0] < fold_n_seq;
             }
+            if (std::getenv("LLAMA_MTP_FOLD_DEBUG_LAYOUT")) {
+                same_order = false;
+                ggml_round_trace_count("mtp_fold_layout_fallback");
+            }
             if (same_order) {
                 mctx_fold = mtp_fold_dft->mtp_fold_prepare(ubatch);
             }
