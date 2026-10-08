@@ -27,7 +27,7 @@ verify_frozen() {
     local stray
     stray=$(ldd "$BIN/test-backend-ops" | awk '/libggml/ {print $3}' | grep -v "^$BIN/" || true)
     [[ -z $stray ]] || die 6 "ggml libs resolve outside the frozen dir: $stray"
-    strings -a "$BIN/libggml-cuda.so" | grep -q 'gdn_joint_mutant: engaged' || die 6 "libggml-cuda lacks the joint kernel mutant switch"
+    strings -a "$BIN/libggml-cuda.so" | grep -c 'gdn_joint_mutant: engaged' > /dev/null || die 6 "libggml-cuda lacks the joint kernel mutant switch"
 }
 guard() {
     if journalctl -k -b --since "$CUTOFF" --no-pager 2>/dev/null | grep -Eq '\bXid\b|fallen off the bus'; then die 3 "Xid since $CUTOFF"; fi
