@@ -78,7 +78,7 @@ stamps() {
     [[ $(git rev-parse HEAD) == "$SHA" && -z $(git status --porcelain --untracked-files=no) ]]
 }
 freeze() {
-    "$W/bin/wt" freeze "$ROOT" stack9 --build build-cuda --desc 'stack8 + multi-sequence indexed GDN + catch-up fold; Mac gates passed; CUDA 13.2 120 CCCL343 NCCL OFF'
+    nice -n 19 "$W/bin/wt" freeze "$ROOT" stack9 --build build-cuda --desc 'stack8 + multi-sequence indexed GDN + catch-up fold; Mac gates passed; CUDA 13.2 120 CCCL343 NCCL OFF'
     [[ $(head -1 "$W/frozen/stack9/SOURCE") == "$SHA" ]]
     {
         printf 'commit %s\nconfigure: cmake -B build-cuda ' "$SHA"

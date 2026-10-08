@@ -99,19 +99,20 @@ def fixture_checks():
     from harness import mkitem
     with tempfile.TemporaryDirectory(dir=evidence.parent) as temporary:
         for source in (Path(__file__).resolve().parent / 'items').glob('stack9-*.toml.in'):
-            for fold in ('1',):
-                path = Path(temporary) / source.name.removesuffix('.in')
-                path.write_text(source.read_text().replace('@STACK9_SHA@', '0'*40))
-                x = lib.read_experiment(path)
-                assert type(x['priority']) is int and len(x['canary']['plan']) == 1
-                assert set(x['canary']['plan']) <= x['arms'].keys()
-                assert x['budget']['canary_s'] <= 600
-                assert len(x['plan'])*mkitem.boot_wall(x) + x['budget']['canary_s'] <= 0.7*mkitem.budget(x)['budget_s']
-                if x['kind'] == 'depth':
-                    assert x['depth']['request']['ignore_eos'] is True
-                for arm in x['arms'].values():
-                    for pattern in arm['canary_log']:
-                        re.compile(pattern)
+            path = Path(temporary) / source.name.removesuffix('.in')
+            path.write_text(source.read_text().replace('@STACK9_SHA@', '0'*40))
+            x = lib.read_experiment(path)
+            assert type(x['priority']) is int and len(x['canary']['plan']) == 1
+            assert set(x['canary']['plan']) <= x['arms'].keys()
+            assert x['budget']['canary_s'] <= 600
+            assert len(x['plan'])*mkitem.boot_wall(x) + x['budget']['canary_s'] <= 0.7*mkitem.budget(x)['budget_s']
+            if x['kind'] == 'depth':
+                assert x['depth']['request']['ignore_eos'] is True
+            else:
+                assert all('n_seq=2' not in pattern for arm in x['arms'].values() for pattern in arm['canary_log']), 'campaign canary sends sequential requests'
+            for arm in x['arms'].values():
+                for pattern in arm['canary_log']:
+                    re.compile(pattern)
     window = tomllib.loads((Path(__file__).resolve().parent / 'bw-stack9.toml').read_text())
     assert window['kind'] == 'filler' and window['priority'] == 19
     assert window['host_sensitive'] is False and window['preemptible'] is False

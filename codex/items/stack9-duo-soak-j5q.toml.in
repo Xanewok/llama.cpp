@@ -28,7 +28,7 @@ repo = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack9"
 bin = "build/bin"
 exe = "build/bin/round-trace"
 flags = []
-canary_log = ["MTP chain disabled: needs one sequence \\(n_seq=2\\)", "(?s)^(?!.*MTP chain: k=)", "n_kv_pad += 4096\\b", "mtp_fold_decode: engaged n_seq=2\\b"]
+canary_log = ["MTP chain disabled: needs one sequence \\(n_seq=2\\)", "(?s)^(?!.*MTP chain: k=)", "n_kv_pad += 4096\\b", "mtp_fold_decode: engaged n_seq=1\\b"]
 k = 5
 p_min = 0
 
