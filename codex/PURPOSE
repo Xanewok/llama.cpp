@@ -1,6 +1,6 @@
-purpose: stack10 candidates from the HQ-gap causes (docs/proposals/hqgap8-experiments.md): pkg 54 + K4 indexed conv state, K3 persistent rot, K2 shared FA KV-max scan, K5 alpha-chain fusion, K7 paired q/k norm; Codex write mode
-base: cd776e104dbd516c7b74506992d2e8efd7600155
+purpose: K11b single staging copy slow rank first (stack10 withheld brief)
+base: 0cfc0723e7e991600ca01004efa7cd377400c37b
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack10-cand
-created: 2026-10-08T16:07:39+02:00
+branch: topic/s10-k11b
+created: 2026-10-08T21:17:35+02:00
 creator: xanewok
