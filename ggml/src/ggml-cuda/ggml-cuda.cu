@@ -4813,7 +4813,9 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
         return fused_node_count - 1;
     }
 
-    if (ggml_cuda_can_fuse_add_rms_norm(cgraph, i)) {
+    static const bool add_rms_norm = !getenv("GGML_CUDA_ADD_RMS_NORM") || atoi(getenv("GGML_CUDA_ADD_RMS_NORM")) != 0;
+    if (add_rms_norm && ggml_cuda_can_fuse_add_rms_norm(cgraph, i)) {
+        GGML_LOG_DEBUG("add_rms_norm: device=%d rows=%" PRId64 " columns=%" PRId64 "\n", cuda_ctx->device, node->ne[1], node->ne[0]);
         ggml_cuda_op_add_rms_norm(*cuda_ctx, node, cgraph->nodes[i + 1], cgraph->nodes[i + 2]);
         return 2;
     }
