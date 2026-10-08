@@ -56,7 +56,7 @@ Other edits are confined to `codex/`: supplied prompt/purpose, GPU entry, bounde
 
 ## Mac evidence
 
-Primary witness: `239f830af2d6833189fb0e3f98fbf82aa5f2c1a0`, `build-bw-mac-results/stack10-cand-mac-a4/`. Recorded-parser follow-up: `bf2926e72b22812b6801452fc249be9ff41e24df`, `build-bw-mac-results/stack10-cand-static-mac-a2/`. Final payload replay is recorded separately in `codex/stack10-evidence/summary.json`.
+Primary witness: `239f830af2d6833189fb0e3f98fbf82aa5f2c1a0`, `build-bw-mac-results/stack10-cand-mac-a4/`. Recorded-parser follow-up: `bf2926e72b22812b6801452fc249be9ff41e24df`, `build-bw-mac-results/stack10-cand-static-mac-a2/`. Final payload witness: `594675edd98c8bbcca18a59e09e98c6629476ae3`, `build-bw-mac-results/stack10-cand-static-mac-a3/`. It has the same production-source digest and records the final payload hash in `codex/stack10-evidence/summary.json`.
 
 ```sh
 CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 BW_MAC_OUTPUT_BASE="$PWD/build-bw-mac-results" ~/repos/qwen38-eval-worktrees/bin/bw-mac "$PWD" codex/bw-stack10-cand-mac.sh stack10-cand
@@ -72,6 +72,7 @@ CPU build: Clang, CUDA/Metal/BLAS/Accelerate/repack/llamafile off, native off, `
 | 22 rotation identity/fallback/negative control | 270 | PASS |
 | 31 primary recorded parser controls | 1 | PASS |
 | 31 dtype/proof/counter/parser follow-up | 1 | PASS |
+| 31 final payload replay and shell lint | 1 | PASS |
 
 M: 18 q8 attention cases passed, including two sequences and a non-unified cache view. M: each raw-logit artifact is 123169696 bytes; comparison is streaming and no artifact over 200 MB was loaded. M: zeroed persistent matrices fail; off/on/allocation-failure raw logits match; all three arms' complete np2 token/counter JSON matches for plain and Meta. Logs and source provenance are in `codex/stack10-evidence/`.
 

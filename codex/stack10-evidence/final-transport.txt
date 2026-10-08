@@ -1,0 +1,2 @@
+HEAD=594675edd98c8bbcca18a59e09e98c6629476ae3
+REMOTE=/Users/builder/qwen38-bw/stack10-cand-static/594675edd98c8bbcca18a59e09e98c6629476ae3/run.Hd0In3
