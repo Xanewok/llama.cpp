@@ -1,6 +1,6 @@
-purpose: L1 shape-gated MMQ small-J for np2 verify (sm_120): general commit + local-tuned commit, test-backend-ops cases, build window + items
-base: 41d2954a21106c9a65c8dd2a0697e7d33ae4f22f
+purpose: K8 MMQ stream-k occupancy-aware grid/partition + L1 selector agreement (stack10 withheld brief)
+base: ace9a6d01d4edc2381824fd23cffe795914e3999
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/l1-mmq-smallj
-created: 2026-10-08T09:54:11+02:00
+branch: topic/l1-k8
+created: 2026-10-08T20:42:50+02:00
 creator: xanewok
