@@ -319,13 +319,35 @@ struct gdn_probe {
     int     n_indexed_multi = 0;
     int     n_plain_single  = 0;
     int64_t n_gathered      = 0;
+    std::set<ggml_tensor *> rotations;
+    bool rotation_ok = true;
 };
 
 static bool gdn_probe_cb(ggml_tensor * t, bool ask, void * user_data) {
-    if (!ask) {
-        return false;
-    }
     auto * probe = (gdn_probe *) user_data;
+    int32_t hint;
+    memcpy(&hint, t->op_params + 1, sizeof(hint));
+    const bool rotation = t->op == GGML_OP_MUL_MAT && hint == GGML_HINT_SRC0_IS_HADAMARD;
+    if (!ask) {
+        if (rotation && probe->rotations.insert(t->src[0]).second) {
+            const auto * matrix = t->src[0];
+            const int64_t n = matrix->ne[0];
+            std::vector<float> values(n*n);
+            ggml_backend_tensor_get(matrix, values.data(), 0, ggml_nbytes(matrix));
+            const float magnitude = 1.0 / sqrtf(n);
+            for (int64_t row = 0; row < n; ++row) {
+                for (int64_t col = 0; col < n; ++col) {
+                    int parity = 0;
+                    for (int64_t bits = row & col; bits; bits >>= 1) {
+                        parity ^= bits & 1;
+                    }
+                    const float expected = parity ? -magnitude : magnitude;
+                    probe->rotation_ok &= memcmp(&values[row*n + col], &expected, sizeof(float)) == 0;
+                }
+            }
+        }
+        return true;
+    }
     if (t->op == GGML_OP_GATED_DELTA_NET) {
         (t->src[6] ? probe->n_indexed : probe->n_plain)++;
         if (t->src[6] && t->src[2]->ne[3] > 1) {
@@ -342,7 +364,7 @@ static bool gdn_probe_cb(ggml_tensor * t, bool ask, void * user_data) {
     if (src && strncmp(src->name, "cache_s_l", 9) == 0) {
         probe->n_gathered += t->ne[1];
     }
-    return false;
+    return rotation;
 }
 
 // Compare getter and gather builds on identical batches; single-sequence batches can use different arithmetic.
@@ -444,6 +466,14 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
                 return test_status::FAIL;
             }
             llama_synchronize(ctx_gate.get());
+            if (!probe.rotation_ok) {
+                LOG_ERR("%s: rotation matrix bytes differ from the Hadamard reference\n", __func__);
+                return test_status::FAIL;
+            }
+            if ((ggml_is_quantized(params.cache_type_k) || ggml_is_quantized(params.cache_type_v)) && probe.rotations.empty()) {
+                LOG_ERR("%s: quantized KV did not read a rotation matrix\n", __func__);
+                return test_status::FAIL;
+            }
             LOG_INF("%s: %s: %s: gdn nodes %d by id, %d gathered; state rows gathered %" PRId64 "\n", __func__,
                     sc.name, ph.name, probe.n_indexed, probe.n_plain, probe.n_gathered);
 
