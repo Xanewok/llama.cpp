@@ -1525,7 +1525,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         verify_h_rows.assign(n_seq, 0);
 
         if (!is_mem_shared && !chain_heads) {
-            fold = llama_mtp_fold_init(ctx_tgt, ctx_dft);
+            const char * enabled = std::getenv("LLAMA_MTP_FOLD_C");
+            fold = (!enabled || std::atoi(enabled) != 0) && llama_mtp_fold_init(ctx_tgt, ctx_dft);
         }
     }
 
