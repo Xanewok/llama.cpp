@@ -20,6 +20,7 @@
 #include "ggml-backend.h"
 #include "ggml-cpp.h"
 #include "../ggml/src/ggml-ssm-conv.h"
+#include "../ggml/src/ggml-rms-norm-scale-pair.h"
 
 #include <algorithm>
 #include <atomic>
@@ -12465,6 +12466,226 @@ static bool run_alpha_gate_identity(ggml_backend_t backend, const char * filter)
     return true;
 }
 
+// q and k RMS_NORM -> SCALE chains as built for the gated-delta-net layers: a backend may run both in one
+// launch but must produce the bytes of the unfused chains. The reference nodes are flagged as outputs, which
+// keeps them out of every fusion; all tensors are statically allocated, so aliasing only comes from the layouts.
+// The graph matcher is checked on the same graphs, with one mutation per guard.
+static bool run_rms_norm_scale_pair_identity(ggml_backend_t backend, const char * filter) {
+    if (filter && std::string(filter).find("RMS_NORM_SCALE_PAIR") == std::string::npos) {
+        return true;
+    }
+
+    enum { L_SHARED_PARENT, L_SEPARATE, L_PADDED_K, L_COMPUTE_BETWEEN, L_DST_OVER_Q_INPUT, L_SHAPE_MISMATCH, L_COUNT };
+    const uint32_t sentinel = 0xfffffff1u;
+
+    int cases = 0;
+    std::vector<float> last_expected;
+    for (int64_t ncols : { 64, 128, 256, 1000, 1536 }) {
+        for (int64_t heads : { 1, 16 }) {
+            for (int64_t tokens : { 1, 3, 12 }) {
+                for (int64_t seqs : { 1, 2 }) {
+                    for (int layout = 0; layout < L_COUNT; ++layout) {
+                        ggml_init_params params = { 96*ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true };
+                        ggml_context_ptr ctx(ggml_init(params));
+                        const int64_t width = heads*ncols;
+                        const bool shared   = layout == L_SHARED_PARENT || layout == L_COMPUTE_BETWEEN;
+                        const bool separate = layout == L_SEPARATE || layout == L_DST_OVER_Q_INPUT || layout == L_SHAPE_MISMATCH;
+                        // eps and scale are per chain; the shared layouts use the model's 1/sqrt(n)
+                        const float eps[2]   = { 1e-6f/ncols, separate ? 1e-5f/ncols : 1e-6f/ncols };
+                        const float scale[2] = { 1.0f/sqrtf((float) ncols), separate ? 0.7f : 1.0f/sqrtf((float) ncols) };
+                        const int64_t heads_k = layout == L_SHAPE_MISMATCH ? 2*heads : heads;
+
+                        struct inputs_t {
+                            ggml_tensor * parent[2] = {};
+                            ggml_tensor * x[2]      = {};
+                        };
+                        const auto make_inputs = [&]() {
+                            inputs_t in;
+                            if (shared) {
+                                in.parent[0] = ggml_new_tensor_3d(ctx.get(), GGML_TYPE_F32, 3*width, tokens, seqs);
+                                for (int k = 0; k < 2; ++k) {
+                                    in.x[k] = ggml_view_4d(ctx.get(), in.parent[0], ncols, heads, tokens, seqs,
+                                        ncols*sizeof(float), in.parent[0]->nb[1], in.parent[0]->nb[2], k*width*sizeof(float));
+                                }
+                            } else if (separate) {
+                                for (int k = 0; k < 2; ++k) {
+                                    in.parent[k] = ggml_new_tensor_4d(ctx.get(), GGML_TYPE_F32, ncols, k ? heads_k : heads, tokens, seqs);
+                                    in.x[k] = in.parent[k];
+                                }
+                            } else {
+                                // k rows are padded, so the two chains have different strides
+                                for (int k = 0; k < 2; ++k) {
+                                    in.parent[k] = ggml_new_tensor_3d(ctx.get(), GGML_TYPE_F32, width + 5*k, tokens, seqs);
+                                    in.x[k] = ggml_view_4d(ctx.get(), in.parent[k], ncols, heads, tokens, seqs,
+                                        ncols*sizeof(float), in.parent[k]->nb[1], in.parent[k]->nb[2], 0);
+                                }
+                            }
+                            return in;
+                        };
+                        const inputs_t test = make_inputs();
+                        const inputs_t ref  = make_inputs();
+
+                        ggml_tensor * rms[2];
+                        ggml_tensor * out[2];
+                        ggml_tensor * ref_out[2];
+                        ggml_tensor * other_in  = nullptr;
+                        auto * graph = ggml_new_graph(ctx.get());
+                        for (int k = 0; k < 2; ++k) {
+                            rms[k] = ggml_rms_norm(ctx.get(), test.x[k], eps[k]);
+                            out[k] = ggml_scale(ctx.get(), rms[k], scale[k]);
+                            ggml_build_forward_expand(graph, out[k]);
+                            if (layout == L_COMPUTE_BETWEEN && k == 0) {
+                                other_in = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, 8);
+                                ggml_build_forward_expand(graph, ggml_scale(ctx.get(), other_in, 2.0f));
+                            }
+                        }
+                        for (int k = 0; k < 2; ++k) {
+                            ggml_tensor * ref_rms = ggml_rms_norm(ctx.get(), ref.x[k], eps[k]);
+                            ggml_set_output(ref_rms);
+                            ref_out[k] = ggml_scale(ctx.get(), ref_rms, scale[k]);
+                            ggml_build_forward_expand(graph, ref_out[k]);
+                        }
+
+                        for (int i = 0; i < ggml_graph_n_nodes(graph); ++i) {
+                            if (!ggml_backend_supports_op(backend, ggml_graph_node(graph, i))) {
+                                return true;
+                            }
+                        }
+                        ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors(ctx.get(), backend));
+                        if (!buffer) {
+                            return false;
+                        }
+                        // The k output overwrites the q input after the q chain has read it: valid unfused, a hazard if paired.
+                        if (layout == L_DST_OVER_Q_INPUT) {
+                            out[1]->data = test.x[0]->data;
+                        }
+
+                        // Matcher: engages exactly where a paired launch is safe, and each guard rejects its mutation.
+                        int start = 0;
+                        while (graph->nodes[start] != rms[0]) {
+                            ++start;
+                        }
+                        int i_b = 0;
+                        const bool expect_pair = layout != L_COMPUTE_BETWEEN && layout != L_DST_OVER_Q_INPUT && layout != L_SHAPE_MISMATCH;
+                        if (ggml_match_rms_norm_scale_pair(graph, start, i_b) != expect_pair || (expect_pair && graph->nodes[i_b] != rms[1])) {
+                            printf("  FAIL RMS_NORM_SCALE_PAIR matcher: layout=%d expected %s\n", layout, expect_pair ? "pair" : "no pair");
+                            return false;
+                        }
+                        if (expect_pair) {
+                            const auto rejected = [&](const char * what, auto mutate, auto restore) {
+                                mutate();
+                                const bool matched = ggml_match_rms_norm_scale_pair(graph, start, i_b);
+                                restore();
+                                if (matched) {
+                                    printf("  FAIL RMS_NORM_SCALE_PAIR matcher accepted: %s (layout=%d)\n", what, layout);
+                                }
+                                return !matched;
+                            };
+                            void * data_a = out[0]->data;
+                            void * data_b = out[1]->data;
+                            bool ok = true;
+                            ok = ok && rejected("first intermediate is a graph output",
+                                [&] { rms[0]->flags |= GGML_TENSOR_FLAG_OUTPUT; }, [&] { rms[0]->flags &= ~GGML_TENSOR_FLAG_OUTPUT; });
+                            ok = ok && rejected("second intermediate is a graph output",
+                                [&] { rms[1]->flags |= GGML_TENSOR_FLAG_OUTPUT; }, [&] { rms[1]->flags &= ~GGML_TENSOR_FLAG_OUTPUT; });
+                            ok = ok && rejected("first output over the second input",
+                                [&] { out[0]->data = test.x[1]->data; }, [&] { out[0]->data = data_a; });
+                            ok = ok && rejected("second output over the first input",
+                                [&] { out[1]->data = test.x[0]->data; }, [&] { out[1]->data = data_b; });
+                            ok = ok && rejected("outputs overlap",
+                                [&] { out[1]->data = out[0]->data; }, [&] { out[1]->data = data_b; });
+                            // Same bytes as the real input, so only the dependency check can reject it.
+                            ggml_tensor * alias = ggml_view_4d(ctx.get(), out[0], out[0]->ne[0], out[0]->ne[1], out[0]->ne[2], out[0]->ne[3],
+                                out[0]->nb[1], out[0]->nb[2], out[0]->nb[3], 0);
+                            alias->data = test.x[1]->data;
+                            ok = ok && rejected("second input is a view of the first output",
+                                [&] { rms[1]->src[0] = alias; }, [&] { rms[1]->src[0] = test.x[1]; });
+                            ok = ok && rejected("unsupported scale bias",
+                                [&] { ggml_set_op_params_f32(out[1], 1, 0.5f); }, [&] { ggml_set_op_params_f32(out[1], 1, 0.0f); });
+                            if (!ok) {
+                                return false;
+                            }
+                        }
+
+                        const size_t n[2] = { (size_t) ggml_nelements(out[0]), (size_t) ggml_nelements(out[1]) };
+                        std::vector<float> data[2];
+                        std::vector<float> actual, expected;
+                        // Changing inputs exercise the same graph after capture, including degenerate rows.
+                        for (int replay = 0; replay < 4; ++replay) {
+                            for (int k = 0; k < (shared ? 1 : 2); ++k) {
+                                data[k].resize(ggml_nelements(test.parent[k]));
+                                uint32_t state = 12345u + 977u*replay + 31u*k + (uint32_t) (ncols*7 + heads*3 + tokens*5 + seqs);
+                                for (float & v : data[k]) {
+                                    state = state*1664525u + 1013904223u;
+                                    v = ((state >> 8) & 0xffff)/16384.0f - 2.0f;
+                                }
+                                // row starts: zero row, inf, subnormal, overflowing squares
+                                for (size_t st : { (size_t) 0, (size_t) (shared ? width : 0) }) {
+                                    for (int64_t c = 0; c < ncols; ++c) {
+                                        data[k][st + c] = replay == 0 ? 0.0f : replay == 1 ? (c == 3 ? INFINITY : 1.0f) :
+                                            replay == 2 ? 1e-39f*(c + 1) : 1e30f;
+                                    }
+                                }
+                                ggml_backend_tensor_set(test.parent[k], data[k].data(), 0, ggml_nbytes(test.parent[k]));
+                                ggml_backend_tensor_set(ref.parent[k],  data[k].data(), 0, ggml_nbytes(ref.parent[k]));
+                            }
+                            if (other_in) {
+                                std::vector<float> o(8, 1.0f + replay);
+                                ggml_backend_tensor_set(other_in, o.data(), 0, ggml_nbytes(other_in));
+                            }
+                            if (layout != L_DST_OVER_Q_INPUT) {
+                                for (int k = 0; k < 2; ++k) {
+                                    std::vector<uint32_t> fill(n[k], sentinel);
+                                    ggml_backend_tensor_set(out[k], fill.data(), 0, ggml_nbytes(out[k]));
+                                }
+                            }
+                            if (ggml_backend_graph_compute(backend, graph) != GGML_STATUS_SUCCESS) {
+                                return false;
+                            }
+                            for (int k = 0; k < 2; ++k) {
+                                actual.resize(n[k]);
+                                expected.resize(n[k]);
+                                ggml_backend_tensor_get(out[k], actual.data(), 0, ggml_nbytes(out[k]));
+                                ggml_backend_tensor_get(ref_out[k], expected.data(), 0, ggml_nbytes(ref_out[k]));
+                                if (memcmp(actual.data(), expected.data(), n[k]*sizeof(float)) != 0) {
+                                    printf("  FAIL RMS_NORM_SCALE_PAIR byte identity: ncols=%lld heads=%lld tokens=%lld seqs=%lld layout=%d chain=%d replay=%d\n",
+                                        (long long) ncols, (long long) heads, (long long) tokens, (long long) seqs, layout, k, replay);
+                                    return false;
+                                }
+                                for (float v : expected) {
+                                    uint32_t bits;
+                                    memcpy(&bits, &v, sizeof(bits));
+                                    if (bits == sentinel) {
+                                        printf("  FAIL RMS_NORM_SCALE_PAIR reference equals the unwritten-output sentinel\n");
+                                        return false;
+                                    }
+                                }
+                            }
+                            last_expected = expected;
+                        }
+                        ++cases;
+                    }
+                }
+            }
+        }
+    }
+
+    // Negative control: the comparison must see a one-bit difference in any output element.
+    for (size_t i : { (size_t) 0, last_expected.size()/2, last_expected.size() - 1 }) {
+        std::vector<float> flipped = last_expected;
+        uint32_t bits;
+        memcpy(&bits, &flipped[i], sizeof(bits));
+        bits ^= 1u;
+        memcpy(&flipped[i], &bits, sizeof(bits));
+        if (memcmp(flipped.data(), last_expected.data(), flipped.size()*sizeof(float)) == 0) {
+            printf("  FAIL RMS_NORM_SCALE_PAIR negative control: one-bit flip not detected\n");
+            return false;
+        }
+    }
+    printf("  RMS_NORM_SCALE_PAIR: same-backend byte identity, matcher guards and changing-input replay PASS cases=%d\n", cases);
+    return true;
+}
+
 static bool run_fa_vec_slice(ggml_backend_t backend, ggml_backend_t backend_cpu, const char * op_names_filter) {
     const char * LLAMA_TEST_FA_VEC_DISABLE = getenv("LLAMA_TEST_FA_VEC_DISABLE");
     if (LLAMA_TEST_FA_VEC_DISABLE) {
@@ -12665,7 +12886,8 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
 
         const bool slice_ok = run_fa_vec_slice(backend, backend_cpu.get(), op_names_filter);
 
-        return n_ok == tests_run && slice_ok && run_alpha_gate_identity(backend, op_names_filter);
+        return n_ok == tests_run && slice_ok && run_alpha_gate_identity(backend, op_names_filter) &&
+               run_rms_norm_scale_pair_identity(backend, op_names_filter);
     }
 
     if (mode == MODE_GRAD) {
