@@ -11,6 +11,7 @@
 // TODO: replace with #include "llama-ext.h" in the future
 #include "../src/llama-arch.h"
 #include "../src/llama-model-saver.h"
+#include "../src/llama-sampler.h"
 #include "../ggml/src/ggml-backend-impl.h"
 
 #include <algorithm>
@@ -20,6 +21,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdint>
+#include <numeric>
 #include <random>
 #include <regex>
 #include <stdexcept>
@@ -981,6 +983,268 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
     return all_ok ? 0 : 1;
 }
 
+// post-chain candidate arrays, bitwise: ids, logits, probabilities, order and the selected entry
+static bool same_candidates(common_sampler * a, common_sampler * b) {
+    const auto * pa = common_sampler_get_candidates(a, false);
+    const auto * pb = common_sampler_get_candidates(b, false);
+    return pa->size == pb->size && pa->selected == pb->selected &&
+        std::memcmp(pa->data, pb->data, pa->size*sizeof(llama_token_data)) == 0;
+}
+
+// the k + 1 best unbanned logits are finite and strictly ordered, i.e. the top k and its order are unique
+static bool unique_top_k(const float * logits, const std::vector<char> & ban, int32_t k) {
+    std::vector<float> v;
+    for (size_t i = 0; i < ban.size(); ++i) {
+        if (!ban[i]) {
+            v.push_back(logits[i]);
+        }
+    }
+    std::partial_sort(v.begin(), v.begin() + k + 1, v.end(), std::greater<float>());
+    for (int32_t i = 0; i <= k; ++i) {
+        if (!std::isfinite(v[i]) || (i > 0 && !(v[i - 1] > v[i]))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// ids by descending logit, the first n sorted; ties broken by key (else by id)
+static std::vector<llama_token> top_ids(const std::vector<float> & logits, int32_t n, const std::vector<uint32_t> * key = nullptr) {
+    std::vector<llama_token> order(logits.size());
+    std::iota(order.begin(), order.end(), 0);
+    std::partial_sort(order.begin(), order.begin() + n, order.end(), [&](llama_token a, llama_token b) {
+        if (logits[a] != logits[b]) {
+            return logits[a] > logits[b];
+        }
+        return key ? (*key)[a] < (*key)[b] : a < b;
+    });
+    order.resize(n);
+    return order;
+}
+
+// A -inf logit bias (ignore_eos, banned tokens) keeps the backend candidate path: the backend takes the top
+// k + 1 + n_ban raw logits, the host drops the banned ids. Synthetic rows stand in for the backend: the top n_cand
+// raw logits, ties at the n_cand-th broken at random, in random order. Logits on coarse grids tie at every place;
+// planted ties sit at the k-th unbanned place (the host must read the full row), right below it and at the
+// n_cand-th raw place (it must not). Every draw, candidate array and rejection-sampling verdict must equal the host
+// full-row path's. Negative control: a backend without the extension (n_cand = k + 1) must be caught reading the
+// full row of a row whose top k is unique.
+static bool test_banned_candidates(const llama_model * model, const size_t seed) {
+    const int32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
+    const int32_t k       = 20;
+    const int     n_trial = 120;
+    const size_t  n_rows  = 4; // a draft of 3 and the bonus row
+
+    std::mt19937 rng(seed);
+    std::normal_distribution<float> normal(0.0f, 2.0f);
+
+    struct fake_row {
+        std::vector<float>       logits;
+        std::vector<llama_token> ids;
+        std::vector<float>       vals;
+        int                      n_full = 0;
+
+        common_sampler_row row(bool candidates) {
+            common_sampler_row r;
+            r.n_vocab = int32_t(logits.size());
+            if (candidates) {
+                r.cand_ids    = ids.data();
+                r.cand_logits = vals.data();
+                r.n_cand      = uint32_t(ids.size());
+            }
+            r.logits = [this]() { ++n_full; return logits.data(); };
+            return r;
+        }
+    };
+
+    common_params_sampling params;
+    params.top_k = k;
+    params.top_p = 0.95f;
+    params.min_p = 0.05f;
+    params.temp  = 1.0f;
+
+    bool ok = true;
+    auto backend_k = [&](const std::vector<llama_logit_bias> & bias) {
+        params.logit_bias       = bias;
+        params.backend_sampling = true;
+        common_sampler_ptr probe(common_sampler_init(model, params));
+        return llama_sampler_chain_leading_top_k(common_sampler_get_backend(probe.get()));
+    };
+
+    // routes: a finite bias or a token biased twice keeps the full chain (logit bias first, no leading top-k); the
+    // extension stays within the backend top-k limit of 256
+    {
+        std::vector<llama_logit_bias> many;
+        for (llama_token t = 0; t < 256 - k - 1; ++t) {
+            many.push_back({ t*7 + 1, -INFINITY });
+        }
+        const int32_t k_many   = backend_k(many);
+        many.push_back({ 2, -INFINITY });
+        const int32_t k_over   = backend_k(many);
+        const int32_t k_finite = backend_k({ { 5, -INFINITY }, { 7, 1.5f } });
+        const int32_t k_dup    = backend_k({ { 5, -INFINITY }, { 5, -INFINITY } });
+        const int32_t k_none   = backend_k({});
+        const int32_t k_one    = backend_k({ { 5, -INFINITY } });
+        if (k_many != 256 || k_over != -1 || k_finite != -1 || k_dup != -1 || k_none != k + 1 || k_one != k + 2) {
+            LOG_ERR("%s: backend top-k: %d bans %d, one more %d, finite %d, duplicate %d, none %d, one %d\n", __func__,
+                    int(many.size()) - 1, k_many, k_over, k_finite, k_dup, k_none, k_one);
+            ok = false;
+        }
+    }
+
+    int n_tie = 0, n_unique = 0, n_caught = 0, n_accept_all = 0, n_reject = 0;
+    for (int t = 0; t < n_trial && ok; ++t) {
+        const float step = t % 3 == 0 ? 0.0f : t % 3 == 1 ? 0.5f : 0.125f;
+        std::vector<fake_row> rows(n_rows);
+        for (auto & fr : rows) {
+            fr.logits.resize(n_vocab);
+            for (auto & x : fr.logits) {
+                x = normal(rng);
+                if (step > 0.0f) {
+                    x = std::round(x/step)*step;
+                }
+            }
+        }
+
+        // bans: about half among row 0's raw top k + 8 (inside the top k and at its edge), the rest anywhere
+        const std::vector<llama_token> best0 = top_ids(rows[0].logits, k + 8);
+        const int nb = 1 + int(rng() % 12);
+        std::vector<char> ban(n_vocab, 0);
+        for (int n = 0; n < nb; ) {
+            const llama_token id = rng() % 2 ? best0[rng() % best0.size()] : llama_token(rng() % n_vocab);
+            n += !ban[id];
+            ban[id] = 1;
+        }
+        std::vector<llama_logit_bias> bias;
+        for (llama_token id = 0; id < n_vocab; ++id) {
+            if (ban[id]) {
+                bias.push_back({ id, -INFINITY });
+            }
+        }
+        std::shuffle(bias.begin(), bias.end(), rng);
+        const int32_t n_cand = k + 1 + nb;
+
+        if (step == 0.0f) {
+            auto unbanned = [&](const fake_row & fr) {
+                std::vector<llama_token> u;
+                for (llama_token id : top_ids(fr.logits, n_cand + 2)) {
+                    if (!ban[id]) {
+                        u.push_back(id);
+                    }
+                }
+                return u;
+            };
+            const auto u1 = unbanned(rows[1]);
+            rows[1].logits[u1[k]] = rows[1].logits[u1[k - 1]]; // tie at the k-th unbanned place
+            const auto u2 = unbanned(rows[2]);
+            rows[2].logits[u2[k + 1]] = rows[2].logits[u2[k]]; // tie right below it
+            const auto r3 = top_ids(rows[3].logits, n_cand + 1);
+            rows[3].logits[r3[n_cand]] = rows[3].logits[r3[n_cand - 1]]; // tie at the backend's last place
+        }
+
+        const int32_t k_dev = backend_k(bias);
+        if (k_dev != n_cand) {
+            LOG_ERR("%s: trial %d: %d bans: backend top-k %d, want %d\n", __func__, t, nb, k_dev, n_cand);
+            ok = false;
+            break;
+        }
+
+        auto fail = [&](const char * what, int mutant, size_t r, uint32_t s, int got, int want) {
+            LOG_ERR("%s: trial %d (step %.3f, %d bans)%s row %zu seed %u: %s: got %d, want %d\n", __func__, t, step, nb,
+                    mutant ? " mutant" : "", r, s, what, got, want);
+            ok = false;
+        };
+
+        for (int mutant = 0; mutant < 2 && ok; ++mutant) {
+            for (auto & fr : rows) {
+                std::vector<uint32_t> key(n_vocab);
+                for (auto & x : key) {
+                    x = rng();
+                }
+                fr.ids = top_ids(fr.logits, mutant ? k + 1 : n_cand, &key);
+                std::shuffle(fr.ids.begin(), fr.ids.end(), rng);
+                fr.vals.clear();
+                for (llama_token id : fr.ids) {
+                    fr.vals.push_back(fr.logits[id]);
+                }
+            }
+
+            for (size_t r = 0; r < n_rows && ok; ++r) {
+                const bool unique = unique_top_k(rows[r].logits.data(), ban, k);
+                for (uint32_t s = 0; s < 4 && ok; ++s) {
+                    params.logit_bias       = bias;
+                    params.seed             = uint32_t(seed) + 1000u*t + s;
+                    params.backend_sampling = true;
+                    common_sampler_ptr cand(common_sampler_init(model, params));
+                    params.backend_sampling = false;
+                    common_sampler_ptr host(common_sampler_init(model, params));
+
+                    rows[r].n_full = 0;
+                    const llama_token got    = common_sampler_sample_row(cand.get(), rows[r].row(true));
+                    const int         n_full = rows[r].n_full;
+                    const llama_token want   = common_sampler_sample_row(host.get(), rows[r].row(false));
+                    if (got != want || !same_candidates(cand.get(), host.get())) {
+                        fail("draw or candidate array differs from the full-row path", mutant, r, s, got, want);
+                    } else if (ban[got]) {
+                        fail("drew a banned id", mutant, r, s, got, want);
+                    } else if (!mutant && (n_full > 0) == unique) {
+                        fail(unique ? "read the full row although the top k is unique" : "kept the candidates although the top k is tied",
+                                mutant, r, s, n_full, unique);
+                    }
+                    if (!mutant) {
+                        (unique ? n_unique : n_tie)++;
+                    } else if (unique && n_full > 0) {
+                        n_caught++;
+                    }
+                }
+            }
+
+            // rejection-sampling verify over the rows; the middle draft token is banned, mid-ranked or anywhere
+            for (uint32_t s = 0; s < 8 && ok; ++s) {
+                llama_tokens draft = { top_ids(rows[0].logits, 1)[0], 0, top_ids(rows[2].logits, 1)[0] };
+                switch ((t + s) % 3) {
+                    case 0:  draft[1] = bias[s % bias.size()].token;  break;
+                    case 1:  draft[1] = top_ids(rows[1].logits, 4)[3]; break;
+                    default: draft[1] = llama_token(rng() % n_vocab);  break;
+                }
+                std::vector<std::vector<llama_token_data>> q(draft.size());
+                for (size_t i = 0; i < draft.size(); ++i) {
+                    const auto alt = top_ids(rows[i].logits, 2);
+                    q[i] = { { draft[i], 0.0f, 0.7f }, { alt[alt[0] == draft[i]], 0.0f, 0.3f } };
+                }
+
+                params.logit_bias       = bias;
+                params.seed             = uint32_t(seed) + 7919u*t + s;
+                params.backend_sampling = true;
+                common_sampler_ptr cand(common_sampler_init(model, params));
+                params.backend_sampling = false;
+                common_sampler_ptr host(common_sampler_init(model, params));
+
+                const auto got  = common_sampler_sample_and_accept_n_rejection_rows(cand.get(),
+                        [&](size_t i) { return rows[i].row(true); }, draft, q);
+                const auto want = common_sampler_sample_and_accept_n_rejection_rows(host.get(),
+                        [&](size_t i) { return rows[i].row(false); }, draft, q);
+                if (got != want) {
+                    fail("rejection-sampling verdict differs (row = accepted length)", mutant, got.size(), s, got.back(), want.back());
+                }
+                (got.size() == draft.size() + 1 ? n_accept_all : n_reject)++;
+            }
+        }
+    }
+
+    if (ok && (n_tie == 0 || n_unique == 0 || n_accept_all == 0 || n_reject == 0)) {
+        LOG_ERR("%s: coverage: %d tied and %d unique draws, %d full accepts and %d rejections\n", __func__, n_tie, n_unique, n_accept_all, n_reject);
+        ok = false;
+    }
+    if (ok && n_caught == 0) {
+        LOG_ERR("%s: negative control: candidates without the extension were never caught\n", __func__);
+        ok = false;
+    }
+    LOG("%s: %d trials, %d tied / %d unique draws, %d full accepts / %d rejections, mutant caught %d times: %s\n",
+            __func__, n_trial, n_tie, n_unique, n_accept_all, n_reject, n_caught, ok ? "OK" : "FAIL");
+    return ok;
+}
+
 // Backend sampling under SPLIT_MODE_TENSOR against host sampling of the same logits. Each check runs a backend chain
 // on a tensor-split context and compares it with the logits that a twin context on the same model (no backend
 // sampler) copies to the host. The TP forward pass is identical in both, so any difference comes from the sampling
@@ -1171,6 +1435,136 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
             }
         }
         LOG("%s: verify candidates and deferred logits, 64 seeds x %d rows: %s\n", __func__, n_rows, ok ? "OK" : "FAIL");
+    }
+
+    // ignore_eos and banned tokens: a -inf bias keeps the candidate chain, k + 1 + n_ban wide, on the TP context (a
+    // refused sampler throws in make_ctx). Bans: every row's best, k-th and (k+1)-th logit, and a few ids anywhere.
+    // Draws, candidate arrays and rejection-sampling verdicts must equal host sampling of the full rows. Negative
+    // control: the same rows from a k + 1 wide chain (no extension) must make the host read the full row.
+    if (ok) {
+        std::vector<char> ban(n_vocab, 0);
+        std::mt19937 rng{uint32_t(seed)};
+        for (int32_t r = 0; r < n_rows; ++r) {
+            const auto best = top_ids(ref[r], k + 1);
+            ban[best[0]] = ban[best[k - 1]] = ban[best[k]] = 1;
+        }
+        for (int i = 0; i < 3; ++i) {
+            ban[rng() % n_vocab] = 1;
+        }
+
+        common_params_sampling params;
+        params.top_k = k;
+        params.top_p = 0.95f;
+        params.min_p = 0.05f;
+        params.temp  = 1.0f;
+        for (llama_token id = 0; id < llama_token(n_vocab); ++id) {
+            if (ban[id]) {
+                params.logit_bias.push_back({ id, -INFINITY });
+            }
+        }
+        const int32_t n_cand = k + 1 + int32_t(params.logit_bias.size());
+
+        auto ctx_row = [](llama_context * lctx, int32_t idx, int * n_full) {
+            common_sampler_row row;
+            row.n_vocab     = llama_vocab_n_tokens(llama_model_get_vocab(llama_get_model(lctx)));
+            row.cand_ids    = llama_get_sampled_candidates_ith(lctx, idx);
+            row.cand_logits = llama_get_sampled_logits_ith(lctx, idx);
+            row.n_cand      = llama_get_sampled_logits_count_ith(lctx, idx);
+            row.logits      = [lctx, idx, n_full]() { ++*n_full; return llama_get_logits_ith(lctx, idx); };
+            return row;
+        };
+        auto ref_row = [&](int32_t r) {
+            common_sampler_row row;
+            row.n_vocab = n_vocab;
+            row.logits  = [&ref, r]() { return ref[r].data(); };
+            return row;
+        };
+
+        params.seed             = uint32_t(seed);
+        params.backend_sampling = true;
+        common_sampler_ptr chain_owner(common_sampler_init(model.get(), params));
+        llama_sampler_ptr  unextended(llama_sampler_chain_init(llama_sampler_chain_default_params()));
+        llama_sampler_chain_add(unextended.get(), llama_sampler_init_top_k(k + 1));
+
+        for (int mutant = 0; mutant < 2 && ok; ++mutant) {
+            llama_context_ptr ctx = make_ctx(mutant ? unextended.get() : common_sampler_get_backend(chain_owner.get()));
+            decode(ctx.get());
+            llama_synchronize(ctx.get());
+
+            int n_banned_cand = 0, n_full_rows = 0;
+            for (int32_t r = 0; r < n_rows && ok; ++r) {
+                const int32_t idx = i_row0 + r;
+                const bool unique = unique_top_k(ref[r].data(), ban, k);
+                int n_full_row = 0;
+                for (uint32_t s = 0; s < 64 && ok; ++s) {
+                    params.seed             = s;
+                    params.backend_sampling = true;
+                    common_sampler_ptr cand(common_sampler_init(model.get(), params));
+                    params.backend_sampling = false;
+                    common_sampler_ptr host(common_sampler_init(model.get(), params));
+                    int n_full = 0;
+                    const llama_token got  = common_sampler_sample_row(cand.get(), ctx_row(ctx.get(), idx, &n_full));
+                    const llama_token want = common_sampler_sample_row(host.get(), ref_row(r));
+                    if (got != want || !same_candidates(cand.get(), host.get()) || ban[got]) {
+                        fail(mutant ? "banned (unextended): draw or candidate array differs" : "banned: draw or candidate array differs",
+                                r, got, float(s), float(want));
+                    } else if (!mutant && unique && n_full > 0) {
+                        fail("banned: read the full row although the top k is unique", r, got, float(s), float(n_full));
+                    }
+                    n_full_row += n_full > 0;
+                }
+                n_full_rows += unique && n_full_row > 0;
+                // after the draws, so that a candidate chain left unextended shows as full-row reads first
+                const uint32_t count = llama_get_sampled_candidates_count_ith(ctx.get(), idx);
+                if (count != uint32_t(mutant ? k + 1 : n_cand)) {
+                    fail("banned: candidate count", r, -1, float(count), float(mutant ? k + 1 : n_cand));
+                }
+                for (uint32_t i = 0; i < count; ++i) {
+                    n_banned_cand += ban[llama_get_sampled_candidates_ith(ctx.get(), idx)[i]];
+                }
+            }
+            if (ok && !mutant && n_banned_cand == 0) {
+                LOG_ERR("%s: banned: no banned id among the candidates, the drop is not exercised\n", __func__);
+                ok = false;
+            }
+            if (ok && mutant && n_full_rows == 0) {
+                LOG_ERR("%s: banned: negative control: the unextended chain was not caught\n", __func__);
+                ok = false;
+            }
+
+            // the k+1 verify: draft 3 over the first rows, the last one is the bonus row
+            int n_accept_all = 0;
+            for (uint32_t s = 0; s < 64 && ok; ++s) {
+                llama_tokens draft(n_rows - 1);
+                std::vector<std::vector<llama_token_data>> q(draft.size());
+                for (size_t i = 0; i < draft.size(); ++i) {
+                    const auto best = top_ids(ref[i], k + 2);
+                    // a banned id, the best unbanned one, or the k-th unbanned one
+                    draft[i] = s % 3 == 0 && i == 1 ? best[0] : best[1 + (s % 3 == 2 && i == 1)*k];
+                    q[i] = { { draft[i], 0.0f, 0.6f }, { best[0] == draft[i] ? best[2] : best[0], 0.0f, 0.4f } };
+                }
+                params.seed             = 1000 + s;
+                params.backend_sampling = true;
+                common_sampler_ptr cand(common_sampler_init(model.get(), params));
+                params.backend_sampling = false;
+                common_sampler_ptr host(common_sampler_init(model.get(), params));
+                int n_full = 0;
+                const auto got  = common_sampler_sample_and_accept_n_rejection_rows(cand.get(),
+                        [&](size_t i) { return ctx_row(ctx.get(), i_row0 + int32_t(i), &n_full); }, draft, q);
+                const auto want = common_sampler_sample_and_accept_n_rejection_rows(host.get(),
+                        [&](size_t i) { return ref_row(int32_t(i)); }, draft, q);
+                if (got != want) {
+                    fail("banned: rejection-sampling verdict differs (id = accepted length)", int32_t(got.size()), got.back(), float(s), float(want.back()));
+                }
+                n_accept_all += got.size() == draft.size() + 1;
+            }
+            LOG("%s: banned ids (%zu, %d among the candidates)%s: draws, candidate arrays and verify verdicts over 64 seeds x %d rows (%d full accepts): %s\n",
+                    __func__, params.logit_bias.size(), n_banned_cand, mutant ? ", unextended chain caught" : "", n_rows, n_accept_all, ok ? "OK" : "FAIL");
+        }
+    }
+
+    if (ok && !gpu && !test_banned_candidates(model.get(), seed)) {
+        ok = false;
     }
 
     {
