@@ -16,7 +16,7 @@ The target nextn rows are unmasked and indexed by raw token row; each sequence a
 
 Base: `7049ff0cbeb1f5ead231de4522af6b75d8d773c0`. Apply prerequisites/*.patch in lexical order, then root patches. Fresh Mac git-am/build/test results and commands: `apply.txt`; collector report: `codex/REPORT-upstream-pack.md`. A successful apply/build does not establish GPU correctness or speed.
 
-M: Qwen3.5-4B np2 plain-CPU MTP test passes: patch/baseline JSON (tokens and counters) is byte-identical at seed 1729, fixed 16+16 output tokens. Wrong-slot-row mutant differs. Source restored, final build and clean-source check pass. Command: bash validation/model_tests.sh "$PWD" 71-mtp-verify-bulk-read; logs: codex/upstream-out/mac-evidence/final/71/.
+M: Qwen3.5-4B np2 plain-CPU MTP test passes: patch/baseline JSON (tokens and counters) is byte-identical at seed 1729, fixed 16/32 output tokens per phase across the two slots. Wrong-slot-row mutant differs. Source restored, final build and clean-source check pass. Command: bash validation/model_tests.sh "$PWD" 71-mtp-verify-bulk-read; logs: codex/upstream-out/mac-evidence/final/71/.
 
 ## Limits
 

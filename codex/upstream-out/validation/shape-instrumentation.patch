@@ -1,0 +1,13 @@
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index d4b273e74..cb44b7857 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -1528,6 +1528,8 @@ bool llama_context::set_adapter_cvec(
+ }
+ 
+ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, llm_graph_type gtype, llama_memory_context_i * mctx, ggml_status & ret) {
++    std::fprintf(stderr, "PACK_SHAPE type=%d tokens=%u seqs=%u outputs=%lld\n", int(cparams.ctx_type), unsigned(ubatch.n_tokens), unsigned(ubatch.n_seqs_unq), (long long) n_outputs);
++
+     logits_deferred_fetch();
+     if (mctx && !mctx->apply()) {
+         LLAMA_LOG_ERROR("%s: failed to apply memory context\n", __func__);

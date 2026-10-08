@@ -1,0 +1,14 @@
+M, 2026-10-08: generated root tree and Mac git-am root tree match.
+68-backend-candidates-neginf 4a79e22fc83defa632a6475360f05abe90286f51
+21-mtp-draft-chain f98d88036d51ea1755d1dab7a1947964f241e686
+69-ssm-out-proj-2d 6be13f897cfa853cb5968289b9f6bdc8d230ce0c
+70-kv-seq-rm-indexed e54e5f176d183c76580ddeace4941921578da23d
+71-mtp-verify-bulk-read 99cab0662ea1fd756fb4d5acb894cce2c7a9905c
+72-mtp-fold-catchup 07378d3aed8871f7c71bf914373012316a7205ef
+73-meta-host-view-plan aa5d50e6c2c1bb7d2c703481299ee291a9b5ef12
+
+Commands: git --git-dir=build-upstream-pack.git rev-parse ROOT_TIP^{tree};
+git -C PACKAGE/src rev-parse HEAD^{tree} on mini-builder.
+72 already had one local diagnostic commit, so its production tree was checked with HEAD~1^{tree}.
+68's Mac source is ROOT/src; the other sources are ROOT/PACKAGE/src.
+Commit IDs differ with Mac committer dates; trees do not.

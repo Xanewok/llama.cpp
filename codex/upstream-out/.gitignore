@@ -1,0 +1,5 @@
+/base.bundle
+/logs/
+/mac-evidence/*
+!/mac-evidence/final/
+/validation/__pycache__/
