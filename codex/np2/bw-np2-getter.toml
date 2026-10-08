@@ -33,6 +33,7 @@ protected = ["budget"]
 
 [pins]
 files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/mmq.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/bw-run.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/np2-kernels/codex/np2/bw-np2-getter.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/np2-kernels/codex/np2/cpu-gate.sh",

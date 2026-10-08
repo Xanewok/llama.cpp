@@ -337,17 +337,15 @@ static bool gdn_probe_cb(ggml_tensor * t, bool ask, void * user_data) {
     return false;
 }
 
-// The GDN state getter reads states in place. A ubatch whose cell range holds only its own sequences (n_rs == n_seqs)
-// must read by id and gather no state; one with extra states in its range must keep the gather. The logits of every
-// phase must equal those of a single-sequence context decoding the same stream: a wrong row reads another sequence's
-// state, a lost extra state breaks the later phases of that sequence.
-static test_status test_getter_gate(const common_params & params, llama_model * model, uint8_t fill) {
+// Compare getter and gather builds on identical batches; single-sequence batches can use different arithmetic.
+static test_status test_getter_gate(const common_params & params, llama_model * model, uint8_t fill,
+                                   FILE * logits_out = nullptr, FILE * logits_ref = nullptr, bool gathered_multi = false) {
     const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
 
     constexpr uint32_t n_ubatch = 16;
 
     gdn_probe probe;
-    const auto make_ctx_gate = [&](uint32_t n_seq, bool probed) {
+    const auto make_ctx_gate = [&](uint32_t n_seq) {
         auto cparams = common_context_params_to_llama(params);
         cparams.n_seq_max  = n_seq;
         cparams.n_rs_seq   = 8;
@@ -355,10 +353,8 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
         cparams.n_batch    = 256;
         cparams.n_ubatch   = n_ubatch;
         cparams.kv_unified = false;
-        if (probed) {
-            cparams.cb_eval           = gdn_probe_cb;
-            cparams.cb_eval_user_data = &probe;
-        }
+        cparams.cb_eval           = gdn_probe_cb;
+        cparams.cb_eval_user_data = &probe;
         return init_ctx(model, cparams, fill);
     };
 
@@ -412,17 +408,13 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
         } },
     };
 
-    constexpr double nmse_eps = 1e-4;
-
     int n_gdn = 0;
+    uint32_t scenario_id = 0;
+    std::vector<float> reference(n_vocab);
     for (const auto & sc : scenarios) {
-        llama_context_ptr ctx_gate = make_ctx_gate(sc.n_seq, true);
-        std::vector<llama_context_ptr> ctx_ref;
-        for (uint32_t s = 0; s < sc.n_seq; ++s) {
-            ctx_ref.push_back(make_ctx_gate(1, false));
-        }
-        if (!ctx_gate || std::any_of(ctx_ref.begin(), ctx_ref.end(), [](const llama_context_ptr & c) { return !c; })) {
-            LOG_ERR("%s: %s: failed to init contexts\n", __func__, sc.name);
+        llama_context_ptr ctx_gate = make_ctx_gate(sc.n_seq);
+        if (!ctx_gate) {
+            LOG_ERR("%s: %s: failed to init context\n", __func__, sc.name);
             return test_status::FAIL;
         }
         if (llama_n_rs_seq(ctx_gate.get()) == 0) {
@@ -430,6 +422,7 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
             return test_status::SKIP;
         }
 
+        uint32_t phase_id = 0;
         for (const auto & ph : sc.phases) {
             probe = {};
             common_batch batch(ctx_gate.get());
@@ -448,48 +441,56 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
 
             for (size_t j = 0; j < ph.streams.size(); ++j) {
                 const uint32_t s = ph.streams[j];
-                common_batch batch_ref(ctx_ref[s].get());
-                for (llama_pos pos = ph.p0; pos < ph.p1; ++pos) {
-                    batch_ref.add(tok(s, pos), pos, 0, pos >= ph.out_from);
-                }
-                if (llama_process(ctx_ref[s].get(), LLAMA_PROCESS_TYPE_DECODE, batch_ref.get()) != 0) {
-                    LOG_ERR("%s: %s: %s: reference decode failed\n", __func__, sc.name, ph.name);
-                    return test_status::FAIL;
-                }
                 const int32_t first = (int32_t) j*(ph.p1 - ph.p0) - ph.p0; // batch index of pos is first + pos
                 for (llama_pos pos = ph.out_from; pos < ph.p1; ++pos) {
                     const float * l_gate = llama_get_logits_ith(ctx_gate.get(), first + pos);
-                    const float * l_ref  = llama_get_logits_ith(ctx_ref[s].get(), (int32_t) (pos - ph.p0));
-                    const double  err    = l_gate && l_ref ? nmse(l_ref, l_gate, n_vocab) : std::numeric_limits<double>::infinity();
-                    if (err > nmse_eps) {
-                        LOG_ERR("%s: %s: %s: seq %u pos %d logits differ from the single-sequence context (nmse %g)\n",
-                                __func__, sc.name, ph.name, s, (int) pos, err);
+                    if (!l_gate || !std::all_of(l_gate, l_gate + n_vocab, [](float v) { return std::isfinite(v); })) {
+                        LOG_ERR("%s: %s: %s: seq %u pos %d missing or non-finite logits\n", __func__, sc.name, ph.name, s, (int) pos);
                         return test_status::FAIL;
+                    }
+                    const uint32_t key[] = { fill, scenario_id, phase_id, s, (uint32_t) pos, (uint32_t) n_vocab };
+                    if (logits_out && (fwrite(key, sizeof(key), 1, logits_out) != 1 ||
+                                       fwrite(l_gate, sizeof(float), n_vocab, logits_out) != (size_t) n_vocab)) {
+                        LOG_ERR("%s: failed to write getter logits\n", __func__);
+                        return test_status::FAIL;
+                    }
+                    if (logits_ref) {
+                        uint32_t key_ref[6];
+                        if (fread(key_ref, sizeof(key_ref), 1, logits_ref) != 1 || memcmp(key, key_ref, sizeof(key)) != 0 ||
+                            fread(reference.data(), sizeof(float), n_vocab, logits_ref) != (size_t) n_vocab ||
+                            memcmp(l_gate, reference.data(), n_vocab*sizeof(float)) != 0) {
+                            LOG_ERR("%s: %s: %s: seq %u pos %d logits differ from the gathered same-batch reference\n",
+                                    __func__, sc.name, ph.name, s, (int) pos);
+                            return test_status::FAIL;
+                        }
                     }
                 }
             }
 
+            ++phase_id;
+            const form expect = gathered_multi && ph.streams.size() > 1 ? form::GATHERED : ph.expect;
             n_gdn += probe.n_indexed + probe.n_plain;
             if (probe.n_indexed + probe.n_plain == 0) {
                 continue;
             }
-            if (ph.expect == form::BY_ID && (probe.n_indexed == 0 || probe.n_plain != 0 || probe.n_gathered != 0)) {
+            if (expect == form::BY_ID && (probe.n_indexed == 0 || probe.n_plain != 0 || probe.n_gathered != 0)) {
                 LOG_ERR("%s: %s: %s: ubatches without extra states must read the state by id and gather none\n",
                         __func__, sc.name, ph.name);
                 return test_status::FAIL;
             }
-            if (ph.expect == form::GATHERED && (probe.n_plain == 0 || probe.n_indexed != 0)) {
+            if (expect == form::GATHERED && (probe.n_plain == 0 || probe.n_indexed != 0)) {
                 LOG_ERR("%s: %s: %s: ubatches with extra states must keep the gathered state\n", __func__, sc.name, ph.name);
                 return test_status::FAIL;
             }
         }
+        ++scenario_id;
     }
 
     if (n_gdn == 0) {
         LOG_INF("%s: skipping because the model has no gated delta net\n", __func__);
         return test_status::SKIP;
     }
-    LOG_INF("%s: all scenarios match the single-sequence contexts\n", __func__);
+    LOG_INF("%s: all scenarios pass%s\n", __func__, logits_ref ? " with exact same-batch logits" : " structure and finite-logit checks");
     return test_status::PASS;
 }
 
@@ -899,7 +900,7 @@ static void print_usage(int /* argc */, char ** argv) {
     LOG("\n  %s -m your_model.gguf\n", argv[0]);
     LOG("\n  %s --models tests/test-models\n", argv[0]);
     LOG("\n  %s --state-movers -m your_model.gguf\n", argv[0]);
-    LOG("\n  %s --getter-gate -m your_model.gguf\n", argv[0]);
+    LOG("\n  %s --getter-gate [--getter-logits FILE | --getter-reference FILE] [--getter-gathered] -m your_model.gguf\n", argv[0]);
     LOG("\n");
 }
 
@@ -916,6 +917,8 @@ int main(int argc, char ** argv) {
     std::string models_dir;
     bool state_movers = false;
     bool getter_gate  = false;
+    bool getter_gathered = false;
+    std::string getter_logits, getter_reference;
     std::vector<char *> filtered_argv;
     filtered_argv.push_back(argv[0]);
     for (int i = 1; i < argc; i++) {
@@ -923,6 +926,15 @@ int main(int argc, char ** argv) {
             state_movers = true;
         } else if (strcmp(argv[i], "--getter-gate") == 0) {
             getter_gate = true;
+        } else if (strcmp(argv[i], "--getter-gathered") == 0) {
+            getter_gathered = true;
+        } else if (strcmp(argv[i], "--getter-logits") == 0 || strcmp(argv[i], "--getter-reference") == 0) {
+            if (i + 1 >= argc) {
+                LOG_ERR("%s: %s requires a file argument\n", __func__, argv[i]);
+                return 1;
+            }
+            (strcmp(argv[i], "--getter-logits") == 0 ? getter_logits : getter_reference) = argv[i + 1];
+            ++i;
         } else if (strcmp(argv[i], "--models") == 0) {
             if (i + 1 >= argc) {
                 LOG_ERR("%s: --models requires a directory argument\n", __func__);
@@ -953,19 +965,40 @@ int main(int argc, char ** argv) {
         return init->model() && test_state_movers(params, init->model()) == test_status::PASS ? 0 : 1;
     }
 
+    if ((!getter_logits.empty() || !getter_reference.empty() || getter_gathered) && !getter_gate) {
+        LOG_ERR("%s: getter options require --getter-gate\n", __func__);
+        return 1;
+    }
+    if (!getter_logits.empty() && !getter_reference.empty()) {
+        LOG_ERR("%s: select a getter output or a reference file\n", __func__);
+        return 1;
+    }
     if (getter_gate) {
         auto init = common_init_from_params(params, true);
         if (!init->model()) {
             return 1;
         }
+        FILE * out = getter_logits.empty() ? nullptr : fopen(getter_logits.c_str(), "wb");
+        FILE * ref = getter_reference.empty() ? nullptr : fopen(getter_reference.c_str(), "rb");
+        if ((!getter_logits.empty() && !out) || (!getter_reference.empty() && !ref)) {
+            LOG_ERR("%s: failed to open getter logits file\n", __func__);
+            if (out) { fclose(out); }
+            if (ref) { fclose(ref); }
+            return 1;
+        }
         test_status gate = test_status::SKIP;
         for (uint8_t fill : { 0, 0x3e }) {
-            gate = merge_status(gate, test_getter_gate(params, init->model(), fill));
+            gate = merge_status(gate, test_getter_gate(params, init->model(), fill, out, ref, getter_gathered));
             if (gate == test_status::FAIL) {
                 break;
             }
         }
-        return gate == test_status::FAIL ? 1 : 0;
+        if (out && fclose(out) != 0) { gate = test_status::FAIL; }
+        if (ref) {
+            if (fgetc(ref) != EOF || ferror(ref)) { gate = test_status::FAIL; }
+            fclose(ref);
+        }
+        return gate == test_status::PASS ? 0 : 1;
     }
 
     if (!models_dir.empty()) {
