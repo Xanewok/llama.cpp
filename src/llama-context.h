@@ -387,6 +387,8 @@ private:
     // Every device-to-host copy and graph enqueue of this context goes through here or graph_compute(), which set the flag.
     // Initially true so the first synchronize() is real.
     bool backend_pending = true;
+    int64_t n_sync_elided = 0;
+    int64_t n_sync_missed = 0;
     void tensor_get_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size);
 
     // sequence embeddings output (map of [n_embd] vectors)
