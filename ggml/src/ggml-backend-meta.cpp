@@ -2042,6 +2042,13 @@ struct ggml_backend_meta_context : ggml_backend_meta_graph_plan {
     void *                               comm_ctx       = nullptr;
     ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;
 
+    // Probed on the first owned upload; stays NULL when the backends have no shared staging.
+    bool                                 input_stage_probed = false;
+    void *                               input_stage        = nullptr;
+    ggml_backend_input_stage_free_t      input_stage_free   = nullptr;
+    ggml_backend_input_stage_set_batch_t input_stage_set    = nullptr;
+    std::vector<std::vector<ggml_backend_tensor_transfer>> input_stage_transfers;
+
     ggml_backend_meta_context(ggml_backend_dev_t meta_dev, const char * params) {
         const char * reuse = getenv("GGML_META_PLAN_REUSE");
         plan_reuse = !reuse || atoi(reuse) != 0;
@@ -2078,6 +2085,9 @@ struct ggml_backend_meta_context : ggml_backend_meta_graph_plan {
     }
 
     ~ggml_backend_meta_context() {
+        if (input_stage != nullptr) {
+            input_stage_free(input_stage);
+        }
         if (comm_ctx != nullptr) {
             ggml_backend_comm_free_t comm_free = (ggml_backend_comm_free_t) ggml_backend_reg_get_proc_address(
                 ggml_backend_dev_backend_reg(ggml_backend_get_device(backend_configs[0].backend)), "ggml_backend_comm_free");
@@ -2151,6 +2161,47 @@ static void ggml_backend_meta_set_tensor_async(ggml_backend_t backend, ggml_tens
 
 static void ggml_backend_meta_synchronize(ggml_backend_t backend);
 
+// One host read of the mirrored inputs for every rank. False has no side effects.
+static bool ggml_backend_meta_input_stage_set_batch(ggml_backend_t backend, const ggml_backend_tensor_transfer * transfers, size_t n_transfers) {
+    auto * ctx = (ggml_backend_meta_context *) backend->context;
+    const size_t n_backends = ctx->backend_configs.size();
+    if (!ctx->input_stage_probed) {
+        ctx->input_stage_probed = true;
+        std::vector<ggml_backend_t> simple(n_backends);
+        for (size_t j = 0; j < n_backends; ++j) {
+            simple[j] = ctx->backend_configs[j].backend;
+        }
+        ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(ggml_backend_get_device(simple[0]));
+        auto stage_init = reg ? (ggml_backend_input_stage_init_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_input_stage_init") : nullptr;
+        auto stage_free = reg ? (ggml_backend_input_stage_free_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_input_stage_free") : nullptr;
+        auto stage_set  = reg ? (ggml_backend_input_stage_set_batch_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_input_stage_set_batch") : nullptr;
+        if (stage_init && stage_free && stage_set) {
+            ctx->input_stage = stage_init(simple.data(), n_backends);
+            if (ctx->input_stage) {
+                ctx->input_stage_free = stage_free;
+                ctx->input_stage_set  = stage_set;
+            }
+        }
+    }
+    if (!ctx->input_stage) {
+        return false;
+    }
+    ctx->input_stage_transfers.resize(n_backends);
+    std::vector<ggml_backend_t> simple(n_backends);
+    std::vector<const ggml_backend_tensor_transfer *> per_rank(n_backends);
+    for (size_t j = 0; j < n_backends; ++j) {
+        simple[j] = ctx->backend_configs[j].backend;
+        auto & rank = ctx->input_stage_transfers[j];
+        rank.resize(n_transfers);
+        for (size_t i = 0; i < n_transfers; ++i) {
+            rank[i] = transfers[i];
+            rank[i].tensor = ggml_backend_meta_buffer_simple_tensor(transfers[i].tensor, j);
+        }
+        per_rank[j] = rank.data();
+    }
+    return ctx->input_stage_set(ctx->input_stage, simple.data(), n_backends, per_rank.data(), n_transfers);
+}
+
 static bool ggml_backend_meta_set_tensor_batch_owned(ggml_backend_t backend, const ggml_backend_tensor_transfer * transfers, size_t n_transfers) {
     std::lock_guard<std::recursive_mutex> lock(meta_tensor_mutex);
     const size_t n_backends = ggml_backend_meta_n_backends(backend);
@@ -2165,6 +2216,12 @@ static bool ggml_backend_meta_set_tensor_batch_owned(ggml_backend_t backend, con
         if (state.axis != GGML_BACKEND_SPLIT_AXIS_MIRRORED) {
             return false;
         }
+    }
+    if (n_transfers == 0) {
+        return true;
+    }
+    if (n_backends > 1 && ggml_backend_meta_input_stage_set_batch(backend, transfers, n_transfers)) {
+        return true;
     }
     std::vector<ggml_backend_tensor_transfer> simple_transfers(n_transfers);
     for (size_t j = 0; j < n_backends; ++j) {
