@@ -458,11 +458,16 @@ template <mmq_q8_1_ds_layout ds_layout, bool scatter>
 static __global__ void quantize_mmq_q8_1(
         const float * __restrict__ x, const int32_t * __restrict__ ids, void * __restrict__ vy,
         const int64_t ne00, const int64_t s01, const int64_t s02, const int64_t s03,
-        const int64_t ne0, const int ne1, const int ne2, const int n_expert_used) {
+        const int64_t ne0, const int ne1, const int ne2, const int n_expert_used, const int pdl_mutant) {
 
     // Waits before the early return so that every block is ordered after the producer.
     ggml_cuda_pdl_lc();
     const int pdl_offset = ggml_cuda_pdl_sync_offset();
+    if (pdl_mutant & 8) {
+        for (int i = 0; i < 200; ++i) {
+            __nanosleep(1000);
+        }
+    }
     x += pdl_offset; ids += pdl_offset; vy = (char *) vy + pdl_offset;
 
     constexpr int vals_per_scale = ds_layout == MMQ_Q8_1_DS_LAYOUT_D2S6 ? 64 : 32;
@@ -589,19 +594,22 @@ void quantize_mmq_q8_1_cuda(
     const dim3 block_size(CUDA_QUANTIZE_BLOCK_SIZE_MMQ, 1, 1);
     switch (mmq_get_q8_1_ds_layout(type_src0)) {
         case MMQ_Q8_1_DS_LAYOUT_D4:
-            ggml_cuda_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D4, false>,
+            ggml_cuda_mmq_pdl_log(reinterpret_cast<const void *>(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D4, false>), "quantize", ggml_type_name(type_src0), 0, 0, 0);
+            ggml_cuda_mmq_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D4, false>,
                 ggml_cuda_kernel_launch_params(num_blocks, block_size, 0, stream),
-                x, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2, /*n_expert_used=*/0);
+                x, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2, /*n_expert_used=*/0, ggml_cuda_mmq_pdl_mutant());
             break;
         case MMQ_Q8_1_DS_LAYOUT_DS4:
-            ggml_cuda_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_DS4, false>,
+            ggml_cuda_mmq_pdl_log(reinterpret_cast<const void *>(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_DS4, false>), "quantize", ggml_type_name(type_src0), 0, 0, 0);
+            ggml_cuda_mmq_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_DS4, false>,
                 ggml_cuda_kernel_launch_params(num_blocks, block_size, 0, stream),
-                x, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2, /*n_expert_used=*/0);
+                x, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2, /*n_expert_used=*/0, ggml_cuda_mmq_pdl_mutant());
             break;
         case MMQ_Q8_1_DS_LAYOUT_D2S6:
-            ggml_cuda_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6, false>,
+            ggml_cuda_mmq_pdl_log(reinterpret_cast<const void *>(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6, false>), "quantize", ggml_type_name(type_src0), 0, 0, 0);
+            ggml_cuda_mmq_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6, false>,
                 ggml_cuda_kernel_launch_params(num_blocks, block_size, 0, stream),
-                x, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2, /*n_expert_used=*/0);
+                x, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2, /*n_expert_used=*/0, ggml_cuda_mmq_pdl_mutant());
             break;
         default:
             GGML_ABORT("fatal error");
@@ -622,19 +630,19 @@ void quantize_scatter_mmq_q8_1_cuda(
     const dim3 block_size(CUDA_QUANTIZE_BLOCK_SIZE_MMQ, 1, 1);
     switch (mmq_get_q8_1_ds_layout(type_src0)) {
         case MMQ_Q8_1_DS_LAYOUT_D4:
-            ggml_cuda_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D4, true>,
+            ggml_cuda_mmq_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D4, true>,
                 ggml_cuda_kernel_launch_params(num_blocks, block_size, 0, stream),
-                x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used);
+                x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used, ggml_cuda_mmq_pdl_mutant());
             break;
         case MMQ_Q8_1_DS_LAYOUT_DS4:
-            ggml_cuda_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_DS4, true>,
+            ggml_cuda_mmq_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_DS4, true>,
                 ggml_cuda_kernel_launch_params(num_blocks, block_size, 0, stream),
-                x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used);
+                x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used, ggml_cuda_mmq_pdl_mutant());
             break;
         case MMQ_Q8_1_DS_LAYOUT_D2S6:
-            ggml_cuda_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6, true>,
+            ggml_cuda_mmq_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6, true>,
                 ggml_cuda_kernel_launch_params(num_blocks, block_size, 0, stream),
-                x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used);
+                x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used, ggml_cuda_mmq_pdl_mutant());
             break;
         default:
             GGML_ABORT("fatal error");
