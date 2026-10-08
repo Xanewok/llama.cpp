@@ -1,4 +1,4 @@
-priority = 30
+priority = 31
 id = "fold-mseq-np2-real-j5q"
 kind = "depth"
 title = "fold-mseq vs stack7: J5q real prompts, k3, np2, catch-up fold off vs on; chain off both"
@@ -128,14 +128,14 @@ LLAMA_MTP_CHAIN = "0"
 LLAMA_MTP_FOLD_C = "1"
 
 [server]
-args = ["-m", "{model}", "-c", "{ctx}", "-np", "{np}", "-ctk", "q8_0", "-ctv", "q8_0", "-ngl", "99", "-fa", "on", "--spec-type", "draft-mtp", "--spec-draft-n-max", "3", "--spec-draft-n-min", "0", "--spec-draft-p-min", "0", "--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16", "-sm", "tensor", "--tensor-split", "50,50", "-b", "2048", "-ub", "128", "--jinja", "--chat-template-file", "/home/xanewok/repos/qwen38-eval/corpora/templates/swift-leading-instructions-v1.jinja", "--temp", "1", "--top-k", "20", "--top-p", "0.95", "--min-p", "0.05", "--host", "127.0.0.1", "--port", "{port}", "--metrics", "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--backend-sampling", "-t", "8", "-tb", "8", "--spec-draft-vocab", "{draft_vocab}"]
+args = ["-m", "{model}", "-c", "{ctx}", "-np", "{np}", "-ctk", "q8_0", "-ctv", "q8_0", "-ngl", "99", "-fa", "on", "--spec-type", "draft-mtp", "--spec-draft-n-max", "5", "--spec-draft-n-min", "0", "--spec-draft-p-min", "0", "--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16", "-sm", "tensor", "--tensor-split", "50,50", "-b", "2048", "-ub", "128", "--jinja", "--chat-template-file", "/home/xanewok/repos/qwen38-eval/corpora/templates/swift-leading-instructions-v1.jinja", "--temp", "1", "--top-k", "20", "--top-p", "0.95", "--min-p", "0.05", "--host", "127.0.0.1", "--port", "{port}", "--metrics", "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--backend-sampling", "-t", "8", "-tb", "8", "--spec-draft-vocab", "{draft_vocab}"]
 knobs = ["LLAMA_MTP_GRAPH_REUSE", "GGML_META_PLAN_REUSE", "GGML_SCHED_INPUT_STAGING", "LLAMA_ARG_KV_PAD", "LLAMA_ARG_LOG_VERBOSITY", "GGML_CUDA_DEBUG_SSM_CONV", "GGML_CUDA_AR_COPY_STREAMS", "LLAMA_GRAPH_REUSE_DISABLE", "LLAMA_ROUND_TRACE", "GGML_SCHED_DEBUG", "GGML_CUDA_FA_MMA_Q8_0", "LLAMA_MTP_CHAIN", "LLAMA_MTP_FOLD_C", "LLAMA_MTP_FOLD_DEBUG_SWAP_SEQ", "LLAMA_MTP_FOLD_DEBUG_LAYOUT", "LLAMA_STACK7_PROOF", "LLAMA_HOST_TRIMS_SEQRM", "LLAMA_HOST_TRIMS_BULKH", "LLAMA_HOST_TRIMS_VERIFY", "LLAMA_HOST_TRIMS_MUTANT", "LLAMA_HOST_TRIMS_PROOF", "GGML_CUDA_DEBUG_GDN_STATE", "LLAMA_MTP_DRAFT_DUMP", "LLAMA_MTP_CHAIN_DUMP", "LLAMA_MTP_CHAIN_DEBUG_REVERSE_U", "LLAMA_MTP_CHAIN_DEBUG_SHIFT_EMBD", "GGML_ROUND_TRACE_SYNC"]
 boot_cap_s = 300
 request_cap_s = 600
 
 [depth]
 depths = [8192, 32768, 90112]
-k = 3
+k = 5  # served duo k
 streams = 2
 identity = "off"
 min_steady_intervals = 40
