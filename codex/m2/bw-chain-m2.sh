@@ -75,7 +75,7 @@ cuda_stage() {
     [[ $n == 25 ]] || { echo "expected 25 DeviceTopK strings (CCCL v3.4.3)"; return 1; }
     local short; short=$(git rev-parse --short HEAD)
     strings build-cuda/bin/libggml-base.so | grep -x "$short" >/dev/null || { echo "ggml stamp $short not in libggml-base.so"; return 1; }
-    strings build-cuda/bin/libllama.so | grep -q 'the batch does not fit the MTP chain' || { echo "M2 chain refusal missing from libllama"; return 1; }
+    strings build-cuda/bin/libllama.so | grep -c 'the batch does not fit the MTP chain' > /dev/null || { echo "M2 chain refusal missing from libllama"; return 1; }
     "$W/bin/wt" freeze "$ROOT" "$NAME" --build build-cuda \
         --desc "stack7 48b82b0d1 + MTP draft chain for several sequences (M2, np2); CUDA 13.2, CCCL343, NCCL OFF; round-trace = cp of llama-server" || return 1
     {
