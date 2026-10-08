@@ -15,4 +15,18 @@ PY
 do
     sleep 1
 done
-exec nice -n 19 "$@"
+exec nice -n 19 python3 - "$@" <<'PY'
+import os, signal, subprocess, sys
+job = subprocess.Popen(sys.argv[1:], start_new_session=True)
+try:
+    sys.exit(job.wait(timeout=600))
+except subprocess.TimeoutExpired:
+    os.killpg(job.pid, signal.SIGTERM)
+    try:
+        job.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        os.killpg(job.pid, signal.SIGKILL)
+        job.wait()
+    print('FAIL model gate exceeded 10 min', flush=True)
+    sys.exit(124)
+PY

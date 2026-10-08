@@ -32,7 +32,7 @@ for meta in (0,1):
     shapes = []
     for chain in (0,1):
         log=(p/f'{meta}-{chain}.log').read_text()
-        assert 'LLAMA_MTP_FOLD_C ignored: needs one sequence' in log, (meta,chain,'fold gate not engaged')
+        assert 'mtp_fold_decode: engaged n_seq=2' in log, (meta,chain,'joint fold did not engage')
         assert 'MTP chain: k=' not in log, (meta,chain,'chain engaged at np2')
         phases = [ph for line in (p/f'{meta}-{chain}.trace.jsonl').read_text().splitlines()
                   for ph in json.loads(line)['phases']]
@@ -45,5 +45,5 @@ for meta in (0,1):
     off_dump = (p/f'{meta}-0.dump.txt').read_text()
     on_dump = (p/f'{meta}-1.dump.txt').read_text()
     assert off_dump and off_dump == on_dump, (meta,'draft IDs, candidates or q changed')
-print('np2 chain fallback, fold gate, shapes and draft identity PASS')
+print('np2 chain fallback, joint fold, shapes and draft identity PASS')
 PY

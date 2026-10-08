@@ -1,6 +1,6 @@
-purpose: stack7 + chain-np2 fix + cand-neginf; window CPU on Mac, CUDA freeze local
-base: ddedffacb3dd84790292e2c660c1f585d8d08dee
+purpose: stack9 = stack8 + np2 getter (np2-kernels) + multi-seq fold C (fold-mseq); Codex assembly + window
+base: 5df0dbffc7b6ac753dc4521387f36098a01893bb
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack8
-created: 2026-10-07T23:59:10+02:00
+branch: topic/stack9
+created: 2026-10-08T11:24:45+02:00
 creator: xanewok

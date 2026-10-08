@@ -55,12 +55,13 @@ int main(int argc, char ** argv) {
     if (std::getenv("HOST_KV_Q8")) {
         params.cache_type_k = params.cache_type_v = GGML_TYPE_Q8_0;
     }
-    params.cpuparams.n_threads = params.cpuparams_batch.n_threads = meta ? 4 : 8;
+    params.cpuparams.n_threads = params.cpuparams_batch.n_threads = std::getenv("NP2_THREADS") ? std::atoi(std::getenv("NP2_THREADS")) : meta ? 4 : 8;
     if (std::getenv("BW_CPU_ONLY")) {
-        params.cpuparams.n_threads = params.cpuparams_batch.n_threads = 4;
+        params.cpuparams.n_threads = params.cpuparams_batch.n_threads = std::min(4, params.cpuparams.n_threads);
     }
     params.speculative.types = {COMMON_SPECULATIVE_TYPE_DRAFT_MTP};
-    params.speculative.draft.n_max = 3;
+    params.speculative.draft.n_max = std::getenv("NP2_N_MAX") ? std::atoi(std::getenv("NP2_N_MAX")) : 3;
+    params.kv_unified = std::getenv("NP2_KV_UNIFIED") && std::atoi(std::getenv("NP2_KV_UNIFIED"));
     params.speculative.draft.n_min = 0;
     params.speculative.draft.p_min = 0;
     params.speculative.draft.probabilistic = true;
@@ -85,6 +86,7 @@ int main(int argc, char ** argv) {
     }
     server_context server;
     require(server.load_model(params), "model load failed");
+    const auto logit_bias_eog = server.get_meta().logit_bias_eog;
 
     // slot 0: short prompt, slot 1: long prompt, so slot 1 prefills in several batches while slot 0 already drafts
     // (mixed prompt/decode batches). Phase 1 starts cold; phase 2 repeats the prompts and so takes the prefix-reuse
@@ -109,9 +111,11 @@ int main(int argc, char ** argv) {
                 task.id = reader.get_new_id();
                 task.id_slot = slot;
                 task.cli = true;
-                task.cli_prompt = prompts[slot];
-                task.params.n_predict = std::atoi(argv[6]) + 16 * slot;
+                const bool mixed = slot == 1 && std::getenv("NP2_MIXED");
+                task.cli_prompt = mixed ? "Continue the letters a, b, c, d:" : prompts[slot];
+                task.params.n_predict = mixed ? 2 : std::atoi(argv[6]) + 16 * slot;
                 task.params.return_tokens = true;
+
                 task.params.cache_prompt = true;
                 task.params.stream = true;
                 task.params.sampling.seed = std::strtoul(argv[5], nullptr, 10) + slot;
@@ -119,6 +123,9 @@ int main(int argc, char ** argv) {
                 task.params.sampling.top_k = 20;
                 task.params.sampling.top_p = 0.95f;
                 task.params.sampling.min_p = 0.05f;
+                task.params.sampling.ignore_eos = true;
+                // Direct tasks must apply the EOG biases normally added by the request schema.
+                task.params.sampling.logit_bias = logit_bias_eog;
                 task.params.sampling.backend_sampling = true;
                 tasks.push_back(std::move(task));
             }
@@ -138,7 +145,7 @@ int main(int argc, char ** argv) {
                     ids.insert(ids.end(), partial->tokens.begin(), partial->tokens.end());
                 }
                 if (auto * final = dynamic_cast<server_task_result_cmpl_final *>(result.get())) {
-                    require(final->stats.n_draft_tokens > 0 && final->stats.n_draft_verif_steps > 0, "MTP did not engage");
+                    require((final->index == 1 && std::getenv("NP2_MIXED")) || (final->stats.n_draft_tokens > 0 && final->stats.n_draft_verif_steps > 0), "MTP did not engage");
                     require(final->index >= 0 && final->index < np && !seen[final->index], "bad or duplicate result index");
                     seen[final->index] = true;
                     by_slot[final->index] = json{{"slot", final->index}, {"draft", final->stats.n_draft_tokens},
@@ -154,7 +161,7 @@ int main(int argc, char ** argv) {
             }
             json token_rows = json::array();
             for (int slot = 0; slot < np; ++slot) {
-                require(tokens[slot].size() == (size_t) (std::atoi(argv[6]) + 16 * slot), "short completion");
+                require(tokens[slot].size() == (size_t) (slot == 1 && std::getenv("NP2_MIXED") ? 2 : std::atoi(argv[6]) + 16 * slot), "short completion");
                 json row = json::array();
                 for (llama_token token : tokens[slot]) {
                     row.push_back(token);
