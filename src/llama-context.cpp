@@ -2045,7 +2045,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
     if (fold_h && mtp_fold_dft && cparams.embeddings_nextn && !cparams.embeddings_nextn_masked && loras->empty()) {
         const auto & ubatch = mctx->get_ubatch();
         if (ubatch.n_tokens == n_tokens_all && ubatch.n_tokens <= mtp_fold_max_tokens &&
-                ubatch.token && !ubatch.embd && ubatch.n_pos == 1 && ubatch.data) {
+                ubatch.token && !ubatch.embd && ubatch.data) {
             bool same_order = true;
             for (uint32_t i = 0; i < ubatch.n_tokens; ++i) {
                 same_order = same_order && ubatch.data->batch_idxs[i] == (int32_t) i &&
