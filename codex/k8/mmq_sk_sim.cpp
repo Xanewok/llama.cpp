@@ -22,6 +22,7 @@ struct launch {
     int I;      // rows per block tile (64 or 128)
     int group;  // blocks per partition tile (default I / I)
     int nparts;
+    bool bug_sub = false; // negative control: the fixup reads the partials of sub-block 0 only
 };
 
 static bool tiling_efficient(int ntiles, int nsm) {
@@ -117,7 +118,7 @@ static std::vector<float> run(const shape & s, const launch & L, const std::vect
             if (kbc == kbc_stop) { bidx--; kbc_stop = kbc; continue; }
             any = true;
             for (int gi = 0; gi < rg_per_tile; ++gi) {
-                sum[gi] += tmp[(size_t) (bidx * L.group + sub) * rg_per_tile + gi];
+                sum[gi] += tmp[(size_t) (bidx * L.group + (L.bug_sub ? 0 : sub)) * rg_per_tile + gi];
             }
             if (kbc % kb == 0 || kbc / kb < kbc0 / kb) { break; }
             bidx--;
@@ -195,12 +196,45 @@ int main() {
         (np == ntiles128 ? plain : split)++;
     }
 
+    // Negative control for the completeness check itself: a fixup that mixes up the sub-blocks must fail it.
+    size_t bug_caught = 0, bug_total = 0;
+    for (int rows : { 3072, 5120, 6144 }) {
+        shape s = { rows, 16, 12, 1, 1, 20, 1, 36 };
+        const size_t nelem = (size_t) (rows / 64) * s.ntx() * s.nz();
+        std::vector<float> it(nelem * 20 * 2), ex(nelem, 0.0f);
+        for (size_t i = 0; i < it.size(); ++i) { it[i] = (float) (int) (rng() % 7) - 3.0f; }
+        for (size_t e = 0; e < nelem; ++e) { for (int i = 0; i < 40; ++i) { ex[e] += it[e * 40 + i]; } }
+        launch B = { 64, 2, plan_nparts(s, 128, 128), true };
+        bug_total++;
+        bug_caught += ndiff(run(s, B, it), ex) != 0;
+    }
+
+    // What the window's hash gates must see at 36 SMs (the RTX 5060 Ti), per np2 model shape: 1 = bits differ from the default tile.
+    printf("model shapes at nsm=36 (k=5120, kb=20): rows cols default K8 L1-own-grid forced(grid=nsm) misaligned\n");
+    for (int rows : { 1024, 2688, 3072, 5120, 5248, 6144, 8704, 9216, 11520, 17408 }) {
+        for (auto c : { std::pair<int, int>{ 16, 12 }, std::pair<int, int>{ 24, 24 } }) {
+            shape s = { rows, c.first, c.second, 1, 1, 20, 1, 36 };
+            const int np = plan_nparts(s, 128, 128);
+            const int ntiles128 = ((rows + 127) / 128) * s.ntx();
+            const size_t nelem = (size_t) (rows / 64) * s.ntx() * s.nz();
+            std::vector<float> terms(nelem * 20 * 2);
+            std::uniform_real_distribution<float> mant(-1.0f, 1.0f);
+            std::uniform_int_distribution<int> expo(-6, 8);
+            for (float & t : terms) { t = std::ldexp(mant(rng), expo(rng)); }
+            const std::vector<float> d = run(s, { 128, 1, np }, terms);
+            printf("  %6d %2d %-8s %d %d %d %d\n", rows, c.second, np == ntiles128 ? "plain" : "stream-k",
+                   (int) (ndiff(d, run(s, { 64, 2, np }, terms)) != 0), (int) (ndiff(d, run(s, { 64, 1, plan_nparts(s, 64, 64) }, terms)) != 0),
+                   (int) (ndiff(d, run(s, { 64, 1, 36 }, terms)) != 0), (int) (ndiff(d, run(s, { 64, 2, 37 }, terms)) != 0));
+        }
+    }
+    printf("fixup sub-block mix-up caught by the completeness check: %zu/%zu (must be all)\n", bug_caught, bug_total);
+
     printf("cases=%zu default_plain=%zu default_streamk=%zu\n", cases, plain, split);
     printf("K8 partition vs default tile: %zu cases differ (must be 0)\n", aligned_bad);
     printf("integer-term completeness failures over all variants: %zu (must be 0)\n", exact_bad);
     printf("negative controls, cases whose bits differ from the default tile: L1 own-tile grid %zu/%zu, forced small grid=nsm %zu/%zu, misaligned %zu/%zu (each must be > 0)\n",
            d_l1, n_l1, d_force, n_force, d_mut, n_mut);
-    const bool ok = aligned_bad == 0 && exact_bad == 0 && d_l1 > 0 && d_force > 0 && d_mut > 0;
+    const bool ok = aligned_bad == 0 && exact_bad == 0 && d_l1 > 0 && d_force > 0 && d_mut > 0 && bug_caught == bug_total;
     printf("%s\n", ok ? "PASS" : "FAIL");
     return ok ? 0 : 1;
 }
