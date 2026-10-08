@@ -4,7 +4,7 @@ kind = "depth"
 title = "L1 shape-gated small-I MMQ tiles vs stack8: J5q real prompts, untraced, k5, np2 serving profile (chain/fold off both arms); 12-column verify GEMMs at gated shapes use 128-thread I=64 tiles"
 # Expected (D/G): -0.27..-0.45 ms/round at np2 J5q, about -0.5 IQ4 (spike per-shape derivation, D); the earlier -0.5..-1 ms/round was a guess (G).
 # Negative control by record: the stack8 arm has no mmq_tiles code (its canary logs none); the l1 canary requires `mmq_tiles: ... cols=12 ... small_i=1`.
-# Kernel-level same-binary null (auto-drop, A/A) is in l1-mmq-perf; exactness in l1-mmq-cuda-checks (this item runs after it).
+# Kernel-level same-binary null (auto-drop, A/A) is in l1-mmq-perf; exactness in l1-mmq-cuda-checks (submit it first; gpuq v1 has no dependencies).
 plan = ["up", "patch", "patch", "up"]
 devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
 out = "/home/xanewok/repos/qwen38-eval/results/@DATE@-l1-mmq-np2-real-j5q"
@@ -115,4 +115,4 @@ preflight = "preflight-plan"
 
 [cpu_evidence]
 path = "@EVIDENCE@"
-command = "bw-l1-mmq-smallj: CUDA 13.2 build of the L1 commit, freeze, string/stamp checks. Exactness evidence is the GPU item l1-mmq-cuda-checks (queued before this one via `after`); no CPU-side gate exists for a CUDA-only kernel."
+command = "bw-l1-mmq-smallj: CUDA 13.2 build of the L1 commit, freeze, string/stamp checks. Exactness evidence is the GPU item l1-mmq-cuda-checks (submit and run it before this one; gpuq v1 has no item dependencies); no CPU-side gate exists for a CUDA-only kernel."

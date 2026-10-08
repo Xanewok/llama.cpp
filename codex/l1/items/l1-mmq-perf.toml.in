@@ -5,7 +5,6 @@ title = "L1 small-I MMQ tiles kernel timing on both RTX 5060 Ti: test-backend-op
 # Expected (D from the spike per-shape data): auto - default -3..-11 us at m=8704 k=5120 (IQ4_XS, Q4_K, Q5_K, Q6_K) and about -80 us at Q6_K 124160;
 # 0 at m=3072/5120/6144 and Q8_0 (gate rejects, same stock kernel); auto-drop - default within the default A/A spread everywhere.
 priority = 29
-after = ["l1-mmq-cuda-checks"]
 kind = "measure"
 host_sensitive = false
 budget_s = 7800

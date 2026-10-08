@@ -18,7 +18,6 @@ DRAFTS = EVAL / 'orchestration/gpuq/items/drafts'
 CCX01 = W / 'work/aa-load/ccx01.sh'
 WRAPPER = W / 'wt/stack7/codex/gpu_ab.sh'  # untraced stack7 entry, so ms/round compares with the stack7/stack8 np2 items
 FROZEN = W / 'frozen/l1-mmq-smallj'
-AFTER = 'l1-mmq-cuda-checks'
 
 
 def ccx01_copy(text):
@@ -31,16 +30,14 @@ def ccx01_copy(text):
             assert item[section]['cmd'][0] == 'bash'
             line = 'cmd = ' + json.dumps(['bash', str(CCX01), *item[section]['cmd']])
         out.append(line)
-        if line.startswith('priority = '):
-            out.append(f'after = ["{AFTER}"]')
-            if 'host_sensitive' not in item:
-                out.append('host_sensitive = false')
+        if line.startswith('priority = ') and 'host_sensitive' not in item:
+            out.append('host_sensitive = false')
     text = '\n'.join(out) + '\n'
     text, n = re.subn(r'(?m)^files = \[\n', f'files = [\n  "{CCX01}",\n', text, count=1)
     assert n == 1
     parsed = tomllib.loads(text)
     assert parsed['run']['cmd'][1] == str(CCX01) and parsed['canary']['cmd'][1] == str(CCX01)
-    assert parsed['host_sensitive'] is False and parsed['priority'] == 29 and parsed['after'] == [AFTER]
+    assert parsed['host_sensitive'] is False and parsed['priority'] == 29
     assert str(CCX01) in parsed['pins']['files']
     return text
 
