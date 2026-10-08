@@ -319,6 +319,9 @@ struct gdn_probe {
     int     n_indexed_multi = 0;
     int     n_plain_single  = 0;
     int64_t n_gathered      = 0;
+    int     n_conv_rs       = 0; // convolutions that read their state by id and write the snapshots
+    int     n_conv_plain    = 0; // convolutions of a gathered, concatenated state
+    int64_t n_conv_gathered = 0; // conv state rows that get_rows copies
     std::set<ggml_tensor *> rotations;
     bool rotation_ok = true;
 };
@@ -357,6 +360,8 @@ static bool gdn_probe_cb(ggml_tensor * t, bool ask, void * user_data) {
             ++probe->n_plain_single;
         }
     }
+    probe->n_conv_rs    += t->op == GGML_OP_SSM_CONV_RS;
+    probe->n_conv_plain += t->op == GGML_OP_SSM_CONV;
     const ggml_tensor * src = t->op == GGML_OP_GET_ROWS ? t->src[0] : nullptr;
     if (src && src->view_src) {
         src = src->view_src;
@@ -364,12 +369,20 @@ static bool gdn_probe_cb(ggml_tensor * t, bool ask, void * user_data) {
     if (src && strncmp(src->name, "cache_s_l", 9) == 0) {
         probe->n_gathered += t->ne[1];
     }
+    if (src && strncmp(src->name, "cache_r_l", 9) == 0) {
+        probe->n_conv_gathered += t->ne[1];
+    }
     return rotation;
 }
 
 // Compare getter and gather builds on identical batches; single-sequence batches can use different arithmetic.
+enum class conv_form { ANY, RS, GATHERED };
+
+// n_rs_seq is the rollback depth of the context; at 0 the state is read and written as one slot and the gated delta net
+// keeps its gather, so only the convolution is checked.
 static test_status test_getter_gate(const common_params & params, llama_model * model, uint8_t fill,
-                                   FILE * logits_out = nullptr, FILE * logits_ref = nullptr, bool gathered_multi = false) {
+                                   FILE * logits_out = nullptr, FILE * logits_ref = nullptr, bool gathered_multi = false,
+                                   conv_form conv_expect = conv_form::ANY, uint32_t n_rs_seq = 8) {
     const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
 
     constexpr uint32_t n_ubatch = 16;
@@ -378,7 +391,7 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
     const auto make_ctx_gate = [&](uint32_t n_seq) {
         auto cparams = common_context_params_to_llama(params);
         cparams.n_seq_max  = n_seq;
-        cparams.n_rs_seq   = 8;
+        cparams.n_rs_seq   = n_rs_seq;
         cparams.n_ctx      = 256*n_seq;
         cparams.n_batch    = 256;
         cparams.n_ubatch   = n_ubatch;
@@ -399,11 +412,13 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
         std::vector<uint32_t> streams;
         llama_pos             p0, p1, out_from;
         form                  expect;
+        llama_pos             rm_from = -1; // first position the streams give back before the batch: the state comes from a snapshot
     };
     struct scenario {
         const char *       name;
         uint32_t           n_seq;
         std::vector<phase> phases;
+        bool               rollback = false; // needs snapshots
     };
     const std::vector<scenario> scenarios = {
         { "two slots", 2, {
@@ -421,6 +436,22 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
             { "verify batch, both seqs",   { 0, 1 }, 19, 25, 19, form::BY_ID },
             { "decode, both seqs",         { 0, 1 }, 25, 26, 25, form::BY_ID },
         } },
+        // a verify batch where three tokens are accepted: the next batch reads the snapshot that precedes the rest
+        { "accepted slot", 2, {
+            { "prefill seq 0",             { 0 },    0, 19, 18, form::BY_ID },
+            { "prefill seq 1",             { 1 },    0, 19, 18, form::BY_ID },
+            { "verify batch, both seqs",   { 0, 1 }, 19, 25, 19, form::BY_ID },
+            { "replay after rollback",     { 0, 1 }, 22, 26, 22, form::BY_ID, 22 },
+            { "decode, both seqs",         { 0, 1 }, 26, 27, 26, form::BY_ID },
+        }, true },
+        // the same with the cells swapped and one token accepted: the oldest snapshot of the batch
+        { "accepted slot, swapped cells", 2, {
+            { "prefill seq 1",             { 1 },    0, 19, 18, form::BY_ID },
+            { "prefill seq 0",             { 0 },    0, 19, 18, form::BY_ID },
+            { "verify batch, both seqs",   { 0, 1 }, 19, 25, 19, form::BY_ID },
+            { "replay after rollback",     { 0, 1 }, 20, 26, 20, form::BY_ID, 20 },
+            { "decode, both seqs",         { 0, 1 }, 26, 27, 26, form::BY_ID },
+        }, true },
         // both start from the shared zero state in one batch
         { "joint start", 2, {
             { "prefill both seqs",         { 0, 1 }, 0, 12, 11, form::BY_ID },
@@ -439,15 +470,19 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
     };
 
     int n_gdn = 0;
+    int n_conv = 0;
     uint32_t scenario_id = 0;
     std::vector<float> reference(n_vocab);
     for (const auto & sc : scenarios) {
+        if (sc.rollback && n_rs_seq == 0) {
+            continue;
+        }
         llama_context_ptr ctx_gate = make_ctx_gate(sc.n_seq);
         if (!ctx_gate) {
             LOG_ERR("%s: %s: failed to init context\n", __func__, sc.name);
             return test_status::FAIL;
         }
-        if (llama_n_rs_seq(ctx_gate.get()) == 0) {
+        if (llama_n_rs_seq(ctx_gate.get()) != n_rs_seq) {
             LOG_INF("%s: skipping because n_rs_seq is disabled\n", __func__);
             return test_status::SKIP;
         }
@@ -457,6 +492,10 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
             probe = {};
             common_batch batch(ctx_gate.get());
             for (uint32_t s : ph.streams) {
+                if (ph.rm_from >= 0 && !llama_memory_seq_rm(llama_get_memory(ctx_gate.get()), (llama_seq_id) s, ph.rm_from, -1)) {
+                    LOG_ERR("%s: %s: %s: rollback of seq %u to %d failed\n", __func__, sc.name, ph.name, s, (int) ph.rm_from);
+                    return test_status::FAIL;
+                }
                 for (llama_pos pos = ph.p0; pos < ph.p1; ++pos) {
                     batch.add(tok(s, pos), pos, (llama_seq_id) s, pos >= ph.out_from);
                 }
@@ -476,6 +515,20 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
             }
             LOG_INF("%s: %s: %s: gdn nodes %d by id, %d gathered; state rows gathered %" PRId64 "\n", __func__,
                     sc.name, ph.name, probe.n_indexed, probe.n_plain, probe.n_gathered);
+            LOG_INF("%s: %s: %s: conv nodes %d by id, %d gathered; state rows gathered %" PRId64 "\n", __func__,
+                    sc.name, ph.name, probe.n_conv_rs, probe.n_conv_plain, probe.n_conv_gathered);
+            n_conv += probe.n_conv_rs + probe.n_conv_plain;
+            // Extra cached states are moved by a gather that the convolution must not replace.
+            const bool conv_extras = ph.expect == form::GATHERED;
+            if (conv_expect == conv_form::RS && (probe.n_conv_rs == 0 || probe.n_conv_plain != 0 ||
+                                                 (probe.n_conv_gathered != 0) != conv_extras)) {
+                LOG_ERR("%s: %s: %s: the convolution must read its state by id and gather only extra states\n", __func__, sc.name, ph.name);
+                return test_status::FAIL;
+            }
+            if (conv_expect == conv_form::GATHERED && (probe.n_conv_rs != 0 || probe.n_conv_plain == 0)) {
+                LOG_ERR("%s: %s: %s: the convolution must keep the gathered state\n", __func__, sc.name, ph.name);
+                return test_status::FAIL;
+            }
 
             for (size_t j = 0; j < ph.streams.size(); ++j) {
                 const uint32_t s = ph.streams[j];
@@ -510,6 +563,9 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
             if (probe.n_indexed + probe.n_plain == 0) {
                 continue;
             }
+            if (n_rs_seq == 0) {
+                continue;
+            }
             // A phase with several streams can split into single-sequence ubatches.
             if (gathered_multi) {
                 if (probe.n_indexed_multi != 0 || probe.n_plain_single != 0 || (probe.n_plain == 0 && probe.n_gathered != 0)) {
@@ -534,6 +590,10 @@ static test_status test_getter_gate(const common_params & params, llama_model * 
     if (n_gdn == 0) {
         LOG_INF("%s: skipping because the model has no gated delta net\n", __func__);
         return test_status::SKIP;
+    }
+    if (n_conv == 0) {
+        LOG_ERR("%s: no convolution node was observed\n", __func__);
+        return test_status::FAIL;
     }
     LOG_INF("%s: all scenarios pass%s\n", __func__, logits_ref ? " with exact same-batch logits" : " structure and finite-logit checks");
     return test_status::PASS;
@@ -945,7 +1005,8 @@ static void print_usage(int /* argc */, char ** argv) {
     LOG("\n  %s -m your_model.gguf\n", argv[0]);
     LOG("\n  %s --models tests/test-models\n", argv[0]);
     LOG("\n  %s --state-movers -m your_model.gguf\n", argv[0]);
-    LOG("\n  %s --getter-gate [--getter-logits FILE | --getter-reference FILE] [--getter-gathered] -m your_model.gguf\n", argv[0]);
+    LOG("\n  %s --getter-gate [--getter-logits FILE | --getter-reference FILE] [--getter-gathered]"
+        " [--conv-expect rs|gathered] [--getter-rs-seq N] -m your_model.gguf\n", argv[0]);
     LOG("\n");
 }
 
@@ -964,6 +1025,8 @@ int main(int argc, char ** argv) {
     bool getter_gate  = false;
     bool getter_gathered = false;
     std::string getter_logits, getter_reference;
+    conv_form conv_expect = conv_form::ANY;
+    uint32_t getter_rs_seq = 8;
     std::vector<char *> filtered_argv;
     filtered_argv.push_back(argv[0]);
     for (int i = 1; i < argc; i++) {
@@ -979,6 +1042,22 @@ int main(int argc, char ** argv) {
                 return 1;
             }
             (strcmp(argv[i], "--getter-logits") == 0 ? getter_logits : getter_reference) = argv[i + 1];
+            ++i;
+        } else if (strcmp(argv[i], "--conv-expect") == 0 || strcmp(argv[i], "--getter-rs-seq") == 0) {
+            if (i + 1 >= argc) {
+                LOG_ERR("%s: %s requires an argument\n", __func__, argv[i]);
+                return 1;
+            }
+            if (strcmp(argv[i], "--getter-rs-seq") == 0) {
+                getter_rs_seq = (uint32_t) atoi(argv[i + 1]);
+            } else if (strcmp(argv[i + 1], "rs") == 0) {
+                conv_expect = conv_form::RS;
+            } else if (strcmp(argv[i + 1], "gathered") == 0) {
+                conv_expect = conv_form::GATHERED;
+            } else {
+                LOG_ERR("%s: --conv-expect takes rs or gathered\n", __func__);
+                return 1;
+            }
             ++i;
         } else if (strcmp(argv[i], "--models") == 0) {
             if (i + 1 >= argc) {
@@ -1010,7 +1089,8 @@ int main(int argc, char ** argv) {
         return init->model() && test_state_movers(params, init->model()) == test_status::PASS ? 0 : 1;
     }
 
-    if ((!getter_logits.empty() || !getter_reference.empty() || getter_gathered) && !getter_gate) {
+    if ((!getter_logits.empty() || !getter_reference.empty() || getter_gathered || conv_expect != conv_form::ANY ||
+         getter_rs_seq != 8) && !getter_gate) {
         LOG_ERR("%s: getter options require --getter-gate\n", __func__);
         return 1;
     }
@@ -1033,7 +1113,7 @@ int main(int argc, char ** argv) {
         }
         test_status gate = test_status::SKIP;
         for (uint8_t fill : { 0, 0x3e }) {
-            gate = merge_status(gate, test_getter_gate(params, init->model(), fill, out, ref, getter_gathered));
+            gate = merge_status(gate, test_getter_gate(params, init->model(), fill, out, ref, getter_gathered, conv_expect, getter_rs_seq));
             if (gate == test_status::FAIL) {
                 break;
             }
