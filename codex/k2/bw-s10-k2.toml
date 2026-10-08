@@ -1,0 +1,46 @@
+id = "bw-s10-k2"
+title = "K2 shared FA KV-max scan: CUDA build, byte identity, replay, overwrite controls and perf pairs; Mac CPU gates required"
+kind = "filler"
+priority = 18
+host_sensitive = false
+preemptible = false
+# G: 2400 s; D: 7200 s cap includes compilation, the whole FLASH_ATTN_EXT suite on both devices and the ABBA perf pairs.
+est_s = 2400
+budget_s = 7200
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-s10-k2: FAIL" }]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/codex/bw-s10-k2.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/codex/window/s10-k2-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0", GPUQ_BUILD_WINDOW = "1" }
+ports = []
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/codex/bw-s10-k2.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/codex/window/s10-k2-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/codex/window/s10-k2-a{attempt}/payload.log"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "stages", "controls"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/codex/bw-s10-k2.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/codex/bw-s10-k2.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/codex/s10_k2_perf.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/codex/s10-k2-evidence/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/ggml/src/ggml-cuda/ggml-cuda.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/ggml/src/ggml-cuda/common.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/ggml/src/ggml-cuda/fattn-common.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/ggml/src/ggml-cuda/fattn-kv-max-cache.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/tests/test-backend-ops.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/tests/test-fattn-kv-max-cache.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k2/tests/CMakeLists.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+]
