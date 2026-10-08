@@ -81,7 +81,7 @@ def fixture_checks():
     from harness import lib, mkitem
     root = Path(__file__).resolve().parent
     with tempfile.TemporaryDirectory(dir=root.parent) as tmp:
-        for source in (root/'items').glob('s10c-*.toml.in'):
+        for source in (root/'items').glob('s10c2-*.toml.in'):
             p = Path(tmp)/source.name.removesuffix('.in')
             p.write_text(source.read_text().replace('@STACK10_SHA@', '0'*40))
             x = lib.read_experiment(p)
@@ -130,8 +130,8 @@ def fixture_checks():
     assert counter_match(runs, ['up','patch'])[0]
     runs[1]['streams'][0]['timings']['draft_n_accepted'] += 1
     assert not counter_match(runs, ['up','patch'])[0], 'real-record counter mutation escaped'
-    window = tomllib.loads((root/'bw-stack10-cand.toml').read_text())
-    assert window['kind'] == 'filler' and window['priority'] == 19
+    window = tomllib.loads((root/'bw-s10c-fafix.toml').read_text())
+    assert window['kind'] == 'filler' and window['priority'] == 21
     assert window['host_sensitive'] is False and window['preemptible'] is False
     assert window['run']['env']['CUDA_VISIBLE_DEVICES'].startswith('GPU-')
     print('stack10 recorded parsers, engagement negative controls, item structure PASS')

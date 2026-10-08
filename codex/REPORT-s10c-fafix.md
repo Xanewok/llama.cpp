@@ -1,0 +1,50 @@
+# s10c-fafix: restore stack9 SASS for the multi-query q8_0 verify FA instances
+
+Tree `wt/s10c-fafix`, branch `topic/s10c-fafix`, base `0cfc0723e` (frozen/stack10-cand). Not compiled for CUDA here (no nvcc use). The first version of the fix (`05ef88569`) failed the stage-40 build: `GGML_ASSERT(...one_row<DKQ, DV, ...>() || ...)` split into 5 macro arguments. Fixed in `2efa6f8dc` (hoisted to `constexpr bool one_row`); `05ef88569` is superseded.
+
+## Commits
+- `2efa6f8dc` (was `05ef88569`; rebase dependents onto this) `cuda : keep the multi-query q8_0 MMA FA path free of single-query decode code`: one file, `ggml/src/ggml-cuda/fattn-mma-f16.cuh`. Fixup-ready for `a1fff47fc` (`git commit --fixup a1fff47fc` equivalent; keep separate until squashed).
+- `3e80343bc`-style codex commit on top (hash moves on amend): window, item template, gate scripts, patches, this report. No CPU source touched, so no Mac gate.
+
+## Fix
+A compile-time predicate `flash_attn_ext_f16_q8_0_one_row<DKQ,DV,ncols1,ncols2,type_KV>()` = q8_0 and not (`ncols1 > 1` and `ggml_cuda_flash_attn_ext_mma_q8_0_instance`), i.e. every q8_0 instance except `<256,256,4|8,8>`. It selects, per instance:
+- `flash_attn_ext_f16_load_tile_q8_0<..., one_row>`: one_row = a1fff47fc loader (byte stride, per-iteration `c >= nchunks` break, 2-byte fallback); else the stack9 loader verbatim (half2 stride scaled inside, last-iteration-only guard, `static_assert(row_bytes % 16 == 0)`).
+- `flash_attn_ext_f16_dequantize_tile_q8_0<..., one_row>`: `!one_row || D % 64 == 0` takes the stack9 pair loop (textually identical to a1fff47fc's `D % 64` branch, so decode is unchanged); the block-wise fallback only for one_row with other head sizes.
+- `flash_attn_ext_f16_load_tile_q8_0_partial` calls (nstages <= 1) under `if constexpr (one_row)`.
+- sink mask `one_row && zt_gqa*ncols2 + c >= gqa_ratio ? -INF : sinks_f[c]`; kernel strides `one_row ? nb11 : nb11/sizeof(half2)` (same for V); stack9 prologue guard `!one_row && type_KV != F16 && nstages <= 1` restored (a1fff47fc's `#ifndef CP_ASYNC_AVAILABLE` guard kept for all q8_0).
+- host `ggml_cuda_flash_attn_ext_mma_f16_case`: stack9 `DKQ == DV` and `nstages > 1` checks restored for non-one_row (host-only).
+- `ggml_cuda_flash_attn_ext_mma_q8_0_instance` moved above first use and made `__host__ __device__`.
+All hunks of a1fff47fc in this file are covered; for the verify instances every device-side hunk now folds to the stack9 text, so the IR should equal stack9's. D: not compiled here.
+
+## Package patches (read-only package not edited)
+- `codex/pkg54-fix/01-keep-multi-query-q8-fa-free-of-one-row.patch`: `git format-patch` of `2efa6f8dc` (applies on the stack10 line).
+- `codex/pkg54-fix/local/01-keep-multi-query-q8-fa-free-of-one-row.patch`: same change for package-local (BASE `6ef137376` + `local/01`). `git apply --check` passes on that state (M, scratch replay). There `ggml_cuda_flash_attn_ext_mma_q8_0_instance` also lists `ncols1 == 1`, hence the `ncols1 > 1` term.
+- Root package (BASE `a7b94df2c`) has no multi-query q8_0 instance: nothing to protect, no change.
+
+## Window `bw-s10c-fafix` (filler, priority 21, non-preemptible, host_sensitive false, est 4200 s, budget 10800 s)
+`codex/bw-s10c-fafix.{toml,sh}`; payload log prefix `bw-s10c-fafix:`; failures exit 8, the SASS gate exits 1. Stages:
+1. 40 `cuda-build` (stack10 recipe, 120a, CUDA 13.2, NCCL off, buildgate -j4, ccache).
+2. 41 `sass-gate` (`codex/sass_gate.py`): `cuobjdump -sass -fun` on `<256,256,8,8,..Q8_0>` and `<256,256,4,8,..>` vs `frozen/stack9` lib: instructions <= +1 %, STL/LDL <=, HMMA/REG/STACK/LOCAL/SHARED equal; `--dump-resource-usage` of every common kernel equal; one-row decode kernel present; negative control: `frozen/stack10-cand` through the same gate must fail. Exit 1 on any violation.
+3. 42 stamps (DeviceTopK 25, HEAD hash in libggml-base).
+4. 43 `cuda-fa-ops`: full `test-backend-ops -o FLASH_ATTN_EXT` on CUDA0 and CUDA1 (all must pass; a failure is tolerated only if the stack10-cand build fails the same case), the q8 decode subset with `fattn_q8_decode:` engagement, and the `GGML_CUDA_Q8_DECODE=0` control with no marker.
+5. 44 `fa-byte-identity`: `codex/fa-identity.cpp` (public ggml API, fixed RNG, FNV64 of the raw f32 output) built once, run on both GPUs against three library sets. decode (39 cases, hs 64-576, gqa, 1-2 seqs, kv 256-32768): new == stack10-cand; verify (104 cases, hs256, 3-8 queries, kv 256-32768, sinks, 2 seqs): new == stack9; other (f16 K/V, q8_0 with 2 and 9+ queries): new == stack9 and == stack10-cand. Non-vacuity: no UNSUPPORTED/non-finite, digest-mutation control, decode marker present in new/cand and absent with the switch off. Informational: cand vs stack9 verify equality, decode on-vs-off and in-kernel-vs-f16-copy differing counts.
+6. 45 freeze `frozen/stack10-cand2`; 46 render + `gpuq submit --check` of `s10c2-np2-real-j5q` (never submitted).
+
+Checks run here: preflight under `env -i HOME=$HOME PATH=/usr/local/bin:/usr/bin:/bin` PASS; `python3 -m gpuq.shlint` on `bw-s10c-fafix.sh` and `gpu_ab.sh` rc 0; `gpuq submit --check codex/bw-s10c-fafix.toml` valid; `gpu_stack10.py --fixtures` PASS (includes the new item template and window fields). M: `sass_gate.py` run on the frozen libs reproduces the measured regression exactly (stack9 vs stack10-cand: 8,8 instructions 10056 -> 10536, STL 92 -> 151, LDL 80 -> 108, BRA 36 -> 94; 4,8 7848 -> 8216, STACK 40 -> 48; 6483 common kernels, 1 changed) and fails; stack9 vs stack9 passes the kernel comparison (control correctly fails then flags the missing decode kernel only). `fa-identity` ran on the CPU backend (CUDA_VISIBLE_DEVICES empty): deterministic, 39/104/15 cases, all digests distinct, no non-finite. Shell flow of `all_passed`, `fa_full`, `identity` was replayed against stubs. Item rendered end to end with the stack10-cand freeze substituted for stack10-cand2 (dry run, files removed): contract valid.
+
+## Timing item `s10c2-np2-real-j5q` (rendered in stage 46, priority 27, `codex/items/rendered/s10c2-np2-real-j5q.gpuq.toml`)
+J5q, np2 real prompts, `swift15-j5q-duo` flags (`-ub 128`, kv-pad 4096, staging, chain, `--cache-ram 0` default), depths 8192 and 90112, plan `s9 s10c2 s10c s10c s10c2 s9` (2 boots per arm, interleaved), est 6000 s, canary = s10c2 at 8k, counters must match across arms (existing guard).
+Expected (D): s10c2 - s9 about 0 at 8k and 90k (stack9-equivalent verify SASS); K3/K5 benefit remains (about -0.1 to -0.3 ms/round at 8k); s10c reproduces +0.2 / +2.5 ms/round at 8k / 90k. Falsifier: s10c2 - s9 > +0.5 ms/round at 90k. If the SASS gate passes but this falsifies, the cost is not in the verify kernels' SASS (look at the decode instances' register/shared footprint or the f16-copy allocation change in `ggml_cuda_flash_attn_ext_get_alloc_size`).
+
+## Uncertainty
+- Not compiled: a template or constexpr mistake would surface at stage 40; the gate is the arbiter of "stack9-equivalent" (thresholds are not bit-equality; I expect identical SASS).
+- Stage 43 pass criterion is strict on the new build; baseline tolerance covers only failures the stack10-cand build shares.
+- `fa-identity` stream-view cases rely on the CUDA backend supporting the permuted views as `test-backend-ops` does; an UNSUPPORTED line fails stage 44 by design.
+
+## K1 q8_0 draft KV OOM (`s10c-q8dkv-np2-real-j5q` canary): not a pkg 54 dispatch bug, not fixed, no window gate added
+Cause (M from logs, D from code): the 845 MiB is the f16 K/V scratch that `ggml_cuda_flash_attn_ext_get_alloc_size` adds to the graph-reserve buffer for the worst-case draft graph, not a KQ matrix and not an "unsupported" FA.
+- Draft KV: 102400 cells x 2 seqs, 1 layer, 4 KV heads x 256 (`server.log:3574` f16: K 400 MiB + V 400 MiB; q8_0 run: 425 MiB total). The f16 copy of K and V views is 2 x 400 MiB = 800 MiB; plus the ordinary 42-45 MiB graph = 845 MiB (the failing `cudaMalloc` is exactly 845.00 MiB, `q8 server.log:3625`).
+- Reserve shape: `sched_reserve: worst-case: n_tokens = 128, n_seqs = 2` (`-ub 128`), i.e. 64 query rows per sequence (`attn_inp_kq_mask {102400, 64, 1, 2}`). For that shape `ggml_cuda_get_best_fattn_kernel` returns MMA_F16 (not VEC, which handles <= 2 rows), and the one-row q8 path needs `Q->ne[1] == 1` (`fattn.cu:198`, `ggml_cuda_flash_attn_ext_mma_q8_0_decode_supported`) while the verify path needs 3-8 rows. So `need_f16_K = need_f16_V = !decode_supported(...)` = true (`fattn.cu:939`), and the extra data is sized by `ggml_cuda_flash_attn_ext_get_f16_extra_data` (`fattn-common.cuh:79`), called from `fattn.cu:951`. With f16 draft KV there is nothing to convert: 42 MiB (`s10c-np2-real-j5q/.../0-s10/server.log:3641`).
+- Pre-existing, independent of pkg 54: stack9's `get_alloc_size` sets `need_f16_K = need_f16_V = true` for MMA/TILE unconditionally (`git show cd776e104:ggml/src/ggml-cuda/fattn.cu:796`), and the main context already carries the same 845 MiB with its q8_0 KV in every arm, including the old `up` build (`results/2026-10-07-gdn-getter-gate-np2-busy-j5q/canary-a1/0-up/server.log:214`: 845.27 MiB; `0-s10/server.log:3190` and the q8 run `:3190`: 845.00 MiB). The second 845 MiB on device 0 (draft context) does not fit next to the target.
+- The scratch is real, not only an estimate, for draft prefill: the draft context ingests prompt batches of up to 128 tokens, which are MMA batches with q8_0 K/V. Single-row draft steps (n_tokens = 2, n_seqs = 2) would use the grouped decode path without scratch.
+- Net effect for K1: q8_0 draft KV saves 375 MiB of cache (800 -> 425 MiB) and costs +803 MiB of reserve scratch at `-ub 128`, so it cannot fit as configured. A fix would be a new no-copy q8_0 MMA path for batches above 8 rows (or a draft-specific ubatch), which is not a pkg 54 supports/dispatch correction; not attempted. The coordinator's gate (draft compute buffer <= 2 x the f16 value) was conditional on fixing pkg 54 and is therefore not added; with this tree the gate would fail (845 vs 42 MiB). Not investigated: whether a separate draft `-ub` flag exists.
