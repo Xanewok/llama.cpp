@@ -1,0 +1,27 @@
+model shapes at nsm=36 (k=5120, kb=20): rows cols default K8 L1-own-grid forced(grid=nsm) misaligned
+    1024 12 stream-k 0 1 1 1
+    1024 24 stream-k 0 1 1 1
+    2688 12 stream-k 0 1 1 1
+    2688 24 stream-k 0 1 1 1
+    3072 12 stream-k 0 1 1 1
+    3072 24 stream-k 0 1 1 1
+    5120 12 stream-k 0 1 1 1
+    5120 24 stream-k 0 1 1 1
+    5248 12 stream-k 0 1 1 1
+    5248 24 stream-k 0 1 1 1
+    6144 12 stream-k 0 1 1 1
+    6144 24 stream-k 0 1 1 1
+    8704 12 plain    0 0 1 1
+    8704 24 plain    0 0 1 1
+    9216 12 plain    0 0 0 1
+    9216 24 plain    0 0 0 1
+   11520 12 stream-k 0 1 1 1
+   11520 24 stream-k 0 1 1 1
+   17408 12 plain    0 0 1 1
+   17408 24 plain    0 0 1 1
+fixup sub-block mix-up caught by the completeness check: 3/3 (must be all)
+cases=5256 default_plain=2682 default_streamk=2574
+K8 partition vs default tile: 0 cases differ (must be 0)
+integer-term completeness failures over all variants: 0 (must be 0)
+negative controls, cases whose bits differ from the default tile: L1 own-tile grid 2348/5256, forced small grid=nsm 4043/5256, misaligned 4863/5256 (each must be > 0)
+PASS

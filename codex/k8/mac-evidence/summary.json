@@ -1,0 +1,38 @@
+{
+  "result": "PASS",
+  "commit": "54b6009f326c618d88fd75f556125d567f194ce5",
+  "mac_out": "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/l1-k8-mac-a1",
+  "stages": [
+    {
+      "name": "1-sim",
+      "rc": 0,
+      "wall_s": 3
+    },
+    {
+      "name": "2-build",
+      "rc": 0,
+      "wall_s": 84
+    },
+    {
+      "name": "3-cases",
+      "rc": 0,
+      "wall_s": 20
+    },
+    {
+      "name": "4-hash",
+      "rc": 0,
+      "wall_s": 30
+    }
+  ],
+  "source_files": [
+    "ggml/src/ggml-cuda/mmq.cuh",
+    "tests/test-backend-ops.cpp",
+    "codex/k8/mmq_sk_sim.cpp",
+    "codex/k8/bw-k8-mac.sh"
+  ],
+  "source_sha256": "40ae1f6e7f368747d46e2b3ff54b116a71ba2717e143e8ef3351a8e68491334c",
+  "sim": [
+    "negative controls, cases whose bits differ from the default tile: L1 own-tile grid 2348/5256, forced small grid=nsm 4043/5256, misaligned 4863/5256 (each must be > 0)",
+    "PASS"
+  ]
+}
