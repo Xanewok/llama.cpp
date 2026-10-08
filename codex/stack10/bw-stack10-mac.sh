@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Combined Mac CPU payload of topk/stack10 (run through bin/bw-mac, argument = OUT dir). One configure+build for the union of
 # targets, then per-component libs (codex/stack10/mac/<comp>.sh), each sourced in its own subshell. Cheap stages first, long
-# model runs last. S10_ONLY="k7 k4" reruns components only (the build always runs); S10_KEEP_GOING=0 stops at the first failure.
+# model runs last. COMPONENTS="k7 k4" (alias S10_ONLY; default all of ops base p55 k7 k4 k6a k6b k2 k10 k9 k8 k11a k11b) runs those
+# components only, the build always runs; the words cheap/model select a phase. S10_KEEP_GOING=0 stops at the first failure.
 # bw-mac forwards no environment, so the filter may also ride in the bw-mac OUT_NAME: `stack10-mac__k7__k4` selects k7 and k4.
 # Libs define <comp>_cheap and/or <comp>_model, which call `stage CODE NAME FN`.
 set -euo pipefail
@@ -14,7 +15,8 @@ OUT=${1:?output}
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 MODEL=${BW_MODEL:?}
-if [[ -z ${S10_ONLY:-} ]]; then
+S10_ONLY=${COMPONENTS:-${S10_ONLY:-}}
+if [[ -z $S10_ONLY ]]; then
     run_name=$(basename "$(dirname "$(dirname "$(dirname "$OUT")")")")
     [[ $run_name != *__* ]] || { S10_ONLY=${run_name#*__}; S10_ONLY=${S10_ONLY//__/ }; }
 fi
@@ -65,7 +67,7 @@ COMP=build D=$OUT/build
 mkdir -p "$D"
 S10_KEEP_GOING=0 stage 10 cpu-build build
 
-CHEAP_ORDER=(ops p55 k7 k6 k2 k10 k9 k8 k11b base gdn4)
+CHEAP_ORDER=(ops p55 k7 k6a k6b k2 k10 k9 k8 k11b base)
 MODEL_ORDER=(p55 k7 k4 base k11a)
 # the words "cheap" and "model" in S10_ONLY select a phase, the others select components (none: all). macOS bash is 3.2: no empty arrays.
 only_comps=' ' only_phase=''
