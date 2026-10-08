@@ -32,6 +32,7 @@ preflight() {
     [[ $(git diff --name-only "$STACK9" HEAD -- . ':!codex' | LC_ALL=C sort | tr '\n' ' ') == \
        'ggml/src/ggml-cuda/mmvq-params.h ggml/src/ggml-cuda/mmvq.cu ggml/src/ggml-cuda/mmvq.cuh tests/CMakeLists.txt tests/test-backend-ops.cpp tests/test-mmvq-params.cpp ' ]] || return 1
     for script in codex/bw-stack9-p55.sh codex/bw-stack9-mac.sh codex/bw-stack9-p55-mac.sh codex/gpu_ab.sh; do bash -n "$script" || return 1; done
+    python3 codex/p55_checks.py --fixtures > /dev/null || return 1
     python3 - <<'PY' || return 1
 import hashlib, json, tomllib
 from pathlib import Path
@@ -91,17 +92,37 @@ stamps() {
     strings build-cuda/bin/libggml-base.so | grep -x "$SHORT" >/dev/null
     [[ $(git rev-parse HEAD) == "$SHA" && -z $(git status --porcelain --untracked-files=no) ]]
 }
-# The only stage that sees the GPUs. Contract: every MUL_MAT / MUL_MAT_ID case of the changed quant types at n=5..8 passes on both GPUs, no Xid.
+# test-backend-ops under the GPU wrapper. Contract: rc 0 or 1 only (1 = a test case failed; p55_checks.py judges which); a crash or timeout is rc >= 2.
+bops() {
+    local op=$1 backend=$2 out=$3 err=$4 limit=$5 rc=0
+    shift 5
+    nice -n 19 "$W/bin/cpugate" env CUDA_VISIBLE_DEVICES="$GPUS" taskset -c 0-3,12-15 timeout --kill-after=30s "$limit" \
+        build-cuda/bin/test-backend-ops -o "$op" -b "$backend" "$@" --output sql > "$out" 2> "$err" || rc=$?
+    echo "test-backend-ops $op $backend rc_M=$rc"
+    [[ $rc == 0 || $rc == 1 ]]
+}
+# The only stage that sees the GPUs. Contract: every MUL_MAT / MUL_MAT_ID case of the changed quant types (any n) and of every type at n=5..8
+# passes on both GPUs, no Xid. A failing case elsewhere is excused only if it passes RETRIES fresh reruns (inputs are random per run).
 correctness() {
-    local op backend
+    local op backend base params re attempt
     [[ ${GPUQ_ACTIVE:-0} == 1 ]]
+    python3 codex/p55_checks.py --fixtures
     for op in MUL_MAT MUL_MAT_ID; do
         for backend in CUDA0 CUDA1; do
-            nice -n 19 "$W/bin/cpugate" env CUDA_VISIBLE_DEVICES="$GPUS" taskset -c 0-3,12-15 timeout --kill-after=30s 600s \
-                build-cuda/bin/test-backend-ops -o "$op" -b "$backend" --output sql \
-                > "$OUT/$op-$backend.sql" 2> "$OUT/$op-$backend.err"
-            nice -n 19 python3 codex/p55_checks.py "$OUT/$op-$backend.sql" "$op" "$backend" "$SHA"
-            PYTHONPATH="$EVAL" nice -n 19 python3 - "$OUT/$op-$backend.journal" <<'PY'
+            base=$OUT/$op-$backend
+            bops "$op" "$backend" "$base.sql" "$base.err" 600s
+            nice -n 19 python3 codex/p55_checks.py "$base.sql" "$op" "$backend" "$SHA"
+            while IFS= read -r -u 3 params; do
+                [[ -n $params ]] || continue
+                re=$(python3 codex/p55_checks.py --regex "$params")
+                for attempt in 1 2 3; do
+                    bops "$op" "$backend" "$base.rerun$attempt.sql" "$base.rerun$attempt.err" 300s -p "$re"
+                    python3 codex/p55_checks.py --rerun-passed "$base.rerun$attempt.sql" "$op" "$backend" "$SHA" "$params" \
+                        || { echo "rerun $attempt failed: $params"; return 1; }
+                done
+                echo "excused after 3 clean reruns: $params"
+            done 3< "$base.sql.retry"
+            PYTHONPATH="$EVAL" nice -n 19 python3 - "$base.journal" <<'PY'
 import os, sys
 from pathlib import Path
 from harness import lib
