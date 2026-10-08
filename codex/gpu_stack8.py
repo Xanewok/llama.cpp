@@ -66,8 +66,7 @@ def fixture_checks():
             pass
         else:
             raise AssertionError('np2 fallback control escaped')
-    # The new fold and projection markers have no GPU artifact until this window builds them. The parser must reject
-    # their absence in a real log; their positive engagement gate runs in the queued canary.
+    # Reject missing fold/projection markers in the recorded GPU log; the canary must prove engagement.
     for marker in (r'mtp_fold_decode: engaged\b', r'ssm_out_2d: seqs=2 rows=[1-9]\d* matrices=1\b'):
         try:
             lib.verify_log_patterns((REAL / 'server.log').read_text(), [marker], 'absent new marker')

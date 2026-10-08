@@ -1,0 +1,7 @@
+20	cpu-build	0	52
+21	unit-tests	0	23
+23	np1-chain-identity	0	4923
+29	np2-chain-identity	0	112
+32	np2-old-negative-control	0	242
+33	cand-cpu-identity	0	360
+34	cand-mutant	0	2

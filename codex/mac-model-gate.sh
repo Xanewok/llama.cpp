@@ -13,6 +13,6 @@ if busy or total * fraction < 4 * 1024**3:
     sys.exit(1)
 PY
 do
-    sleep 20
+    sleep 1
 done
 exec nice -n 19 "$@"
