@@ -56,7 +56,8 @@ struct llama_context {
     //   - etc.
     void sched_reserve();
 
-    void synchronize();
+    // returns at once when no device work was enqueued since the last real sync; force always syncs the backends
+    void synchronize(bool force = false);
 
     const llama_model   & get_model()   const;
     const llama_cparams & get_cparams() const;
@@ -374,6 +375,11 @@ private:
     };
     logits_deferred_info logits_deferred;
     void logits_deferred_fetch();
+
+    // Every device-to-host copy and graph enqueue of this context goes through here or graph_compute(), which set the flag.
+    // Initially true so the first synchronize() is real.
+    bool backend_pending = true;
+    void tensor_get_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size);
 
     // sequence embeddings output (map of [n_embd] vectors)
     // populated only when pooling_type != LLAMA_POOLING_TYPE_NONE
