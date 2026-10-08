@@ -90,6 +90,10 @@ ops() {
             echo 'FAIL alpha mutant escaped'; return 1
         fi
         grep -q 'FAIL ADD_SOFTPLUS_MUL byte identity' "$OUT/alpha-mutant-$dev.log"
+        if env CUDA_VISIBLE_DEVICES="$VISIBLE" GGML_CUDA_ALPHA_ALIAS_MUTANT=1 timeout 600 nice -n 19 build-cuda/bin/test-backend-ops test -b "$dev" -o ADD_SOFTPLUS_MUL -j 1 > "$OUT/alpha-alias-mutant-$dev.log" 2>&1; then
+            echo 'FAIL alpha alias mutant escaped'; return 1
+        fi
+        grep -E 'FAIL ADD_SOFTPLUS_MUL byte identity:.*layout=[23]' "$OUT/alpha-alias-mutant-$dev.log" >/dev/null
         env CUDA_VISIBLE_DEVICES="$VISIBLE" timeout 600 nice -n 19 build-cuda/bin/test-backend-ops test -b "$dev" -o FLASH_ATTN_EXT -p 'hsk=(64|96|128|256),.*kv=2048,nb=1,.*type_K=q8_0,type_V=q8_0' -j 1 > "$OUT/q8-$dev.log" 2>&1
         grep -q 'fattn_q8_decode:' "$OUT/q8-$dev.log"
         grep -E '[1-9][0-9]*/[1-9][0-9]* tests passed' "$OUT/q8-$dev.log" >/dev/null
