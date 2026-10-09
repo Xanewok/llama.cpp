@@ -25,7 +25,7 @@ preflight() {
     [[ $(git branch --show-current) == topic/restrict-probe ]] || return 1
     [[ -z $(git status --porcelain --untracked-files=no) ]] || return 1
     git merge-base --is-ancestor "$BASE" HEAD || return 1
-    [[ $(grep -c "$FORCE" ggml/src/ggml-cuda/common.cuh) -ge 1 ]] || return 1
+    [[ $(grep -c -- "GGML_CUDA_FORCE_RESTRICT" ggml/src/ggml-cuda/common.cuh) -ge 1 ]] || return 1
     local p
     for p in "$CCCL" "$W/bin/buildgate" /usr/local/cuda-13.2/bin/nvcc "$CUOBJDUMP" codex/restrict_sass.py codex/restrict_summary.py \
              /mnt/scratch; do
