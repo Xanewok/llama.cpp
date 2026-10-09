@@ -1,6 +1,6 @@
 {
   "result": "PASS",
-  "commit": "2df562da733c2c41f5e33dae82fa588456f49043",
+  "commit": "6b61cd24a416c52b75c7d40a45001df59041f7a7",
   "source_files": [
     "common/CMakeLists.txt",
     "common/arg.cpp",
@@ -1848,7 +1848,7 @@
     "tests/test-unicode.cpp",
     "tests/testing.h"
   ],
-  "source_sha256": "ee4f8a8d7975467129bd7a23e4344e43e05aa382c714c2b9bb24cebdf7d35bed",
+  "source_sha256": "8d3282da01f94c5be66e4e531efd9c1b8597d6103d514764124e5f5d2f76b2bb",
   "tree_dirty": "",
   "stages": [
     {
@@ -1885,13 +1885,13 @@
       "code": 31,
       "name": "p55-mmvq-table-mutant",
       "rc": 0,
-      "wall_s_M": 1
+      "wall_s_M": 2
     },
     {
       "code": 33,
       "name": "p55-tp-sampling",
       "rc": 0,
-      "wall_s_M": 17
+      "wall_s_M": 16
     },
     {
       "code": 40,
@@ -1927,7 +1927,7 @@
       "code": 60,
       "name": "k6a-q8-cache-contract",
       "rc": 0,
-      "wall_s_M": 0
+      "wall_s_M": 1
     },
     {
       "code": 61,
@@ -1939,13 +1939,13 @@
       "code": 62,
       "name": "k6a-mul-mat-shared-identity",
       "rc": 0,
-      "wall_s_M": 3
+      "wall_s_M": 2
     },
     {
       "code": 65,
       "name": "k6b-add-rms-norm-matcher",
       "rc": 0,
-      "wall_s_M": 0
+      "wall_s_M": 1
     },
     {
       "code": 66,
@@ -1957,7 +1957,7 @@
       "code": 67,
       "name": "k6b-add-rms-norm-identity",
       "rc": 0,
-      "wall_s_M": 2
+      "wall_s_M": 1
     },
     {
       "code": 70,
@@ -1987,7 +1987,7 @@
       "code": 80,
       "name": "k10-emu-build",
       "rc": 0,
-      "wall_s_M": 0
+      "wall_s_M": 1
     },
     {
       "code": 81,
@@ -1999,7 +1999,7 @@
       "code": 82,
       "name": "k10-emu-mutants",
       "rc": 0,
-      "wall_s_M": 23
+      "wall_s_M": 25
     },
     {
       "code": 83,
@@ -2011,13 +2011,13 @@
       "code": 84,
       "name": "k10-topk-cpu-ops",
       "rc": 0,
-      "wall_s_M": 2
+      "wall_s_M": 1
     },
     {
       "code": 85,
       "name": "k10-canonical-control",
       "rc": 0,
-      "wall_s_M": 1
+      "wall_s_M": 2
     },
     {
       "code": 90,
@@ -2035,7 +2035,7 @@
       "code": 101,
       "name": "k8-mul-mat-cases",
       "rc": 0,
-      "wall_s_M": 18
+      "wall_s_M": 19
     },
     {
       "code": 102,
@@ -2053,13 +2053,13 @@
       "code": 121,
       "name": "k11b-meta-glue-mutant",
       "rc": 0,
-      "wall_s_M": 0
+      "wall_s_M": 1
     },
     {
       "code": 122,
       "name": "k11b-cuda-sim",
       "rc": 0,
-      "wall_s_M": 3
+      "wall_s_M": 2
     },
     {
       "code": 123,
@@ -2071,31 +2071,31 @@
       "code": 20,
       "name": "base-payload-lint",
       "rc": 0,
-      "wall_s_M": 0
+      "wall_s_M": 1
     },
     {
       "code": 21,
       "name": "base-sampling-and-alloc-units",
       "rc": 0,
-      "wall_s_M": 2
+      "wall_s_M": 1
     },
     {
       "code": 22,
       "name": "base-softplus-and-fa-q8-ops",
       "rc": 0,
-      "wall_s_M": 1
+      "wall_s_M": 2
     },
     {
       "code": 23,
       "name": "base-recorded-parser-controls",
       "rc": 0,
-      "wall_s_M": 1
+      "wall_s_M": 0
     },
     {
       "code": 32,
       "name": "p55-recurrent-state-rollback",
       "rc": 0,
-      "wall_s_M": 82
+      "wall_s_M": 83
     },
     {
       "code": 34,
@@ -2107,7 +2107,7 @@
       "code": 35,
       "name": "p55-np2-chain-identity",
       "rc": 0,
-      "wall_s_M": 103
+      "wall_s_M": 102
     },
     {
       "code": 43,
@@ -2125,19 +2125,19 @@
       "code": 53,
       "name": "k4-ssm-conv-rs-np2-driver",
       "rc": 0,
-      "wall_s_M": 126
+      "wall_s_M": 125
     },
     {
       "code": 24,
       "name": "base-rotation-identity",
       "rc": 0,
-      "wall_s_M": 263
+      "wall_s_M": 262
     },
     {
       "code": 110,
       "name": "k11a-sync-elide-identity",
       "rc": 0,
-      "wall_s_M": 378
+      "wall_s_M": 379
     },
     {
       "code": 111,
@@ -2146,5 +2146,5 @@
       "wall_s_M": 410
     }
   ],
-  "total_wall_s_M": 1815
+  "total_wall_s_M": 1818
 }

@@ -1,6 +1,6 @@
-0.01.115.145 D set_logits: using backend candidates: n_cand = 21, n_ban = 9, top_k = 20
-0.01.115.177 D set_logits: using backend candidates: n_cand = 21, n_ban = 9, top_k = 20
-0.01.115.206 D set_logits: using backend candidates: n_cand = 21, n_ban = 9, top_k = 20
+0.01.145.011 D set_logits: using backend candidates: n_cand = 21, n_ban = 9, top_k = 20
+0.01.145.044 D set_logits: using backend candidates: n_cand = 21, n_ban = 9, top_k = 20
+0.01.145.077 D set_logits: using backend candidates: n_cand = 21, n_ban = 9, top_k = 20
 test_banned_candidates: 120 trials, 1440 tied / 480 unique draws, 4 full accepts / 1916 rejections, mutant caught 132 times: OK
 test_tp_sampling: fallback logits across two ubatches: OK
 test_tp_sampling: top-k candidates, 4 rows: OK
