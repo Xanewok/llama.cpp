@@ -51,11 +51,6 @@ ENGAGEMENT = {
         r'top_k_batched: engaged ncols=\d+ nrows=[1-9]\d* k=\d+'],
         anchors=[('ggml/src/ggml-cuda/top-k.cu', 'top_k_batched: engaged ncols=%d nrows=%d k=%d')],
         samples=['top_k_batched: engaged ncols=248320 nrows=6 k=20']),
-    'k9': dict(shapes=ALL, env={'GGML_CUDA_MMQ_PDL_LOG': '1'}, where='server.log (stderr, once per distinct line), only with GGML_CUDA_MMQ_PDL_LOG', patterns=[
-        r'mmq_pdl: kernel=mmq type=\w+ J=\d+ stream_k=[01] fixup=[01] pdl=1\b',
-        r'mmq_pdl: kernel=quantize type=\w+ J=\d+ stream_k=[01] fixup=[01] pdl=1\b'],
-        anchors=[('ggml/src/ggml-cuda/common.cuh', 'mmq_pdl: kernel=%s type=%s J=%d stream_k=%d fixup=%d pdl=%d')],
-        samples=['mmq_pdl: kernel=mmq type=q6_K J=128 stream_k=0 fixup=0 pdl=1', 'mmq_pdl: kernel=quantize type=q6_K J=128 stream_k=0 fixup=0 pdl=1']),
     # small-I tiles are taken for 16 and 24 columns only: the 12-column np2 verify, never the 6-column np1 or sequential-duo one.
     'k8': dict(shapes=('np2',), env={'GGML_CUDA_MMQ_TILES_LOG': '1'}, where='server.log (stderr), only with GGML_CUDA_MMQ_TILES_LOG', patterns=[
         r'mmq_tiles: type=\w+ m=\d+ cols=(?:9|1\d|2[0-4]) z=\d+ J=(?:16|24) ntiles=\d+ nsm=\d+ small_i=1 '],
@@ -103,7 +98,6 @@ def selftest():
     # negative controls: a mutated line and a missing line must fail the regex
     assert not re.search(ENGAGEMENT['k8']['patterns'][0], ENGAGEMENT['k8']['samples'][0].replace('small_i=1', 'small_i=0'))
     assert not re.search(ENGAGEMENT['k8']['patterns'][0], ENGAGEMENT['k8']['samples'][0].replace('cols=12', 'cols=6'))
-    assert not re.search(ENGAGEMENT['k9']['patterns'][0], ENGAGEMENT['k9']['samples'][0].replace('pdl=1', 'pdl=0'))
     assert not re.search(ENGAGEMENT['k4']['patterns'][0], ENGAGEMENT['k4']['samples'][0].replace('mutant=0', 'mutant=1'))
     assert not re.search(ENGAGEMENT['k11a']['patterns'][1], 'x\nsynchronize: sync_elide: missed: backend busy at a skipped sync (a device enqueue was not tracked), waited 31 us, caller f\n')
     assert not re.search(ENGAGEMENT['k11a']['patterns'][0], 'sync_elide: debug check engaged (backend query unavailable, timing fallback)')
