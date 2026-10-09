@@ -16,6 +16,8 @@ e = src.index('// Combined load-convert-add kernel.')
 body = src[m.start():e]
 open(sys.argv[1] + '/kernel.h', 'w').write(body)
 open(sys.argv[1] + '/local', 'w').write('1' if 'int                         mutant' in src else '0')
+open(sys.argv[1] + '/flag_t', 'w').write('uint64_t' if 'uint64_t *                  arrival_mine' in src else 'int')
+open(sys.argv[1] + '/multi', 'w').write('1' if 'FLAG_WORDS' in body or 'FLAG_INTS' in body else '0')
 PY
 if [[ ${2:-} == mutated ]]; then
     n=$(grep -c 'while (ggml_cuda_ar_signal_get[_a-z]*(other_slot) != token)' "$OUT/kernel.h" || true)
@@ -23,5 +25,5 @@ if [[ ${2:-} == mutated ]]; then
     sed -i 's/while (ggml_cuda_ar_signal_get[_a-z]*(other_slot) != token)/while (false)/' "$OUT/kernel.h"
 fi
 LOCAL=$(cat "$OUT/local")
-g++ -std=c++20 -O1 -pthread -DKERNEL_HEADER="\"$OUT/kernel.h\"" -DAR_API_LOCAL="$LOCAL" "$HERE/ar-duplex-cpumodel.cpp" -o "$OUT/model"
-exec nice -n 19 taskset -c 6-11,18-23 "$OUT/model" "${2:-}"
+g++ -std=c++20 -O1 -pthread -DKERNEL_HEADER="\"$OUT/kernel.h\"" -DAR_API_LOCAL="$LOCAL" -DFLAG_T="$(cat "$OUT/flag_t")" -DMULTI_FLAG="$(cat "$OUT/multi")" "$HERE/ar-duplex-cpumodel.cpp" -o "$OUT/model"
+exec "$HOME/repos/qwen38-eval-worktrees/bin/cpugate" nice -n 19 taskset -c 6-11,18-23 "$OUT/model" "${2:-}"

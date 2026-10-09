@@ -14,7 +14,8 @@ W=$HOME/repos/qwen38-eval-worktrees
 EVAL=$HOME/repos/qwen38-eval
 CCCL=$HOME/repos/qwen38-weekend/deps/cccl-v3.4.3
 BASE=f163659410ac18610bfa09b506ddbabd40b9e17d
-GENERAL=f9d0748b6
+GENERAL=f9d0748b6   # first general commit (before the producer-release/64-bit-token fix); kept as a protocol-model arm
+FIX=af3762817       # general fix on top of it; the local commit and the codex files follow
 SCR=/mnt/scratch/ar-duplex
 NEWLIB=$ROOT/build-cuda/bin
 BASELIB=$SCR/base/build/bin
@@ -22,10 +23,11 @@ DRV=$SCR/ar-duplex-driver
 SAN=/usr/local/cuda-13.2/bin/compute-sanitizer
 
 preflight() {
-    [[ $(git branch --show-current) == topic/ar-duplex ]] || return 1
+    [[ $(git branch --show-current) == topic/ar-duplex-v2 ]] || return 1
     [[ -z $(git status --porcelain --untracked-files=no) ]] || return 1
     git merge-base --is-ancestor "$BASE" HEAD || return 1
     [[ $(git rev-parse "$GENERAL^") == "$BASE" ]] || return 1
+    [[ $(git rev-parse "$FIX^") == $(git rev-parse "$GENERAL") ]] || return 1
     [[ $(git diff --name-only "$BASE" HEAD -- . ':!codex' | tr '\n' ' ') == 'ggml/src/ggml-cuda/allreduce.cu ' ]] || return 1
     [[ ! -e $W/frozen/ar-duplex ]] || return 1
     for tool in cmake git python3 nice gpuq ccache strings timeout patchelf taskset g++ tar; do
@@ -81,8 +83,9 @@ flags=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER_FORCED=ON -DCMAKE_CUDA_C
 
 cpu_model() {
     local rev mode
-    # base and the two commits of this tree: the protocol model passes, and with the wait compiled out it must fail (negative control)
-    for rev in "$BASE" "$GENERAL" "$SHA"; do
+    # base and the commits of this tree: the protocol model passes (stale-wrap fails on the 32-bit GENERAL by design), and with
+    # the wait compiled out it must fail (negative control)
+    for rev in "$BASE" "$GENERAL" "$FIX" "$SHA"; do
         for mode in quick mutated; do
             AR_MODEL_OUT=$(mktemp -d "$SCR/model-XXXXXX") bash codex/ar-duplex-cpumodel.sh "$rev" "$mode" > "$OUT/cpumodel-$rev-$mode.out" 2>&1 \
                 || { echo "FAIL cpumodel $rev $mode"; return 8; }
