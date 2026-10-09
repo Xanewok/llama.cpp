@@ -116,7 +116,9 @@ ops() {
 }
 memcheck() {
     [[ $VISIBLE == GPU-* ]] || return 1
-    env CUDA_VISIBLE_DEVICES="${VISIBLE%%,*}" timeout 1800 nice -n 19 /usr/local/cuda-13.2/bin/compute-sanitizer --tool memcheck --error-exitcode 9 \
+    # CUDA graphs off: a refused cudaGraphExecUpdate (error 910) is handled by re-instantiation (ggml-cuda.cu) but memcheck
+    # counts every one as an error; the kernels under test run the same without graphs.
+    env CUDA_VISIBLE_DEVICES="${VISIBLE%%,*}" GGML_CUDA_DISABLE_GRAPHS=1 timeout 1800 nice -n 19 /usr/local/cuda-13.2/bin/compute-sanitizer --tool memcheck --error-exitcode 9 \
         build-cuda/bin/test-backend-ops test -b CUDA0 -o MUL_MAT_SHARED,RMS_NORM_MUL_ADD,ADD_RMS_NORM -j 1 > "$OUT/memcheck.log" 2>&1
     grep -aq 'ERROR SUMMARY: 0 errors' "$OUT/memcheck.log"
 }
