@@ -120,4 +120,4 @@ preflight = "preflight-plan"
 
 [cpu_evidence]
 path = "@EVIDENCE@"
-command = "bw-stack10 Mac (@COMPONENTS@): component CPU gates, recorded parser controls; the CUDA gates are the bw-stack10 window (codex/stack10/bw-stack10.sh)"
+command = "bw-stack10 Mac (@COMPONENTS@): component CPU gates, recorded parser controls; the CUDA gates are the bw-stack10b window (codex/stack10/bw-stack10b.sh)"

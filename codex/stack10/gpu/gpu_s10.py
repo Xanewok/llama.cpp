@@ -115,7 +115,7 @@ def fixture_checks():
                 assert any('mmq_tiles' in p for p in b['canary_log']) == (shape == 'np2' and 'k8' in components)
                 assert any('ssm_conv_rs engaged' in p for p in b['canary_log']) == ('k4' in components)
                 assert x['cpu_evidence']['path'] == str(Path(tmp)/'summary.json')
-    window = tomllib.loads((HERE.parent/'bw-stack10.toml').read_text())
+    window = tomllib.loads((HERE.parent/'bw-stack10b.toml').read_text())
     assert window['kind'] == 'filler' and window['priority'] == 19 and window['host_sensitive'] is False and window['preemptible'] is False
     assert window['run']['env']['CUDA_VISIBLE_DEVICES'].startswith('GPU-') and window['run']['ports'] == 'dynamic'
     print('stack10 item templates: wave-1 flags and env kept, candidate arm without switches, engagement canaries, window fields PASS')

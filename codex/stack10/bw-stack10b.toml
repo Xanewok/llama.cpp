@@ -1,0 +1,165 @@
+id = "bw-stack10b"
+title = "stack10b (stack10 minus K9 plus the K4 np2 meta fix) CUDA window: build, np2 joint-replay smoke, every component's CUDA gates, meta subgraph test, fafix SASS, full test-backend-ops on both GPUs, K11a sync count, freeze as stack10, render/check six A/B items; Mac CPU gates required"
+kind = "filler"
+priority = 19
+host_sensitive = false
+preemptible = false
+# G: sum of the component windows p55 4200 + k7 1800 + k4 2400 + k6 3600 + k2 2400 + k10 1800 + np2 smoke/meta 600 + k8 3000 + k11a 3600 + k11b 2400 + fafix 4200 = 30000 s
+# (one CUDA build is shared, so this overcounts by about ten builds); D: budget twice that.
+est_s = 30000
+budget_s = 60000
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-stack10: FAIL" }]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/bw-stack10b.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/window/stack10b-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", GPUQ_BUILD_WINDOW = "1", GPUQ_ACTIVE = "1", PORT = "{port}" }
+ports = "dynamic"
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/bw-stack10b.sh", "--preflight"]
+timeout_s = 120
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/window/stack10b-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/window/stack10b-a{attempt}/payload.log"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "stages", "controls", "correctness"]
+
+[pins]
+files = [
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf",
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json",
+  "/home/xanewok/repos/attrib-pack/attrib_pack.py",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs.sha256",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs/agg.py",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs/chat-template.jinja",
+  "/home/xanewok/repos/attrib-pack/gpu/inputs/corpus.txt",
+  "/home/xanewok/repos/attrib-pack/gpu/llama_drive.py",
+  "/home/xanewok/repos/attrib-pack/models/llama-swift15-iq4xs.json",
+  "/home/xanewok/repos/attrib-pack/runs/hqgap8-analysis/an.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-index.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10-cand/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10-cand/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack6/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/bw-s10c-fafix.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/bw-stack10-cand.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/fa-identity.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/gpu_stack10.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/gpu_stack9.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/k10/bw-k10.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/k10/k10_perf.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/k11a/drive_np2.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/k11a/sync_count.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/k11b/bw-s10-k11b.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/k2/bw-s10-k2.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/k4/bw-k4.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/k6/bw-s10-k6.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/k7/bw-k7.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/k8/gpu/k8-gpu.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/k8/mmq_sk_sim.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/k9/bw-k9.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/render_s10c2_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/render_stack10_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/sass_gate.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/bw-stack10b.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/bw-stack10b.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/check_pins.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/engagement.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/full_checks.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/gates.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/gates_table.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/gpu/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/gpu/gpu_s10.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/items/s10-depth-iq4.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/items/s10-depth-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/items/s10-duo-soak-iq4.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/items/s10-duo-soak-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/items/s10-np2-real-iq4.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/items/s10-np2-real-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/k8_gpu_patch.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/mac-evidence/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/mk_window_toml.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/np2_smoke.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/np2_smoke.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/render_stack10_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/s10items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/sass_gate.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/shfn.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/stock_tree.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/tail_check.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/docs/ops.md",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/include/ggml-backend.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/include/ggml-rpc.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/include/ggml.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-backend-impl.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-backend-meta.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-backend.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cpu/ggml-cpu.c",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cpu/ggml-cpu.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cpu/ops.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cpu/ops.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/add-rms-norm.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/common.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/fattn-common.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/fattn-kv-max-cache.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/fattn-mma-f16.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/fattn.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/ggml-cuda.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/mmq-config-blackwell.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/mmq-load-tiles.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/mmq-vec-dot.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/mmq.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/mmq.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/mmvq-params.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/mmvq.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/mmvq.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/norm.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/norm.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/q8-cache.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/ssm-conv.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/ssm-conv.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/template-instances/fattn-mma-f16-instance-q8_0-ncols1_1-ncols2_16.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/template-instances/fattn-mma-f16-instance-q8_0-ncols1_1-ncols2_32.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/template-instances/fattn-mma-f16-instance-q8_0-ncols1_1-ncols2_8.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/template-instances/fattn-mma-f16-instance-q8_0-ncols1_4-ncols2_4.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/template-instances/generate_cu_files.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/top-k-batched.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/top-k.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/unary.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-cuda/unary.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml-rms-norm-scale-pair.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/ggml/src/ggml.c",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/src/llama-context.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/src/llama-context.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/src/llama-graph.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/src/llama-kv-cache.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/src/llama-kv-cache.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/src/models/delta-net-base.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/src/models/models.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/src/models/qwen35.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/src/models/qwen35moe.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/src/models/qwen3next.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/tests/CMakeLists.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/tests/test-alloc.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/tests/test-backend-ops.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/tests/test-fattn-kv-max-cache.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/tests/test-meta-input-stage.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/tests/test-mmvq-params.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/tests/test-recurrent-state-rollback.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/tests/test-topk-batched.cpp",
+  "/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf",
+]
