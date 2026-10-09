@@ -170,6 +170,9 @@ extern "C" {
         // Copy host sources before return and order destination writes with compute. False must have no side effects.
         // With no transfers, report capability only.
         bool (*set_tensor_batch_owned)(ggml_backend_t backend, const struct ggml_backend_tensor_transfer * transfers, size_t n_transfers);
+
+        // local: (optional) true when synchronize() would not wait: all work queued on its stream has completed. Must not block.
+        bool (*query)(ggml_backend_t backend);
     };
 
     struct ggml_backend {
