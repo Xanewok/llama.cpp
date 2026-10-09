@@ -1,6 +1,6 @@
 {
   "result": "PASS",
-  "commit": "65aff7285ee65931413c28d0e6c7b299d2d162eb",
+  "commit": "fb4df2e29f6f3130d465eaa248cb0fb5b267621f",
   "source_files": [
     "common/CMakeLists.txt",
     "common/arg.cpp",
@@ -1838,25 +1838,25 @@
     "tests/test-unicode.cpp",
     "tests/testing.h"
   ],
-  "source_sha256": "82b6270827dda2585600e0b75ba69adbc9c9e59fae33ff274d009186e616d50c",
+  "source_sha256": "2b829baa5e3001fe0957ffd22680f59fd6582a64ad4c3cb2baf067621f00a239",
   "stages": [
     {
       "code": 20,
       "name": "cpu-build",
       "rc": 0,
-      "wall_s_M": 43
+      "wall_s_M": 42
     },
     {
       "code": 21,
       "name": "sync-identity",
       "rc": 0,
-      "wall_s_M": 381
+      "wall_s_M": 380
     },
     {
       "code": 22,
       "name": "sync-mutants",
       "rc": 0,
-      "wall_s_M": 408
+      "wall_s_M": 409
     },
     {
       "code": 23,
