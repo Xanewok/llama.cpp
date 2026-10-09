@@ -604,6 +604,17 @@ void ggml_backend_synchronize(ggml_backend_t backend) {
     backend->iface.synchronize(backend);
 }
 
+int ggml_backend_query(ggml_backend_t backend) {
+    GGML_ASSERT(backend);
+    if (backend->iface.synchronize == NULL) {
+        return 1;
+    }
+    if (backend->iface.query == NULL) {
+        return -1;
+    }
+    return backend->iface.query(backend) ? 1 : 0;
+}
+
 ggml_backend_graph_plan_t ggml_backend_graph_plan_create(ggml_backend_t backend, struct ggml_cgraph * cgraph) {
     GGML_ASSERT(backend);
     GGML_ASSERT(backend->iface.graph_plan_create != NULL);

@@ -26,13 +26,14 @@
 #include <unordered_map>
 
 namespace {
-// local: LLAMA_SYNC_ELIDE=0 disables the elision, LLAMA_SYNC_ELIDE_DEBUG=1 runs the real sync after every skipped one,
+// local: LLAMA_SYNC_ELIDE=0 disables the elision, LLAMA_SYNC_ELIDE_DEBUG=1 queries the backends at every skipped sync (busy = a missed
+// enqueue), then syncs for real; a backend without a query falls back to timing that sync,
 // LLAMA_SYNC_ELIDE_MUTANT=1 stops graph_compute marking pending work, =2 stops device-to-host copies marking it, =3 clears the flag after every enqueue
 // (=1 and =3 also drop the n_queued_tokens guard), =4 is =3 with the state I/O syncs elidable as well (before they were forced). Negative controls.
 struct sync_elide_flags {
     bool on     = true;
     bool debug  = false;
-    int  debug_us = 20; // LLAMA_SYNC_ELIDE_DEBUG=N with N > 1 sets the threshold; scheduler noise on a loaded CPU host exceeds 20 us
+    int  debug_us = 20; // LLAMA_SYNC_ELIDE_DEBUG=N with N > 1 sets the threshold of the timing fallback and of the slow-idle log
     int  mutant = 0;
     sync_elide_flags() {
         const char * e = getenv("LLAMA_SYNC_ELIDE");
@@ -47,6 +48,20 @@ struct sync_elide_flags {
 const sync_elide_flags & sync_elide_env() {
     static const sync_elide_flags flags;
     return flags;
+}
+// 1 all backends drained, 0 one still has queued work, -1 one cannot tell
+int sync_elide_query(ggml_backend_sched_t sched) {
+    int res = 1;
+    for (int i = 0; i < ggml_backend_sched_get_n_backends(sched); ++i) {
+        const int q = ggml_backend_query(ggml_backend_sched_get_backend(sched, i));
+        if (q == 0) {
+            return 0;
+        }
+        if (q < 0) {
+            res = -1;
+        }
+    }
+    return res;
 }
 } // namespace
 
@@ -535,7 +550,7 @@ llama_context::llama_context(
 
 llama_context::~llama_context() {
     if (sync_elide_env().debug) {
-        LLAMA_LOG_INFO("%s: sync_elide: elided=%lld missed=%lld\n", __func__, (long long) n_sync_elided, (long long) n_sync_missed);
+        LLAMA_LOG_WARN("%s: sync_elide: elided=%lld missed=%lld idle_slow=%lld\n", __func__, (long long) n_sync_elided, (long long) n_sync_missed, (long long) n_sync_idle_slow);
     }
     // wait for any pending asynchronous copies into the output buffers before they are freed
     synchronize(true);
@@ -842,16 +857,24 @@ void llama_context::synchronize(bool force, const char * caller) {
             n_sync_elided++;
             return;
         }
-        // local: the elision claims the stream is drained; prove it by syncing for real and timing the wait
+        // local: the elision claims the streams are drained; the backend query decides. A sync on an idle stream can still take
+        // tens of us (host scheduling, tracer), so its time decides only for a backend without a query.
+        const int idle = sync_elide_query(sched.get());
         const int64_t t0 = ggml_time_us();
         ggml_backend_sched_synchronize(sched.get());
         const int64_t waited = ggml_time_us() - t0;
         if (n_sync_elided++ == 0) {
-            LLAMA_LOG_INFO("%s: sync_elide: debug check engaged\n", __func__);
+            LLAMA_LOG_WARN("%s: sync_elide: debug check engaged (backend query %s)\n", __func__, idle < 0 ? "unavailable, timing fallback" : "exact");
         }
-        if (waited > sync_elide_env().debug_us) {
+        if (idle == 0) {
             n_sync_missed++;
-            LLAMA_LOG_ERROR("%s: sync_elide: skipped sync waited %lld us (> %d us; a device enqueue was not tracked), caller %s\n", __func__, (long long) waited, sync_elide_env().debug_us, caller);
+            LLAMA_LOG_ERROR("%s: sync_elide: missed: backend busy at a skipped sync (a device enqueue was not tracked), waited %lld us, caller %s\n", __func__, (long long) waited, caller);
+        } else if (idle < 0 && waited > sync_elide_env().debug_us) {
+            n_sync_missed++;
+            LLAMA_LOG_ERROR("%s: sync_elide: missed: skipped sync waited %lld us (> %d us, no backend query), caller %s\n", __func__, (long long) waited, sync_elide_env().debug_us, caller);
+        } else if (waited > sync_elide_env().debug_us) {
+            n_sync_idle_slow++;
+            LLAMA_LOG_INFO("%s: sync_elide: idle backends, sync took %lld us (latency, not a miss), caller %s\n", __func__, (long long) waited, caller);
         }
         return;
     }
