@@ -68,6 +68,10 @@ static void deferred_sync(ggml_backend_t backend) {
     }
 }
 
+static bool deferred_query(ggml_backend_t backend) {
+    return g_queues[backend].empty();
+}
+
 static void deferred_free(ggml_backend_t backend) {
     deferred_sync(backend);
     g_queues.erase(backend);
@@ -85,6 +89,7 @@ static ggml_backend_t init_owned_cpu(ggml_backend_dev_t dev, const char * params
         backend->iface.graph_compute = deferred_compute;
         backend->iface.get_tensor_async = deferred_get;
         backend->iface.synchronize = deferred_sync;
+        backend->iface.query = deferred_query;
         backend->iface.free = deferred_free;
     }
     return backend;

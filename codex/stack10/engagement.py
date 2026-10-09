@@ -61,13 +61,14 @@ ENGAGEMENT = {
         r'mmq_tiles: type=\w+ m=\d+ cols=(?:9|1\d|2[0-4]) z=\d+ J=(?:16|24) ntiles=\d+ nsm=\d+ small_i=1 '],
         anchors=[('ggml/src/ggml-cuda/mmq.cuh', 'mmq_tiles: type=%s m=%lld cols=%lld z=%lld J=%d ntiles=%d nsm=%d small_i=%d units=%d parts=%d blocks=%d')],
         samples=['mmq_tiles: type=q6_K m=8704 cols=12 z=1 J=16 ntiles=136 nsm=36 small_i=1 units=68 parts=68 blocks=136']),
-    # no line exists without the debug check, which syncs for real after every skipped sync: the canary proves the path is taken
-    # and that no skipped sync had pending work; the measured arms run with the default (elision, no check).
-    'k11a': dict(shapes=ALL, env={'LLAMA_SYNC_ELIDE_DEBUG': '2000'}, where='server.log, INFO, only with LLAMA_SYNC_ELIDE_DEBUG (weak: threshold 2000 us)', patterns=[
-        r'sync_elide: debug check engaged',
-        r'(?s)^(?!.*skipped sync waited)'],
-        anchors=[('src/llama-context.cpp', 'sync_elide: debug check engaged'), ('src/llama-context.cpp', 'sync_elide: skipped sync waited')],
-        samples=['synchronize: sync_elide: debug check engaged\nother lines']),
+    # no line exists without the debug check, which queries the backends at every skipped sync (busy = missed enqueue) and then
+    # syncs for real: the canary proves the path is taken, query-based, and that no skipped sync had queued work; the measured
+    # arms run with the default (elision, no check).
+    'k11a': dict(shapes=ALL, env={'LLAMA_SYNC_ELIDE_DEBUG': '1'}, where='server.log, WARN/ERROR, only with LLAMA_SYNC_ELIDE_DEBUG', patterns=[
+        r'sync_elide: debug check engaged \(backend query exact\)',
+        r'(?s)^(?!.*sync_elide: missed:)'],
+        anchors=[('src/llama-context.cpp', 'sync_elide: debug check engaged (backend query %s)'), ('src/llama-context.cpp', 'sync_elide: missed: backend busy at a skipped sync')],
+        samples=['synchronize: sync_elide: debug check engaged (backend query exact)\nother lines']),
     'k11b': dict(shapes=ALL, env={}, where='server.log, boot INFO (needs GGML_SCHED_INPUT_STAGING=1, set in every arm)', patterns=[
         r'one pinned copy per input, uploads slowest host link first: CUDA[01] \('],
         anchors=[(CU, 'one pinned copy per input, uploads slowest host link first: %s')],
@@ -104,7 +105,8 @@ def selftest():
     assert not re.search(ENGAGEMENT['k8']['patterns'][0], ENGAGEMENT['k8']['samples'][0].replace('cols=12', 'cols=6'))
     assert not re.search(ENGAGEMENT['k9']['patterns'][0], ENGAGEMENT['k9']['samples'][0].replace('pdl=1', 'pdl=0'))
     assert not re.search(ENGAGEMENT['k4']['patterns'][0], ENGAGEMENT['k4']['samples'][0].replace('mutant=0', 'mutant=1'))
-    assert not re.search(ENGAGEMENT['k11a']['patterns'][1], 'x\nsync_elide: skipped sync waited 31 us (> 20 us)\n')
+    assert not re.search(ENGAGEMENT['k11a']['patterns'][1], 'x\nsynchronize: sync_elide: missed: backend busy at a skipped sync (a device enqueue was not tracked), waited 31 us, caller f\n')
+    assert not re.search(ENGAGEMENT['k11a']['patterns'][0], 'sync_elide: debug check engaged (backend query unavailable, timing fallback)')
     assert not re.search(ENGAGEMENT['k11a']['patterns'][0], 'a boot without the check')
     assert canary_env(['k8', 'k4'], 'np1') == {'GGML_SSM_CONV_RS_LOG': '1'}
     assert canary_env(['k8', 'k4'], 'np2') == {'GGML_CUDA_MMQ_TILES_LOG': '1', 'GGML_SSM_CONV_RS_LOG': '1'}

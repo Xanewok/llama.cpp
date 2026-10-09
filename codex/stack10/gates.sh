@@ -129,7 +129,7 @@ stamps() {
     [[ $n == 25 ]]
     strings build-cuda/bin/libggml-base.so | grep -x "$SHORT" > /dev/null
     if has k9; then [[ $(grep -ac 'mmq_pdl:' build-cuda/bin/libggml-cuda.so) -gt 0 ]]; fi
-    if has k11a; then [[ $(strings build-cuda/bin/libllama.so | grep -c 'debug check engaged') -ge 1 ]]; fi
+    if has k11a; then [[ $(strings build-cuda/bin/libllama.so | grep -c 'backend busy at a skipped sync') -ge 1 ]]; fi
     [[ $(git rev-parse HEAD) == "$SHA" && -z $(git status --porcelain --untracked-files=no) ]]
 }
 
