@@ -51,7 +51,7 @@ def main():
     inherited = s10items.extra_pins(ROOT, 's10-depth-iq4.toml.in')
     top = {k: old[k] for k in ('priority', 'kind', 'devices', 'protected')}
     top |= {'id': f's10-identity-{TAG}', 'title': f'stack10 np1 {TAG} identity: single-switch ablations against recorded stack9-p55',
-            'plan': plan, 'out': str(HERE / 'results'),
+            'plan': plan, 'out': str(HERE / ('results' if DEPTH == 32768 else f'results-{TAG}')),
             'extra_pins': [*inherited, *map(str, own), str(SOURCE),
                            str(RESULTS / f'0-s9p/depth-{DEPTH}.json'), str(RESULTS / f'1-s10/depth-{DEPTH}.json'),
                            str(RESULTS / 'pins.json'), str(RESULTS / '0-s9p/command.json'), str(RESULTS / '0-s9p/env.json')]}

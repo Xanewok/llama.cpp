@@ -19,22 +19,22 @@ signatures = [
 ]
 
 [run]
-cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/gpu_ab.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/experiment.toml", "--execute", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/results/full-a{attempt}", "--port", "{port}"]
-cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness"
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/gpu_ab.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/experiment.toml", "--execute", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/results-90k/full-a{attempt}", "--port", "{port}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness"
 env = { GPUQ_ACTIVE = "1" }
 ports = "dynamic"
 
 [preflight]
-cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/gpu_ab.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/experiment.toml", "--preflight", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/results/preflight-plan"]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/gpu_ab.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/experiment.toml", "--preflight", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/results-90k/preflight-plan"]
 timeout_s = 600
 
 [canary]
-cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/gpu_ab.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/experiment.toml", "--canary", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/results/canary-a{attempt}", "--port", "{port}"]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/gpu_ab.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/experiment.toml", "--canary", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/results-90k/canary-a{attempt}", "--port", "{port}"]
 env = { GPUQ_ACTIVE = "1" }
 timeout_s = 180
 
 [outputs]
-paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/results/full-a{attempt}"]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/results-90k/full-a{attempt}"]
 
 [fix]
 editable = []
@@ -124,22 +124,22 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/llama-server",
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/round-trace",
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/test-backend-ops",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/experiment.toml",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/__init__.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/__main__.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/agents.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/bw-run.sh",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/bw_item.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/calibration.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/campaign.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/depth.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/lib.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/mkitem.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/notes.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/probe.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/report.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/run.sh",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/snapshot.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/harness/stub_server.py",
-  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-f8144935898208f1004b751936d2702e0bb9d5bfadd30866028a348b5cd3c741/source-root.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/experiment.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/__init__.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/__main__.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/agents.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/bw-run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/bw_item.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/calibration.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/campaign.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/depth.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/lib.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/mkitem.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/notes.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/probe.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/report.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/snapshot.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/harness/stub_server.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-d62ab7eb56b7d3bab89ebfd8ce2b81946a1955d6ed205de92283ee99c41bce4f/source-root.txt",
 ]
