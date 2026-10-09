@@ -107,6 +107,17 @@ all_passed() {
     echo "$1: passed=${n:-none} total=${m:-none}"
     [[ -n ${n:-} && ${n:-0} == "${m:-x}" && $n -gt 0 ]]
 }
+completed() { grep -aEq '[0-9]+/[0-9]+ tests passed' "$1"; }
+# Failing case of a completed run: "N/M tests passed" with N < M and a FAIL on a FLASH_ATTN_EXT case. test-backend-ops colours
+# FAIL (ESC[1;31mFAIL), so the case line is matched as OP(...) followed by FAIL, not ": FAIL".
+mutant_detected() { # LOG
+    local n m
+    grep -aq 'FLASH_ATTN_EXT(.*FAIL' "$1" || return 1
+    read -r n m < <(sed -n 's#.*[^0-9]\([0-9][0-9]*\)/\([0-9][0-9]*\) tests passed.*#\1 \2#p' "$1" | tail -n 1) || true
+    [[ -n ${n:-} && -n ${m:-} && $n -lt $m ]]
+}
+# Failing-case identity: the OP(vars) text only; the ERR/NMSE numbers differ between runs and builds.
+fail_ids() { sed 's/\x1b\[[0-9;]*m//g' "$1" | sed -E 's/^.*(FLASH_ATTN_EXT\([^)]*\)).*$/\1/' | LC_ALL=C sort -u; }
 # Every FLASH_ATTN_EXT case must pass. A failing case is tolerated only if the pkg54-fixed base build fails the same case on
 # this device (a pre-existing failure); a case the base does not have (the new window cases) is never tolerated.
 fa_full() {
@@ -116,11 +127,12 @@ fa_full() {
         return 0
     fi
     echo "fa-$dev: failing cases, comparing with the base build"
+    completed "$OUT/fa-$dev.log" || { echo "FAIL fa-$dev: run did not complete (no tests-passed summary: crash or timeout)"; return 1; }
     grep -a 'FAIL' "$OUT/fa-$dev.log" > "$OUT/fa-$dev.fail.raw" || { echo "FAIL fa-$dev: no failing case line (crash or timeout)"; return 1; }
-    sed 's/\x1b\[[0-9;]*m//g' "$OUT/fa-$dev.fail.raw" | LC_ALL=C sort -u > "$OUT/fa-$dev.fail"
+    fail_ids "$OUT/fa-$dev.fail.raw" > "$OUT/fa-$dev.fail"
     env CUDA_VISIBLE_DEVICES="$VISIBLE" timeout 2700 nice -n 19 "$base" test -b "$dev" -o FLASH_ATTN_EXT -j 1 > "$OUT/fa-base-$dev.log" 2>&1 || true
     grep -a 'FAIL' "$OUT/fa-base-$dev.log" > "$OUT/fa-base-$dev.fail.raw" || true
-    sed 's/\x1b\[[0-9;]*m//g' "$OUT/fa-base-$dev.fail.raw" | LC_ALL=C sort -u > "$OUT/fa-base-$dev.fail"
+    fail_ids "$OUT/fa-base-$dev.fail.raw" > "$OUT/fa-base-$dev.fail"
     LC_ALL=C comm -23 "$OUT/fa-$dev.fail" "$OUT/fa-base-$dev.fail" > "$OUT/fa-$dev.new-failures"
     cat "$OUT/fa-$dev.new-failures"
     [[ ! -s $OUT/fa-$dev.new-failures ]]
@@ -160,9 +172,11 @@ mutants() {
     for m in 1 2 3 4 5; do
         if wcases CUDA0 "mut$m" GGML_CUDA_FA_KV_WINDOW=1024 GGML_CUDA_FA_KV_WINDOW_MUTANT=$m; then
             echo "mutant $m: test-backend-ops PASSED (control blind)"
-        else
+        elif mutant_detected "$OUT/win-mut$m-CUDA0.log"; then
             echo "mutant $m: test-backend-ops failed as required ($(grep -ac 'FAIL' "$OUT/win-mut$m-CUDA0.log") failing lines)"
             seen=$((seen+1))
+        else
+            echo "mutant $m: nonzero rc without a completed run with a failing case (crash or timeout; not a detection)"
         fi
     done
     [[ $seen == 5 ]]
@@ -185,7 +199,7 @@ PY_NMSE
 nmse() {
     [[ $VISIBLE == GPU-* ]] || return 1
     g++ -std=c++17 -O1 -Wall -Wextra -Werror -Iggml/include codex/fa-window.cpp -L build-cuda/bin -lggml -lggml-base -o "$OUT/fa-window"
-    local dev w m f
+    local dev w m f want got
     for dev in CUDA0 CUDA1; do
         mkdir -p "$OUT/ref-$dev"
         env CUDA_VISIBLE_DEVICES="$VISIBLE" LD_LIBRARY_PATH="$ROOT/build-cuda/bin" GGML_CUDA_FA_KV_WINDOW=0 timeout 1800 "$OUT/fa-window" "$dev" save "$OUT/ref-$dev" > "$OUT/win-save-$dev.txt"
@@ -196,7 +210,12 @@ nmse() {
             nmse_ok "$f" 1e-5
         done
         # one window (kv 8192 at window 8192) takes the unwindowed path: bytes must be the one-pass bytes
-        grep -a ',kv=8192,' "$OUT/win-cmp-$dev-w8192.txt" | grep -c 'bitwise=1' > /dev/null || { echo "FAIL $dev single window not bitwise"; return 1; }
+        # expected = number of kv=8192 cases of the case list (fa-window.cpp cases(): exactly 1, read back from the save run so a
+        # list change is followed); every such row of the cmp run must be bitwise
+        want=$(grep -ac ',kv=8192,.* saved nonfinite=' "$OUT/win-save-$dev.txt" || true)
+        got=$(grep -ac ',kv=8192,.*bitwise=1' "$OUT/win-cmp-$dev-w8192.txt" || true)
+        echo "$dev kv=8192 bitwise rows: $got of $want expected"
+        [[ $want -ge 1 && $got == "$want" ]] || { echo "FAIL $dev single window not bitwise"; return 1; }
         # the other kv sizes (several windows) must have engaged the merge: not bitwise-identical ones exist (informational)
         echo "$dev window 8192 not bitwise: $(grep -c 'bitwise=0' "$OUT/win-cmp-$dev-w8192.txt") cases"
         for m in 1 2 3 4 5; do
