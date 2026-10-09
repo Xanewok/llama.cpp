@@ -59,3 +59,10 @@ gates passed (auditor replay: 211.4 / 12.0 StreamSync per round).
 - Mac a5 (HEAD 459de5dd0): build/identity pass (checkpoints created/restored per combo 2/1 .. 5/2, all `missed=0`); mutant 1 is
   no longer caught anywhere. a4 showed its only catch site was `prompt_save`'s state read (`skipped sync waited 3987 us` / 238 us
   right after `saving prompt ... total state size`), i.e. exactly the path the fix now forces; the gate no longer requires it.
+- Mac a6 (M, `work/build-window-1007/k11a-mac-a6`, HEAD 65aff7285): all stages pass. Identity as a5; mutants: 2 caught by the
+  debug check at `logits_deferred_fetch` (caller now logged), 3 by tokens in all 3 combos, 1 not caught (expected, above).
+  Stage 23 state I/O (deferred backend, 64-token prompt, 53.7 MB sequence state): off = on = mutant 3 (save fnv
+  9745a6af89cc7ae6, restore holds); mutant 4 (the pre-fix elidable state sync) saves stale state (fnv 180a4aa410a4eda0) and
+  the restore is overwritten by the queued decode: the fixture fails without the fix.
+- Window: the proof boot sends the request twice (cache_prompt on), so every arm saves and restores a checkpoint (gated);
+  the debug arm also fails on any destructor `missed=N>0`, in the proof boot and in count.py.
