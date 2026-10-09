@@ -1,6 +1,6 @@
-purpose: wave-2 stack: stack10-cand2 + p55 + K components
-base: def4a4e20 (frozen/stack10-cand2 source)
+purpose: AllReduce kernel path: pipelined write/read (full duplex)
+base: f163659410ac18610bfa09b506ddbabd40b9e17d
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack10
-created: 2026-10-09T00:36:41+02:00
+branch: topic/ar-duplex
+created: 2026-10-09T11:46:27+02:00
 creator: xanewok
