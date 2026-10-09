@@ -105,7 +105,9 @@ def run_window(url, session, out, name, depth, prompts, k, delay, window, n_pred
     ends = [o['stamps'][-1][0] if o.get('stamps') else None for o in outs]
     res = {'name': name, 'kind': 'decode', 'slots': len(SLOTS), 'depth': depth,
            'prefill_requests': [{k_: p.get(k_) for k_ in ('prompt_n', 'cache_n', 'prompt_ms', 'wall_s')} for p in pre],
-           'capture_error': state['err'] or next((o['error'] for o in outs if o.get('error')), None),
+           # the streams' own errors first: a dead server also makes the capture thread fail generically
+           'capture_error': '; '.join([f'slot {s}: {o["error"]}' for s, o in zip(SLOTS, outs) if o.get('error')]
+                                      + ([f'capture: {state["err"]}'] if state['err'] else [])) or None,
            'window_open_after_both_first_tokens_s': (state['opened'] - max(o['stamps'][0][0] for o in outs)) if state['opened'] and all(first_stamp(o) for o in outs) else None,
            'stop_called_before_first_slot_end_s': (min(e for e in ends if e) - state['closing']) if state['closing'] and all(ends) else None,
            'nsys_stop_s': (state['closed'] - state['closing']) if state['closed'] and state['closing'] else None,
