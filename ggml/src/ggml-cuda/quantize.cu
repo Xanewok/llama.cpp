@@ -456,16 +456,14 @@ static __global__ void quantize_mmq_mxfp4(const float * __restrict__ x,
 // scatter: grid over tokens, quantize once, write to all the token's compact rows
 template <mmq_q8_1_ds_layout ds_layout, bool scatter>
 static __global__ void quantize_mmq_q8_1(
-        const float * x_ptr, const int32_t * ids_ptr, void * vy_ptr,
+        const float * __restrict__ x, const int32_t * __restrict__ ids, void * __restrict__ vy,
         const int64_t ne00, const int64_t s01, const int64_t s02, const int64_t s03,
         const int64_t ne0, const int ne1, const int ne2, const int n_expert_used) {
 
     // Waits before the early return so that every block is ordered after the producer.
     ggml_cuda_pdl_lc();
-    ggml_cuda_pdl_sync();
-    const float   * GGML_CUDA_RESTRICT x   = x_ptr;
-    const int32_t * GGML_CUDA_RESTRICT ids = ids_ptr;
-    void          * GGML_CUDA_RESTRICT vy  = vy_ptr;
+    const int pdl_offset = ggml_cuda_pdl_sync_offset();
+    x += pdl_offset; ids += pdl_offset; vy = (char *) vy + pdl_offset;
 
     constexpr int vals_per_scale = ds_layout == MMQ_Q8_1_DS_LAYOUT_D2S6 ? 64 : 32;
     constexpr int vals_per_sum   = ds_layout == MMQ_Q8_1_DS_LAYOUT_D2S6 ? 16 : 32;

@@ -961,9 +961,9 @@ static __device__ __forceinline__ void mul_mat_q_process_tile(
 template <ggml_type type, int J, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>
 __launch_bounds__(ggml_cuda_mmq_get_nthreads(type, J, fallback, prec_src1), ggml_cuda_mmq_get_occupancy(type, J, fallback, prec_src1))
 static __global__ void mul_mat_q(
-        const char * x_ptr, const int * y_ptr, const int32_t * ids_dst_ptr,
-        const int32_t * expert_bounds_ptr, float * dst_ptr, float * tmp_fixup_ptr,
-        const float * y_scale_ptr,
+        const char * __restrict__ x, const int * __restrict__ y, const int32_t * __restrict__ ids_dst,
+        const int32_t * __restrict__ expert_bounds, float * __restrict__ dst, float * __restrict__ tmp_fixup,
+        const float * __restrict__ y_scale,
         const uint3 blocks_per_ne00, const int nrows_x, const int ncols_dst, const int stride_row_x, const int ncols_y, const int stride_col_dst,
         const uint3 channel_ratio, const uint3 nchannels_y, const int stride_channel_x, const int stride_channel_y, const int stride_channel_dst,
         const uint3 sample_ratio, const uint3 nsamples_y, const int stride_sample_x, const int stride_sample_y, const int stride_sample_dst,
@@ -972,16 +972,9 @@ static __global__ void mul_mat_q(
     // Every block must reach the wait before any early return: a grid whose blocks all exit early
     // would otherwise complete, and release its own dependents, while the producer is still running.
     ggml_cuda_pdl_lc();
-    ggml_cuda_pdl_sync();
-
-    // Restrict only after the wait: a restrict pointer lets the compiler hoist loads above it.
-    const char    * GGML_CUDA_RESTRICT x             = x_ptr;
-    const int     * GGML_CUDA_RESTRICT y             = y_ptr;
-    const int32_t * GGML_CUDA_RESTRICT ids_dst       = ids_dst_ptr;
-    const int32_t * GGML_CUDA_RESTRICT expert_bounds = expert_bounds_ptr;
-    float         * GGML_CUDA_RESTRICT dst           = dst_ptr;
-    float         * GGML_CUDA_RESTRICT tmp_fixup     = tmp_fixup_ptr;
-    const float   * GGML_CUDA_RESTRICT y_scale       = y_scale_ptr;
+    const int pdl_offset = ggml_cuda_pdl_sync_offset();
+    x += pdl_offset; y += pdl_offset; ids_dst += pdl_offset; expert_bounds += pdl_offset;
+    dst += pdl_offset; tmp_fixup += pdl_offset; y_scale += pdl_offset;
 
     // Skip unused template specializations for faster compilation:
     if (ggml_cuda_mmq_get_config(type, J, fallback, prec_src1).type == GGML_TYPE_COUNT) {
@@ -1262,16 +1255,13 @@ static __global__ void mul_mat_q(
 template <ggml_type type, int J, bool fallback, ggml_prec prec_src1 = GGML_PREC_Q8>
 __launch_bounds__(ggml_cuda_mmq_get_nthreads(type, J, fallback, prec_src1)/2, 1)
 static __global__ void mul_mat_q_stream_k_fixup(
-        const int32_t * ids_dst_ptr, const int32_t * expert_bounds_ptr, float * dst_ptr,
-        float * tmp_last_tile_ptr, const uint3 blocks_per_ne00, const int nrows_x, const int ncols_dst,
+        const int32_t * __restrict__ ids_dst, const int32_t * __restrict__ expert_bounds, float * __restrict__ dst,
+        float * __restrict__ tmp_last_tile, const uint3 blocks_per_ne00, const int nrows_x, const int ncols_dst,
         const int stride_col_dst, const uint3 nchannels_y, const int stride_channel_dst, const uint3 nsamples_y,
         const int stride_sample_dst, const uint3 ntx) {
     ggml_cuda_pdl_lc();
-    ggml_cuda_pdl_sync();
-    const int32_t * GGML_CUDA_RESTRICT ids_dst       = ids_dst_ptr;
-    const int32_t * GGML_CUDA_RESTRICT expert_bounds = expert_bounds_ptr;
-    float         * GGML_CUDA_RESTRICT dst           = dst_ptr;
-    float         * GGML_CUDA_RESTRICT tmp_last_tile = tmp_last_tile_ptr;
+    const int pdl_offset = ggml_cuda_pdl_sync_offset();
+    ids_dst += pdl_offset; expert_bounds += pdl_offset; dst += pdl_offset; tmp_last_tile += pdl_offset;
     constexpr int warp_size       = ggml_cuda_get_physical_warp_size();
     constexpr int nwarps          = (ggml_cuda_mmq_get_nthreads(type, J, fallback, prec_src1) / 2) / warp_size;
     constexpr int I               = ggml_cuda_mmq_get_I(type, J, fallback, prec_src1);
