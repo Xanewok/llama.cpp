@@ -267,7 +267,11 @@ def main():
     ap.add_argument('--expected', required=True)
     ap.add_argument('--out', type=Path)
     a = ap.parse_args()
-    cfg = Cfg(root=a.root, a1=a.a1, expected=parse_expected(a.expected)).filled()
+    try:
+        cfg = Cfg(root=a.root, a1=a.a1, expected=parse_expected(a.expected)).filled()
+    except Exception as e:
+        print(f'tail precheck REFUSED: cannot read the reused attempt: {type(e).__name__}: {e}')
+        sys.exit(6)
     if a.mode == 'controls':
         results = controls(cfg)
         for label, ok, problems in results:
