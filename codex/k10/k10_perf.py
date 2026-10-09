@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 
 ANSI = re.compile(r'\x1b\[[0-9;]*m')
-TEST_LINE = re.compile(r'^\s+TOP_K\((.*?)\): (.*)$')
+# a failing case is printed after its '[TOP_K] ERR = ...' message on the same line
+TEST_LINE = re.compile(r'(?:^|\s)TOP_K\((.*?)\): (.*)$')
 PERF_LINE = re.compile(r'^\s+TOP_K\((.*?)\):\s+(\d+) runs -\s+([\d.]+) us/run')
 
 
@@ -17,7 +18,7 @@ def lines(path):
 def results(path):
     rows = []
     for l in lines(path):
-        m = TEST_LINE.match(l)
+        m = TEST_LINE.search(l)
         if m:
             status = 'FAIL' if 'FAIL' in m.group(2) else 'OK' if m.group(2).endswith('OK') else 'UNSUPPORTED' if 'not supported' in m.group(2) else '?'
             rows.append((m.group(1), status))
