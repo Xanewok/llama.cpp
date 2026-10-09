@@ -32,7 +32,7 @@ import hashlib, json, subprocess
 from pathlib import Path
 r = json.loads(Path('codex/k9-evidence/summary.json').read_text())
 assert r['result'] == 'PASS'
-assert {20, 21, 31} <= {s['code'] for s in r['stages'] if s['rc'] == 0}
+assert {20, 21, 22, 31} <= {s['code'] for s in r['stages'] if s['rc'] == 0}
 files = subprocess.check_output(['git', 'ls-files', 'src', 'ggml', 'tests', 'common'], text=True).splitlines()
 h = hashlib.sha256()
 for name in files:
@@ -118,8 +118,19 @@ ops() {
     local dev
     for dev in CUDA0 CUDA1; do
         # K9 default: engagement of every launch in the chain, then byte identity against every other configuration.
+        # PDL off and the stock-MMQ binary run before any verdict, so a K9 recompute failure always comes with both controls.
+        local k9_rc off_rc base_rc
         chain "k9-$dev" "$dev" "$K" hash 200 GGML_CUDA_MMQ_PDL_LOG=1
-        [[ $RC == 0 ]] || { echo "FAIL k9-$dev rc=$RC"; return 8; }
+        k9_rc=$RC
+        chain "off-$dev" "$dev" "$K" hash 200 GGML_CUDA_MMQ_PDL=0 GGML_CUDA_MMQ_PDL_LOG=1
+        off_rc=$RC
+        chain "base-$dev" "$dev" "$B" hash 200
+        base_rc=$RC
+        if [[ $k9_rc != 0 || $off_rc != 0 || $base_rc != 0 ]]; then
+            echo "FAIL k9-$dev rc=$k9_rc off-$dev rc=$off_rc base-$dev rc=$base_rc"
+            [[ $off_rc == 0 && $base_rc == 0 ]] || echo "FAIL also without K9 PDL: stock or test defect"
+            return 8
+        fi
         grep -aq '^mmq_pdl: kernel=mmq .* pdl=1' "$OUT/k9-$dev.err" || { echo "FAIL no PDL mmq launch"; return 6; }
         grep -aq '^mmq_pdl: kernel=quantize .* pdl=1' "$OUT/k9-$dev.err" || { echo "FAIL no PDL quantize launch"; return 6; }
         grep -aq '^mmq_pdl: kernel=fixup .* pdl=1' "$OUT/k9-$dev.err" || { echo "FAIL no PDL fixup launch: no shape needs a fixup"; return 6; }
@@ -127,14 +138,10 @@ ops() {
         [[ $(grep -ac '^chain ' "$OUT/k9-$dev.out") == 36 ]] || { echo "FAIL chain case count"; return 8; }
         awk '$1 == "chain" && $5 == $6 {bad = 1} END {exit bad}' "$OUT/k9-$dev.out" || { echo "FAIL alternating inputs hash alike"; return 5; }
 
-        chain "off-$dev" "$dev" "$K" hash 200 GGML_CUDA_MMQ_PDL=0 GGML_CUDA_MMQ_PDL_LOG=1
-        [[ $RC == 0 ]] || { echo "FAIL off-$dev rc=$RC"; return 8; }
         grep -aq '^mmq_pdl: kernel=mmq .* pdl=0' "$OUT/off-$dev.err" || { echo "FAIL off switch did not disable PDL"; return 5; }
         [[ $(grep -ac 'pdl=1' "$OUT/off-$dev.err") == 0 ]] || { echo "FAIL off arm still engaged PDL"; return 5; }
         cmp "$OUT/k9-$dev.out" "$OUT/off-$dev.out" || { echo "FAIL PDL on differs from MMQ-PDL off"; return 8; }
 
-        chain "base-$dev" "$dev" "$B" hash 200
-        [[ $RC == 0 ]] || { echo "FAIL base-$dev rc=$RC"; return 8; }
         cmp "$OUT/k9-$dev.out" "$OUT/base-$dev.out" || { echo "FAIL K9 differs from the stock-MMQ baseline binary"; return 8; }
 
         chain "nopdl-$dev" "$dev" "$K" hash 200 GGML_CUDA_PDL=0

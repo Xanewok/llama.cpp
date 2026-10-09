@@ -1,7 +1,8 @@
 # stack10 drop map
 
 Branch `topic/stack10`, base `def4a4e20` (= frozen/stack10-cand2 source). Every component is a set of general commits followed by one `local:`
-switch commit (env switches, mutants, engagement logs). gdn4 is not in this stack (moved to wave 3). Exceptions: k10 has a trailing general test commit `7d7464a27`; k11a has a second
+switch commit (env switches, mutants, engagement logs). gdn4 is not in this stack (moved to wave 3). Exceptions: k10 has a trailing general test commit `7d7464a27`; k9 has a trailing general test fix `1ae85cd15` (mmq-chain norm weights out of
+the graph allocator, from `wt/s10-k9`); k11a has a second
 general + `local:` pair (`9afd77984`, `3497acd59`, the state I/O sync fix from `wt/s10-k11a`) and a third `local:` commit (`ee200e4d5`,
 query-based debug check: local `ggml_backend_query` hook in ggml-backend/CUDA/meta/CPU) on top of the stack; drops match by
 subject, so the position does not matter.
@@ -17,7 +18,7 @@ subject, so the position does not matter.
 | k6b | ADD+RMS_NORM fusion (<= 16 rows); needs k6a test helper | `1376b053b`, `b303083b7` |
 | k2 | shared flash-attention KV-max mask scan | `fac1254d2`, `7950ebbbc` |
 | k10 | batched top-k (`7d7464a27`: test_top_k::err bounds-checks output indices, on top of the stack) | `4bf1c2ea3`, `7378321b9`, `7d7464a27` |
-| k9 | MMQ programmatic dependent launch | `cd72032e8`, `b33022516`, `c15713fb1`, `23abb0b21` |
+| k9 | MMQ programmatic dependent launch (`1ae85cd15`: mmq-chain test fix, on top of the stack) | `cd72032e8`, `b33022516`, `c15713fb1`, `23abb0b21`, `1ae85cd15` |
 | k8 | MMQ stream-k default-tile units + small-I tiles (L1 prerequisite included) | `88fca1a7b`, `a66f33bc4`, `498383fa1`, `4c3d32429`, `f13e859cd`, `dfe49db88` |
 | k11a | getter synchronize() elision; state I/O and KV stream copies keep the real sync; query-based debug check | `c696e7d7f`, `886be9958`, `9afd77984`, `3497acd59`, `ee200e4d5` |
 | k11b | Meta input staging, slowest link first | `e37639ef7`, `3cdbc3dfb` |
