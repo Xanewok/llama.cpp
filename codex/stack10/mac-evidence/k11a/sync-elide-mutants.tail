@@ -3,10 +3,10 @@
 1-0-1-mut3-dbg0: tokens differ
 1-0-1-mut3-dbg1: debug check fired
 2-1-0-mut1-dbg0: not caught
-2-1-0-mut1-dbg1: debug check fired
+2-1-0-mut1-dbg1: not caught
 2-1-0-mut2-dbg0: not caught
 2-1-0-mut2-dbg1: not caught
 2-1-0-mut3-dbg0: tokens differ
 2-1-0-mut3-dbg1: debug check fired
-{1: 2, 2: 2, 3: 6} mutant 3 token-level catches per combo: [True, True, True]
+{1: 0, 2: 2, 3: 6} mutant 3 token-level catches per combo: [True, True, True] debug check on mutant 3 in every combo: True
 mutant controls PASS

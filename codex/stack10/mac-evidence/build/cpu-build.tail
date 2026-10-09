@@ -1,5 +1,5 @@
-[222/233] Linking CXX executable bin/chain-cpu
-[223/233] Linking CXX executable bin/bw-cand-driver
+[222/233] Linking CXX executable bin/test-recurrent-state-rollback
+[223/233] Linking CXX executable bin/test-topk-batched
 [224/233] Linking CXX executable bin/test-sampling
 [225/233] Linking CXX executable bin/test-llama-archs
 [226/233] Linking CXX executable bin/test-alloc

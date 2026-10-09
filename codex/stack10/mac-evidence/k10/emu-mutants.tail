@@ -1,6 +1,6 @@
 mutant 1 killed: FAIL narrow-ties4 ncols=2 nrows=3 k=2 row=2 slot=0 got=1 want=0
 mutant 2 killed: FAIL narrow-ties4 ncols=257 nrows=1 k=1 row=0 slot=0 got=256 want=25
-mutant 3 killed: FAIL narrow-ties4 ncols=2 nrows=3 k=2 row=2 slot=0 got=1 want=0
+mutant 3 killed: FAIL narrow-const ncols=2 nrows=2 k=2 row=0 slot=0 got=1 want=0
 mutant 4 killed: FAIL narrow-normal ncols=2 nrows=1 k=1 row=0 slot=0 got=0 want=1
 mutant 5 killed: FAIL narrow-ties4 ncols=7 nrows=3 k=2 row=1 slot=0 got=0 want=3
 mutant 6 killed: FAIL narrow-normal ncols=2 nrows=1 k=1 row=0 slot=0 got=0 want=1
