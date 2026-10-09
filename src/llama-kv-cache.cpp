@@ -917,7 +917,7 @@ bool llama_kv_cache::update(llama_context * lctx, bool do_shift, const stream_co
     if (!sc_info.empty()) {
         assert(n_stream > 1 && "stream copy should never happen with a single stream");
 
-        llama_synchronize(lctx);
+        lctx->synchronize(true);
 
         const size_t n_copy = sc_info.ssrc.size();
 
