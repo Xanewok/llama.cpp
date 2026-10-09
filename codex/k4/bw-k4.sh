@@ -84,7 +84,7 @@ ops() {
     for dev in CUDA0 CUDA1; do
         tbo "$dev" "$OUT/ops-$dev.log" GGML_SSM_CONV_RS_LOG=1
         [[ $RC == 0 ]]
-        grep -aq 'byte identity with the gathered path and changing-id replay PASS cases=[1-9][0-9]* unsupported=[1-9]' "$OUT/ops-$dev.log"
+        grep -aq 'byte identity with the gathered path and changing-id replay PASS cases=[1-9][0-9]* unsupported=0\b' "$OUT/ops-$dev.log"
         grep -aq 'ssm_conv_rs engaged:.* silu=1' "$OUT/ops-$dev.log"
         grep -aq 'ssm_conv_rs engaged:.* silu=0' "$OUT/ops-$dev.log"
         # the fused silu epilogue must be exercised on the whole-graph cases too
