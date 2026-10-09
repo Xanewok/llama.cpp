@@ -101,17 +101,18 @@ sass() {
 # length 256, ssm group 16 x state 128, time_step_rank 48, conv kernel 4, vocab shard 124160). Cases are in tests/test-backend-ops.cpp
 # ("local: served decode shapes"); each filter's row count must equal the case count (rc 8 otherwise).
 SETS=(mm fa conv gdn gr sr scan)
-declare -A OPNAME=([mm]=MUL_MAT [fa]=FLASH_ATTN_EXT [conv]=SSM_CONV [gdn]=GATED_DELTA_NET [gr]=GET_ROWS [sr]=SET_ROWS [scan]=SSM_SCAN)
+declare -A OPNAME=([mm]=MUL_MAT [mm1]=MUL_MAT [fa]=FLASH_ATTN_EXT [conv]=SSM_CONV [gdn]=GATED_DELTA_NET [gr]=GET_ROWS [sr]=SET_ROWS [scan]=SSM_SCAN)
 declare -A PARAMS=(
     [mm]='type_a=(iq4_xs|q4_K|q5_K|q6_K|q8_0),type_b=f32,m=(8704|5120|6144|3072|124160),n=[1-8],k=(5120|8704|3072),bs=\[1,1\],nr=\[1,1\]'
+    [mm1]='type_a=(iq4_xs|q4_K|q5_K|q6_K|q8_0),type_b=f32,m=(8704|5120),n=[1-8],k=(5120|8704),bs=\[1,1\],nr=\[1,1\]'
     [fa]='hsk=256,hsv=256,nh=2,nr23=\[6,1\],kv=(8192|32768|90112),nb=(1|6|12),mask=1,.*type_K=f16,type_V=f16,permute=\[0,2,1,3\]'
     [conv]='ne_b=\[4,5120,'
     [gdn]='head_count=8,head_size=128,'
     [gr]='type=f32,n=(393216,m=8,r=[12]|5120,m=6,r=6),'
     [sr]='ne=\[512,90112,1,1\]'
     [scan]='n_seq_tokens=1,n_seqs=1,')
-declare -A EXPECT=([mm]=242 [fa]=9 [conv]=3 [gdn]=3 [gr]=3 [sr]=3 [scan]=2)
-declare -A TMO=([mm]=1800 [fa]=600 [conv]=600 [gdn]=600 [gr]=600 [sr]=600 [scan]=600)
+declare -A EXPECT=([mm]=242 [mm1]=120 [fa]=9 [conv]=3 [gdn]=3 [gr]=3 [sr]=3 [scan]=2)
+declare -A TMO=([mm]=1800 [mm1]=1800 [fa]=600 [conv]=600 [gdn]=600 [gr]=600 [sr]=600 [scan]=600)
 RC=0
 run_set() { # TAG DEV BIN SET
     local tag=$1 dev=$2 bin=$3 set=$4 n ok
@@ -130,14 +131,15 @@ clocks() {
 }
 perf() {
     [[ $VISIBLE == GPU-* ]] || return 6
-    local dev arm i=0 set
+    local dev arm i=0 set sets
     for dev in CUDA0 CUDA1; do
         for arm in stock forced stock forced stock; do
             i=$((i+1))
             clocks "$dev-$arm-$i-pre"
-            for set in "${SETS[@]}"; do
-                # CUDA1 covers the MMVQ/MMQ matrices only
-                [[ $dev == CUDA1 && $set != mm ]] && continue
+            sets=("${SETS[@]}")
+            # CUDA1: the gate/up, down and 5120x5120 MMVQ/MMQ matrices only
+            [[ $dev == CUDA1 ]] && sets=(mm1)
+            for set in "${sets[@]}"; do
                 case $arm in
                     stock) run_set "perf-$dev-stock-$i" "$dev" "$BIN_STOCK" "$set" ;;
                     forced) run_set "perf-$dev-forced-$i" "$dev" "$BIN_FORCED" "$set" ;;
