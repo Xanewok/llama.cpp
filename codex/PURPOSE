@@ -1,6 +1,6 @@
-purpose: stack9 + package 55: one build for all Swift profiles
-base: cd776e104dbd516c7b74506992d2e8efd7600155
+purpose: #24030 restrict cost probe
+base: 45d90d3e4ec1b713bef3804bac5bfc93cbff94c1
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack9-p55
-created: 2026-10-08T20:41:47+02:00
+branch: topic/restrict-probe
+created: 2026-10-09T14:21:22+02:00
 creator: xanewok

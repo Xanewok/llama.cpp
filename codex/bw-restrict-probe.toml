@@ -1,0 +1,42 @@
+id = "bw-restrict-probe"
+title = "#24030 restrict cost probe: CUDA builds stock/forced-restrict, SASS load census, test-backend-ops perf at served decode shapes (MMVQ, FA, SSM_CONV, GDN, GET_ROWS, SET_ROWS), stock forced stock forced stock"
+kind = "filler"
+priority = 17
+host_sensitive = false
+preemptible = false
+# G: 6600 s; D: 10800 s cap covers two cold CUDA builds (~700 s each in bw-k9 a1, ccache may help), the SASS census (~5 min),
+# CUDA0 5 arms x (242 MUL_MAT cases + 30 others, >= 1 s each) and CUDA1 5 arms x 242 MUL_MAT cases (~6 min per arm-run).
+est_s = 6600
+budget_s = 10800
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-restrict-probe: FAIL" }]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/restrict-probe/codex/bw-restrict-probe.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/restrict-probe/codex/window/restrict-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/restrict-probe"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0", GPUQ_BUILD_WINDOW = "1" }
+ports = []
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/restrict-probe/codex/bw-restrict-probe.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/restrict-probe/codex/window/restrict-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/restrict-probe/codex/window/restrict-a{attempt}/payload.log", "/home/xanewok/repos/qwen38-eval-worktrees/wt/restrict-probe/codex/window/restrict-a{attempt}/perf.tsv"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "stages", "controls"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/restrict-probe/codex/bw-restrict-probe.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/restrict-probe/codex/bw-restrict-probe.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/restrict-probe/codex/restrict_sass.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/restrict-probe/codex/restrict_summary.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/restrict-probe/ggml/src/ggml-cuda/common.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/restrict-probe/tests/test-backend-ops.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+]
