@@ -1,2 +1,2 @@
-HEAD=ade74ab9000d8c15e6a74bc57bfd409000dd4bcc
-REMOTE=/Users/builder/qwen38-bw/stack10-mac/ade74ab9000d8c15e6a74bc57bfd409000dd4bcc/run.hmzBzy
+HEAD=0128ceadf5cb0d5150265d706a52969dab6a06b9
+REMOTE=/Users/builder/qwen38-bw/stack10-final/0128ceadf5cb0d5150265d706a52969dab6a06b9/run.TPHzOW

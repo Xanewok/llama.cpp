@@ -1,0 +1,2 @@
+ops mutant 1 killed: FAIL SSM_CONV_RS byte identity
+ops mutant 2 killed: FAIL SSM_CONV_RS byte identity
