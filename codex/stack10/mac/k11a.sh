@@ -43,7 +43,8 @@ print('sync elision identity PASS')
 PY_COMPARE
 }
 # Mutants 1 and 2 drop one of the two enqueue marks; on the exercised paths the other mark still covers the getter, so they can
-# only be seen by the debug check (a skipped sync that finds queued work). Mutant 3 clears the flag after every enqueue: stale reads,
+# only be seen by the debug check (a skipped sync that finds queued work). Mutant 1's only site was the state read in prompt_save,
+# which now always syncs (9afd77984): it is reported, not required. Mutant 3 clears the flag after every enqueue: stale reads,
 # which the token comparison under the deferred backend must catch in every combo (the test's sensitivity control).
 mutants() {
     local combo np meta fold t m dbg rc
@@ -85,7 +86,7 @@ for combo in sys.argv[2:]:
                 caught[m].add(name)
             if m == 3 and not dbg:
                 tok3.append(bool(how))
-ok = all(caught.values()) and all(tok3)
+ok = bool(caught[2]) and bool(caught[3]) and all(tok3)
 print({m: len(v) for m, v in caught.items()}, 'mutant 3 token-level catches per combo:', tok3)
 print('mutant controls', 'PASS' if ok else 'FAIL')
 sys.exit(0 if ok else 1)
