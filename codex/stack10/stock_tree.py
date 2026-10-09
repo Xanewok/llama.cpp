@@ -56,7 +56,9 @@ def make(dest):
     for c in commits():
         patch = git('diff', f'{c}^', c, '--', 'ggml', text=False).stdout
         if patch:
-            subprocess.run(['git', 'apply', '-R', '--whitespace=nowarn', '-'], cwd=dest, input=patch, check=True, capture_output=True)
+            # DEST sits under the worktrees repo: inside a repo git apply silently skips paths (rc 0), so hide the repo from it
+            env = dict(ENV, GIT_CEILING_DIRECTORIES=str(dest.resolve().parent))
+            subprocess.run(['git', 'apply', '-R', '--whitespace=nowarn', '-'], cwd=dest, env=env, input=patch, check=True, capture_output=True)
         print(f'reverted {c[:9]} ({len(patch)} bytes of ggml diff)')
     for name in OWNED:
         have = (dest / name).read_bytes() if (dest / name).exists() else None
