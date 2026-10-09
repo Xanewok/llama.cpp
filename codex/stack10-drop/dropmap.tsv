@@ -7,6 +7,8 @@ k7	local: K7 paired RMS norm and scale switch, mutants, engagement log
 k4	ggml: GGML_OP_SSM_CONV_RS, indexed conv-state read with snapshot writes (CPU, CUDA, Meta)
 k4	llama: read the recurrent conv state by id through ggml_ssm_conv_rs, gathered fallback
 k4	local: K4 SSM_CONV_RS off switch, mutants, engagement log
+mfix	ggml : recreate every meta subgraph after the arena is reallocated
+mfix	local: GGML_META_SUBGRAPH_MUTANT restores the pre-fix meta subgraph bound (negative control)
 k6a	cuda : reuse shared matmul activations of up to 16 rows within a graph
 k6a	local: K6a shared-activation reuse switch, engagement log, stale-cache mutant
 k6b	cuda : fuse residual add with RMS normalization of up to 16 rows
@@ -16,11 +18,6 @@ k2	local: K2 shared KV-max scan off switch and negative controls
 k10	cuda : batch top-k over rows in one launch set with a deterministic order
 k10	local: K10 top-k batching off switch, engagement log, negative-control mutants
 k10	tests : count out-of-range TOP_K output indices as failures instead of reading src through them
-k9	cuda : launch the MMQ kernel and its stream-k fixup with PDL
-k9	cuda : launch the MMQ q8_1 quantize kernel with PDL
-k9	tests : add an MMQ producer/consumer chain with byte hashes and replay checks
-k9	local: K9 MMQ PDL off switch, wait-removal mutants, engagement log
-k9	tests : keep the mmq-chain norm weights out of the graph allocator
 k8	cuda : shape-gated small-I MMQ tiles for 16 and 24 columns on Blackwell
 k8	tests : cover MMQ small-column tile selection
 k8	cuda : MMQ stream-k partitions in default-tile units for narrow tiles
