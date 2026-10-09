@@ -20,6 +20,7 @@ k9	cuda : launch the MMQ kernel and its stream-k fixup with PDL
 k9	cuda : launch the MMQ q8_1 quantize kernel with PDL
 k9	tests : add an MMQ producer/consumer chain with byte hashes and replay checks
 k9	local: K9 MMQ PDL off switch, wait-removal mutants, engagement log
+k9	tests : keep the mmq-chain norm weights out of the graph allocator
 k8	cuda : shape-gated small-I MMQ tiles for 16 and 24 columns on Blackwell
 k8	tests : cover MMQ small-column tile selection
 k8	cuda : MMQ stream-k partitions in default-tile units for narrow tiles
