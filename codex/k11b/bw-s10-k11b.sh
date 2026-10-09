@@ -96,9 +96,17 @@ ops() {
         echo 'FAIL CUDA staging mutant escaped'; return 1
     fi
     grep -aq 'tensor [AB] differs' "$OUT/stage-mutant-cuda.log"
-    if run_test "$OUT/stage-mutant-glue.log" "$VISIBLE" GGML_META_INPUT_STAGE_MUTANT=1; then
-        echo 'FAIL meta glue mutant escaped'; return 1
+    # The glue mutant (rank 1 reads data+1) makes fake_stage_set abort() in fake/staged (tests/test-meta-input-stage.cpp), which
+    # prints nothing and loses the buffered stdout: detection is rc 134 (SIGABRT). Any other nonzero rc (timeout 124, SIGSEGV 139,
+    # an unrelated failure) is not a detection; the content check "fake/staged: ranks differ" (rc 1) is accepted as the fallback.
+    local rc=0
+    run_test "$OUT/stage-mutant-glue.log" "$VISIBLE" GGML_META_INPUT_STAGE_MUTANT=1 || rc=$?
+    echo "glue mutant rc=$rc"
+    if [[ $rc == 0 ]]; then echo 'FAIL meta glue mutant escaped'; return 1; fi
+    if [[ $rc != 134 ]] && ! { [[ $rc == 1 ]] && grep -aq 'fake/staged: ranks differ' "$OUT/stage-mutant-glue.log"; }; then
+        echo "FAIL meta glue mutant: rc=$rc is neither SIGABRT (134) nor the fake/staged content check"; return 1
     fi
+    if grep -aq 'test-meta-input-stage: PASS' "$OUT/stage-mutant-glue.log"; then echo 'FAIL glue mutant log has a PASS line'; return 1; fi
 }
 items() {
     cd "$HOME/repos/gpuq"
