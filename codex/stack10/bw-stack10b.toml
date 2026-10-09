@@ -16,7 +16,7 @@ signatures = [{ class = "deterministic", regex = "bw-stack10: FAIL" }]
 [run]
 cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/bw-stack10b.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/window/stack10b-a{attempt}"]
 cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b"
-env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", GPUQ_BUILD_WINDOW = "1", GPUQ_ACTIVE = "1", PORT = "{port}" }
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", GPUQ_BUILD_WINDOW = "1", GPUQ_ACTIVE = "1", PORT = "{port}", TMPDIR = "/mnt/scratch/tmp-build" }
 ports = "dynamic"
 
 [preflight]
