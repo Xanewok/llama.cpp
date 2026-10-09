@@ -172,8 +172,9 @@ suites() {
     [[ $VISIBLE == GPU-* ]] || return 6
     suite mm-CUDA0 CUDA0 3000 -o MUL_MAT
     suite id-CUDA0 CUDA0 3000 -o MUL_MAT_ID
-    suite mm-CUDA1 CUDA1 1500 -o MUL_MAT -p 'type_a=(iq4_xs|q4_K|q6_K|q8_0),type_b=f32,m=(3072|5120|6144|8704),n=(9|12|16|24),k=(256|1024|5120),'
-    suite id-CUDA1 CUDA1 1500 -o MUL_MAT_ID -p 'type_a=(iq4_xs|q4_K|q6_K|q8_0),type_b=f32,n_mats=4,n_used=2,b=0,m=8704,n=(12|24),k=512,'
+    # full suites: the K8/L1 shape filter of stack10 matches no stock case in this tree (a2 ran 0 cases)
+    suite mm-CUDA1 CUDA1 3000 -o MUL_MAT
+    suite id-CUDA1 CUDA1 3000 -o MUL_MAT_ID
 }
 perf() {
     [[ $VISIBLE == GPU-* ]] || return 6
