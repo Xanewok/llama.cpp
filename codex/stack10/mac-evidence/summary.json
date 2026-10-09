@@ -1,6 +1,6 @@
 {
   "result": "PASS",
-  "commit": "ade74ab9000d8c15e6a74bc57bfd409000dd4bcc",
+  "commit": "0128ceadf5cb0d5150265d706a52969dab6a06b9",
   "source_files": [
     "common/CMakeLists.txt",
     "common/arg.cpp",
@@ -1848,38 +1848,38 @@
     "tests/test-unicode.cpp",
     "tests/testing.h"
   ],
-  "source_sha256": "76788e82339b175128454d8bf6691e4a340757ea4429159107f5151e7dc450b4",
+  "source_sha256": "457696a066e14469bcae0e13b63887001f3f3413650edb8d7c90d65c7d762640",
   "tree_dirty": "",
   "stages": [
     {
       "code": 10,
       "name": "build-cpu-build",
       "rc": 0,
-      "wall_s_M": 50
+      "wall_s_M": 49
     },
     {
       "code": 140,
       "name": "ops-mmvq-mul-mat-small-n",
       "rc": 0,
-      "wall_s_M": 2
+      "wall_s_M": 3
     },
     {
       "code": 141,
       "name": "ops-mul-mat-id-small-n",
       "rc": 0,
-      "wall_s_M": 1
+      "wall_s_M": 0
     },
     {
       "code": 142,
       "name": "ops-mul-mat-id-shared-ops",
       "rc": 0,
-      "wall_s_M": 0
+      "wall_s_M": 1
     },
     {
       "code": 30,
       "name": "p55-mmvq-table-test",
       "rc": 0,
-      "wall_s_M": 1
+      "wall_s_M": 0
     },
     {
       "code": 31,
@@ -1909,13 +1909,25 @@
       "code": 42,
       "name": "k7-neighbour-op-tests",
       "rc": 0,
+      "wall_s_M": 0
+    },
+    {
+      "code": 50,
+      "name": "k4-ssm-conv-rs-ops-identity",
+      "rc": 0,
+      "wall_s_M": 1
+    },
+    {
+      "code": 51,
+      "name": "k4-ssm-conv-rs-ops-mutants",
+      "rc": 0,
       "wall_s_M": 1
     },
     {
       "code": 60,
       "name": "k6a-q8-cache-contract",
       "rc": 0,
-      "wall_s_M": 0
+      "wall_s_M": 1
     },
     {
       "code": 61,
@@ -1927,13 +1939,13 @@
       "code": 62,
       "name": "k6a-mul-mat-shared-identity",
       "rc": 0,
-      "wall_s_M": 3
+      "wall_s_M": 2
     },
     {
       "code": 65,
       "name": "k6b-add-rms-norm-matcher",
       "rc": 0,
-      "wall_s_M": 0
+      "wall_s_M": 1
     },
     {
       "code": 66,
@@ -1945,19 +1957,19 @@
       "code": 67,
       "name": "k6b-add-rms-norm-identity",
       "rc": 0,
-      "wall_s_M": 2
+      "wall_s_M": 1
     },
     {
       "code": 70,
       "name": "k2-kv-max-cache-unit",
       "rc": 0,
-      "wall_s_M": 0
+      "wall_s_M": 1
     },
     {
       "code": 71,
       "name": "k2-shared-mask-identity",
       "rc": 0,
-      "wall_s_M": 2
+      "wall_s_M": 1
     },
     {
       "code": 72,
@@ -1987,7 +1999,7 @@
       "code": 82,
       "name": "k10-emu-mutants",
       "rc": 0,
-      "wall_s_M": 25
+      "wall_s_M": 23
     },
     {
       "code": 83,
@@ -2011,7 +2023,7 @@
       "code": 90,
       "name": "k9-mmq-chain-harness",
       "rc": 0,
-      "wall_s_M": 5
+      "wall_s_M": 4
     },
     {
       "code": 100,
@@ -2023,13 +2035,13 @@
       "code": 101,
       "name": "k8-mul-mat-cases",
       "rc": 0,
-      "wall_s_M": 18
+      "wall_s_M": 19
     },
     {
       "code": 102,
       "name": "k8-mmq-hash-plumbing",
       "rc": 0,
-      "wall_s_M": 18
+      "wall_s_M": 17
     },
     {
       "code": 120,
@@ -2065,13 +2077,13 @@
       "code": 21,
       "name": "base-sampling-and-alloc-units",
       "rc": 0,
-      "wall_s_M": 2
+      "wall_s_M": 1
     },
     {
       "code": 22,
       "name": "base-softplus-and-fa-q8-ops",
       "rc": 0,
-      "wall_s_M": 1
+      "wall_s_M": 2
     },
     {
       "code": 23,
@@ -2083,7 +2095,7 @@
       "code": 32,
       "name": "p55-recurrent-state-rollback",
       "rc": 0,
-      "wall_s_M": 83
+      "wall_s_M": 82
     },
     {
       "code": 34,
@@ -2101,19 +2113,19 @@
       "code": 43,
       "name": "k7-real-graph-adjacency",
       "rc": 0,
-      "wall_s_M": 2
+      "wall_s_M": 1
     },
     {
       "code": 52,
       "name": "k4-ssm-conv-rs-model-gate",
       "rc": 0,
-      "wall_s_M": 84
+      "wall_s_M": 85
     },
     {
       "code": 53,
       "name": "k4-ssm-conv-rs-np2-driver",
       "rc": 0,
-      "wall_s_M": 125
+      "wall_s_M": 126
     },
     {
       "code": 24,
@@ -2134,5 +2146,5 @@
       "wall_s_M": 409
     }
   ],
-  "total_wall_s_M": 1815
+  "total_wall_s_M": 1812
 }
