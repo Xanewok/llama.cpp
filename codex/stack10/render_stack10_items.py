@@ -67,7 +67,7 @@ def main():
     parser.add_argument('--only', choices=NAMES, action='append')
     parser.add_argument('--stack10-root', type=Path, default=W / 'frozen/stack10')
     parser.add_argument('--base-root', type=Path, default=W / 'frozen/stack9-p55')
-    parser.add_argument('--evidence', type=Path, default=ROOT / 'codex/stack10-evidence/summary.json')
+    parser.add_argument('--evidence', type=Path, default=ROOT / 'codex/stack10/mac-evidence/summary.json')
     parser.add_argument('--snapshots', type=Path, default=ROOT / 'codex/stack10/snapshots')
     args = parser.parse_args()
     components = args.components.split()

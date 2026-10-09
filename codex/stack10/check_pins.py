@@ -34,7 +34,7 @@ def written(path):
 OWN = ['bw-stack10.toml', 'bw-stack10.sh', 'gates.sh', 'gates_table.py', 'shfn.py', 'full_checks.py', 'sass_gate.py', 'k8_gpu_patch.py', 'stock_tree.py',
        'engagement.py', 's10items.py', 'render_stack10_items.py', 'check_pins.py', 'mk_window_toml.py', 'gpu/gpu_ab.sh', 'gpu/gpu_s10.py']
 # codex-root files the window or its items import or read (the wave-1 runner stack, the fafix digest driver, the evidence).
-CODEX_ROOT = ['gpu_stack9.py', 'gpu_stack10.py', 'fa-identity.cpp', 'stack10-evidence/summary.json']
+CODEX_ROOT = ['gpu_stack9.py', 'gpu_stack10.py', 'fa-identity.cpp', 'stack10/mac-evidence/summary.json']
 WT_FILES = ['bin/buildgate', 'bin/cpugate', 'bin/wt', 'bin/wt-index.py', 'work/aa-load/ccx01.sh', 'frozen/stack6/RECIPE.txt',
             'frozen/stack9/SOURCE', 'frozen/stack9-p55/SOURCE', 'frozen/stack10-cand/SOURCE',
             'frozen/stack9/build/bin/libggml-cuda.so', 'frozen/stack10-cand/build/bin/libggml-cuda.so',
@@ -58,7 +58,7 @@ def scanned_tokens():
     found = set(scripts)
     for text in texts:
         found |= set(TOKEN.findall(text))
-    return sorted(f for f in found if '$' not in f and (ROOT / f).is_file() and not written(ROOT / f))
+    return sorted(f for f in found if '$' not in f and (ROOT / f).is_file() and not written(ROOT / f) and not f.startswith('codex/stack10-evidence/'))  # stale cand evidence, named only in the cand preflight
 
 
 def source_files():
