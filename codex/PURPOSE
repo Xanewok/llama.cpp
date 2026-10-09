@@ -1,6 +1,6 @@
-purpose: wave-2 stack: stack10-cand2 + p55 + K components
-base: def4a4e20 (frozen/stack10-cand2 source)
+purpose: stack10 minus K9 plus K4 np2 fix
+base: 198cec7439b63688b3b96aed8ff90d00ed34ee51
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack10
-created: 2026-10-09T00:36:41+02:00
+branch: topic/stack10b
+created: 2026-10-09T14:38:36+02:00
 creator: xanewok
