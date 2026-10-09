@@ -41,19 +41,20 @@
 // ---------------------------------------------------------------------------
 // Cross-GPU signal mechanism
 //
-// One int per (slot, rank) pair in pinned host memory.  Each AR call writes a
-// strictly increasing token (= the AR call number) into its own arrival int.
-// The peer spins until its read of the other's arrival int equals the token
-// it expects for this call -- a mismatch means the peer hasn't arrived yet.
-// Tokens never repeat over realistic call rates (32-bit int wraps in tens of
-// days at thousands of ARs/sec), so arrival ints don't need to be reset
-// between calls; we initialize once at pipeline init and let the values
-// accumulate.
+// One int per (slot, rank, block, round) in pinned host memory.  Each AR call
+// writes a strictly increasing token (= the AR call number) into the arrival
+// int of every round it completes.  The peer spins until its read of the other's
+// arrival int equals the token it expects for this call -- a mismatch means the
+// peer hasn't completed that round yet.  Tokens never repeat over realistic call
+// rates (32-bit int wraps in tens of days at thousands of ARs/sec), so arrival
+// ints don't need to be reset between calls; we initialize once at pipeline init
+// and let the values accumulate.
 //
 // There is exactly one writer (the owning GPU) and one reader (the peer), so
 // we don't need atomics.  A volatile store paired with __threadfence_system()
 // provides the release ordering that makes the D2H writes visible system-wide
-// before the arrival token is observed.
+// before the arrival token is observed; the reader's acquire load of the token
+// followed by a block barrier orders its reads of that data.
 //
 // atomicAdd_system() requires hostNativeAtomicSupported, which is unavailable
 // on PCIe-attached consumer GPUs without NVLink, so the volatile path is the
@@ -63,19 +64,36 @@
 static __device__ __forceinline__ void ggml_cuda_ar_signal_set(int * p, int token) {
     *(volatile int *)p = token;
 }
-static __device__ __forceinline__ int ggml_cuda_ar_signal_get(const int * p) {
-    return *(const volatile int *)p;
+// Acquire load: an observed token orders the loads of the peer's data issued after
+// the block barrier, without the full __threadfence_system() whose wait for this
+// thread's own posted host stores would serialize the two PCIe directions.
+static __device__ __forceinline__ int ggml_cuda_ar_signal_get_acquire(const int * p) {
+#ifdef GGML_USE_HIP
+    return __hip_atomic_load(p, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_SYSTEM);
+#else
+    int v;
+    asm volatile("ld.acquire.sys.global.b32 %0, [%1];" : "=r"(v) : "l"(p) : "memory");
+    return v;
+#endif // GGML_USE_HIP
 }
-
-// Byte spacing between adjacent arrival ints.  64 bytes (one cache line)
-// ensures each GPU/block's arrival slot lives on its own line, preventing
-// false-sharing stalls on the polling GPU.
-static constexpr size_t GGML_CUDA_AR_ARRIVAL_STRIDE = 64;
 
 // Number of blocks the chunked kernel launches with.  Each block stripes a
 // disjoint slice of the data and synchronizes through its own arrival-token
-// slot so multiple SMs can pump PCIe stores in parallel.
+// slots so multiple SMs can pump PCIe stores in parallel.
 static constexpr int GGML_CUDA_AR_KERNEL_BLOCKS = 8;
+
+// Threads per block.  One round moves one vector per thread, so a round is
+// KERNEL_BLOCKS * KERNEL_THREADS vectors and the kernel overlaps the store of
+// round r with the load of round r-1.
+static constexpr int GGML_CUDA_AR_KERNEL_THREADS = 256;
+
+// Rounds one launch may have (arrival ints per block): a 1 MB launch of 16 B
+// vectors has at most 65536 vectors, 128 rounds at 64 threads * 8 blocks.  Each
+// block's ints are contiguous and cache-line padded from the next block's, so
+// pollers of different blocks never share a line.
+static constexpr int GGML_CUDA_AR_MAX_ROUNDS = 128;
+static constexpr size_t GGML_CUDA_AR_ARRIVAL_BYTES_PER_BLOCK = GGML_CUDA_AR_MAX_ROUNDS * sizeof(int);
+static_assert(GGML_CUDA_AR_ARRIVAL_BYTES_PER_BLOCK % 64 == 0, "arrival ints of a block must fill whole cache lines");
 
 // ---------------------------------------------------------------------------
 // Chunked kernel AllReduce -- 2 GPUs, supports float, half, and bfloat16.
@@ -86,43 +104,55 @@ static constexpr int GGML_CUDA_AR_KERNEL_BLOCKS = 8;
 // T_dst=F32 with T_wire=BF16 halves the bytes pushed across PCIe).  When
 // T_dst == T_wire the casts below are no-ops.
 //
-// Each GPU runs three phases:
+// The data is processed in rounds of one T_wire vector per thread (vectors are
+// single-instruction wide).  Per round r, in this order:
 //
-//   Phase 1 (all threads): cast sendbuf (T_dst) -> T_wire and store as
-//                          single-instruction-width vectors into host_mine.
-//                          __threadfence_system() commits these writes to host
-//                          memory.
-//   Phase 2 (thread 0):    write token to arrival_mine; spin until
-//                          arrival_other == token.
-//   Phase 3 (all threads): read T_wire vectors from host_other, cast
-//                          each element to T_dst, and sum with the local
-//                          sendbuf value (also rounded through T_wire so that
-//                          both GPUs truncate identically -- this guarantees
-//                          bit-equivalent results across the two devices).
+//   store:   cast sendbuf (T_dst) -> T_wire and store round r as vectors into
+//            host_mine.
+//   load:    (r > 0) wait for the peer's flag for round r-1, read the peer's
+//            round r-1 vectors from host_other, cast each element to T_dst, and
+//            sum with the local sendbuf value (also rounded through T_wire so
+//            that both GPUs truncate identically -- this guarantees
+//            bit-equivalent results across the two devices).
+//   publish: __threadfence_system() commits this block's stores of round r to
+//            host memory, then thread 0 writes the token to the round's flag.
+//
+// The stores of round r are posted and still draining when the loads of round
+// r-1 are issued, so the two PCIe directions carry data at the same time; the
+// flag of round r is published after the loads, which keeps the pipeline free of
+// a cross-thread hand-off.  A pass after the last round waits for the peer's last
+// flag and reads the last round.  With a single round this is the original
+// store, signal, wait, load sequence.
+//
+// Every element goes through exactly the arithmetic of the unpipelined kernel:
+// only when it is stored and when it is loaded changes.  A thread loads and
+// writes back exactly the vectors it stored (same gtid stripe on both GPUs), so
+// the in-place update never overwrites a sendbuf element before it was sent.
 //
 // Multi-block: blocks stripe vectors across (gridDim.x * blockDim.x) global
-// threads to keep multiple SMs issuing PCIe stores in parallel.  Each block
-// has its own arrival-token slot (offset by blockIdx.x * ARRIVAL_STRIDE);
-// thread 0 of each block signals/spins on that slot independently of other
-// blocks.  Tail elements (the leftover < ELEMS_PER_VEC at the end) are
-// handled only by block 0 to avoid cross-block writes to the same slots.
+// threads to keep multiple SMs issuing PCIe stores in parallel.  Each block has
+// its own flags; blocks proceed independently -- no inter-block barrier needed.
+// Round r of block b covers the same vectors on both GPUs, so it is published
+// and awaited per block.  Tail elements (the leftover < ELEMS_PER_VEC at the end)
+// are handled only by block 0, in the last round, to avoid cross-block writes to
+// the same slots.
 // ---------------------------------------------------------------------------
 template <typename T_dst, typename T_wire>
 static __global__ void ggml_cuda_ar_kernel(
         const T_dst  *              sendbuf,
         T_dst        *              recvbuf,
         T_wire       * __restrict__ host_mine,
-        const T_wire * __restrict__ host_other,
+        const T_wire *              host_other,   // written by the peer during the launch: no __restrict__, so no ld.global.nc
         int                         count,
         int *                       arrival_mine,
         int *                       arrival_other,
         int                         token) {
 
     // Vector unit for the wire type, sized to the arch's widest single-instruction
-    // copy (16 B on Volta+).  Each phase-1 iter writes one vector to host memory;
-    // each phase-3 iter reads one and produces ELEMS_PER_VEC sums.
+    // copy (16 B on Volta+).  Each store iter writes one vector to host memory;
+    // each load iter reads one and produces ELEMS_PER_VEC sums.
     constexpr int ELEMS_PER_VEC = ggml_cuda_get_max_cpy_bytes() / sizeof(T_wire);
-    constexpr int ARRIVAL_INTS  = (int)(GGML_CUDA_AR_ARRIVAL_STRIDE / sizeof(int));
+    constexpr int FLAG_INTS     = (int)(GGML_CUDA_AR_ARRIVAL_BYTES_PER_BLOCK / sizeof(int));
 
     const int tid       = threadIdx.x;
     const int nt        = blockDim.x;
@@ -132,72 +162,88 @@ static __global__ void ggml_cuda_ar_kernel(
     const int count_vec = count / ELEMS_PER_VEC;
     const int tail      = count_vec * ELEMS_PER_VEC;
 
-    // Phase 1: cast sendbuf (T_dst) -> host_mine (T_wire) and store as vectors.
-    {
-        for (int i = gtid; i < count_vec; i += gnt) {
-            const int off = i * ELEMS_PER_VEC;
-            T_wire wire[ELEMS_PER_VEC];
-            #pragma unroll
-            for (int k = 0; k < ELEMS_PER_VEC; ++k) {
-                wire[k] = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
+    // Same on both GPUs (depends on count only); at least one round so that the
+    // tail-only case still signals.
+    const int n_rounds = max(1, (count_vec + gnt - 1) / gnt);
+
+    int       * my_flags    = arrival_mine  + bid * FLAG_INTS;
+    const int * other_flags = arrival_other + bid * FLAG_INTS;
+
+    for (int r = 0; r <= n_rounds; ++r) {
+        // Store: cast sendbuf (T_dst) -> host_mine (T_wire) as vectors.
+        if (r < n_rounds) {
+            const int i = r * gnt + gtid;
+            if (i < count_vec) {
+                const int off = i * ELEMS_PER_VEC;
+                T_wire wire[ELEMS_PER_VEC];
+                #pragma unroll
+                for (int k = 0; k < ELEMS_PER_VEC; ++k) {
+                    wire[k] = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
+                }
+                ggml_cuda_memcpy_1<sizeof(wire)>(&host_mine[off], wire);
             }
-            ggml_cuda_memcpy_1<sizeof(wire)>(&host_mine[off], wire);
+            if (r == n_rounds - 1 && bid == 0 && tid < count - tail) {
+                host_mine[tail + tid] = ggml_cuda_cast<T_wire>(sendbuf[tail + tid]);
+            }
         }
-        if (bid == 0 && tid < count - tail) {
-            host_mine[tail + tid] = ggml_cuda_cast<T_wire>(sendbuf[tail + tid]);
-        }
-    }
 
-    // Commit this block's host writes before signalling.
-    __threadfence_system();
-    __syncthreads();
-
-    // Phase 2: thread 0 of each block signals on its own arrival slot, then
-    // spins for the matching slot from peer.  Per-block tokens mean blocks
-    // proceed independently -- no inter-block barrier needed.
-    if (tid == 0) {
-        int       * my_slot    = arrival_mine  + bid * ARRIVAL_INTS;
-        const int * other_slot = arrival_other + bid * ARRIVAL_INTS;
-
-        ggml_cuda_ar_signal_set(my_slot, token);
-        __threadfence_system(); // make our signal visible system-wide
-
-        while (ggml_cuda_ar_signal_get(other_slot) != token) {
+        // Load: the peer's round r-1.  Thread 0 of each block spins on that
+        // block's flag for the round; the barrier releases the other threads.
+        // No __threadfence_system() here: it would wait for the stores of round r
+        // (posted above) to drain before the loads start, which is the
+        // serialization this loop removes.  Every line is loaded once per launch,
+        // the acquire invalidates L1, and the tail line is only loaded in the last
+        // pass.
+        if (r > 0) {
+            if (tid == 0) {
+                const int * other_slot = other_flags + (r - 1);
+                while (ggml_cuda_ar_signal_get_acquire(other_slot) != token) {
 #ifdef GGML_USE_HIP
-            // Equals ~100ns at 2500 MHz (sleeps for n * [1,64] clock cycles)
-            __builtin_amdgcn_s_sleep(4);
+                    // Equals ~100ns at 2500 MHz (sleeps for n * [1,64] clock cycles)
+                    __builtin_amdgcn_s_sleep(4);
 #elif __CUDA_ARCH__ >= GGML_CUDA_CC_VOLTA
-            __nanosleep(100);
+                    __nanosleep(100);
 #else
-            NO_DEVICE_CODE;
+                    NO_DEVICE_CODE;
 #endif // GGML_USE_HIP
-        }
-    }
+                }
+            }
 
-    __syncthreads();
+            __syncthreads();
 
-    // Acquire peer's host_other writes (this block's stripe of them).
-    __threadfence_system();
-
-    // Phase 3: read peer's T_wire vector, cast both sides through T_wire for
-    // bit-equivalence, sum in T_dst precision, and write back to recvbuf.
-    {
-        for (int i = gtid; i < count_vec; i += gnt) {
-            const int off = i * ELEMS_PER_VEC;
-            T_wire wire[ELEMS_PER_VEC];
-            ggml_cuda_memcpy_1<sizeof(wire)>(wire, &host_other[off]);
-            #pragma unroll
-            for (int k = 0; k < ELEMS_PER_VEC; ++k) {
-                const T_wire d_low = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
-                recvbuf[off + k] = ggml_cuda_cast<T_dst>(
-                    ggml_cuda_cast<float>(d_low) + ggml_cuda_cast<float>(wire[k]));
+            // Read peer's T_wire vector, cast both sides through T_wire for
+            // bit-equivalence, sum in T_dst precision, and write back to recvbuf.
+            const int i = (r - 1) * gnt + gtid;
+            if (i < count_vec) {
+                const int off = i * ELEMS_PER_VEC;
+                T_wire wire[ELEMS_PER_VEC];
+                ggml_cuda_memcpy_1<sizeof(wire)>(wire, &host_other[off]);
+                #pragma unroll
+                for (int k = 0; k < ELEMS_PER_VEC; ++k) {
+                    const T_wire d_low = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
+                    recvbuf[off + k] = ggml_cuda_cast<T_dst>(
+                        ggml_cuda_cast<float>(d_low) + ggml_cuda_cast<float>(wire[k]));
+                }
+            }
+            if (r == n_rounds && bid == 0 && tid < count - tail) {
+                const T_wire d_low = ggml_cuda_cast<T_wire>(sendbuf[tail + tid]);
+                recvbuf[tail + tid] = ggml_cuda_cast<T_dst>(
+                    ggml_cuda_cast<float>(d_low) +
+                    ggml_cuda_cast<float>(host_other[tail + tid]));
             }
         }
-        if (bid == 0 && tid < count - tail) {
-            const T_wire d_low = ggml_cuda_cast<T_wire>(sendbuf[tail + tid]);
-            recvbuf[tail + tid] = ggml_cuda_cast<T_dst>(
-                ggml_cuda_cast<float>(d_low) +
-                ggml_cuda_cast<float>(host_other[tail + tid]));
+
+        // Publish: commit this block's stores of round r before signalling.
+        if (r < n_rounds) {
+            __threadfence_system();
+            __syncthreads();
+
+            if (tid == 0) {
+                ggml_cuda_ar_signal_set(my_flags + r, token);
+                if (r == n_rounds - 1) {
+                    __threadfence_system(); // make our last signal visible system-wide
+                }
+            }
         }
     }
 }
@@ -237,6 +283,9 @@ static constexpr int GGML_CUDA_AR_POOL_SIZE = 2;
 // Maximum chunk size (bytes per GPU) handled by one chunked kernel launch.
 // Larger tensors are reduced by issuing multiple chunked launches.
 static constexpr size_t GGML_CUDA_AR_MAX_BYTES = 1024 * 1024; // 1 MB
+// 16 B is the smallest vector the kernel runs with on the supported archs (Volta+).
+static_assert(GGML_CUDA_AR_MAX_BYTES / 16 / (GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_KERNEL_THREADS) <= GGML_CUDA_AR_MAX_ROUNDS,
+              "a launch must not need more rounds than the arrival ints provide");
 
 // Copy-engine path: largest tensor accepted on this path; sets host_large /
 // dev_tmp allocation size.
@@ -338,17 +387,18 @@ struct ggml_cuda_ar_pipeline {
     cudaEvent_t              dev_tmp_kernel_done[GGML_CUDA_MAX_DEVICES];
     bool                     dev_tmp_kernel_done_valid;
 
-    // Arrival ring: ARRIVAL_STRIDE bytes between adjacent ints.  Mapped pinned
+    // Arrival ring: cache-line padded per-block flag arrays.  Mapped pinned
     // memory; CPU never reads/writes -- only the kernel and cudaMemset.
     // Use ggml_cuda_ar_arrival_ptr() to index.
     ggml_cuda_ar_host_mapping arrival;
 };
 
-// Base pointer for the (slot, rank) per-block token block.  The kernel adds
-// blockIdx.x * (ARRIVAL_STRIDE/sizeof(int)) internally to land on its own slot.
+// Base pointer for the (slot, rank) per-block flag blocks.  The kernel adds
+// blockIdx.x * (ARRIVAL_BYTES_PER_BLOCK/sizeof(int)) internally to land on its
+// own block's flags.
 static int * ggml_cuda_ar_arrival_ptr(const ggml_cuda_ar_pipeline * p, int slot, int rank) {
     const size_t offset = ((size_t)slot * p->n_devices + rank) *
-                          GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_STRIDE;
+                          GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_BYTES_PER_BLOCK;
     return reinterpret_cast<int *>(p->arrival.dev + offset);
 }
 
@@ -507,10 +557,10 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
         }
     }
 
-    // Arrival ring: cache-line padded so each GPU's int is on its own line.
+    // Arrival ring: cache-line padded so each GPU's block flags are on their own lines.
     const size_t arrival_bytes =
         (size_t)GGML_CUDA_AR_POOL_SIZE * n_devices *
-        GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_STRIDE;
+        GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_BYTES_PER_BLOCK;
     if (p->arrival.alloc(arrival_bytes) != cudaSuccess) {
         GGML_LOG_ERROR("%s: alloc for arrival ring failed (%zu bytes)\n",
                        __func__, arrival_bytes);
@@ -968,7 +1018,7 @@ bool ggml_cuda_ar_allreduce(
                 }
 
 #define LAUNCH_AR_KERNEL(T_dst, T_wire) \
-                ggml_cuda_ar_kernel<T_dst, T_wire><<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256), 0, stream>>>( \
+                ggml_cuda_ar_kernel<T_dst, T_wire><<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(GGML_CUDA_AR_KERNEL_THREADS), 0, stream>>>( \
                     reinterpret_cast<const T_dst *>(data), \
                     reinterpret_cast<T_dst *>(data), \
                     reinterpret_cast<T_wire *>(p->host_buf[i].dev + (size_t) slot * p->buf_bytes), \
