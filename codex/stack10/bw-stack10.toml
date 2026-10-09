@@ -100,6 +100,8 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10/docs/ops.md",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10/ggml/include/ggml-rpc.h",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10/ggml/include/ggml.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10/ggml/include/ggml-backend.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10/ggml/src/ggml-backend.cpp",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10/ggml/src/ggml-backend-impl.h",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10/ggml/src/ggml-backend-meta.cpp",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10/ggml/src/ggml-cpu/ggml-cpu.c",
