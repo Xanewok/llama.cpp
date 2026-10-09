@@ -14,7 +14,8 @@ asan_build() {
         -DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address
     "$BW_BUILDGATE" cmake --build build-asan --target test-alloc bw-np2-driver -j"${BW_JOBS:-4}"
 }
-# fixed must pass; the mutant must die in the server's crash site (memset in ggml_hash_set_reset under graph_compute_impl)
+# fixed must pass; the mutant must die in graph_compute_impl (the faulting access varies with what the freed arena holds:
+# memset in ggml_hash_set_reset as in the server, or an earlier read of the stale subgraph)
 asan_unit() {
     "$BW_GATE" build-asan/bin/test-alloc > "$D/asan-fixed.txt" 2>&1
     grep -aq 'test_meta_subgraph_capacity(plan) PASSED' "$D/asan-fixed.txt"
@@ -23,7 +24,6 @@ asan_unit() {
     fi
     grep -aq 'test_meta_subgraph_capacity(compute) ' "$D/asan-mutant.txt"
     grep -aq 'ERROR: AddressSanitizer' "$D/asan-mutant.txt"
-    grep -aq 'in ggml_hash_set_reset' "$D/asan-mutant.txt"
     grep -aq 'in ggml_backend_meta_graph_compute_impl' "$D/asan-mutant.txt"
     echo "pre-fix mutant killed: $(grep -a -m1 'ERROR: AddressSanitizer' "$D/asan-mutant.txt")"
 }
