@@ -264,7 +264,11 @@ g_full() {
     for dev in CUDA0 CUDA1; do
         base=$OUT/full/$dev
         tbo_sql build-cuda/bin/test-backend-ops 12600s "$base.sql" "$base.err" -b "$dev"
-        nice -n 19 python3 codex/stack10/full_checks.py check "$base.sql" "$dev" "$SHA" "$csv"
+        # One failing case skips the K7 and K2 self-tests (test-backend-ops chains them after `n_ok == tests_run` with &&),
+        # so their markers come from a run that selects no case.
+        tbo_sql build-cuda/bin/test-backend-ops 1800s "$base.self.sql" "$base.self.err" -b "$dev" \
+            -o RMS_NORM_SCALE_PAIR,FLASH_ATTN_EXT -p no-such-case
+        nice -n 19 python3 codex/stack10/full_checks.py check "$base.sql" "$dev" "$SHA" "$csv" "$base.self.sql"
         while IFS=$'\t' read -r -u 3 scope op params; do
             [[ -n $params ]] || continue
             excused "$scope" "$op" "$dev" "$params" "$base.re$((++NRE))"
