@@ -111,7 +111,7 @@ must_fail() { # TAG: negative control, MUL_MAT_Q cases ran and some failed; q8_0
     read -r ran failed < <(awk '/^ +[0-9]+\/[0-9]+ tests passed/ {split($1, a, "/"); print a[2], a[2] - a[1]; exit}' "$OUT/$1.log") || true
     (( ${ran:-0} >= MIN_MM )) || die 5 "negative control void: $1 ran ${ran:-0} cases, fewer than $MIN_MM (see $OUT/$1.log)"
     (( ${failed:-0} > 0 )) || die 5 "negative control void: $1 dropped the small-I launches and nothing failed"
-    ! grep -aEq '^ +MUL_MAT\(type_a=q8_0.*FAIL' "$OUT/$1.log" || die 5 "negative control void: $1 fails q8_0 cases, which never take a dropped launch"
+    ! grep -aEq '(^|[[:space:]])MUL_MAT\(type_a=q8_0.*FAIL' "$OUT/$1.log" || die 5 "negative control void: $1 fails q8_0 cases, which never take a dropped launch"
     # stream-k shapes must be among the failures: the dropped launch there is a K8 launch
     grep -aEq 'MUL_MAT\(type_a=(iq4_xs|q4_K|q5_K|q6_K),type_b=f32,m=(3072|5120|6144),n=(9|12|16|17|24),k=1024.*FAIL' "$OUT/$1.log" ||
         die 5 "negative control void: $1 fails no stream-k shape (m=3072|5120|6144), so the K8 launches are not taken"
