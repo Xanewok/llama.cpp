@@ -7064,10 +7064,14 @@ struct test_top_k : public test_case {
             std::vector<float> asrc(k);
             std::vector<float> bsrc(k);
             for (int64_t r = 0; r < ggml_nrows(input); r++) {
-                // Convert indices for the row back to integer
+                // Convert indices for the row back to integer. A column outside the row is a failure, never a read:
+                // a broken backend may return garbage, and indexing src with it would crash the whole run.
                 for (int64_t c = 0; c < k; c++) {
-                    ia[c] = (int32_t)a[r * k + c];
-                    ib[c] = (int32_t)b[r * k + c];
+                    const bool a_ok = a[r * k + c] >= 0 && a[r * k + c] < (float) cols;
+                    const bool b_ok = b[r * k + c] >= 0 && b[r * k + c] < (float) cols;
+                    ia[c] = a_ok ? (int32_t)a[r * k + c] : 0;
+                    ib[c] = b_ok ? (int32_t)b[r * k + c] : 0;
+                    diff += (a_ok ? 0 : 1) + (b_ok ? 0 : 1);
                 }
                 // The src values for each row should match.
                 for (int64_t c = 0; c < k; c++) {
