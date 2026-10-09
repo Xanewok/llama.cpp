@@ -1703,7 +1703,10 @@ static bool ggml_cuda_kernel_can_use_pdl(const void * kernel) {
 #endif //defined(GGML_CUDA_USE_PDL)
 
 // PDL and __restrict__ need to be mutually exclusive, see https://github.com/ggml-org/llama.cpp/pull/24030
-# if (defined(GGML_CUDA_USE_PDL) && __CUDA_ARCH__ >= GGML_CUDA_CC_HOPPER)
+// local: GGML_CUDA_FORCE_RESTRICT keeps __restrict__ with PDL on (perf probe only; reintroduces the #24030 hazard, never serve).
+# if defined(GGML_CUDA_FORCE_RESTRICT)
+# define GGML_CUDA_RESTRICT __restrict__
+# elif (defined(GGML_CUDA_USE_PDL) && __CUDA_ARCH__ >= GGML_CUDA_CC_HOPPER)
 # define GGML_CUDA_RESTRICT
 # else
 # define GGML_CUDA_RESTRICT __restrict__
