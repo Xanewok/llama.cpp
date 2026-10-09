@@ -1,0 +1,1 @@
+nodes=17616 q_conv_rms=384 k_conv_rms=384 adjacent_pairs=384 noop_nodes_between={1: 384}

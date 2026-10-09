@@ -1,0 +1,12 @@
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==80055==ABORTING
+/Users/builder/qwen38-bw/stack10-mac/ade74ab9000d8c15e6a74bc57bfd409000dd4bcc/run.hmzBzy/src/codex/stack10/mac/k11b.sh: line 40: 80055 Abort trap: 6           ASAN_OPTIONS=detect_leaks=0 "$BW_GATE" "$SIM/$1" "$2"
+rank-0-only wait mutant killed
+order mutant killed
+ggml_backend_cuda_input_stage_init: one pinned copy per input, uploads slowest host link first: CUDA0 (1000 us per 4 MiB), CUDA1 (1000 us per 4 MiB)
+FAIL codex/k11b/cuda-sim/stage_sim.cpp:198 !memcmp(rank[r].b[i]->data, batches[i].expect_b.data(), batches[i].expect_b.size()): rank 0 round 0 B differs
+shifted-source mutant killed
