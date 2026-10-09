@@ -2653,9 +2653,12 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
             backend_ctx->ctx.reset(ggml_init(params));
             // The reset freed every main graph: a later graph with more subgraphs than this one but at most max_subgraphs
             // does not come back here.
+            // local: GGML_META_SUBGRAPH_MUTANT=1 restores the pre-fix bound (negative control of the np2 smoke and test-alloc)
+            static const bool subgraph_mutant = getenv("GGML_META_SUBGRAPH_MUTANT") != nullptr;
+            const size_t n_main = subgraph_mutant ? n_subgraphs : backend_ctx->max_subgraphs;
             for (size_t j = 0; j < n_backends; j++) {
                 auto & bcj = backend_ctx->backend_configs[j];
-                for (size_t i = 0; i < backend_ctx->max_subgraphs; i++) {
+                for (size_t i = 0; i < n_main; i++) {
                     bcj.cgraphs[i].cgraph_main = ggml_new_graph_custom(backend_ctx->ctx.get(), backend_ctx->max_nnodes, /*grads =*/ false);
                 }
             }
