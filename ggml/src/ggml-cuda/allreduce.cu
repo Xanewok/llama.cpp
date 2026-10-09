@@ -146,7 +146,10 @@ static __global__ void ggml_cuda_ar_kernel(
         int                         count,
         int *                       arrival_mine,
         int *                       arrival_other,
-        int                         token) {
+        int                         token,
+        int                         round_vecs,    // vectors per thread per round
+        int                         mutant,        // test only: 1 = read the peer's round without waiting for its flag
+        int                         stall_cycles) {// test only: busy-wait before each round's stores
 
     // Vector unit for the wire type, sized to the arch's widest single-instruction
     // copy (16 B on Volta+).  Each store iter writes one vector to host memory;
@@ -163,8 +166,11 @@ static __global__ void ggml_cuda_ar_kernel(
     const int tail      = count_vec * ELEMS_PER_VEC;
 
     // Same on both GPUs (depends on count only); at least one round so that the
-    // tail-only case still signals.
-    const int n_rounds = max(1, (count_vec + gnt - 1) / gnt);
+    // tail-only case still signals.  A round is `per` strided passes over the
+    // vectors; per >= total_iters is the unpipelined single-round kernel.
+    const int total_iters = max(1, (count_vec + gnt - 1) / gnt);
+    const int per         = min(round_vecs, total_iters);
+    const int n_rounds    = (total_iters + per - 1) / per;
 
     int       * my_flags    = arrival_mine  + bid * FLAG_INTS;
     const int * other_flags = arrival_other + bid * FLAG_INTS;
@@ -172,15 +178,22 @@ static __global__ void ggml_cuda_ar_kernel(
     for (int r = 0; r <= n_rounds; ++r) {
         // Store: cast sendbuf (T_dst) -> host_mine (T_wire) as vectors.
         if (r < n_rounds) {
-            const int i = r * gnt + gtid;
-            if (i < count_vec) {
-                const int off = i * ELEMS_PER_VEC;
-                T_wire wire[ELEMS_PER_VEC];
-                #pragma unroll
-                for (int k = 0; k < ELEMS_PER_VEC; ++k) {
-                    wire[k] = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
+            if (stall_cycles > 0) {
+                const long long t0 = clock64();
+                while (clock64() - t0 < stall_cycles) {}
+            }
+            for (int j = 0; j < per; ++j) {
+                const int it = r * per + j;
+                const int i  = it * gnt + gtid;
+                if (it < total_iters && i < count_vec) {
+                    const int off = i * ELEMS_PER_VEC;
+                    T_wire wire[ELEMS_PER_VEC];
+                    #pragma unroll
+                    for (int k = 0; k < ELEMS_PER_VEC; ++k) {
+                        wire[k] = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
+                    }
+                    ggml_cuda_memcpy_1<sizeof(wire)>(&host_mine[off], wire);
                 }
-                ggml_cuda_memcpy_1<sizeof(wire)>(&host_mine[off], wire);
             }
             if (r == n_rounds - 1 && bid == 0 && tid < count - tail) {
                 host_mine[tail + tid] = ggml_cuda_cast<T_wire>(sendbuf[tail + tid]);
@@ -195,7 +208,7 @@ static __global__ void ggml_cuda_ar_kernel(
         // the acquire invalidates L1, and the tail line is only loaded in the last
         // pass.
         if (r > 0) {
-            if (tid == 0) {
+            if (tid == 0 && !mutant) {
                 const int * other_slot = other_flags + (r - 1);
                 while (ggml_cuda_ar_signal_get_acquire(other_slot) != token) {
 #ifdef GGML_USE_HIP
@@ -213,16 +226,19 @@ static __global__ void ggml_cuda_ar_kernel(
 
             // Read peer's T_wire vector, cast both sides through T_wire for
             // bit-equivalence, sum in T_dst precision, and write back to recvbuf.
-            const int i = (r - 1) * gnt + gtid;
-            if (i < count_vec) {
-                const int off = i * ELEMS_PER_VEC;
-                T_wire wire[ELEMS_PER_VEC];
-                ggml_cuda_memcpy_1<sizeof(wire)>(wire, &host_other[off]);
-                #pragma unroll
-                for (int k = 0; k < ELEMS_PER_VEC; ++k) {
-                    const T_wire d_low = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
-                    recvbuf[off + k] = ggml_cuda_cast<T_dst>(
-                        ggml_cuda_cast<float>(d_low) + ggml_cuda_cast<float>(wire[k]));
+            for (int j = 0; j < per; ++j) {
+                const int it = (r - 1) * per + j;
+                const int i  = it * gnt + gtid;
+                if (it < total_iters && i < count_vec) {
+                    const int off = i * ELEMS_PER_VEC;
+                    T_wire wire[ELEMS_PER_VEC];
+                    ggml_cuda_memcpy_1<sizeof(wire)>(wire, &host_other[off]);
+                    #pragma unroll
+                    for (int k = 0; k < ELEMS_PER_VEC; ++k) {
+                        const T_wire d_low = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
+                        recvbuf[off + k] = ggml_cuda_cast<T_dst>(
+                            ggml_cuda_cast<float>(d_low) + ggml_cuda_cast<float>(wire[k]));
+                    }
                 }
             }
             if (r == n_rounds && bid == 0 && tid < count - tail) {
@@ -361,6 +377,10 @@ struct ggml_cuda_ar_pipeline {
     size_t   copy_chunk_bytes;
     size_t   bf16_threshold; // tensors >= this size (bytes) are reduced via FP32->BF16 round-trip; 0 disables
     uint64_t call_count;
+    int      round_threads;  // 0 = auto
+    int      round_vecs;     // vectors per thread per kernel round; 0 = one round (unpipelined)
+    int      mutant;         // test only
+    int      stall_cycles;   // test only: stall applied to rank 1
 
     // Per-device resources.
     ggml_cuda_ar_host_mapping host_buf[GGML_CUDA_MAX_DEVICES];   // pinned staging (chunked kernel)
@@ -491,6 +511,19 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
     // ne).  Set GGML_CUDA_AR_BF16_THRESHOLD=0 to disable, or to a larger
     // byte threshold to opt out for small tensors.
     p->bf16_threshold   = ggml_cuda_ar_env_u64("GGML_CUDA_AR_BF16_THRESHOLD", 1);
+    // Local: GGML_CUDA_AR_THREADS (64..1024, multiple of 32; 0 = auto), GGML_CUDA_AR_ROUND_VECS
+    // (vectors per thread per round; 0 = one round, the unpipelined kernel), GGML_CUDA_AR_MUTANT=1 (read the
+    // peer's round without waiting for its flag: must fail the identity check), GGML_CUDA_AR_STALL_US (rank 1
+    // busy-waits ~this many us before each round's stores).
+    p->round_threads    = (int) ggml_cuda_ar_env_u64("GGML_CUDA_AR_THREADS", 0);
+    if (p->round_threads != 0 && (p->round_threads < 64 || p->round_threads > 1024 || p->round_threads % 32 != 0)) {
+        GGML_LOG_WARN("%s: GGML_CUDA_AR_THREADS=%d not 0 or a multiple of 32 in [64,1024]; using auto\n",
+                      __func__, p->round_threads);
+        p->round_threads = 0;
+    }
+    p->round_vecs       = (int) ggml_cuda_ar_env_u64("GGML_CUDA_AR_ROUND_VECS", 1);
+    p->mutant           = (int) ggml_cuda_ar_env_u64("GGML_CUDA_AR_MUTANT", 0);
+    p->stall_cycles     = (int) (ggml_cuda_ar_env_u64("GGML_CUDA_AR_STALL_US", 0) * 2000);
     for (size_t i = 0; i < n_devices; ++i) {
         p->devices[i] = devices[i];
     }
@@ -840,6 +873,30 @@ static bool ggml_cuda_ar_allreduce_copy_outer(
     return ok;
 }
 
+// Threads per block of the chunked kernel.  Auto: 128 threads (a round of 16 KB over
+// 8 blocks) for the decode-sized reductions this box serves, 256 above (G: 128 gives
+// twice the rounds for the 6-18 row decode payloads of a Gen3 x8 link; measured as its own arm).
+static int ggml_cuda_ar_kernel_threads(const ggml_cuda_ar_pipeline * p, size_t wire_bytes) {
+    if (p->round_threads > 0) {
+        return p->round_threads;
+    }
+    return wire_bytes <= 256 * 1024 ? 128 : GGML_CUDA_AR_KERNEL_THREADS;
+}
+
+// Vectors per thread per round.  Raised when the launch would need more rounds than the
+// arrival ints provide.
+template <typename T_wire>
+static int ggml_cuda_ar_kernel_round_vecs(const ggml_cuda_ar_pipeline * p, size_t chunk_elems, int threads) {
+    const size_t count_vec   = chunk_elems / (16 / sizeof(T_wire));
+    const size_t gnt         = (size_t) GGML_CUDA_AR_KERNEL_BLOCKS * threads;
+    const size_t total_iters = std::max<size_t>(1, (count_vec + gnt - 1) / gnt);
+    size_t per = p->round_vecs > 0 ? (size_t) p->round_vecs : total_iters;
+    while ((total_iters + per - 1) / per > (size_t) GGML_CUDA_AR_MAX_ROUNDS) {
+        per *= 2;
+    }
+    return (int) std::min(per, total_iters);
+}
+
 bool ggml_cuda_ar_allreduce(
         ggml_cuda_ar_pipeline * p,
         ggml_backend_t        * backends,
@@ -1018,15 +1075,21 @@ bool ggml_cuda_ar_allreduce(
                 }
 
 #define LAUNCH_AR_KERNEL(T_dst, T_wire) \
-                ggml_cuda_ar_kernel<T_dst, T_wire><<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(GGML_CUDA_AR_KERNEL_THREADS), 0, stream>>>( \
-                    reinterpret_cast<const T_dst *>(data), \
-                    reinterpret_cast<T_dst *>(data), \
-                    reinterpret_cast<T_wire *>(p->host_buf[i].dev + (size_t) slot * p->buf_bytes), \
-                    reinterpret_cast<const T_wire *>(p->host_buf[peer].dev + (size_t) slot * p->buf_bytes), \
-                    static_cast<int>(chunk_elems), \
-                    ggml_cuda_ar_arrival_ptr(p, slot, i), \
-                    ggml_cuda_ar_arrival_ptr(p, slot, peer), \
-                    token)
+                do { \
+                    const int ar_threads = ggml_cuda_ar_kernel_threads(p, chunk_elems * sizeof(T_wire)); \
+                    ggml_cuda_ar_kernel<T_dst, T_wire><<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(ar_threads), 0, stream>>>( \
+                        reinterpret_cast<const T_dst *>(data), \
+                        reinterpret_cast<T_dst *>(data), \
+                        reinterpret_cast<T_wire *>(p->host_buf[i].dev + (size_t) slot * p->buf_bytes), \
+                        reinterpret_cast<const T_wire *>(p->host_buf[peer].dev + (size_t) slot * p->buf_bytes), \
+                        static_cast<int>(chunk_elems), \
+                        ggml_cuda_ar_arrival_ptr(p, slot, i), \
+                        ggml_cuda_ar_arrival_ptr(p, slot, peer), \
+                        token, \
+                        ggml_cuda_ar_kernel_round_vecs<T_wire>(p, chunk_elems, ar_threads), \
+                        p->mutant, \
+                        i == 1 ? p->stall_cycles : 0); \
+                } while (0)
 
                 if (use_bf16) {
                     GGML_ASSERT(input_type == GGML_TYPE_F32);
