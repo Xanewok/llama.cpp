@@ -1,6 +1,6 @@
-purpose: wave-2 stack: stack10-cand2 + p55 + K components
-base: def4a4e20 (frozen/stack10-cand2 source)
+purpose: scratch: check that the stack10 drop recipe still drops k11a after the state I/O sync fix; disposable
+base: 3f4ccd9a1f8f5cde6b6f9940d393506a31349330
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack10
-created: 2026-10-09T00:36:41+02:00
+branch: scratch/drop-k11a-check
+created: 2026-10-09T05:08:07+02:00
 creator: xanewok
