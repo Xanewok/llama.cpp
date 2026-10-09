@@ -183,10 +183,10 @@ g_k6b() { comp_run k6b ops; }
 g_mfix() {
     local d=$OUT/mfix rc=0
     mkdir -p "$d"
-    env -u GGML_META_SUBGRAPH_MUTANT CUDA_VISIBLE_DEVICES='' build-cuda/bin/test-alloc > "$d/test-alloc.txt" 2>&1
+    timeout --kill-after=10s 300 env -u GGML_META_SUBGRAPH_MUTANT CUDA_VISIBLE_DEVICES='' build-cuda/bin/test-alloc > "$d/test-alloc.txt" 2>&1
     grep -aq 'test_meta_subgraph_capacity(compute) PASSED' "$d/test-alloc.txt"
     grep -aq 'test_meta_subgraph_capacity(plan) PASSED' "$d/test-alloc.txt"
-    env GGML_META_SUBGRAPH_MUTANT=1 CUDA_VISIBLE_DEVICES='' build-cuda/bin/test-alloc > "$d/test-alloc-mutant.txt" 2>&1 || rc=$?
+    timeout --kill-after=10s 300 env GGML_META_SUBGRAPH_MUTANT=1 CUDA_VISIBLE_DEVICES='' build-cuda/bin/test-alloc > "$d/test-alloc-mutant.txt" 2>&1 || rc=$?
     echo "recorded: pre-fix mutant test-alloc rc_M=$rc (nonzero expected)"
 }
 
