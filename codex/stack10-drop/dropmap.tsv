@@ -27,5 +27,7 @@ k8	tests : cover MMQ small-I tiles on stream-k shapes
 k8	local: K8/L1 MMQ tile A/B switch, auto-drop and stream-k partition mutants, mmq-hash tool
 k11a	llama : skip getter synchronize() when no device work is pending
 k11a	local: K11a getter sync elision switch, debug check, mutants
+k11a	llama : keep the real sync in front of state I/O and KV stream copies
+k11a	local: K11a mutant 4 (state I/O syncs elidable again) and the caller in the debug-check log
 k11b	meta : stage mirrored host inputs once and upload slowest link first
 k11b	local: K11b input staging A/B controls and negative-control mutants
