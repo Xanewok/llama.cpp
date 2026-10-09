@@ -1,5 +1,5 @@
 id = "bw-k11a"
-title = "K11a getter sync elision: CUDA build, then StreamSync per np2 round with the elision off / on / debug-checked; Mac CPU gates required"
+title = "K11a getter sync elision: CUDA build, mutant-3 control of the query-based debug check, then StreamSync per np2 round with the elision off / on / debug-checked; Mac CPU gates required"
 kind = "filler"
 priority = 18
 host_sensitive = false
@@ -40,6 +40,11 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/src/llama-context.cpp",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/src/llama-context.h",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/src/llama-kv-cache.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/ggml/include/ggml-backend.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/ggml/src/ggml-backend-impl.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/ggml/src/ggml-backend.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/ggml/src/ggml-backend-meta.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/ggml/src/ggml-cuda/ggml-cuda.cu",
   "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
   "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
   "/home/xanewok/repos/attrib-pack/attrib_pack.py",

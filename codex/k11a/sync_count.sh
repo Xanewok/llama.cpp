@@ -2,7 +2,9 @@
 # K11a window stage: cudaStreamSynchronize per np2 round with the getter sync elision off / on / debug-checked.
 # Derived from work/x2-hostprof-s8/x2_hostprof_s8.sh (proof boot, nsys launch, np2 driver), CUDA-trace pass only.
 # One binary, three arms booted in turn, so the control is the same build: off = LLAMA_SYNC_ELIDE=0, on = default,
-# debug = LLAMA_SYNC_ELIDE_DEBUG=1 (every skipped sync is followed by a real one and timed; a wait > 20 us is logged).
+# debug = LLAMA_SYNC_ELIDE_DEBUG=1 (at every skipped sync the backends are queried; busy = a missed enqueue; then a real sync).
+# First a proof boot under mutant 3 + debug (flag cleared after every enqueue): the query must report misses, so a debug arm
+# without misses is not a blind detector.
 # Mechanism capture, not a timing A/B. Exit: 0 ok, 2 server/nsys/driver failure, 3 Xid, 4 GPUs/port busy, 5 prefill was not cold,
 # 6 input or proof failure, 7 wall budget exceeded, 8 gate failed.
 # Env: ROOT (tree with build-cuda), OUT, PORT, BUDGET_S, XID_SINCE, DRY_RUN (1 = CPU checks only).
@@ -76,7 +78,7 @@ cpu_checks() {
   python3 "$PACK/attrib_pack.py" pack --help > /dev/null || { log "attrib_pack.py does not start"; return 6; }
   if [ "$DRY_RUN" != 1 ]; then
     [ -x "$BIN" ] || { log "missing $BIN"; return 6; }
-    [ "$(strings "$BIN_DIR/libllama.so" | grep -c 'debug check engaged')" -ge 1 ] || { log "the build lacks the local sync-elision debug commit"; return 6; }
+    [ "$(strings "$BIN_DIR/libllama.so" | grep -c 'backend busy at a skipped sync')" -ge 1 ] || { log "the build lacks the local query-based sync-elision debug check"; return 6; }
   fi
 }
 gates() {
@@ -93,6 +95,7 @@ arm_env() {  # ARM
   case $1 in
     off) export LLAMA_SYNC_ELIDE=0 ;;
     debug) export LLAMA_SYNC_ELIDE_DEBUG=1 ;;
+    mut3) export LLAMA_SYNC_ELIDE_DEBUG=1 LLAMA_SYNC_ELIDE_MUTANT=3 ;;
   esac
 }
 args() { ARGS=(-m "$MODEL" --alias local-benchmark -c "$CTX" -np "$NP" -ctk q8_0 -ctv q8_0 -fa on "${EXTRA[@]}"
@@ -130,8 +133,11 @@ proof_boot() {  # ARM UB
   case $arm in
     off) [ "$(grep -cxF 'LLAMA_SYNC_ELIDE=0' "$OUT/$arm/server-env.txt")" = 1 ] || { log "elide env proof failed (arm off)"; return 6; } ;;
     on) [ "$(grep -c '^LLAMA_SYNC_ELIDE' "$OUT/$arm/server-env.txt")" = 0 ] || { log "elide env proof failed: a switch is set in arm on"; return 6; } ;;
-    debug) [ "$(grep -cxF 'LLAMA_SYNC_ELIDE_DEBUG=1' "$OUT/$arm/server-env.txt")" = 1 ] || { log "elide env proof failed (arm debug)"; return 6; }
-      grep -aq 'sync_elide: debug check engaged' "$plog" || { log "debug check did not engage in the proof boot ($plog)"; return 6; } ;;
+    debug|mut3) [ "$(grep -cxF 'LLAMA_SYNC_ELIDE_DEBUG=1' "$OUT/$arm/server-env.txt")" = 1 ] || { log "elide env proof failed (arm $arm)"; return 6; }
+      [ "$arm" = debug ] || [ "$(grep -cxF 'LLAMA_SYNC_ELIDE_MUTANT=3' "$OUT/$arm/server-env.txt")" = 1 ] || { log "elide env proof failed (arm mut3)"; return 6; }
+      grep -aq 'sync_elide: debug check engaged' "$plog" || { log "debug check did not engage in the proof boot ($plog)"; return 6; }
+      [ "$(grep -ac 'sync_elide: debug check engaged (backend query exact)' "$plog")" = "$(grep -ac 'sync_elide: debug check engaged' "$plog")" ] \
+        || { log "debug check fell back to timing: a backend has no query ($plog)"; return 6; } ;;
   esac
   [ "$(grep -acE "n_kv_pad +[=] $LLAMA_ARG_KV_PAD\b" "$plog")" -ge 2 ] || { log "kv_pad proof failed ($plog)"; return 6; }
   [ "$(grep -acE "n_ubatch +[=] $2\b" "$plog")" -ge 2 ] || { log "ub proof failed: n_ubatch = $2 not logged for both contexts ($plog)"; return 6; }
@@ -139,10 +145,16 @@ proof_boot() {  # ARM UB
   [ "$(grep -acE 'MTP chain: k=|mtp_fold_decode: engaged' "$plog")" = 0 ] || { log "chain/fold engaged at np2 (-duo has both off) ($plog)"; return 6; }
   [ "$(grep -ac 'created context checkpoint' "$plog")" -ge 1 ] && [ "$(grep -ac 'restored context checkpoint' "$plog")" -ge 1 ] \
     || { log "proof boot did not save and restore a context checkpoint (arm $arm, $plog)"; return 6; }
-  [ "$(grep -ac 'skipped sync waited' "$plog")" = 0 ] || { log "debug check fired in the proof boot (arm $arm): $(grep -a -m1 'skipped sync waited' "$plog")"; return 8; }
+  if [ "$arm" = mut3 ]; then
+    [ "$(grep -ac 'sync_elide: missed: backend busy' "$plog")" -ge 1 ] && [ "$(grep -acE 'sync_elide: elided=[0-9]+ missed=[1-9]' "$plog")" -ge 1 ] \
+      || { log "mutant 3 control: the debug check found no busy backend at a skipped sync ($plog)"; return 8; }
+    log "mutant control ok: $(grep -ac 'sync_elide: missed: backend busy' "$plog") busy-backend misses under mutant 3"
+    return 0
+  fi
+  [ "$(grep -ac 'sync_elide: missed:' "$plog")" = 0 ] || { log "debug check fired in the proof boot (arm $arm): $(grep -a -m1 'sync_elide: missed:' "$plog")"; return 8; }
   if [ "$arm" = debug ]; then
     # one destructor line per context, all missed=0
-    [ "$(grep -acE 'sync_elide: elided=[0-9]+ missed=0$' "$plog")" -ge 2 ] && [ "$(grep -acE 'sync_elide: elided=[0-9]+ missed=[1-9]' "$plog")" = 0 ] \
+    [ "$(grep -acE 'sync_elide: elided=[0-9]+ missed=0 idle_slow=[0-9]+$' "$plog")" -ge 2 ] && [ "$(grep -acE 'sync_elide: elided=[0-9]+ missed=[1-9]' "$plog")" = 0 ] \
       || { log "debug arm: a context reported missed > 0 or no destructor count ($plog)"; return 8; }
   fi
   log "proof ok (arm $arm, ub $2, np $NP): elision switch as intended, n_kv_pad $LLAMA_ARG_KV_PAD x2, no CPU sampler, chain/fold off"
@@ -176,6 +188,11 @@ trap cleanup EXIT
 trap 'log "signal; stopping"; exit 130' INT TERM
 cpu_checks || exit $?
 gates || exit $?
+
+mkdir -p "$OUT/mut3"
+arm_env mut3
+log "mutant control: LLAMA_SYNC_ELIDE_MUTANT=$LLAMA_SYNC_ELIDE_MUTANT LLAMA_SYNC_ELIDE_DEBUG=$LLAMA_SYNC_ELIDE_DEBUG (proof boot only)"
+proof_boot mut3 "$UB" || exit $?
 
 for arm in "${ARMS[@]}"; do
   mkdir -p "$OUT/$arm"
