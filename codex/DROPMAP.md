@@ -1,7 +1,9 @@
 # stack10 drop map
 
 Branch `topic/stack10`, base `def4a4e20` (= frozen/stack10-cand2 source). Every component is a set of general commits followed by one `local:`
-switch commit (env switches, mutants, engagement logs). gdn4 is not in this stack (moved to wave 3).
+switch commit (env switches, mutants, engagement logs). gdn4 is not in this stack (moved to wave 3). Exception: k11a has a second
+general + `local:` pair (`9afd77984`, `3497acd59`, the state I/O sync fix from `wt/s10-k11a`) on top of the stack; drops match by
+subject, so the position does not matter.
 
 ## Components and commits
 
@@ -16,7 +18,7 @@ switch commit (env switches, mutants, engagement logs). gdn4 is not in this stac
 | k10 | batched top-k | `4bf1c2ea3`, `7378321b9` |
 | k9 | MMQ programmatic dependent launch | `cd72032e8`, `b33022516`, `c15713fb1`, `23abb0b21` |
 | k8 | MMQ stream-k default-tile units + small-I tiles (L1 prerequisite included) | `88fca1a7b`, `a66f33bc4`, `498383fa1`, `4c3d32429`, `f13e859cd`, `dfe49db88` |
-| k11a | getter synchronize() elision | `c696e7d7f`, `886be9958` |
+| k11a | getter synchronize() elision; state I/O and KV stream copies keep the real sync | `c696e7d7f`, `886be9958`, `9afd77984`, `3497acd59` |
 | k11b | Meta input staging, slowest link first | `e37639ef7`, `3cdbc3dfb` |
 
 Full subjects: `codex/stack10-drop/dropmap.tsv` (component TAB subject). The recipe matches commits by subject, so it keeps working
