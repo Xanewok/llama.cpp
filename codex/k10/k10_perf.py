@@ -35,6 +35,8 @@ def engaged(log):
 
 
 def failures(log, arm):
+    # a crashed run stops before most cases: its failures prove nothing about the cases that never ran
+    assert any(re.search(r'\d+/\d+ tests passed', l) for l in lines(log)), f'control {arm}: run did not complete'
     rows = results(log)
     failed = [r for r in rows if r[1] == 'FAIL']
     assert any('canonical=1' in r[0] for r in failed), f'control {arm}: no canonical case failed'
