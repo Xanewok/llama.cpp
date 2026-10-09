@@ -152,7 +152,7 @@ ops() {
         # 8192 (default): several windows at 32768 and 90112; 1024: the smallest window, 8 windows at kv 8192, 2 at 1280..
         wcases "$dev" w8192 GGML_CUDA_FA_KV_WINDOW_LOG=1
         all_passed "$OUT/win-w8192-$dev.log"
-        n=$(grep -ac 'fattn_kv_window: window 1/' "$OUT/win-w8192-$dev.log"); echo "$dev engaged at 8192: $n second-window logs"
+        n=$(grep -ac 'fattn_kv_window: window 1/' "$OUT/win-w8192-$dev.log" || true); echo "$dev engaged at 8192: $n second-window logs"
         [[ $n -gt 0 ]]
         wcases "$dev" w1024 GGML_CUDA_FA_KV_WINDOW=1024 GGML_CUDA_FA_KV_WINDOW_LOG=1
         all_passed "$OUT/win-w1024-$dev.log"
@@ -161,7 +161,7 @@ ops() {
         # window 0: the one-pass conversion, no window log (the control for the engagement check above)
         wcases "$dev" off GGML_CUDA_FA_KV_WINDOW=0 GGML_CUDA_FA_KV_WINDOW_LOG=1
         all_passed "$OUT/win-off-$dev.log"
-        n=$(grep -ac 'fattn_kv_window:' "$OUT/win-off-$dev.log"); echo "$dev window off: $n window logs"
+        n=$(grep -ac 'fattn_kv_window:' "$OUT/win-off-$dev.log" || true); echo "$dev window off: $n window logs"
         [[ $n == 0 ]]
     done
 }
@@ -302,7 +302,7 @@ perf() {
         i=0
         for w in 0 8192 16384 4096 4096 16384 8192 0; do
             env CUDA_VISIBLE_DEVICES="$VISIBLE" GGML_CUDA_FA_KV_WINDOW=$w timeout 1500 nice -n 19 build-cuda/bin/test-backend-ops perf -b "$dev" -o FLASH_ATTN_EXT -p "$PERF_CASES" > "$OUT/perf-$dev-0$i-w$w.log" 2>&1
-            n=$(grep -ac 'FLASH_ATTN_EXT(' "$OUT/perf-$dev-0$i-w$w.log"); echo "$dev run $i window $w: $n cases"
+            n=$(grep -ac 'FLASH_ATTN_EXT(' "$OUT/perf-$dev-0$i-w$w.log" || true); echo "$dev run $i window $w: $n cases"
             [[ $n -ge 20 ]]
             i=$((i+1))
         done
