@@ -1099,6 +1099,83 @@ static void test_buft_get_alloc_size_n_does_not_allocate() {
     GGML_ASSERT(x[1]->data == nullptr);
 }
 
+//
+// Meta backend: the arena of the per-device subgraphs is reallocated when a graph has more nodes or more subgraphs
+// than any before. Every subgraph up to the maximum must be recreated at the maximum node capacity, because a later
+// graph within both maxima does not reallocate.
+
+static ggml_backend_meta_split_state test_meta_split_state_partial(const ggml_tensor * tensor, void * /*userdata*/) {
+    if (tensor->name[0] == 'w' || tensor->name[0] == 'x') {
+        return {GGML_BACKEND_SPLIT_AXIS_0, {tensor->ne[0]/2, tensor->ne[0]/2}, {1}, 1};
+    }
+    return {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
+}
+
+struct test_meta_subgraph_step {
+    int n_partial; // a product split along the reduced dimension is PARTIAL and ends a subgraph
+    int n_pad;     // scale nodes that only add nodes to the graph
+};
+
+static void test_meta_subgraph_realloc(const std::vector<test_meta_subgraph_step> & steps) {
+    constexpr int n_partial_max = 3;
+
+    ggml_backend_load_all();
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+    ggml_backend_dev_t devs[2] = {cpu, cpu};
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, test_meta_split_state_partial, nullptr);
+    ggml_backend_ptr backend(ggml_backend_dev_init(meta, nullptr));
+    GGML_ASSERT(backend);
+
+    ggml_init_params params_w = {ggml_tensor_overhead()*(n_partial_max + 2), nullptr, true};
+    ggml_context_ptr ctx_w(ggml_init(params_w));
+    ggml_tensor * x = ggml_new_tensor_2d(ctx_w.get(), GGML_TYPE_F32, 64, 2);
+    ggml_set_name(x, "x");
+    ggml_tensor * w[n_partial_max];
+    for (int i = 0; i < n_partial_max; i++) {
+        w[i] = ggml_new_tensor_2d(ctx_w.get(), GGML_TYPE_F32, 64, 2);
+        ggml_set_name(w[i], "w");
+    }
+    ggml_tensor * m = ggml_new_tensor_1d(ctx_w.get(), GGML_TYPE_F32, 1);
+    ggml_set_name(m, "m");
+    ggml_backend_buffer_ptr buf_w(ggml_backend_alloc_ctx_tensors(ctx_w.get(), backend.get()));
+    GGML_ASSERT(buf_w);
+
+    ggml_gallocr_ptr galloc(ggml_gallocr_new(ggml_backend_dev_buffer_type(meta)));
+    for (const test_meta_subgraph_step & step : steps) {
+        GGML_ASSERT(step.n_partial >= 1 && step.n_partial <= n_partial_max);
+        const int n_nodes = step.n_pad + step.n_partial;
+        ggml_init_params params = {ggml_tensor_overhead()*n_nodes + ggml_graph_overhead_custom(n_nodes, false), nullptr, true};
+        ggml_context_ptr ctx(ggml_init(params));
+        ggml_cgraph * gf = ggml_new_graph_custom(ctx.get(), n_nodes, false);
+        ggml_tensor * cur = m;
+        for (int i = 0; i < step.n_pad; i++) {
+            cur = ggml_scale(ctx.get(), cur, 1.0f);
+        }
+        ggml_build_forward_expand(gf, cur);
+        for (int i = 0; i < step.n_partial; i++) {
+            ggml_tensor * out = ggml_mul_mat(ctx.get(), w[i], x);
+            ggml_set_output(out);
+            ggml_build_forward_expand(gf, out);
+        }
+        gf->uid = ggml_graph_next_uid();
+        GGML_ASSERT(ggml_gallocr_alloc_graph(galloc.get(), gf));
+        GGML_ASSERT(ggml_backend_graph_compute(backend.get(), gf) == GGML_STATUS_SUCCESS);
+    }
+}
+
+// The larger graph has fewer subgraphs and reallocates the arena; the last graph has more subgraphs again but
+// does not reallocate. The arena is large enough to be unmapped when freed, so a stale subgraph faults.
+static void test_meta_subgraph_realloc_count() {
+    test_meta_subgraph_realloc({{3, 4000}, {1, 8000}, {3, 4000}});
+}
+
+// The smaller graph has more subgraphs and reallocates the arena; the last graph is larger than it but within
+// the maxima, so it must fit the subgraphs created for it.
+static void test_meta_subgraph_realloc_size() {
+    test_meta_subgraph_realloc({{1, 8000}, {3, 2000}, {1, 8000}});
+}
+
 static void run(const char * name, void (*f)()) {
     printf("%s ", name);
     fflush(stdout);
@@ -1139,5 +1216,7 @@ int main() {
     run("test_buft_get_alloc_size_n_custom_override", test_buft_get_alloc_size_n_custom_override);
     run("test_buft_get_alloc_size_n_custom_override_ctx_size", test_buft_get_alloc_size_n_custom_override_ctx_size);
     run("test_buft_get_alloc_size_n_does_not_allocate", test_buft_get_alloc_size_n_does_not_allocate);
+    run("test_meta_subgraph_realloc_count", test_meta_subgraph_realloc_count);
+    run("test_meta_subgraph_realloc_size", test_meta_subgraph_realloc_size);
     return 0;
 }
