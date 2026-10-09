@@ -39,6 +39,7 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/codex/k11a/mac-evidence/summary.json",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/src/llama-context.cpp",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/src/llama-context.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-k11a/src/llama-kv-cache.cpp",
   "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
   "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
   "/home/xanewok/repos/attrib-pack/attrib_pack.py",

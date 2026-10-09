@@ -109,7 +109,8 @@ wait_health() {  # pid
   done
   return 2
 }
-# Short boot of the same binary, argv and env at verbosity 5 plus one ignore_eos request; proves the arm's env reached the server.
+# Short boot of the same binary, argv and env at verbosity 5 plus the same ignore_eos request twice on slot 0 (the first saves a
+# context checkpoint, the second restores it: state save and restore run in every arm); proves the arm's env reached the server.
 proof_boot() {  # ARM UB
   local arm=$1 plog=$OUT/$1/proof-ub$2.log rc
   args "$2"; S=
@@ -117,8 +118,10 @@ proof_boot() {  # ARM UB
   NPID=$!
   wait_health "$NPID"; rc=$?
   if [ "$rc" = 0 ]; then
-    curl -s -m 120 "http://127.0.0.1:$PORT/completion" -H 'Content-Type: application/json' -o "$plog.resp" -d \
-      '{"prompt":"Write a Rust function that parses a CSV line.","n_predict":96,"ignore_eos":true,"cache_prompt":false,"id_slot":0,"temperature":1,"top_k":20,"top_p":0.95,"min_p":0.05,"seed":1729}' || rc=2
+    for r in resp resp2; do
+      curl -s -m 120 "http://127.0.0.1:$PORT/completion" -H 'Content-Type: application/json' -o "$plog.$r" -d \
+        '{"prompt":"Write a Rust function that parses a CSV line.","n_predict":96,"ignore_eos":true,"cache_prompt":true,"id_slot":0,"temperature":1,"top_k":20,"top_p":0.95,"min_p":0.05,"seed":1729}' || rc=2
+    done
     tr '\0' '\n' < "/proc/$NPID/environ" | grep -E '^(GGML|LLAMA)_' | sort > "$OUT/$arm/server-env.txt"
   fi
   stop_pid "$NPID"; NPID=
@@ -134,7 +137,14 @@ proof_boot() {  # ARM UB
   [ "$(grep -acE "n_ubatch +[=] $2\b" "$plog")" -ge 2 ] || { log "ub proof failed: n_ubatch = $2 not logged for both contexts ($plog)"; return 6; }
   [ "$(grep -acE 'set_sampler:.*using CPU' "$plog")" = 0 ] || { log "CPU sampler warning in the proof boot ($plog)"; return 6; }
   [ "$(grep -acE 'MTP chain: k=|mtp_fold_decode: engaged' "$plog")" = 0 ] || { log "chain/fold engaged at np2 (-duo has both off) ($plog)"; return 6; }
-  [ "$(grep -ac 'skipped sync waited' "$plog")" = 0 ] || { log "debug check fired in the proof boot (arm $arm)"; return 8; }
+  [ "$(grep -ac 'created context checkpoint' "$plog")" -ge 1 ] && [ "$(grep -ac 'restored context checkpoint' "$plog")" -ge 1 ] \
+    || { log "proof boot did not save and restore a context checkpoint (arm $arm, $plog)"; return 6; }
+  [ "$(grep -ac 'skipped sync waited' "$plog")" = 0 ] || { log "debug check fired in the proof boot (arm $arm): $(grep -a -m1 'skipped sync waited' "$plog")"; return 8; }
+  if [ "$arm" = debug ]; then
+    # one destructor line per context, all missed=0
+    [ "$(grep -acE 'sync_elide: elided=[0-9]+ missed=0$' "$plog")" -ge 2 ] && [ "$(grep -acE 'sync_elide: elided=[0-9]+ missed=[1-9]' "$plog")" = 0 ] \
+      || { log "debug arm: a context reported missed > 0 or no destructor count ($plog)"; return 8; }
+  fi
   log "proof ok (arm $arm, ub $2, np $NP): elision switch as intended, n_kv_pad $LLAMA_ARG_KV_PAD x2, no CPU sampler, chain/fold off"
 }
 boot() {  # ARM UB

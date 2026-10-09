@@ -4,10 +4,11 @@ Round segmentation and the thread choice are the X2 ones (attrib-pack llama_bloc
 Gates (baseline: stack8 X2 default cuda pass, 211.9 StreamSync/round, 6.00 long):
   off:   StreamSync/round in [150, 260] (the control must show the redundant train)
   on:    StreamSync/round <= 30, long (>= 50 us) within 0.5 of the off arm and >= 5 (required syncs kept)
-  debug: 'debug check engaged' logged, no 'skipped sync waited'
+  debug: 'debug check engaged' logged, no 'skipped sync waited', no destructor count with missed > 0
 Exit: 0 pass, 5 fewer than 40 rounds in an arm, 8 gate failed."""
 import collections
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -59,7 +60,8 @@ def main():
     res = {}
     for a in arms:
         log = (out / a / 'server.log').read_text(errors='replace')
-        res[a] = {'debug_engaged': log.count('sync_elide: debug check engaged'), 'debug_missed': log.count('skipped sync waited')}
+        res[a] = {'debug_engaged': log.count('sync_elide: debug check engaged'),
+                  'debug_missed': log.count('skipped sync waited') + sum(int(m) for m in re.findall(r'sync_elide: elided=\d+ missed=(\d+)', log))}
         res[a].update(count_arm(str(out / a / 'decode-8k.sqlite')))
     fails = []
     short = [a for a in arms if res[a]['rounds'] < MIN_ROUNDS]

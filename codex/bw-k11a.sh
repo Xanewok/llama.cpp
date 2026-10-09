@@ -23,7 +23,7 @@ import hashlib, json
 from pathlib import Path
 r = json.loads(Path('codex/k11a/mac-evidence/summary.json').read_text())
 assert r['result'] == 'PASS'
-assert {20, 21, 22} <= {s['code'] for s in r['stages'] if s['rc'] == 0}
+assert {20, 21, 22, 23} <= {s['code'] for s in r['stages'] if s['rc'] == 0}
 h = hashlib.sha256()
 for name in r['source_files']:
     h.update(name.encode()+b'\0'+Path(name).read_bytes())
