@@ -80,8 +80,7 @@ Per verify round and GPU, ms = calls x measured us (the window fills the us). As
 - If a lever's verdict is none, its served impact is 0 and the number printed is the inside-spread value, not a gain.
 
 ## Self-test of the verdict logic
-`codex/test_fable_bcd_summary.py`: synthetic data, 12 checks: fire/no-fire at the spread boundary, B warm/wrong10 void paths, C and D void on high spread, routing mismatch rc 8, missing DONE rc 8,
-negative control (all arms = control gives "none" everywhere). All pass (M, local CPU, no GPU).
+`codex/test_fable_bcd_summary.py`: synthetic data, 12 checks, all pass (M, CPU only): null data (all arms = control) gives rc 0 and "none" for B, C (every class) and D (negative control); injected effects give B exists, C exists, D partial at 0.3 ms/seq and exposed at 1.0 ms/seq; silent `warm`, firing `wrong10` decoy and a noisy A/A each give void rc 5.
 
 ## Known risks (decision-relevant)
 - Not compiled: first window attempt may die in the build (rc 8). The summary and window scripts are validated; the CUDA code is not. If it fails, the log is `stages`/`cuda-build.log`; fixes are code-only, no verdict lost.
