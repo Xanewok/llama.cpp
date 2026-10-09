@@ -1,0 +1,236 @@
+{
+  "8192": {
+    "paths": [
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-np2-real-iq4/full-a2/0-s9p/depth-8192.json",
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-np2-real-iq4/full-a2/1-s10/depth-8192.json",
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-np2-real-iq4/full-a2/2-s10/depth-8192.json",
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-np2-real-iq4/full-a2/3-s9p/depth-8192.json"
+    ],
+    "stream_tokens_equal": [
+      true,
+      true
+    ],
+    "counters": [
+      [
+        {
+          "predicted_n": 512,
+          "draft_n": 619,
+          "draft_n_accepted": 387,
+          "prompt_n": 4,
+          "cache_n": 8188
+        },
+        {
+          "predicted_n": 512,
+          "draft_n": 495,
+          "draft_n_accepted": 411,
+          "prompt_n": 4,
+          "cache_n": 8188
+        }
+      ],
+      [
+        {
+          "predicted_n": 512,
+          "draft_n": 619,
+          "draft_n_accepted": 387,
+          "prompt_n": 4,
+          "cache_n": 8188
+        },
+        {
+          "predicted_n": 512,
+          "draft_n": 495,
+          "draft_n_accepted": 411,
+          "prompt_n": 4,
+          "cache_n": 8188
+        }
+      ],
+      [
+        {
+          "predicted_n": 512,
+          "draft_n": 619,
+          "draft_n_accepted": 387,
+          "prompt_n": 4,
+          "cache_n": 8188
+        },
+        {
+          "predicted_n": 512,
+          "draft_n": 495,
+          "draft_n_accepted": 411,
+          "prompt_n": 4,
+          "cache_n": 8188
+        }
+      ],
+      [
+        {
+          "predicted_n": 512,
+          "draft_n": 619,
+          "draft_n_accepted": 387,
+          "prompt_n": 4,
+          "cache_n": 8188
+        },
+        {
+          "predicted_n": 512,
+          "draft_n": 495,
+          "draft_n_accepted": 411,
+          "prompt_n": 4,
+          "cache_n": 8188
+        }
+      ]
+    ]
+  },
+  "32768": {
+    "paths": [
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-np2-real-iq4/full-a2/0-s9p/depth-32768.json",
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-np2-real-iq4/full-a2/1-s10/depth-32768.json",
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-np2-real-iq4/full-a2/2-s10/depth-32768.json",
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-np2-real-iq4/full-a2/3-s9p/depth-32768.json"
+    ],
+    "stream_tokens_equal": [
+      true,
+      true
+    ],
+    "counters": [
+      [
+        {
+          "predicted_n": 512,
+          "draft_n": 610,
+          "draft_n_accepted": 389,
+          "prompt_n": 4,
+          "cache_n": 32764
+        },
+        {
+          "predicted_n": 512,
+          "draft_n": 480,
+          "draft_n_accepted": 415,
+          "prompt_n": 4,
+          "cache_n": 32764
+        }
+      ],
+      [
+        {
+          "predicted_n": 512,
+          "draft_n": 610,
+          "draft_n_accepted": 389,
+          "prompt_n": 4,
+          "cache_n": 32764
+        },
+        {
+          "predicted_n": 512,
+          "draft_n": 480,
+          "draft_n_accepted": 415,
+          "prompt_n": 4,
+          "cache_n": 32764
+        }
+      ],
+      [
+        {
+          "predicted_n": 512,
+          "draft_n": 610,
+          "draft_n_accepted": 389,
+          "prompt_n": 4,
+          "cache_n": 32764
+        },
+        {
+          "predicted_n": 512,
+          "draft_n": 480,
+          "draft_n_accepted": 415,
+          "prompt_n": 4,
+          "cache_n": 32764
+        }
+      ],
+      [
+        {
+          "predicted_n": 512,
+          "draft_n": 610,
+          "draft_n_accepted": 389,
+          "prompt_n": 4,
+          "cache_n": 32764
+        },
+        {
+          "predicted_n": 512,
+          "draft_n": 480,
+          "draft_n_accepted": 415,
+          "prompt_n": 4,
+          "cache_n": 32764
+        }
+      ]
+    ]
+  },
+  "90112": {
+    "paths": [
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-np2-real-iq4/full-a2/0-s9p/depth-90112.json",
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-np2-real-iq4/full-a2/1-s10/depth-90112.json",
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-np2-real-iq4/full-a2/2-s10/depth-90112.json",
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-np2-real-iq4/full-a2/3-s9p/depth-90112.json"
+    ],
+    "stream_tokens_equal": [
+      true,
+      true
+    ],
+    "counters": [
+      [
+        {
+          "predicted_n": 512,
+          "draft_n": 478,
+          "draft_n_accepted": 415,
+          "prompt_n": 4,
+          "cache_n": 90108
+        },
+        {
+          "predicted_n": 512,
+          "draft_n": 580,
+          "draft_n_accepted": 394,
+          "prompt_n": 4,
+          "cache_n": 90108
+        }
+      ],
+      [
+        {
+          "predicted_n": 512,
+          "draft_n": 478,
+          "draft_n_accepted": 415,
+          "prompt_n": 4,
+          "cache_n": 90108
+        },
+        {
+          "predicted_n": 512,
+          "draft_n": 580,
+          "draft_n_accepted": 394,
+          "prompt_n": 4,
+          "cache_n": 90108
+        }
+      ],
+      [
+        {
+          "predicted_n": 512,
+          "draft_n": 478,
+          "draft_n_accepted": 415,
+          "prompt_n": 4,
+          "cache_n": 90108
+        },
+        {
+          "predicted_n": 512,
+          "draft_n": 580,
+          "draft_n_accepted": 394,
+          "prompt_n": 4,
+          "cache_n": 90108
+        }
+      ],
+      [
+        {
+          "predicted_n": 512,
+          "draft_n": 478,
+          "draft_n_accepted": 415,
+          "prompt_n": 4,
+          "cache_n": 90108
+        },
+        {
+          "predicted_n": 512,
+          "draft_n": 580,
+          "draft_n_accepted": 394,
+          "prompt_n": 4,
+          "cache_n": 90108
+        }
+      ]
+    ]
+  }
+}

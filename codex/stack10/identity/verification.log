@@ -1,0 +1,41 @@
+CPU verification PASS: comparator separates tokens and counters; single-switch arms; exact archived requests at both depths; pins exist; Python parses.
+{
+  "stock": {},
+  "k6a_off": {
+    "GGML_CUDA_Q8_REUSE": "0"
+  },
+  "k11b_off": {
+    "GGML_META_INPUT_STAGE": "0"
+  },
+  "k11a_off": {
+    "LLAMA_SYNC_ELIDE": "0"
+  },
+  "k10_off": {
+    "GGML_CUDA_TOPK_BATCHED": "0"
+  },
+  "k4_off": {
+    "GGML_SSM_CONV_RS_OFF": "1"
+  },
+  "k7_off": {
+    "GGML_CUDA_RMS_NORM_SCALE_PAIR": "0"
+  },
+  "alpha_off": {
+    "GGML_CUDA_ALPHA_GATE": "0"
+  },
+  "rot_off": {
+    "LLAMA_KV_ROT_PERSIST": "0"
+  },
+  "q8decode_off": {
+    "GGML_CUDA_Q8_DECODE": "0"
+  },
+  "k8_off": {
+    "GGML_CUDA_MMQ_TILES": "default"
+  },
+  "k6b_off": {
+    "GGML_CUDA_ADD_RMS_NORM": "0"
+  },
+  "k2_off": {
+    "GGML_CUDA_FATTN_KV_MAX_SHARE": "0"
+  }
+}
+CPU synthetic sweep control PASS: recorded-data copies identify the designated restoring arm; a stock token mutation returns rc 5. No GPU execution.

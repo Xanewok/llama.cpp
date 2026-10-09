@@ -1,0 +1,111 @@
+{
+  "8192": {
+    "request_equal": true,
+    "tokens_equal": true,
+    "final_counters_equal": true,
+    "first_token_index0": null,
+    "first_tokens": null,
+    "first_draft_counter_chunk0": null,
+    "first_draft_counters": null,
+    "reference_counters": {
+      "predicted_n": 512,
+      "draft_n": 589,
+      "draft_n_accepted": 392,
+      "prompt_n": 8192,
+      "cache_n": 0
+    },
+    "candidate_counters": {
+      "predicted_n": 512,
+      "draft_n": 589,
+      "draft_n_accepted": 392,
+      "prompt_n": 8192,
+      "cache_n": 0
+    },
+    "sha256": {
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-depth-iq4/full-a3/0-s9p/depth-8192.json": "408d723a4335e7dad023ed56902b65aeac722bf9fffc764bd412d09226db78e1",
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-depth-iq4/full-a3/1-s10/depth-8192.json": "312c0cc151abe8b34e3ee43817efee1e192a9dede5b045b8e9ff524808ec60be"
+    }
+  },
+  "32768": {
+    "request_equal": true,
+    "tokens_equal": false,
+    "final_counters_equal": false,
+    "first_token_index0": 53,
+    "first_tokens": [
+      513,
+      25
+    ],
+    "first_draft_counter_chunk0": 52,
+    "first_draft_counters": [
+      {
+        "predicted_n": 53,
+        "draft_n": 95,
+        "draft_n_accepted": 34
+      },
+      {
+        "predicted_n": 53,
+        "draft_n": 95,
+        "draft_n_accepted": 35
+      }
+    ],
+    "reference_counters": {
+      "predicted_n": 512,
+      "draft_n": 862,
+      "draft_n_accepted": 338,
+      "prompt_n": 32768,
+      "cache_n": 0
+    },
+    "candidate_counters": {
+      "predicted_n": 512,
+      "draft_n": 802,
+      "draft_n_accepted": 350,
+      "prompt_n": 32768,
+      "cache_n": 0
+    },
+    "sha256": {
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-depth-iq4/full-a3/0-s9p/depth-32768.json": "09c359d8635e2f6cac8a7e075df8d2422176822e1a64cc15c57142f285cc8dc4",
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-depth-iq4/full-a3/1-s10/depth-32768.json": "c4db33582b5e9dd6851666a1860cda6114f0cedc41915fa6c790d03517233790"
+    }
+  },
+  "90112": {
+    "request_equal": true,
+    "tokens_equal": false,
+    "final_counters_equal": false,
+    "first_token_index0": 2,
+    "first_tokens": [
+      369,
+      7701
+    ],
+    "first_draft_counter_chunk0": 1,
+    "first_draft_counters": [
+      {
+        "predicted_n": 2,
+        "draft_n": 5,
+        "draft_n_accepted": 1
+      },
+      {
+        "predicted_n": 2,
+        "draft_n": 5,
+        "draft_n_accepted": 0
+      }
+    ],
+    "reference_counters": {
+      "predicted_n": 512,
+      "draft_n": 513,
+      "draft_n_accepted": 408,
+      "prompt_n": 90112,
+      "cache_n": 0
+    },
+    "candidate_counters": {
+      "predicted_n": 512,
+      "draft_n": 470,
+      "draft_n_accepted": 417,
+      "prompt_n": 90112,
+      "cache_n": 0
+    },
+    "sha256": {
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-depth-iq4/full-a3/0-s9p/depth-90112.json": "d88630886442ed8b085e8b477bdfc98782011042f0ecbb2488d9b00025ca4fa3",
+      "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-depth-iq4/full-a3/1-s10/depth-90112.json": "f8916e4637feca9275b271fd4de9d734483b16970327301d328d222df2c585f8"
+    }
+  }
+}
