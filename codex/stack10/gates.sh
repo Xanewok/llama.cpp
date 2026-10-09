@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stage library of bw-stack10.sh (sourced, never run alone). Contract: a component's CUDA gate is that component's own function,
+# Stage library of bw-stack10b.sh (sourced, never run alone). Contract: a component's CUDA gate is that component's own function,
 # extracted from its window by gates_table.py and run in a subshell with OUT=$OUT/<comp>; nothing here re-implements a check.
 # Needs from the caller: ROOT W EVAL OUT SHA BUILD_SHA (the commit build-cuda was built from: SHA, or the reused attempt's in the tail) SHORT VISIBLE COMPONENTS CPUS GPUS CCCL BUILDGATE flags S9_LIB CAND_LIB P55_LIB.
 
@@ -109,7 +109,7 @@ comp_run() {
 
 # Test binaries of the selected components exist only where the component is in the tree.
 targets() {
-    local t=(llama-server test-backend-ops)
+    local t=(llama-server test-backend-ops test-alloc)
     if has k4; then t+=(test-recurrent-state-rollback); fi
     if has k2; then t+=(test-fattn-kv-max-cache); fi
     if has k11b; then t+=(test-meta-input-stage); fi
@@ -151,10 +151,10 @@ assemble_bin() {
     printf '%s\n' "$source_line" > "$dest/SOURCE"
 }
 
-# Stock-MMQ reference: HEAD with the K8 and K9 ggml commits reverted (stock_tree.py verifies the MMQ files equal the base).
+# Stock-MMQ reference: HEAD with the K8 ggml commits reverted (stock_tree.py verifies the MMQ files equal the base).
 # Built in a bin/wt work dir (same depth as this tree, so the shared ccache hits on every unchanged unit).
 stock_build() {
-    STOCK_DIR=$("$W/bin/wt" work "s10-stock-a$ATTEMPT" --purpose "stack10 window attempt $ATTEMPT: HEAD with the K8 and K9 ggml commits reverted, the stock-MMQ reference of the K8 and K9 gates; scratch, safe to delete after the window")
+    STOCK_DIR=$("$W/bin/wt" work "s10b-stock-a$ATTEMPT" --purpose "stack10b window attempt $ATTEMPT: HEAD with the K8 ggml commits reverted, the stock-MMQ reference of the K8 gate; scratch, safe to delete after the window")
     echo "STOCK_DIR=$STOCK_DIR" > "$OUT/stock-dir.txt"
     python3 codex/stack10/stock_tree.py make "$STOCK_DIR"
     nice -n 19 "$BUILDGATE" cmake -S "$STOCK_DIR" -B "$STOCK_DIR/build-cuda" "${flags[@]}"
@@ -166,7 +166,7 @@ stock_build() {
     [[ $(grep -ac 'mmq_pdl:' "$STOCK_DIR/build-cuda/bin/libggml-cuda.so") == 0 ]]
     [[ $(grep -ac 'GGML_CUDA_MMQ_SK_MUTANT' "$STOCK_DIR/build-cuda/bin/libggml-cuda.so") == 0 ]]
     [[ $(grep -ac 'mmq-hash' "$STOCK_DIR/build-cuda/bin/test-backend-ops") -gt 0 ]]
-    assemble_bin "$STOCK_DIR/build-cuda/bin" "$STOCK_DIR/stock-bin" "stock-mmq of $SHA (K8 and K9 ggml commits reverted)"
+    assemble_bin "$STOCK_DIR/build-cuda/bin" "$STOCK_DIR/stock-bin" "stock-mmq of $SHA (K8 ggml commits reverted)"
     assemble_bin build-cuda/bin "$STOCK_DIR/k8-bin" "$SHA CUDA 13.2 120a CCCL343 NCCL OFF, stack10 test-backend-ops build"
     [[ $(grep -ac 'GGML_CUDA_MMQ_SK_MUTANT' "$STOCK_DIR/k8-bin/libggml-cuda.so") -gt 0 ]]
 }
@@ -176,6 +176,25 @@ g_k7() { comp_run k7 ops; }
 g_k4() { comp_run k4 ops model; }
 g_k6a() { comp_run k6a ops; }
 g_k6b() { comp_run k6b ops; }
+
+# K4 np2 fix: the meta subgraph sequence of test-alloc (CPU devices; the fix is in ggml-base) passes in this build. The local
+# mutant (pre-fix bound) is recorded only: without ASAN its read of the freed arena need not fault (its must-fail controls are
+# the Mac ASAN stage and the np2 smoke's mutant arm).
+g_mfix() {
+    local d=$OUT/mfix rc=0
+    mkdir -p "$d"
+    env -u GGML_META_SUBGRAPH_MUTANT CUDA_VISIBLE_DEVICES='' build-cuda/bin/test-alloc > "$d/test-alloc.txt" 2>&1
+    grep -aq 'test_meta_subgraph_capacity(compute) PASSED' "$d/test-alloc.txt"
+    grep -aq 'test_meta_subgraph_capacity(plan) PASSED' "$d/test-alloc.txt"
+    env GGML_META_SUBGRAPH_MUTANT=1 CUDA_VISIBLE_DEVICES='' build-cuda/bin/test-alloc > "$d/test-alloc-mutant.txt" 2>&1 || rc=$?
+    echo "recorded: pre-fix mutant test-alloc rc_M=$rc (nonzero expected)"
+}
+
+# The stack10 crash: both slots prefilled at 8k, joint replay, 3 repetitions must survive; the pre-fix mutant must die.
+np2_smoke() {
+    [[ -n ${PORT:-} ]]
+    env CUDA_VISIBLE_DEVICES="$VISIBLE" ROOT="$ROOT" PORT="$PORT" XID_SINCE="$STARTED" bash codex/stack10/np2_smoke.sh "$OUT/np2-smoke"
+}
 g_k6_memcheck() { comp_run k6 memcheck; }
 g_k2() { comp_run k2 ops; }
 g_k10() { comp_run k10 ops controls; }
@@ -279,7 +298,7 @@ g_full() {
 freeze() {
     [[ $(git rev-parse HEAD) == "$SHA" && -z $(git status --porcelain --untracked-files=no) ]]
     [[ ! -e $W/frozen/stack10 ]]
-    local desc="stack9-p55 + K7 K4 K6a K6b K2 K10 K9 K8 K11a K11b ($COMPONENTS); CUDA gates passed on both GPUs; CUDA 13.2 120a CCCL343 NCCL OFF"
+    local desc="stack10b: stack9-p55 + K7 K4 (+ meta subgraph fix) K6a K6b K2 K10 K8 K11a K11b ($COMPONENTS), no K9; CUDA gates and np2 smoke passed on both GPUs; CUDA 13.2 120a CCCL343 NCCL OFF"
     if [[ -n $TAIL_FROM ]]; then
         desc="$desc; build commit $BUILD_SHA, gates 40-65 in codex/window/$TAIL_FROM, full-suite K11a freeze render in codex/window/${OUT##*/} at $SHA (src ggml tests common identical)"
     fi

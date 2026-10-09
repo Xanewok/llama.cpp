@@ -1,4 +1,5 @@
-"""Source of the stock-MMQ reference build: HEAD with the K8 and K9 ggml commits reverted, so the MMQ code is that of the base.
+"""Source of the stock-MMQ reference build: HEAD with the K8 ggml commits reverted, so the MMQ code is that of the base (K9 is
+not in stack10b).
 
 usage: stock_tree.py list            commits to revert, newest first (each subject must match exactly one commit of BASE..HEAD)
        stock_tree.py make DEST       git archive HEAD into DEST (new directory), revert them in order, verify the MMQ files
@@ -14,9 +15,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BASE = 'def4a4e20a689047e68e8edd81c97790b69a1de7'
 SUBJECTS = [
-    'cuda : launch the MMQ q8_1 quantize kernel with PDL',
-    'cuda : launch the MMQ kernel and its stream-k fixup with PDL',
-    'local: K9 MMQ PDL off switch',
     'cuda : take SMALL_I MMQ tiles on stream-k launches too',
     'cuda : MMQ stream-k partitions in default-tile units for narrow tiles',
     'cuda : shape-gated small-I MMQ tiles for 16 and 24 columns on Blackwell',

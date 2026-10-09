@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Combined stack10 CUDA window (parent queue only, no A/B timing): CUDA build, every selected component's own CUDA gates, the
-# fafix SASS gate, test-backend-ops in full on both GPUs, freeze as frozen/stack10, render and check the A/B items.
-#   env COMPONENTS (default: p55 k7 k4 k6a k6b k2 k10 k9 k8 k11a k11b) selects the gates and the canaries of the rendered items;
-#   the base ops, the fafix gates and the full suite always run. gdn4 is not part of this window.
-#   env STACK10_TAIL_FROM=<codex/window dir> (set by the tail item only) reuses that attempt's stages 40-65 instead of rerunning
+# Combined stack10b CUDA window (stack10 minus K9 plus the K4 np2 fix; parent queue only, no A/B timing): CUDA build, the np2
+# joint-replay server smoke (the stack10 crash), every selected component's own CUDA gates, the meta subgraph unit test, the fafix
+# SASS gate, test-backend-ops in full on both GPUs, K11a sync count, freeze as frozen/stack10, render and check the A/B items.
+#   env COMPONENTS (default: p55 k7 k4 k6a k6b k2 k10 k8 k11a k11b) selects the gates and the canaries of the rendered items;
+#   the base ops, the np2 smoke, the meta unit test, the fafix gates and the full suite always run. gdn4 and K9 are not part of it.
+#   env STACK10_TAIL_FROM=<codex/window dir> (set by a tail item only) reuses that attempt's stages 40-65 instead of rerunning
 #   them: tail_check.py must prove them still valid (rc 6 otherwise) before any GPU stage; then only 66, 63, 70, 71 run.
 # rc: 0 pass | 3 Xid | 4 transient (GPU busy/missing) | 5 void negative control or too little data | 6 integrity
 #     7 timeout | 8 deterministic failure. A failed gate does not stop the other gates (the drop map needs every failing component),
@@ -28,17 +29,17 @@ S9_LIB=$W/frozen/stack9/build/bin
 CAND_LIB=$W/frozen/stack10-cand/build/bin
 P55_LIB=$W/frozen/stack9-p55/build/bin
 EVIDENCE=codex/stack10/mac-evidence/summary.json
-ALL_COMPONENTS='p55 k7 k4 k6a k6b k2 k10 k9 k8 k11a k11b'
+ALL_COMPONENTS='p55 k7 k4 k6a k6b k2 k10 k8 k11a k11b'
 COMPONENTS=$(echo "${COMPONENTS:-$ALL_COMPONENTS}" | xargs)
 TAIL_FROM=${STACK10_TAIL_FROM:-}
 if [[ -n $TAIL_FROM ]]; then
-    [[ $TAIL_FROM =~ ^stack10-a[0-9]+$ ]] || { echo "bad STACK10_TAIL_FROM $TAIL_FROM"; exit 8; }
+    [[ $TAIL_FROM =~ ^stack10b-a[0-9]+$ ]] || { echo "bad STACK10_TAIL_FROM $TAIL_FROM"; exit 8; }
     A1=$ROOT/codex/window/$TAIL_FROM
-    ITEM=bw-stack10-tail
-    OUT_GLOB=$ROOT/codex/window/stack10-tail-a[0-9]*
+    ITEM=bw-stack10b-tail
+    OUT_GLOB=$ROOT/codex/window/stack10b-tail-a[0-9]*
 else
-    ITEM=bw-stack10
-    OUT_GLOB=$ROOT/codex/window/stack10-a[0-9]*
+    ITEM=bw-stack10b
+    OUT_GLOB=$ROOT/codex/window/stack10b-a[0-9]*
 fi
 # shellcheck source=gates.sh
 source "$ROOT/codex/stack10/gates.sh"
@@ -55,8 +56,10 @@ flags=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER_FORCED=ON -DCMAKE_CUDA_C
 STAGES=(
     'fatal 40 cuda-build build'
     'fatal 41 cuda-stamps stamps'
-    'fatal 42 stock-mmq-build stock_build k8 k9'
+    'fatal 43 np2-smoke np2_smoke'
+    'fatal 42 stock-mmq-build stock_build k8'
     'gate 50 base-ops g_base'
+    'gate 54 meta-subgraphs g_mfix'
     'gate 52 k7-pair g_k7 k7'
     'gate 53 k4-conv-rs g_k4 k4'
     'gate 55 k6a-q8-reuse g_k6a k6a'
@@ -64,7 +67,6 @@ STAGES=(
     'gate 57 k6-memcheck g_k6_memcheck k6a k6b'
     'gate 58 k2-shared-mask g_k2 k2'
     'gate 59 k10-topk g_k10 k10'
-    'gate 60 k9-mmq-pdl g_k9 k9'
     'gate 61 k8-mmq-tiles g_k8 k8'
     'gate 62 k11b-input-stage g_k11b k11b'
     'gate 64 fafix-sass g_sass'
@@ -100,7 +102,7 @@ preflight() {
     for word in $COMPONENTS; do
         [[ " $ALL_COMPONENTS " == *" $word "* ]] || { echo "unknown component $word"; return 1; }
     done
-    case $(git branch --show-current) in topic/stack10|topic/stack10-*) ;; *) echo 'branch is not topic/stack10[-*]'; return 1 ;; esac
+    [[ $(git branch --show-current) == topic/stack10b ]] || { echo 'branch is not topic/stack10b'; return 1; }
     [[ -z $(git status --porcelain --untracked-files=no) ]] || { echo 'tracked tree is dirty'; return 1; }
     [[ ! -e $W/frozen/stack10 ]] || { echo 'frozen/stack10 exists'; return 1; }
     for tool in cmake git python3 nice gpuq ccache strings timeout patchelf flock taskset g++ cuobjdump nsys compute-sanitizer nvidia-smi \
@@ -119,10 +121,11 @@ preflight() {
     done
     [[ $(head -n 1 "$W/frozen/stack9/SOURCE") == "$STACK9" ]] || { echo 'frozen/stack9 is not cd776e104'; return 1; }
     [[ -w $W/work ]] || { echo 'work dir not writable'; return 1; }
-    for script in codex/stack10/bw-stack10.sh codex/stack10/gates.sh codex/stack10/gpu/gpu_ab.sh codex/k8/gpu/k8-gpu.sh codex/k11a/sync_count.sh; do
+    for script in codex/stack10/bw-stack10b.sh codex/stack10/gates.sh codex/stack10/np2_smoke.sh codex/stack10/gpu/gpu_ab.sh codex/k8/gpu/k8-gpu.sh codex/k11a/sync_count.sh; do
         bash -n "$script" || { echo "bash -n $script"; return 1; }
     done
     python3 codex/stack10/shfn.py selftest > /dev/null || { echo 'shfn selftest'; return 1; }
+    bash codex/stack10/np2_smoke.sh --preflight || { echo 'np2 smoke preflight'; return 1; }
     python3 codex/stack10/full_checks.py --fixtures > /dev/null || { echo 'full_checks fixtures'; return 1; }
     python3 codex/stack10/engagement.py selftest > /dev/null || { echo 'engagement selftest'; return 1; }
     python3 codex/stack10/stock_tree.py list > /dev/null || { echo 'stock tree commits'; return 1; }

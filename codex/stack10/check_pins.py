@@ -1,11 +1,11 @@
-"""The window's pin set: what bw-stack10.toml must pin (every file the window reads) and what it must not (anything it writes).
+"""The window's pin set: what bw-stack10b.toml must pin (every file the window reads) and what it must not (anything it writes).
 
 Contract: required() is the single definition used by mk_window_toml.py to emit the pins and by this check to verify the toml.
 A pinned file that the window writes would park the queued item, so no pin may lie under WRITES.
 
 usage: check_pins.py [TOML]    exit 0: every required file is pinned and exists, no pin is written by the window
        check_pins.py list      print the required pins
-       check_pins.py --tail [TOML | list]   the same for the tail item (bw-stack10-tail.toml): the full window's pins plus the reused
+       check_pins.py --tail [TOML | list]   the same for a tail item (bw-stack10b-tail.toml): the full window's pins plus the reused
                                attempt's evidence and build-cuda/bin, which the tail reads and never writes
 """
 import re
@@ -26,21 +26,21 @@ HOME = Path.home()
 # The window writes only here (OUT, the rendered items and their snapshots, the build, the frozen result, the scratch work dir, the
 # bin/wt index) and in the k11a dry run directory; none of these may be pinned.
 WRITES = [str(ROOT / 'codex/window'), str(ROOT / 'codex/stack10/rendered'), str(ROOT / 'codex/stack10/snapshots'), str(ROOT / 'build-cuda'),
-          str(W / 'frozen/stack10'), str(W / 'work/s10-stock-a'), str(W / 'INDEX.md')]
+          str(W / 'frozen/stack10'), str(W / 'work/s10b-stock-a'), str(W / 'INDEX.md')]
 
 
 # The tail writes only its own attempt dirs, the k11a dry run directory, the rendered items and the frozen result; build-cuda and the
 # reused attempt (TAIL_FROM) are inputs.
-WRITES_TAIL = [str(ROOT / 'codex/window/stack10-tail-a'), str(ROOT / 'codex/window/preflight'), str(ROOT / 'codex/stack10/rendered'),
+WRITES_TAIL = [str(ROOT / 'codex/window/stack10b-tail-a'), str(ROOT / 'codex/window/preflight'), str(ROOT / 'codex/stack10/rendered'),
                str(ROOT / 'codex/stack10/snapshots'), str(W / 'frozen/stack10'), str(W / 'INDEX.md')]
-TAIL_FROM = 'stack10-a1'
+TAIL_FROM = 'stack10b-a1'
 
 
 def written(path, tail=False):
     """WRITES entries are directories, files, or (the stock work dir) a name prefix ending in -a."""
     p = str(path)
     return any(p == w or p.startswith(w + '/') or (w.endswith('-a') and p.startswith(w)) for w in (WRITES_TAIL if tail else WRITES))
-OWN = ['bw-stack10.toml', 'bw-stack10.sh', 'tail_check.py', 'gates.sh', 'gates_table.py', 'shfn.py', 'full_checks.py', 'sass_gate.py', 'k8_gpu_patch.py', 'stock_tree.py',
+OWN = ['bw-stack10b.toml', 'bw-stack10b.sh', 'np2_smoke.sh', 'np2_smoke.py', 'tail_check.py', 'gates.sh', 'gates_table.py', 'shfn.py', 'full_checks.py', 'sass_gate.py', 'k8_gpu_patch.py', 'stock_tree.py',
        'engagement.py', 's10items.py', 'render_stack10_items.py', 'check_pins.py', 'mk_window_toml.py', 'gpu/gpu_ab.sh', 'gpu/gpu_s10.py']
 # codex-root files the window or its items import or read (the wave-1 runner stack, the fafix digest driver, the evidence).
 CODEX_ROOT = ['gpu_stack9.py', 'gpu_stack10.py', 'fa-identity.cpp', 'stack10/mac-evidence/summary.json']
@@ -56,13 +56,13 @@ EXTERNAL = ['/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf',
                 'attrib_pack.py', 'runs/hqgap8-analysis/an.py', 'gpu/llama_drive.py', 'gpu/inputs.sha256', 'gpu/inputs/agg.py',
                 'gpu/inputs/corpus.txt', 'gpu/inputs/chat-template.jinja', 'models/llama-swift15-iq4xs.json'))]
 # Scripts scanned for further codex/... files they call.
-SCANNED = ['gates.sh', 'bw-stack10.sh', 'gates_table.py']
+SCANNED = ['gates.sh', 'bw-stack10b.sh', 'gates_table.py']
 TOKEN = re.compile(r'codex/[A-Za-z0-9_./-]+\.(?:sh|py|cpp|toml|json|jinja)\b')
 
 
 def scanned_tokens(tail=False):
     texts = [(ROOT / 'codex/stack10' / n).read_text() for n in SCANNED]
-    scripts = {s for _, s, _ in gates_table.EXTRACTIONS} | {'codex/k8/gpu/k8-gpu.sh', 'codex/k11a/sync_count.sh'}
+    scripts = {s for _, s, _ in gates_table.EXTRACTIONS} | {'codex/k8/gpu/k8-gpu.sh', 'codex/k11a/sync_count.sh', 'codex/k11a/drive_np2.py'}
     texts += [(ROOT / s).read_text() for s in scripts]
     found = set(scripts)
     for text in texts:
@@ -81,7 +81,7 @@ def tail_inputs():
     stock = re.search(r'^STOCK_DIR=(.*)$', (a1 / 'stock-dir.txt').read_text(), re.M).group(1)
     files = [a1 / n for n in ('stages.tsv', 'summary.json', 'payload.log', 'stock-dir.txt', 'cuda-stamps.log')] + [Path(stock) / 'k8-bin/SHA256SUMS']
     files += sorted(p for p in (ROOT / 'build-cuda/bin').iterdir() if not p.is_symlink())
-    return {str(f) for f in files} | {str(ROOT / 'codex/stack10/bw-stack10-tail.toml')}
+    return {str(f) for f in files} | {str(ROOT / 'codex/stack10/bw-stack10b-tail.toml')}
 
 
 def required(tail=False):
@@ -118,7 +118,7 @@ if __name__ == '__main__':
     if args == ['list']:
         print('\n'.join(required(tail)))
         sys.exit(0)
-    default = ROOT / 'codex/stack10' / ('bw-stack10-tail.toml' if tail else 'bw-stack10.toml')
+    default = ROOT / 'codex/stack10' / ('bw-stack10b-tail.toml' if tail else 'bw-stack10b.toml')
     problems = check(args[0] if args else default, tail)
     print('\n'.join(problems) if problems else f'pins: {len(required(tail))} required files pinned, exist, none written by the window PASS')
     sys.exit(1 if problems else 0)
