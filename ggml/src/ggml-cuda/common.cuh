@@ -1617,7 +1617,21 @@ struct ggml_cuda_mm_fusion_args_device {
     const void * shared_gate = nullptr;
     float * shared_dst = nullptr;
     uint32_t shared_stride_col_dst = 0;
+    uint32_t probe_pf = 0; // local: fable-bcd probe C, K-iterations of weights prefetched above the PDL wait (0 = stock)
 };
+
+// local: fable-bcd probe C. Read at kernel launch, so a CUDA graph captured under a value keeps it.
+inline int g_fable_probe_pf = 0;
+
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+static __device__ __forceinline__ void ggml_cuda_fable_prefetch_l2(const void * p) {
+    asm volatile("prefetch.global.L2 [%0];" :: "l"(p));
+}
+#else
+static __device__ __forceinline__ void ggml_cuda_fable_prefetch_l2(const void * p) {
+    GGML_UNUSED(p);
+}
+#endif // !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
 
 struct ggml_cuda_kernel_launch_params {
     dim3 block_nums;

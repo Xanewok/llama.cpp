@@ -462,6 +462,26 @@ static __global__ void mul_mat_vec_q(
     uint32_t channel_y;
     uint32_t sample_dst;
 
+    // local: fable-bcd probe C. Weights are static, so their L2 prefetch is order-safe above the wait. Dense only; every
+    // address below comes from kernel parameters, nothing the producer writes.
+    if (fusion.probe_pf != 0 && ids == nullptr) {
+        const uint32_t pf_channel_x = fastdiv(blockIdx.y, channel_ratio);
+        const uint32_t pf_sample_x  = fastdiv(blockIdx.z, sample_ratio);
+        const int pf_kbx_offset = pf_sample_x*stride_sample_x + pf_channel_x*stride_channel_x + row0*stride_row_x;
+        for (int pf_it = 0; pf_it < int(fusion.probe_pf); ++pf_it) {
+            const int pf_kbx = tid / (qi/vdr) + pf_it*blocks_per_iter;
+            if (pf_kbx >= blocks_per_row_x) {
+                break;
+            }
+#pragma unroll
+            for (int i = 0; i < rows_per_cuda_block; ++i) {
+                const char * pf_p = (const char *) vx + (size_t)(pf_kbx_offset + i*stride_row_x + pf_kbx) * ggml_cuda_type_traits<type>::bs;
+                ggml_cuda_fable_prefetch_l2(pf_p);
+                ggml_cuda_fable_prefetch_l2(pf_p + ggml_cuda_type_traits<type>::bs - 1);
+            }
+        }
+    }
+
     ggml_cuda_pdl_sync();
     channel_x  = shared_expert ? 0 : ncols_dst == 1 && ids ? ids[channel_dst] : fastdiv(channel_dst, channel_ratio);
     channel_y  = ncols_dst == 1 && ids ? fastmodulo(channel_dst, nchannels_y) : channel_dst;
@@ -1280,6 +1300,7 @@ void ggml_cuda_mul_mat_vec_q(
     float         *  dst_d =       (float         *)  dst->data;
 
     ggml_cuda_mm_fusion_args_device fusion_local{};
+    fusion_local.probe_pf = (uint32_t) g_fable_probe_pf;
 
     if (fusion) {
         const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
@@ -1411,6 +1432,7 @@ void ggml_cuda_op_mul_mat_vec_q(
     const int stride_col_y = src1_padded_row_size / QK8_1;
 
     ggml_cuda_mm_fusion_args_device fusion_local{};
+    fusion_local.probe_pf = (uint32_t) g_fable_probe_pf;
     mul_mat_vec_q_switch_type(
         src0_dd_i, src0->type, src1_ddq_i, nullptr, fusion_local, dst_dd_i, ne00, row_diff, src1_ncols, stride_row_x, stride_col_y, nrows_dst,
         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, stream);

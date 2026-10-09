@@ -967,11 +967,60 @@ static __global__ void mul_mat_q(
         const uint3 blocks_per_ne00, const int nrows_x, const int ncols_dst, const int stride_row_x, const int ncols_y, const int stride_col_dst,
         const uint3 channel_ratio, const uint3 nchannels_y, const int stride_channel_x, const int stride_channel_y, const int stride_channel_dst,
         const uint3 sample_ratio, const uint3 nsamples_y, const int stride_sample_x, const int stride_sample_y, const int stride_sample_dst,
-        const uint3 ntx) {
+        const uint3 ntx, const int probe_pf) {
 
     // Every block must reach the wait before any early return: a grid whose blocks all exit early
     // would otherwise complete, and release its own dependents, while the producer is still running.
     ggml_cuda_pdl_lc();
+
+    // local: fable-bcd probe C. Prefetch the first tile's weights above the wait: they are static, so this is order-safe.
+    // Dense only; every address comes from kernel parameters. Replays the tile selection below for the block's first tile.
+    if constexpr (ggml_cuda_mmq_get_config(type, J, fallback, prec_src1).type != GGML_TYPE_COUNT) {
+        if (probe_pf != 0 && ids_dst == nullptr) {
+            constexpr int pf_I        = ggml_cuda_mmq_get_I(type, J, fallback, prec_src1);
+            constexpr int pf_nthreads = ggml_cuda_mmq_get_nthreads(type, J, fallback, prec_src1);
+            constexpr int pf_bpi      = ggml_cuda_mmq_get_K_vram(type, J, fallback, prec_src1) / ggml_cuda_type_traits<type>::qk;
+            int pf_it;
+            int pf_zt;
+            int pf_wt;
+            int pf_kb0 = 0;
+            if constexpr (!ggml_cuda_mmq_get_stream_k(type, J, fallback, prec_src1)) {
+                const uint2 pf_t2 = fast_div_modulo(blockIdx.z, nchannels_y);
+                pf_wt = pf_t2.x;
+                pf_zt = pf_t2.y;
+                pf_it = blockIdx.x;
+            } else {
+                const uint32_t pf_nty = (nrows_x + pf_I - 1) / pf_I;
+                int pf_kbc = int64_t(blockIdx.x)*(nsamples_y.z*nchannels_y.z*ntx.z*pf_nty*blocks_per_ne00.z) / gridDim.x;
+                pf_kbc -= fastmodulo(pf_kbc, blocks_per_ne00) % pf_bpi;
+                pf_kb0 = fastmodulo(pf_kbc, blocks_per_ne00);
+                int pf_tmp = fastdiv(pf_kbc, blocks_per_ne00);
+                uint2 pf_t2 = fast_div_modulo(pf_tmp, ntx);
+                pf_tmp = pf_t2.x;
+                pf_t2 = fast_div_modulo(pf_tmp, nchannels_y);
+                pf_zt = pf_t2.y;
+                pf_tmp = pf_t2.x;
+                pf_t2 = fast_div_modulo(pf_tmp, nsamples_y);
+                pf_wt = pf_t2.y;
+                pf_it = pf_t2.x;
+            }
+            const int pf_tid  = threadIdx.y*ggml_cuda_get_physical_warp_size() + threadIdx.x;
+            const int pf_row0 = pf_it*pf_I;
+            const int pf_kb1  = min(pf_kb0 + probe_pf*pf_bpi, int(blocks_per_ne00.z));
+            const int pf_offset_x = fastdiv(pf_wt, sample_ratio)*stride_sample_x + fastdiv(pf_zt, channel_ratio)*stride_channel_x + pf_row0*stride_row_x;
+            const size_t pf_bytes = (size_t)(pf_kb1 - pf_kb0) * ggml_cuda_type_traits<type>::bs;
+            for (int r = pf_tid; r < pf_I; r += pf_nthreads) {
+                if (pf_row0 + r < nrows_x && pf_bytes > 0) {
+                    const char * pf_p = x + (size_t)(pf_offset_x + r*stride_row_x + pf_kb0) * ggml_cuda_type_traits<type>::bs;
+                    for (size_t o = 0; o < pf_bytes; o += 128) {
+                        ggml_cuda_fable_prefetch_l2(pf_p + o);
+                    }
+                    ggml_cuda_fable_prefetch_l2(pf_p + pf_bytes - 1);
+                }
+            }
+        }
+    }
+
     const int pdl_offset = ggml_cuda_pdl_sync_offset();
     x += pdl_offset; y += pdl_offset; ids_dst += pdl_offset; expert_bounds += pdl_offset;
     dst += pdl_offset; tmp_fixup += pdl_offset; y_scale += pdl_offset;
@@ -1451,7 +1500,7 @@ static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & a
             blocks_per_ne00_fd, args.nrows_x, args.ncols_dst, args.stride_row_x, args.ncols_y, args.nrows_dst,
             channel_ratio_fd, nchannels_y_fd, args.stride_channel_x, args.stride_channel_y, args.stride_channel_dst,
             sample_ratio_fd, nsamples_y_fd, args.stride_sample_x, args.stride_sample_y, args.stride_sample_dst,
-            ntx_fd);
+            ntx_fd, (int) g_fable_probe_pf);
         return;
     }
 
@@ -1481,7 +1530,7 @@ static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & a
         blocks_per_ne00_fd, args.nrows_x, args.ncols_dst, args.stride_row_x, args.ncols_y, args.nrows_dst,
         channel_ratio_fd, nchannels_y_fd, args.stride_channel_x, args.stride_channel_y, args.stride_channel_dst,
         sample_ratio_fd, nsamples_y_fd, args.stride_sample_x, args.stride_sample_y, args.stride_sample_dst,
-        ntx_fd);
+        ntx_fd, (int) g_fable_probe_pf);
 
     if (!fixup_needed) {
         return;
