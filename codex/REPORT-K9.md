@@ -66,3 +66,43 @@ Run `bw-mac ... codex/bw-k9-mac.sh k9` on `mini-builder` at HEAD `72ab2e59b` (ou
 | 31 bash -n, py_compile, shlint | 0 | PASS |
 
 An earlier attempt (`k9-mac-a1`, 554 s) failed at stage 21 because the Mac model gate prints `WAIT` lines on stdout while other workers run, which polluted the hash files; the payload now keeps only `chain`/`perf` lines (`72ab2e59b`). No source file needed a fix. These gates validate the harness only; PDL, MMQ and the CUDA edits remain uncompiled until the window.
+
+## Window bw-k9 a1 failure: test defect, not a PDL race (2026-10-09)
+
+Cause (M on CPU, D for the GPU pattern): `mmq-chain` uploaded the norm weights `t1` (k floats) and `t2` (m1 floats) once, as graph
+inputs. `ggml-alloc.c` frees an input after its last use (`ggml_gallocr_free_node` keeps only `GGML_TENSOR_FLAG_OUTPUT`). For m1 > k
+(= 5120) the freed `t1`+`t2` hole merges with the freed `rms_norm(x)*t1` block (k*n floats, too small for `rms_norm(y1)` = m1*n), so
+`y2 = MUL_MAT(A2, ...)` and the in-place `ADD` are allocated over `t1`/`t2`. Every recompute after the first then ran with weights
+overwritten by the previous output. Independent of n, type, backend, CUDA graphs and PDL; `quick` (m1 = 3072 only) could not see it.
+- GPU a1: 0/200 at m1 = 3072, 198/200 at 6144/8704 for all types and n = recomputes 0 and 1 are the per-input references, every later
+  recompute differs (not warmup vs replay).
+- Allocator replay (D): a line-by-line mirror of `ggml_dyn_tallocr` for this graph puts `y2` over `t1`/`t2` exactly for m1 in {6144, 8704}
+  (and none of 3072/4096/5120); with the weights outside the allocator, no overlap.
+- CPU control (M, Mac `k9-mac-a3`, `codex/k9-evidence/defect-cases.txt`): the pre-fix test, 3 recomputes, all 36 shapes: m1 = 3072 `0 of 3`
+  (12 cases), m1 = 6144/8704 `1 of 3` (24 cases), `mmq-chain: FAIL 24 recomputes differ`. Same split as the GPU, no CUDA, no PDL.
+- Code audit: no PDL defect found. All three kernels wait (`ggml_cuda_pdl_sync`) before any global access and before every early return;
+  launch is `cudaLaunchAttributeProgrammaticStreamSerialization`, so the dependent's wait covers producer completion and flush, and the
+  entry trigger affects only overlap. The PDL-off control was never run in a1 (the stage stopped at the first verdict).
+
+| Commit | Subject | Class |
+|---|---|---|
+| `9410da234` | tests : keep the mmq-chain norm weights out of the graph allocator | general test fix (squash into `ad462a292` for upstream) |
+| `345ed9d2a` | codex : K9 window runs PDL-off and stock controls before the verdict; Mac runs all chain shapes and the pre-fix test as a control | window, payloads |
+
+Gate changes:
+- `codex/bw-k9.sh` `ops`: `k9`, `off` (`GGML_CUDA_MMQ_PDL=0`) and `base` (stock-MMQ binary) chains all run before any verdict. On failure
+  it prints all three rcs and `FAIL also without K9 PDL: stock or test defect` when off or base fails too. Preflight requires Mac stage 22.
+- `codex/bw-k9-mac.sh` stage 22 `chain-full-shapes`: fixed test, all 36 shapes, `0 of 3` each (M: 36/36, 59 s incl. the rebuild); then the
+  pre-fix test rebuilt from `codex/k9-chain-defect.patch` (reverse-applied, tree restored, clean status checked) must fail exactly the
+  24 m1 > k cases (M: yes). Each run is capped at 540 s.
+- Unchanged: mutants 9/18 (wait removal + slow producer) still must fail; with the false positive gone, they are the race detectors.
+  Not yet run on a GPU.
+
+Mac results: `bw-mac ... codex/bw-k9-mac.sh k9` at `345ed9d2a` (`work/build-window-1007/k9-mac-a3`): stages 20 (35 s), 21 (6 s),
+22 (59 s), 31 PASS; sealed in `codex/k9-evidence/summary.json` (+ `full-cases.txt`, `defect-cases.txt`, `stages.tsv`).
+
+stack10 port (`wt/stack10`, on `5b7304c25`): `1ae85cd15` tests fix (cherry-pick of `9410da234`, stack10 SOURCE CHANGED, so the
+stack10 Mac evidence `b2f9854a0` at `2df562da7` is stale), `6b61cd24a` codex: `codex/k9/bw-k9.sh` synced (the k9 gate extracts
+`chain`/`ops`; `shfn.py selftest` PASS), dropmap.tsv + DROPMAP.md list the new k9 subject. Dry run of a K9 drop (scratch branch, deleted):
+the rebase completes with the mmq.cuh conflict auto-resolved; `check-drop.sh` PASS; no `MMQ_PDL`/`mmq_pdl`/`pdl_sync` left in
+mmq.cuh/quantize.cu/common.cuh.
