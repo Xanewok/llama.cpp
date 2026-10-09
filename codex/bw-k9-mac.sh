@@ -56,6 +56,29 @@ chain() {
     [[ $RC == 0 ]]
     [[ $(grep -c '^perf ' "$OUT/perf.out") == 2 ]]
 }
+# All 36 shapes, 3 recomputes each (run 2 is checked against run 0). Control: the test before 9410da234 (norm weights as graph
+# inputs, overwritten after the first recompute when m1 > k) must fail exactly the m1 = 6144/8704 cases, with no CUDA or PDL involved.
+full_shapes() {
+    local cap=540
+    RC=0
+    perl -e 'alarm shift; exec @ARGV' "$cap" "$GATE" $T mmq-chain CPU hash 3 > "$OUT/full.raw" 2> "$OUT/full.err" || RC=$?
+    [[ $RC == 0 ]]
+    [[ $(grep -c 'recompute mismatches 0 of 3' "$OUT/full.err") == 36 ]]
+    cp "$T" build-cpu/bin/test-backend-ops.fixed
+    git apply -R codex/k9-chain-defect.patch
+    "$BW_BUILDGATE" cmake --build build-cpu --target test-backend-ops -j4
+    mv build-cpu/bin/test-backend-ops build-cpu/bin/test-backend-ops.defect
+    mv build-cpu/bin/test-backend-ops.fixed "$T"
+    git checkout -- tests/test-backend-ops.cpp
+    [[ -z $(git status --porcelain --untracked-files=no) ]]
+    RC=0
+    perl -e 'alarm shift; exec @ARGV' "$cap" "$GATE" build-cpu/bin/test-backend-ops.defect mmq-chain CPU hash 3 > "$OUT/defect.raw" 2> "$OUT/defect.err" || RC=$?
+    [[ $RC == 1 ]]
+    grep -a 'recompute mismatches' "$OUT/defect.err" > "$OUT/defect-cases.txt"
+    [[ $(grep -c ' m1=3072 .* mismatches 0 of 3' "$OUT/defect-cases.txt") == 12 ]]
+    [[ $(grep -cE ' m1=(6144|8704) .* mismatches 1 of 3' "$OUT/defect-cases.txt") == 24 ]]
+    grep -aq 'mmq-chain: FAIL 24 recomputes differ' "$OUT/defect.err"
+}
 static_checks() {
     bash -n codex/bw-k9-mac.sh codex/bw-k9.sh
     python3 -m py_compile codex/k9_summary.py
@@ -63,6 +86,7 @@ static_checks() {
 }
 stage 20 cpu-build build
 stage 21 chain-harness chain
+stage 22 chain-full-shapes full_shapes
 stage 31 static-checks static_checks
 python3 - "$OUT" <<'PY_SUMMARY'
 import hashlib, json, subprocess, sys
