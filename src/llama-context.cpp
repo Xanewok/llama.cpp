@@ -27,7 +27,7 @@
 namespace {
 // local: LLAMA_SYNC_ELIDE=0 disables the elision, LLAMA_SYNC_ELIDE_DEBUG=1 runs the real sync after every skipped one,
 // LLAMA_SYNC_ELIDE_MUTANT=1 stops graph_compute marking pending work, =2 stops device-to-host copies marking it, =3 clears the flag after every enqueue
-// (=1 and =3 also drop the n_queued_tokens guard). Negative controls.
+// (=1 and =3 also drop the n_queued_tokens guard), =4 is =3 with the state I/O syncs elidable as well (before they were forced). Negative controls.
 struct sync_elide_flags {
     bool on     = true;
     bool debug  = false;
@@ -818,7 +818,7 @@ void llama_context::sched_reserve() {
             __func__, (t_end_us - t_start_us)/1000.0, ggml_backend_sched_get_n_copies(sched.get()));
 }
 
-void llama_context::synchronize(bool force) {
+void llama_context::synchronize(bool force, const char * caller) {
     if (!sched) {
         return;
     }
@@ -826,7 +826,7 @@ void llama_context::synchronize(bool force) {
     // Contract: backend_pending is set before every enqueue of device work on this context's backends and cleared only here,
     // after a real sync. A drained context has nothing to wait for. With several scheduler copies the sync also rewinds
     // next_copy, so that case always syncs.
-    if (!force && !backend_pending && (n_queued_tokens == 0 || sync_elide_env().mutant == 1 || sync_elide_env().mutant == 3) && ggml_backend_sched_get_n_copies(sched.get()) == 1 && sync_elide_env().on) {
+    if (!force && !backend_pending && (n_queued_tokens == 0 || sync_elide_env().mutant == 1 || sync_elide_env().mutant >= 3) && ggml_backend_sched_get_n_copies(sched.get()) == 1 && sync_elide_env().on) {
         if (!sync_elide_env().debug) {
             n_sync_elided++;
             return;
@@ -840,7 +840,7 @@ void llama_context::synchronize(bool force) {
         }
         if (waited > sync_elide_env().debug_us) {
             n_sync_missed++;
-            LLAMA_LOG_ERROR("%s: sync_elide: skipped sync waited %lld us (> %d us; a device enqueue was not tracked)\n", __func__, (long long) waited, sync_elide_env().debug_us);
+            LLAMA_LOG_ERROR("%s: sync_elide: skipped sync waited %lld us (> %d us; a device enqueue was not tracked), caller %s\n", __func__, (long long) waited, sync_elide_env().debug_us, caller);
         }
         return;
     }
@@ -980,7 +980,7 @@ enum llama_pooling_type llama_context::pooling_type() const {
 void llama_context::tensor_get_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
     if (sync_elide_env().mutant != 2) { backend_pending = true; }
     ggml_backend_tensor_get_async(backend, tensor, data, offset, size);
-    if (sync_elide_env().mutant == 3) { backend_pending = false; }
+    if (sync_elide_env().mutant >= 3) { backend_pending = false; }
 }
 
 void llama_context::logits_deferred_fetch() {
@@ -3032,7 +3032,7 @@ ggml_status llama_context::graph_compute(
 
     if (sync_elide_env().mutant != 1) { backend_pending = true; }
     auto status = ggml_backend_sched_graph_compute_async(get_sched_graph(), gf);
-    if (sync_elide_env().mutant == 3) { backend_pending = false; }
+    if (sync_elide_env().mutant >= 3) { backend_pending = false; }
     if (status != GGML_STATUS_SUCCESS) {
         LLAMA_LOG_ERROR("%s: ggml_backend_sched_graph_compute_async failed with error %d\n", __func__, status);
     }
@@ -4708,20 +4708,20 @@ size_t llama_state_get_size(llama_context * ctx) {
 }
 
 size_t llama_state_get_data(llama_context * ctx, uint8_t * dst, size_t size) {
-    ctx->synchronize(true);
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     return ctx->state_get_data(dst, size);
 }
 
 // Sets the state reading from the specified source address
 size_t llama_state_set_data(llama_context * ctx, const uint8_t * src, size_t size) {
-    ctx->synchronize(true);
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     return ctx->state_set_data(src, size);
 }
 
 bool llama_state_load_file(llama_context * ctx, const char * path_session, llama_token * tokens_out, size_t n_token_capacity, size_t * n_token_count_out) {
-    ctx->synchronize(true);
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     try {
         return ctx->state_load_file(path_session, tokens_out, n_token_capacity, n_token_count_out);
@@ -4732,7 +4732,7 @@ bool llama_state_load_file(llama_context * ctx, const char * path_session, llama
 }
 
 bool llama_state_save_file(llama_context * ctx, const char * path_session, const llama_token * tokens, size_t n_token_count) {
-    ctx->synchronize(true);
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     try {
         return ctx->state_save_file(path_session, tokens, n_token_count);
@@ -4759,18 +4759,18 @@ size_t llama_state_seq_get_size_ext(llama_context * ctx, llama_seq_id seq_id, ll
 }
 
 size_t llama_state_seq_get_data_ext(llama_context * ctx, uint8_t * dst, size_t size, llama_seq_id seq_id, llama_state_seq_flags flags) {
-    ctx->synchronize(true);
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     return ctx->state_seq_get_data(seq_id, dst, size, flags);
 }
 size_t llama_state_seq_set_data_ext(llama_context * ctx, const uint8_t * src, size_t size, llama_seq_id seq_id, llama_state_seq_flags flags) {
-    ctx->synchronize(true);
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     return ctx->state_seq_set_data(seq_id, src, size, flags);
 }
 
 size_t llama_state_seq_save_file(llama_context * ctx, const char * filepath, llama_seq_id seq_id, const llama_token * tokens, size_t n_token_count) {
-    ctx->synchronize(true);
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     try {
         return ctx->state_seq_save_file(seq_id, filepath, tokens, n_token_count);
@@ -4781,7 +4781,7 @@ size_t llama_state_seq_save_file(llama_context * ctx, const char * filepath, lla
 }
 
 size_t llama_state_seq_load_file(llama_context * ctx, const char * filepath, llama_seq_id dest_seq_id, llama_token * tokens_out, size_t n_token_capacity, size_t * n_token_count_out) {
-    ctx->synchronize(true);
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     try {
         return ctx->state_seq_load_file(dest_seq_id, filepath, tokens_out, n_token_capacity, n_token_count_out);
