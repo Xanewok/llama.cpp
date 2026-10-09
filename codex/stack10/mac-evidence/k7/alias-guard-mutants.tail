@@ -1,0 +1,4 @@
+alias mutant 1 killed: first output over the second input
+alias mutant 2 killed: second output over the first input
+alias mutant 4 killed: outputs overlap
+alias mutant 8 killed: second input is a view of the first output

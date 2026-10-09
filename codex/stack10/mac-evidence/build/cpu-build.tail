@@ -1,0 +1,12 @@
+[222/233] Linking CXX executable bin/test-recurrent-state-rollback
+[223/233] Linking CXX executable bin/test-topk-batched
+[224/233] Linking CXX executable bin/test-sampling
+[225/233] Linking CXX executable bin/test-llama-archs
+[226/233] Linking CXX executable bin/test-alloc
+[227/233] Linking CXX executable bin/test-fattn-kv-max-cache
+[228/233] Linking CXX executable bin/test-meta-input-stage
+[229/233] Linking CXX executable bin/llama-completion
+[230/233] Building CXX object llama/tests/CMakeFiles/test-backend-ops.dir/test-backend-ops.cpp.o
+[231/233] Linking CXX executable bin/test-backend-ops
+[232/233] Building CXX object llama/tests/CMakeFiles/test-mmvq-params.dir/test-mmvq-params.cpp.o
+[233/233] Linking CXX executable bin/test-mmvq-params

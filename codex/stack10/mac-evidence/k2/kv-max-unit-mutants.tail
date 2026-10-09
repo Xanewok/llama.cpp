@@ -1,0 +1,10 @@
+unit mutant killed: invalidate-noop: FAIL tests/test-fattn-kv-max-cache.cpp:191 !valid()
+unit mutant killed: overlap-boundary: FAIL tests/test-fattn-kv-max-cache.cpp:182 valid()
+unit mutant killed: ncols1-ignored: FAIL tests/test-fattn-kv-max-cache.cpp:70 c.acquire(q, k, m, 16, scan) == nullptr
+unit mutant killed: iter-k-ignored: FAIL tests/test-fattn-kv-max-cache.cpp:129 c.groups.size() == 7
+unit mutant killed: stride-ignored: FAIL tests/test-fattn-kv-max-cache.cpp:129 c.groups.size() == 7
+unit mutant killed: sequences-ignored: FAIL tests/test-fattn-kv-max-cache.cpp:129 c.groups.size() == 7
+unit mutant killed: single-user-kept: FAIL tests/test-fattn-kv-max-cache.cpp:104 c.reserve() == 0
+unit mutant killed: single-sequence-scanned: FAIL tests/test-fattn-kv-max-cache.cpp:91 c.groups.empty()
+unit mutant killed: slot-unaligned: FAIL tests/test-fattn-kv-max-cache.cpp:54 n >= 8 && n % 64 == 0
+unit mutant killed: mask-end-ignored: FAIL tests/test-fattn-kv-max-cache.cpp:191 !valid()
