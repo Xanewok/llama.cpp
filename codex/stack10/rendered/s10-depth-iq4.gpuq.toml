@@ -1,0 +1,163 @@
+# experiment = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/rendered/s10-depth-iq4.toml"
+id = "s10-depth-iq4"
+priority = 27
+title = "stack10 np1 IQ4_XS: frozen/stack9-p55 vs frozen/stack10 (served swift15-iq4 flags, chain + fold C), cross-arm identity, ABBA, CCX0+1"
+note = "expect: -0.3..0.0 ms/round (G) | falsifier: Delta above +0.1 ms/round at any depth, or any cross-arm token/draft-counter difference (integrity, bisect by codex/DROPMAP.md). IQ4 prefill must be unchanged within spread (p55 is already in the base arm). | answers: Whether stack10 costs the served IQ4 np1 profile anything vs stack9-p55 (smaller than np2, G)."
+# s9p s10 s10 s9p: 4 x 900 s x 1.5 + 150 = run 5550; + canary 600 + cleanup 150 = 6300.
+# cpu_evidence: bw-stack10 Mac (p55 k7 k4 k6a k6b k2 k10 k8 k11a k11b): component CPU gates, recorded parser controls; the CUDA gates are the bw-stack10b window (codex/stack10/bw-stack10b.sh)
+host_sensitive = false
+kind = "measure"
+ab = true
+retry = "fresh"
+budget_s = 6300
+est_s = 4200
+startup_grace_s = 300
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "integrity", regex = "frozen bytes changed|inputs changed|model SHA changed|effective params mismatch|frozen file set changed|cross-arm identity failed|path-engaged proof failed|staging-engaged proof failed|canary prompt differs" },
+  { class = "insufficient_data", regex = "too few verify steps|proof inconclusive|missing final token identity|canary prompt has \\d+ tokens|reached only \\d+ cached|R2 reused only" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/gpu/gpu_ab.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/experiment.toml", "--execute", "--out", "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-depth-iq4/full-a{attempt}", "--port", "{port}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness"
+env = { GPUQ_ACTIVE = "1" }
+ports = "dynamic"
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/gpu/gpu_ab.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/experiment.toml", "--preflight", "--out", "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-depth-iq4/preflight-plan"]
+timeout_s = 600
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/gpu/gpu_ab.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/run.sh", "depth", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/experiment.toml", "--canary", "--out", "/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-depth-iq4/canary-a{attempt}", "--port", "{port}"]
+env = { GPUQ_ACTIVE = "1" }
+timeout_s = 600
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval/results/2026-10-09-s10-depth-iq4/full-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["identity", "frozen", "budget", "arms", "steady_minimum"]
+
+[pins]
+files = [
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf",
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/gpu_stack9.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/gpu_stack10.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/mac-evidence/np2-on.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/mac-evidence/np2-old-on.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack9-evidence/recorded-getter.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/gpu/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/gpu/gpu_s10.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/render_stack10_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/s10items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/engagement.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/items/s10-depth-iq4.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval/recipes/_common/kld/tokens64k.bin",
+  "/home/xanewok/repos/qwen38-eval/corpora/templates/swift-leading-instructions-v1.jinja",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-apps.csv",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/nvidia-smi-query.csv",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/xid-lines.txt",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/summary.md",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-server/serve-bench-tail.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1-input.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/cold-tool-1.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/warmup-0.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/long-tool-s1-1.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/llama-sse/server.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/fit.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-94000.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-94000.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/single-94000.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/errors.txt",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-32768.json",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/steps.txt",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/conc-32768.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/serve.log",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/hq-two-stream/boot1/single-94000.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack6-depth-j5q/full-a1/1-s6/depth-8192.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-05-stack6-depth-j5q/full-a1/1-s6/server.log",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-07-gdn-getter-gate-np2-busy-j5q/canary-a1/0-up/depth-8192.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-07-gdn-getter-gate-np1-j5q/canary-a1/0-patch/server.log",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-06-draft-chain-m1-depth-j5q/canary-a2/0-chain/server.log",
+  "/home/xanewok/repos/qwen38-eval/results/2026-10-07-cand-neginf-depth-j5q/canary-a1/1-cn/server.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/mac-evidence/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/round-trace",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/round-trace",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/experiment.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/__init__.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/__main__.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/agents.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/bw-run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/bw_item.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/calibration.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/campaign.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/depth.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/lib.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/mkitem.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/notes.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/probe.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/report.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/snapshot.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/harness/stub_server.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/snapshots/harness-2efcc3847528a7c527245d2f0163a04c43e87b1cd018f3b5f5d450d2600746e3/source-root.txt",
+]
