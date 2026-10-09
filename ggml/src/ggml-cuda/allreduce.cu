@@ -41,38 +41,41 @@
 // ---------------------------------------------------------------------------
 // Cross-GPU signal mechanism
 //
-// One int per (slot, rank, block, round) in pinned host memory.  Each AR call
-// writes a strictly increasing token (= the AR call number) into the arrival
-// int of every round it completes.  The peer spins until its read of the other's
-// arrival int equals the token it expects for this call -- a mismatch means the
-// peer hasn't completed that round yet.  Tokens never repeat over realistic call
-// rates (32-bit int wraps in tens of days at thousands of ARs/sec), so arrival
-// ints don't need to be reset between calls; we initialize once at pipeline init
-// and let the values accumulate.
+// One 64-bit word per (slot, rank, block, round) in pinned host memory.  Each AR
+// call writes a strictly increasing token (= the AR call number, starting at 1)
+// into the arrival word of every round it completes.  The peer spins until its
+// read of the other's arrival word equals the token it expects for this call --
+// a mismatch means the peer hasn't completed that round yet.  Words are zeroed
+// once at pipeline init and never reset.  Tokens are 64-bit so that a stale word
+// can never equal a later call's token: with 32 bits a word of a round that
+// short launches never touch would match again after 2^32 calls.  2^64 calls
+// are unreachable.
 //
 // There is exactly one writer (the owning GPU) and one reader (the peer), so
-// we don't need atomics.  A volatile store paired with __threadfence_system()
-// provides the release ordering that makes the D2H writes visible system-wide
-// before the arrival token is observed; the reader's acquire load of the token
-// followed by a block barrier orders its reads of that data.
+// we don't need atomics.  Producer: every thread's stores, a block barrier, then
+// thread 0 issues __threadfence_system() and the volatile flag store.  The fence
+// is cumulative over what the barrier made visible to thread 0, so the other
+// threads need no fence of their own (the same pattern as cooperative-groups
+// grid sync).  Consumer: thread 0's acquire load of the token followed by a
+// block barrier orders the block's reads of the data.
 //
 // atomicAdd_system() requires hostNativeAtomicSupported, which is unavailable
 // on PCIe-attached consumer GPUs without NVLink, so the volatile path is the
 // portable choice.
 // ---------------------------------------------------------------------------
 
-static __device__ __forceinline__ void ggml_cuda_ar_signal_set(int * p, int token) {
-    *(volatile int *)p = token;
+static __device__ __forceinline__ void ggml_cuda_ar_signal_set(uint64_t * p, uint64_t token) {
+    *(volatile uint64_t *)p = token;
 }
 // Acquire load: an observed token orders the loads of the peer's data issued after
 // the block barrier, without the full __threadfence_system() whose wait for this
 // thread's own posted host stores would serialize the two PCIe directions.
-static __device__ __forceinline__ int ggml_cuda_ar_signal_get_acquire(const int * p) {
+static __device__ __forceinline__ uint64_t ggml_cuda_ar_signal_get_acquire(const uint64_t * p) {
 #ifdef GGML_USE_HIP
     return __hip_atomic_load(p, __ATOMIC_ACQUIRE, __HIP_MEMORY_SCOPE_SYSTEM);
 #else
-    int v;
-    asm volatile("ld.acquire.sys.global.b32 %0, [%1];" : "=r"(v) : "l"(p) : "memory");
+    uint64_t v;
+    asm volatile("ld.acquire.sys.global.b64 %0, [%1];" : "=l"(v) : "l"(p) : "memory");
     return v;
 #endif // GGML_USE_HIP
 }
@@ -87,13 +90,13 @@ static constexpr int GGML_CUDA_AR_KERNEL_BLOCKS = 8;
 // round r with the load of round r-1.
 static constexpr int GGML_CUDA_AR_KERNEL_THREADS = 256;
 
-// Rounds one launch may have (arrival ints per block): a 1 MB launch of 16 B
+// Rounds one launch may have (arrival words per block): a 1 MB launch of 16 B
 // vectors has at most 65536 vectors, 128 rounds at 64 threads * 8 blocks.  Each
 // block's ints are contiguous and cache-line padded from the next block's, so
 // pollers of different blocks never share a line.
 static constexpr int GGML_CUDA_AR_MAX_ROUNDS = 128;
-static constexpr size_t GGML_CUDA_AR_ARRIVAL_BYTES_PER_BLOCK = GGML_CUDA_AR_MAX_ROUNDS * sizeof(int);
-static_assert(GGML_CUDA_AR_ARRIVAL_BYTES_PER_BLOCK % 64 == 0, "arrival ints of a block must fill whole cache lines");
+static constexpr size_t GGML_CUDA_AR_ARRIVAL_BYTES_PER_BLOCK = GGML_CUDA_AR_MAX_ROUNDS * sizeof(uint64_t);
+static_assert(GGML_CUDA_AR_ARRIVAL_BYTES_PER_BLOCK % 64 == 0, "arrival words of a block must fill whole cache lines");
 
 // ---------------------------------------------------------------------------
 // Chunked kernel AllReduce -- 2 GPUs, supports float, half, and bfloat16.
@@ -114,8 +117,9 @@ static_assert(GGML_CUDA_AR_ARRIVAL_BYTES_PER_BLOCK % 64 == 0, "arrival ints of a
 //            sum with the local sendbuf value (also rounded through T_wire so
 //            that both GPUs truncate identically -- this guarantees
 //            bit-equivalent results across the two devices).
-//   publish: __threadfence_system() commits this block's stores of round r to
-//            host memory, then thread 0 writes the token to the round's flag.
+//   publish: after a block barrier that follows every thread's stores of round
+//            r, thread 0 issues __threadfence_system() and writes the token to
+//            the round's flag.
 //
 // The stores of round r are posted and still draining when the loads of round
 // r-1 are issued, so the two PCIe directions carry data at the same time; the
@@ -144,15 +148,15 @@ static __global__ void ggml_cuda_ar_kernel(
         T_wire       * __restrict__ host_mine,
         const T_wire *              host_other,   // written by the peer during the launch: no __restrict__, so no ld.global.nc
         int                         count,
-        int *                       arrival_mine,
-        int *                       arrival_other,
-        int                         token) {
+        uint64_t *                  arrival_mine,
+        uint64_t *                  arrival_other,
+        uint64_t                    token) {
 
     // Vector unit for the wire type, sized to the arch's widest single-instruction
     // copy (16 B on Volta+).  Each store iter writes one vector to host memory;
     // each load iter reads one and produces ELEMS_PER_VEC sums.
     constexpr int ELEMS_PER_VEC = ggml_cuda_get_max_cpy_bytes() / sizeof(T_wire);
-    constexpr int FLAG_INTS     = (int)(GGML_CUDA_AR_ARRIVAL_BYTES_PER_BLOCK / sizeof(int));
+    constexpr int FLAG_WORDS    = (int)(GGML_CUDA_AR_ARRIVAL_BYTES_PER_BLOCK / sizeof(uint64_t));
 
     const int tid       = threadIdx.x;
     const int nt        = blockDim.x;
@@ -166,8 +170,8 @@ static __global__ void ggml_cuda_ar_kernel(
     // tail-only case still signals.
     const int n_rounds = max(1, (count_vec + gnt - 1) / gnt);
 
-    int       * my_flags    = arrival_mine  + bid * FLAG_INTS;
-    const int * other_flags = arrival_other + bid * FLAG_INTS;
+    uint64_t       * my_flags    = arrival_mine  + bid * FLAG_WORDS;
+    const uint64_t * other_flags = arrival_other + bid * FLAG_WORDS;
 
     for (int r = 0; r <= n_rounds; ++r) {
         // Store: cast sendbuf (T_dst) -> host_mine (T_wire) as vectors.
@@ -196,7 +200,7 @@ static __global__ void ggml_cuda_ar_kernel(
         // pass.
         if (r > 0) {
             if (tid == 0) {
-                const int * other_slot = other_flags + (r - 1);
+                const uint64_t * other_slot = other_flags + (r - 1);
                 while (ggml_cuda_ar_signal_get_acquire(other_slot) != token) {
 #ifdef GGML_USE_HIP
                     // Equals ~100ns at 2500 MHz (sleeps for n * [1,64] clock cycles)
@@ -233,12 +237,17 @@ static __global__ void ggml_cuda_ar_kernel(
             }
         }
 
-        // Publish: commit this block's stores of round r before signalling.
+        // Publish round r.  Every thread's stores of round r precede a block barrier
+        // before thread 0 fences: the load phase's barrier for r > 0, an explicit one
+        // for r == 0.  Thread 0's release fence is cumulative over the stores that
+        // barrier made visible to it, so the other threads need no fence, and none
+        // sits between round r+1's stores and round r's loads.
         if (r < n_rounds) {
-            __threadfence_system();
-            __syncthreads();
-
+            if (r == 0) {
+                __syncthreads();
+            }
             if (tid == 0) {
+                __threadfence_system();
                 ggml_cuda_ar_signal_set(my_flags + r, token);
                 if (r == n_rounds - 1) {
                     __threadfence_system(); // make our last signal visible system-wide
@@ -285,7 +294,7 @@ static constexpr int GGML_CUDA_AR_POOL_SIZE = 2;
 static constexpr size_t GGML_CUDA_AR_MAX_BYTES = 1024 * 1024; // 1 MB
 // 16 B is the smallest vector the kernel runs with on the supported archs (Volta+).
 static_assert(GGML_CUDA_AR_MAX_BYTES / 16 / (GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_KERNEL_THREADS) <= GGML_CUDA_AR_MAX_ROUNDS,
-              "a launch must not need more rounds than the arrival ints provide");
+              "a launch must not need more rounds than the arrival words provide");
 
 // Copy-engine path: largest tensor accepted on this path; sets host_large /
 // dev_tmp allocation size.
@@ -396,10 +405,10 @@ struct ggml_cuda_ar_pipeline {
 // Base pointer for the (slot, rank) per-block flag blocks.  The kernel adds
 // blockIdx.x * (ARRIVAL_BYTES_PER_BLOCK/sizeof(int)) internally to land on its
 // own block's flags.
-static int * ggml_cuda_ar_arrival_ptr(const ggml_cuda_ar_pipeline * p, int slot, int rank) {
+static uint64_t * ggml_cuda_ar_arrival_ptr(const ggml_cuda_ar_pipeline * p, int slot, int rank) {
     const size_t offset = ((size_t)slot * p->n_devices + rank) *
                           GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_BYTES_PER_BLOCK;
-    return reinterpret_cast<int *>(p->arrival.dev + offset);
+    return reinterpret_cast<uint64_t *>(p->arrival.dev + offset);
 }
 
 static uint64_t ggml_cuda_ar_env_u64(const char * name, uint64_t default_value) {
@@ -414,8 +423,8 @@ static uint64_t ggml_cuda_ar_env_u64(const char * name, uint64_t default_value) 
 }
 
 struct ggml_cuda_ar_slot_info {
-    int slot;
-    int token;
+    int      slot;
+    uint64_t token;
 };
 
 static ggml_cuda_ar_slot_info ggml_cuda_ar_acquire_slot(ggml_cuda_ar_pipeline * p) {
@@ -431,7 +440,7 @@ static ggml_cuda_ar_slot_info ggml_cuda_ar_acquire_slot(ggml_cuda_ar_pipeline * 
         }
     }
 
-    return { slot, (int) p->call_count };
+    return { slot, p->call_count };
 }
 
 // Per-AR copy-engine chunk size: env-var override if set, else heuristic
