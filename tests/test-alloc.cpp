@@ -1256,25 +1256,11 @@ static ggml_backend_meta_split_state test_meta_split_state_k(const ggml_tensor *
 }
 
 static void test_meta_subgraph_capacity(bool use_plan) {
-#ifndef _WIN32
     // big enough that the freed arena is unmapped rather than kept on the heap
+    // in-process: a fork after earlier cases started the OpenMP pool deadlocks the child
     const int n_pad_small = 4000;
     const int n_pad_big   = 8000;
     const int n_partial_max = 3;
-
-    const pid_t pid = fork();
-    GGML_ASSERT(pid >= 0);
-    if (pid != 0) {
-        int status = 0;
-        GGML_ASSERT(waitpid(pid, &status, 0) == pid);
-        if (WIFSIGNALED(status)) {
-            fprintf(stderr, "killed by signal %d\n", WTERMSIG(status));
-        }
-        GGML_ASSERT(WIFEXITED(status) && WEXITSTATUS(status) == 0);
-        return;
-    }
-    struct rlimit limit = {0, 0};
-    setrlimit(RLIMIT_CORE, &limit);
 
     ggml_backend_load_all();
     ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
@@ -1330,10 +1316,6 @@ static void test_meta_subgraph_capacity(bool use_plan) {
     run_graph(1, n_pad_big);
     run_graph(n_partial_max, n_pad_small);
     ggml_gallocr_free(galloc);
-    _exit(0);
-#else
-    GGML_UNUSED(use_plan);
-#endif // _WIN32
 }
 
 static void run(const char * name, void (*f)()) {
