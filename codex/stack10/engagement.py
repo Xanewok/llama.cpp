@@ -39,11 +39,13 @@ ENGAGEMENT = {
         r'q8_reuse: device=[01] graph=\d+ rows=[1-9]\d* skipped=[1-9]\d* quantized=\d+'],
         anchors=[(CU, 'q8_reuse: device=%d graph=%" PRIu64 " rows=%d skipped=%d quantized=%d bytes=%zu')],
         samples=['q8_reuse: device=0 graph=12 rows=6 skipped=3 quantized=2 bytes=4096']),
-    'k6b': dict(shapes=ALL, env={}, where='server.log, -lv 5 (debug)', patterns=[
+    # 10-09 canaries (M): engages in the duo canary only (112 lines); 0 in the np1 depth and np2 joint-start canaries
+    'k6b': dict(shapes=('duo',), env={}, where='server.log, -lv 5 (debug)', patterns=[
         r'add_rms_norm: device=[01] rows=[1-9]\d* columns=[1-9]\d*'],
         anchors=[(CU, 'add_rms_norm: device=%d rows=%" PRId64 " columns=%" PRId64 "')],
         samples=['add_rms_norm: device=0 rows=6 columns=5120']),
-    'k2': dict(shapes=ALL, env={}, where='server.log, -lv 5 (debug)', patterns=[
+    # 10-09 canaries (M): 0 lines in np1, np2 and duo; the shared scan needs Q ne[1] >= 1024 or ne[3] > 1 (fattn-kv-max-cache.h)
+    'k2': dict(shapes=(), env={}, where='server.log, -lv 5 (debug)', patterns=[
         r'fattn_kv_max: device=[01] graph=\d+ groups=[1-9]\d* ints=[1-9]\d*'],
         anchors=[(CU, 'fattn_kv_max: device=%d graph=%" PRIu64 " groups=%zu ints=%zu')],
         samples=['fattn_kv_max: device=0 graph=77 groups=1 ints=16']),
