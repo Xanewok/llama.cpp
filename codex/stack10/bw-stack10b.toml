@@ -6,7 +6,7 @@ host_sensitive = false
 preemptible = false
 # G: sum of the component windows p55 4200 + k7 1800 + k4 2400 + k6 3600 + k2 2400 + k10 1800 + np2 smoke/meta 600 + k8 3000 + k11a 3600 + k11b 2400 + fafix 4200 = 30000 s
 # (one CUDA build is shared, so this overcounts by about ten builds); D: budget twice that.
-est_s = 30000
+est_s = 7200
 budget_s = 60000
 ab = false
 retry = "never"
