@@ -104,7 +104,7 @@ must_fail() { # TAG: negative control, MUL_MAT_Q cases ran and some failed; q8_0
     read -r ran failed < <(awk '/^ +[0-9]+\/[0-9]+ tests passed/ {split($1, a, "/"); print a[2], a[2] - a[1]; exit}' "$OUT/$1.log") || true
     (( ${ran:-0} >= MIN_MM )) || die 5 "negative control void: $1 ran ${ran:-0} cases, fewer than $MIN_MM (see $OUT/$1.log)"
     (( ${failed:-0} > 0 )) || die 5 "negative control void: $1 dropped the small-I launches and nothing failed"
-    ! grep -Eq '^ +MUL_MAT\(type_a=q8_0.*FAIL' "$OUT/$1.log" || die 5 "negative control void: $1 fails q8_0 cases, which never take a dropped launch"
+    ! grep -Eq '(^|[[:space:]])MUL_MAT\(type_a=q8_0.*FAIL' "$OUT/$1.log" || die 5 "negative control void: $1 fails q8_0 cases, which never take a dropped launch"
     note "$1: ${failed} of $ran cases fail with small-I launches dropped, as required"
 }
 hash_keys() { cut -d' ' -f1-4 "$1"; }
