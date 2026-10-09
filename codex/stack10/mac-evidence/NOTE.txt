@@ -1,2 +1,0 @@
-run: HEAD ade74ab90 (stack10-mac-mac-a1), payload rc=0.
-Gap: k4 cheap stages 50 (ssm-conv-rs-ops-identity) and 51 (ssm-conv-rs-ops-mutants) were not in CHEAP_ORDER of this run; fixed afterwards, not yet run on this tree.

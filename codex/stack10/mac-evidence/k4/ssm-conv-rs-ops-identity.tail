@@ -1,0 +1,12 @@
+  SSM_CONV_RS(channels=128,tokens=6,seqs=2,K=6,width=5,mode=1,silu=1): not supported [CPU, CPU] 
+  SSM_CONV_RS(channels=128,tokens=6,seqs=2,K=6,width=9,mode=1,silu=1): not supported [CPU, CPU] 
+  SSM_CONV_RS(channels=128,tokens=6,seqs=2,K=6,width=15,mode=1,silu=1): not supported [CPU, CPU] 
+  SSM_CONV_RS(channels=7,tokens=6,seqs=2,K=6,width=4,mode=1,silu=1): not supported [CPU, CPU] 
+  SSM_CONV_RS(channels=200,tokens=3,seqs=3,K=3,width=4,mode=2,silu=0): not supported [CPU, CPU] 
+  SSM_CONV_RS(channels=128,tokens=33,seqs=2,K=6,width=4,mode=1,silu=1): not supported [CPU, CPU] 
+  SSM_CONV_RS(channels=128,tokens=2,seqs=9,K=6,width=4,mode=2,silu=1): not supported [CPU, CPU] 
+  0/0 tests passed
+  SSM_CONV_RS: byte identity with the gathered path and changing-id replay PASS cases=0 unsupported=800
+  Backend CPU: [1;32mOK[0m
+1/1 backends passed
+[1;32mOK[0m
