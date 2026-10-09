@@ -136,6 +136,20 @@ static __device__ __forceinline__ void ggml_cuda_pdl_sync() {
 #endif // defined(GGML_CUDA_USE_PDL) && __CUDA_ARCH__ >= GGML_CUDA_CC_HOPPER
 }
 
+// ggml_cuda_pdl_sync that also returns 0 from the wait's asm statement. A kernel that keeps `const __restrict__` pointer
+// parameters (and with them the read-only LDG.CONSTANT path) adds the result to each of them before the first access: the
+// accesses then depend on the wait by data, so the compiler cannot hoist them above it, as it may for loads it treats as
+// invariant (the reason for GGML_CUDA_RESTRICT, #24030).
+static __device__ __forceinline__ int ggml_cuda_pdl_sync_offset() {
+#if defined(GGML_CUDA_USE_PDL) && __CUDA_ARCH__ >= GGML_CUDA_CC_HOPPER
+    int zero;
+    asm volatile("griddepcontrol.wait;\n\tmov.u32 %0, 0;" : "=r"(zero) : : "memory");
+    return zero;
+#else
+    return 0;
+#endif // defined(GGML_CUDA_USE_PDL) && __CUDA_ARCH__ >= GGML_CUDA_CC_HOPPER
+}
+
 static __device__ __forceinline__ void ggml_cuda_pdl_lc() {
 #if defined(GGML_CUDA_USE_PDL) && __CUDA_ARCH__ >= GGML_CUDA_CC_HOPPER
     cudaTriggerProgrammaticLaunchCompletion();
