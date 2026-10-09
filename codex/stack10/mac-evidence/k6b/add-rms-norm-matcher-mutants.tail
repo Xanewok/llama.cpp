@@ -1,0 +1,11 @@
+FAIL rows=17 cols=1: matcher=1 expected=0
+FAIL rows=17 cols=24: matcher=1 expected=0
+FAIL rows=17 cols=512: matcher=1 expected=0
+FAIL rows=17 cols=1024: matcher=1 expected=0
+FAIL rows=17 cols=5120: matcher=1 expected=0
+killed: /Users/builder/qwen38-bw/stack10-mac/ade74ab9000d8c15e6a74bc57bfd409000dd4bcc/run.hmzBzy/out/k6b/bin/matcher-cap
+FAIL normalized buffer over the residual: matcher=1 expected=0
+FAIL normalized buffer over y: matcher=1 expected=0
+killed: /Users/builder/qwen38-bw/stack10-mac/ade74ab9000d8c15e6a74bc57bfd409000dd4bcc/run.hmzBzy/out/k6b/bin/matcher-norm
+FAIL result exactly over the residual: matcher=1 expected=0
+killed: /Users/builder/qwen38-bw/stack10-mac/ade74ab9000d8c15e6a74bc57bfd409000dd4bcc/run.hmzBzy/out/k6b/bin/matcher-resid

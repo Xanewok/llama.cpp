@@ -1,0 +1,3 @@
+rotation mutant killed: rotation matrix bytes differ from the Hadamard reference
+rotation plain/Meta tokens and counters PASS
+rotation raw logits, fallback, negative control PASS

@@ -1,0 +1,7 @@
+sim perrank: OK
+ggml_backend_cuda_input_stage_init: one pinned copy per input, uploads slowest host link first: CUDA0 (1000 us per 4 MiB), CUDA1 (1000 us per 4 MiB)
+sim declines: OK
+ggml_backend_cuda_input_stage_init: one pinned copy per input, uploads slowest host link first: CUDA0 (1000 us per 4 MiB), CUDA1 (1000 us per 4 MiB)
+sim ring-lazy: OK (event syncs 58)
+ggml_backend_cuda_input_stage_init: one pinned copy per input, uploads slowest host link first: CUDA0 (1000 us per 4 MiB), CUDA1 (1000 us per 4 MiB)
+sim ring-random: OK (event syncs 58)

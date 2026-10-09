@@ -1,0 +1,7 @@
+fake/no-staging-exports: OK (init 0, staged 0, per-rank 6, free 0)
+fake/init-refused: OK (init 1, staged 0, per-rank 6, free 0)
+fake/batch-declined: OK (init 1, staged 3, per-rank 6, free 1)
+fake/staged: OK (init 1, staged 3, per-rank 0, free 1)
+fake/mutant-drops-a-write: OK (init 1, staged 1, per-rank 0, free 1)
+cuda input stage: SKIP, fewer than two CUDA devices
+test-meta-input-stage: PASS
