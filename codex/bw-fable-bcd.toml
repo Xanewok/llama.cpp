@@ -1,0 +1,47 @@
+id = "bw-fable-bcd"
+title = "Fable B/C/D existence probes: one CUDA build (K9-fix MMQ PDL substrate + prefetch-above-pdl_sync variants), test-fable-bcd on CUDA1 and CUDA0: B L2 prefetch vs cold, C pre-wait weight prefetch in MMVQ/MMQ chains, D GDN K=6 vs K=1 snapshot writes"
+kind = "filler"
+priority = 16
+host_sensitive = false
+preemptible = false
+# G: 2700 s = one cold CUDA build of ggml-cuda + one test target (~700-1500 s in bw-k9 a1, ccache may help; buildgate -j4)
+# + 3 driver runs (CUDA1, nopdl diagnostic, CUDA0) at ~5-10 min each (B 8 cfg x 9 arms x 7 rounds x 400 reps of ~50 us; C 12 cfg x 6 arms x 7 rounds x 60-120 reps of a 48-link graph; D 4 cfg x 4 arms x 7 rounds x 60-120 reps).
+# D: 5400 s budget = 2x est (cold build at the top of the range plus slow runs).
+est_s = 2700
+budget_s = 5400
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-fable-bcd: FAIL" }]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/codex/bw-fable-bcd.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/codex/window/fable-bcd-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0", GPUQ_BUILD_WINDOW = "1" }
+ports = []
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/codex/bw-fable-bcd.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/codex/window/fable-bcd-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/codex/window/fable-bcd-a{attempt}/payload.log", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/codex/window/fable-bcd-a{attempt}/verdict.txt", "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/codex/window/fable-bcd-a{attempt}/summary.tsv"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "stages", "controls"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/codex/bw-fable-bcd.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/codex/bw-fable-bcd.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/codex/fable_bcd_summary.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/ggml/src/ggml-cuda/common.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/ggml/src/ggml-cuda/mmvq.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/ggml/src/ggml-cuda/mmq.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/ggml/src/ggml-cuda/fable-probe.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/ggml/src/ggml-cuda/fable-probe.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/fable-bcd/tests/test-fable-bcd.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+]
