@@ -1,6 +1,6 @@
-purpose: K9 PDL for MMQ (stack10 withheld)
-base: 0cfc0723e7e991600ca01004efa7cd377400c37b
+purpose: K9 perf regression fix: keep the MMQ read-only load path under PDL (brief 2026-10-09-k9-perf-regression)
+base: 1039f834f65044f24d34821186382e24f8620a59
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/s10-k9
-created: 2026-10-08T20:49:20+02:00
+branch: topic/k9-fix
+created: 2026-10-09T14:07:36+02:00
 creator: xanewok
