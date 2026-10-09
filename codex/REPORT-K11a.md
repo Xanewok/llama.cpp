@@ -33,3 +33,29 @@ Gates: off arm 150-260 StreamSync/round; on arm <= 30 and long (>= 50 us) within
 ## Expected effect (D from X2 section 5a; G realised)
 206 -> ~14 StreamSync per round (198 redundant removed; 6 long required + ~7 second-rank calls stay). Critical path at the five interior D boundaries: train of 27 tiny calls spans 41.7-44.9 us, minus the required pair: -0.20 ms/round D, -0.12..-0.20 G (np2 8k stack8). Depth-flat (counts do not depend on KV), so the same at 90k; with K13 (chain) 4 of the 5 trains disappear and the saving shrinks to ~0.04.
 Falsifier: on-arm StreamSync > 60/round, or interior D gap not shorter by >= 0.02 ms (use X2's `x2_tiny.py` / `c_step.py` on the new trace), or any token difference in a later A/B (baseline-vs-baseline negative control first). This window does not time the gain; the timing verdict needs an off/on pair in the stack item.
+
+## Window a1 debug-arm miss (2026-10-09): no untracked enqueue; state I/O now always syncs
+a1 (IQ4_XS, TP2 Meta, np2, ub 512) failed only in the debug arm's proof boot: one `skipped sync waited 25 us` in the target
+context (destructor `elided=583 missed=1`) between `main/do_checkpoint = yes` and `created context checkpoint`. Off/on count
+gates passed (auditor replay: 211.4 / 12.0 StreamSync per round).
+- Site (D, code + log timing): `create_checkpoint` (server-context.cpp:2611) -> `common_prompt_checkpoint::update_tgt`
+  (common.cpp:2312 `data_tgt.resize` = fresh 150 MiB zero-fill, the pool is empty on the first checkpoint; 68 ms before the
+  error) -> `llama_state_seq_get_data_ext` `ctx->synchronize()` (llama-context.cpp:4761).
+- Nothing was pending (D): the last sync on the target was `llama_get_embeddings_nextn(ctx_tgt)` (speculative.cpp:1731) after
+  the draft catch-up decode (own backends: ggml-backend-meta.cpp:2042 makes per-context simple backends). Between it and the
+  checkpoint sync only host work runs: `slot.mem.seq_rm` (server-context.cpp:3727 -> llama_kv_cache::seq_rm,
+  llama_memory_recurrent::seq_rm: metadata), `init_sampler`, `llama_memory_seq_pos_min/max`, `llama_state_seq_get_size_ext`
+  (dummy writer). Every backend-stream enqueue in src/, common/, tools/server/ is `ggml_backend_sched_graph_compute_async`
+  (graph_compute, marked) or `ggml_backend_tensor_get_async` (marked helper / copy_tensor_async_rows); state, KV and recurrent
+  I/O use the blocking buffer API (CUDA: cudaStreamPerThread + cudaStreamSynchronize, ggml-cuda.cu:800-948).
+- So the 25 us is host latency of the debug check's real sync (two idle cudaStreamSynchronize) right after the zero-fill (G:
+  cold caches/TLB, page-fault aftermath). The Mac deferred-backend runs (a4) already saved 2-5 and restored 1-2 checkpoints per
+  combo with `missed=0` at 80 us against a 100 us simulated wait (M).
+- Latent hazard behind it (D): state reads/writes go through another stream and are ordered after the context's graphs only
+  by that one sync; an elided sync there with a tracking gap would save or restore stale state. Fix `e9053e0e4` (general):
+  state save/restore wrappers and the KV stream-copy sync use `synchronize(true)`. They are rare and dominated by the copy;
+  the getter path keeps the elision. Local `f83e7bd5e`: mutant 4 (= mutant 3 with those syncs elidable again) and the
+  caller name in the debug-check log line. 20 us threshold unchanged.
+- Mac a5 (HEAD 459de5dd0): build/identity pass (checkpoints created/restored per combo 2/1 .. 5/2, all `missed=0`); mutant 1 is
+  no longer caught anywhere. a4 showed its only catch site was `prompt_save`'s state read (`skipped sync waited 3987 us` / 238 us
+  right after `saving prompt ... total state size`), i.e. exactly the path the fix now forces; the gate no longer requires it.
