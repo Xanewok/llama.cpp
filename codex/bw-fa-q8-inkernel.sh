@@ -125,6 +125,8 @@ fa_run() { # DEVICE TAG PATTERN|- [ENV=VALUE...]
         return 0
     fi
     echo "$tag-$dev: failing cases, comparing with the base build"
+    # a crash or timeout can print only FAIL lines the base also has: only a completed run (summary line) may pass on "no new failures"
+    grep -aEq '[0-9]+/[0-9]+ tests passed' "$OUT/$tag-$dev.log" || { echo "FAIL $tag-$dev: run did not complete (no tests-passed summary: crash or timeout)"; return 1; }
     grep -a 'FAIL' "$OUT/$tag-$dev.log" > "$OUT/$tag-$dev.fail.raw" || { echo "FAIL $tag-$dev: no failing case line (crash or timeout)"; return 1; }
     sed 's/\x1b\[[0-9;]*m//g' "$OUT/$tag-$dev.fail.raw" | LC_ALL=C sort -u > "$OUT/$tag-$dev.fail"
     env CUDA_VISIBLE_DEVICES="$VISIBLE" timeout 3000 nice -n 19 "$base" test -b "$dev" -o FLASH_ATTN_EXT "${sel[@]}" -j 1 > "$OUT/$tag-base-$dev.log" 2>&1 || true
