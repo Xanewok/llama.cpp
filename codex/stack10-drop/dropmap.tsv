@@ -30,5 +30,6 @@ k11a	llama : skip getter synchronize() when no device work is pending
 k11a	local: K11a getter sync elision switch, debug check, mutants
 k11a	llama : keep the real sync in front of state I/O and KV stream copies
 k11a	local: K11a mutant 4 (state I/O syncs elidable again) and the caller in the debug-check log
+k11a	local: K11a debug check queries the backends instead of timing the sync
 k11b	meta : stage mirrored host inputs once and upload slowest link first
 k11b	local: K11b input staging A/B controls and negative-control mutants
