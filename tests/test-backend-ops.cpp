@@ -12892,6 +12892,10 @@ static int mmq_chain(const char * dev_name, const char * kind, int iters, bool q
             ggml_context_ptr ctx_w(ggml_init({ ggml_tensor_overhead()*4, nullptr, true }));
             ggml_tensor * A1 = ggml_new_tensor_2d(ctx_w.get(), type, k, m1);
             ggml_tensor * A2 = ggml_new_tensor_2d(ctx_w.get(), type, m1, k);
+            // The norm weights are uploaded once, so they must live outside the graph allocator: it reuses an input's memory
+            // after the input's last use, and a later node would overwrite them during every recompute.
+            ggml_tensor * t1 = ggml_new_tensor_1d(ctx_w.get(), GGML_TYPE_F32, k);
+            ggml_tensor * t2 = ggml_new_tensor_1d(ctx_w.get(), GGML_TYPE_F32, m1);
             ggml_backend_buffer_ptr buf_w(ggml_backend_alloc_ctx_tensors_from_buft(ctx_w.get(), buft));
             if (!buf_w) {
                 fprintf(stderr, "alloc failed\n");
@@ -12902,15 +12906,13 @@ static int mmq_chain(const char * dev_name, const char * kind, int iters, bool q
                 ggml_quantize_chunk(type, wf.data(), wq.data(), 0, A->ne[1], A->ne[0], nullptr);
                 ggml_backend_tensor_set(A, wq.data(), 0, wq.size());
             }
+            ggml_backend_tensor_set(t1, w1.data(), 0, ggml_nbytes(t1));
+            ggml_backend_tensor_set(t2, w2.data(), 0, ggml_nbytes(t2));
 
             for (int64_t n : ns) {
                 ggml_context_ptr ctx(ggml_init({ ggml_tensor_overhead()*32 + ggml_graph_overhead(), nullptr, true }));
                 ggml_tensor * x  = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, k, n);
-                ggml_tensor * t1 = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, k);
-                ggml_tensor * t2 = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, m1);
                 ggml_set_input(x);
-                ggml_set_input(t1);
-                ggml_set_input(t2);
                 ggml_tensor * y1  = ggml_mul_mat(ctx.get(), A1, ggml_mul(ctx.get(), ggml_rms_norm(ctx.get(), x, 1e-6f), t1));
                 ggml_tensor * y2  = ggml_mul_mat(ctx.get(), A2, ggml_mul(ctx.get(), ggml_rms_norm(ctx.get(), y1, 1e-6f), t2));
                 ggml_tensor * out = ggml_add(ctx.get(), y2, x);
@@ -12920,8 +12922,6 @@ static int mmq_chain(const char * dev_name, const char * kind, int iters, bool q
                 ggml_build_forward_expand(gf, out);
                 ggml_gallocr_t galloc = ggml_gallocr_new(buft);
                 GGML_ASSERT(ggml_gallocr_alloc_graph(galloc, gf));
-                ggml_backend_tensor_set(t1, w1.data(), 0, ggml_nbytes(t1));
-                ggml_backend_tensor_set(t2, w2.data(), 0, ggml_nbytes(t2));
 
                 int status = GGML_STATUS_SUCCESS;
                 if (perf) {
