@@ -3,6 +3,8 @@
 # fafix SASS gate, test-backend-ops in full on both GPUs, freeze as frozen/stack10, render and check the A/B items.
 #   env COMPONENTS (default: p55 k7 k4 k6a k6b k2 k10 k9 k8 k11a k11b) selects the gates and the canaries of the rendered items;
 #   the base ops, the fafix gates and the full suite always run. gdn4 is not part of this window.
+#   env STACK10_TAIL_FROM=<codex/window dir> (set by the tail item only) reuses that attempt's stages 40-65 instead of rerunning
+#   them: tail_check.py must prove them still valid (rc 6 otherwise) before any GPU stage; then only 66, 63, 70, 71 run.
 # rc: 0 pass | 3 Xid | 4 transient (GPU busy/missing) | 5 void negative control or too little data | 6 integrity
 #     7 timeout | 8 deterministic failure. A failed gate does not stop the other gates (the drop map needs every failing component),
 #     but nothing is frozen or rendered after one; the exit code is the worst of them (3 > 6 > 5 > 8 > 7 > 4), an Xid stops at once.
@@ -28,6 +30,16 @@ P55_LIB=$W/frozen/stack9-p55/build/bin
 EVIDENCE=codex/stack10/mac-evidence/summary.json
 ALL_COMPONENTS='p55 k7 k4 k6a k6b k2 k10 k9 k8 k11a k11b'
 COMPONENTS=$(echo "${COMPONENTS:-$ALL_COMPONENTS}" | xargs)
+TAIL_FROM=${STACK10_TAIL_FROM:-}
+if [[ -n $TAIL_FROM ]]; then
+    [[ $TAIL_FROM =~ ^stack10-a[0-9]+$ ]] || { echo "bad STACK10_TAIL_FROM $TAIL_FROM"; exit 8; }
+    A1=$ROOT/codex/window/$TAIL_FROM
+    ITEM=bw-stack10-tail
+    OUT_GLOB=$ROOT/codex/window/stack10-tail-a[0-9]*
+else
+    ITEM=bw-stack10
+    OUT_GLOB=$ROOT/codex/window/stack10-a[0-9]*
+fi
 # shellcheck source=gates.sh
 source "$ROOT/codex/stack10/gates.sh"
 
@@ -37,6 +49,51 @@ flags=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER_FORCED=ON -DCMAKE_CUDA_C
     -DGGML_OPENMP_FETCH=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_EXAMPLES=OFF
     -DGGML_CUDA_CCCL_VERSION=v3.4.3 -DFETCHCONTENT_SOURCE_DIR_CCCL="$CCCL"
     -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DFETCHCONTENT_UPDATES_DISCONNECTED=ON -DGGML_CCACHE=ON)
+
+# kind code name function [components: any one selects the stage]. The single definition of what the window runs before the
+# full suite; the tail's integrity precheck derives the stages it must find at rc 0 from the same table.
+STAGES=(
+    'fatal 40 cuda-build build'
+    'fatal 41 cuda-stamps stamps'
+    'fatal 42 stock-mmq-build stock_build k8 k9'
+    'gate 50 base-ops g_base'
+    'gate 52 k7-pair g_k7 k7'
+    'gate 53 k4-conv-rs g_k4 k4'
+    'gate 55 k6a-q8-reuse g_k6a k6a'
+    'gate 56 k6b-add-rms g_k6b k6b'
+    'gate 57 k6-memcheck g_k6_memcheck k6a k6b'
+    'gate 58 k2-shared-mask g_k2 k2'
+    'gate 59 k10-topk g_k10 k10'
+    'gate 60 k9-mmq-pdl g_k9 k9'
+    'gate 61 k8-mmq-tiles g_k8 k8'
+    'gate 62 k11b-input-stage g_k11b k11b'
+    'gate 64 fafix-sass g_sass'
+    'gate 65 fafix-identity g_fafix'
+)
+# Fields of a STAGES row into F; succeeds when the stage is selected (no component listed, or one of them is).
+stage_fields() {
+    local comp
+    read -ra F <<< "$1"
+    [[ ${#F[@]} == 4 ]] && return 0
+    for comp in "${F[@]:4}"; do has "$comp" && return 0; done
+    return 1
+}
+expected_stages() {
+    local row F out=()
+    for row in "${STAGES[@]}"; do
+        if stage_fields "$row"; then out+=("${F[1]}:${F[2]}"); fi
+    done
+    local IFS=,
+    echo "${out[*]}"
+}
+
+# Tail only: controls (every sub-check must refuse its one-input mutation) and then the real precheck of the reused attempt.
+tail_proof() {
+    local expected
+    expected=$(expected_stages)
+    python3 codex/stack10/tail_check.py controls --root "$ROOT" --a1 "$A1" --expected "$expected" || return 6
+    python3 codex/stack10/tail_check.py check --root "$ROOT" --a1 "$A1" --expected "$expected" ${1:+--out "$1"} || return 6
+}
 
 preflight() {
     local tool word p script
@@ -87,51 +144,51 @@ for name in files:
     h.update(name.encode() + b'\0' + Path(name).read_bytes())
 assert h.hexdigest() == r['source_sha256'], 'source differs from the Mac CPU gate'
 PY_GATE
+    [[ -z $TAIL_FROM || -d $A1 ]] || { echo "missing $A1"; return 1; }
     if has k11a; then
         DRY_RUN=1 ROOT="$ROOT" OUT="$ROOT/codex/window/preflight" bash codex/k11a/sync_count.sh > /dev/null || { echo 'k11a dry run'; return 1; }
     fi
     return 0
 }
 
+if [[ ${1:-} == --list-stages ]]; then
+    for row in "${STAGES[@]}"; do if stage_fields "$row"; then echo "${F[1]} ${F[2]}"; fi; done
+    exit 0
+fi
 if [[ ${1:-} == --preflight ]]; then
-    if preflight; then echo 'bw-stack10: PASS preflight'; exit 0; fi
+    if preflight && { [[ -z $TAIL_FROM ]] || tail_proof; }; then echo 'bw-stack10: PASS preflight'; exit 0; fi
     echo 'bw-stack10: FAIL preflight'; exit 8
 fi
-[[ ${GPUQ_ITEM:-} == bw-stack10 && ${GPUQ_BUILD_WINDOW:-0} == 1 && $# == 1 ]] || exit 8
+[[ ${GPUQ_ITEM:-} == "$ITEM" && ${GPUQ_BUILD_WINDOW:-0} == 1 && $# == 1 ]] || exit 8
 OUT=$1
-case $OUT in "$ROOT"/codex/window/stack10-a[0-9]*) ;; *) exit 8 ;; esac
-ATTEMPT=${OUT##*stack10-a}
+case $OUT in $OUT_GLOB) ;; *) exit 8 ;; esac
+ATTEMPT=${OUT##*-a}
 mkdir -p "$OUT"
 exec > >(tee "$OUT/payload.log") 2>&1
 preflight || { echo 'bw-stack10: FAIL preflight'; exit 8; }
 SHA=$(git rev-parse HEAD)
 SHORT=$(git rev-parse --short=9 HEAD)
+BUILD_SHA=$SHA
 P55_SHA=$(head -n 1 "$P55_LIB/../../SOURCE")
 STARTED=$(date '+%Y-%m-%d %H:%M:%S')
-echo "bw-stack10: components=[$COMPONENTS] commit=$SHA visible=$VISIBLE"
+echo "bw-stack10: components=[$COMPONENTS] commit=$SHA visible=$VISIBLE tail_from=${TAIL_FROM:--}"
 [[ $VISIBLE == GPU-*,GPU-* ]] || { echo 'bw-stack10: FAIL no two GPU UUIDs in CUDA_VISIBLE_DEVICES'; exit 4; }
 
-fatal 40 cuda-build build
-fatal 41 cuda-stamps stamps
-if has k8 || has k9; then
-    fatal 42 stock-mmq-build stock_build
-    STOCK_DIR=$(sed -n 's/^STOCK_DIR=//p' "$OUT/stock-dir.txt")
-    [[ -d $STOCK_DIR/stock-bin && -d $STOCK_DIR/k8-bin ]]
+if [[ -n $TAIL_FROM ]]; then
+    # Reuse of an earlier attempt's build and gates: proven before any GPU stage, evidence copied next to the tail's own.
+    if ! tail_proof "$OUT/tail-precheck.json"; then echo 'bw-stack10: STOP tail precheck refused rc=6'; finish_fail 6; fi
+    BUILD_SHA=$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["a1_commit"])' "$OUT/tail-precheck.json")
+    for f in stages.tsv summary.json payload.log; do cp -p "$A1/$f" "$OUT/a1-$f"; done
+else
+    for row in "${STAGES[@]}"; do
+        stage_fields "$row" || continue
+        "${F[0]}" "${F[1]}" "${F[2]}" "${F[3]}"
+        if [[ ${F[1]} == 42 ]]; then
+            STOCK_DIR=$(sed -n 's/^STOCK_DIR=//p' "$OUT/stock-dir.txt")
+            [[ -d $STOCK_DIR/stock-bin && -d $STOCK_DIR/k8-bin ]]
+        fi
+    done
 fi
-
-gate 50 base-ops g_base
-if has k7; then gate 52 k7-pair g_k7; fi
-if has k4; then gate 53 k4-conv-rs g_k4; fi
-if has k6a; then gate 55 k6a-q8-reuse g_k6a; fi
-if has k6b; then gate 56 k6b-add-rms g_k6b; fi
-if has k6a || has k6b; then gate 57 k6-memcheck g_k6_memcheck; fi
-if has k2; then gate 58 k2-shared-mask g_k2; fi
-if has k10; then gate 59 k10-topk g_k10; fi
-if has k9; then gate 60 k9-mmq-pdl g_k9; fi
-if has k8; then gate 61 k8-mmq-tiles g_k8; fi
-if has k11b; then gate 62 k11b-input-stage g_k11b; fi
-gate 64 fafix-sass g_sass
-gate 65 fafix-identity g_fafix
 gate 66 full-suite g_full
 # The server-launching capture goes last and only on a clean sheet: it costs the most GPU time and adds no drop-map information
 # once another gate has failed.
@@ -142,12 +199,17 @@ if [[ ${#FAILS[@]} != 0 ]]; then finish_fail; fi
 
 fatal 70 freeze-stack10 freeze
 fatal 71 render-and-check-items items
-python3 - "$OUT" "$SHA" "$COMPONENTS" <<'PY_RESULT'
+python3 - "$OUT" "$SHA" "$COMPONENTS" "$TAIL_FROM" "$BUILD_SHA" <<'PY_RESULT'
 import json, sys
 from pathlib import Path
 p = Path(sys.argv[1])
 stages = [dict(code=int(c), name=n, rc=int(rc), wall_s_M=int(t)) for c, n, rc, t in (l.split('\t') for l in (p/'stages.tsv').read_text().splitlines())]
-(p/'summary.json').write_text(json.dumps(dict(result='PASS', commit=sys.argv[2], components=sys.argv[3].split(), GPU_execution=True, stages=stages,
-    frozen='frozen/stack10', items='codex/stack10/rendered; checked, NOT submitted'), indent=2)+'\n')
+result = dict(result='PASS', commit=sys.argv[2], components=sys.argv[3].split(), GPU_execution=True, stages=stages,
+              frozen='frozen/stack10', items='codex/stack10/rendered; checked, NOT submitted')
+if sys.argv[4]:
+    a1 = json.loads((p/'tail-precheck.json').read_text())
+    result.update(tail_from=sys.argv[4], build_commit=sys.argv[5], reused_stages=a1['stages'], precheck='tail-precheck.json',
+                  note='stages is the tail only; reused_stages passed rc 0 in tail_from (a1-stages.tsv) and were re-proved by tail-precheck.json')
+(p/'summary.json').write_text(json.dumps(result, indent=2)+'\n')
 PY_RESULT
 echo 'bw-stack10: PASS; frozen as stack10 and items checked, NOT submitted'
