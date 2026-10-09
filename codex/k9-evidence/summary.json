@@ -1,19 +1,25 @@
 {
   "result": "PASS",
-  "commit": "72ab2e59bfde4c6a7ed1623570e0c9a3681194d7",
-  "source_sha256": "d93f6970368362f594bfa85e8a55454814ec9ca1ad5f400cedd813b1e6bff60d",
+  "commit": "345ed9d2acec0fdd754e411bfdf3fb23f840785e",
+  "source_sha256": "ff31bac7643e98d580c7afe944e69f5ccbf2b424e56f07f4a5e6ba075d4243ca",
   "stages": [
     {
       "code": 20,
       "name": "cpu-build",
       "rc": 0,
-      "wall_s_M": 38
+      "wall_s_M": 35
     },
     {
       "code": 21,
       "name": "chain-harness",
       "rc": 0,
-      "wall_s_M": 8
+      "wall_s_M": 6
+    },
+    {
+      "code": 22,
+      "name": "chain-full-shapes",
+      "rc": 0,
+      "wall_s_M": 59
     },
     {
       "code": 31,
