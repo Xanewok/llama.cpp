@@ -2651,9 +2651,11 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
             };
             ggml_round_trace_scope trace_arena("meta_arena", -1, 1, params.mem_size);
             backend_ctx->ctx.reset(ggml_init(params));
+            // The reset freed every main graph: a later graph with more subgraphs than this one but at most max_subgraphs
+            // does not come back here.
             for (size_t j = 0; j < n_backends; j++) {
                 auto & bcj = backend_ctx->backend_configs[j];
-                for (size_t i = 0; i < n_subgraphs; i++) {
+                for (size_t i = 0; i < backend_ctx->max_subgraphs; i++) {
                     bcj.cgraphs[i].cgraph_main = ggml_new_graph_custom(backend_ctx->ctx.get(), backend_ctx->max_nnodes, /*grads =*/ false);
                 }
             }

@@ -1245,6 +1245,97 @@ static void test_meta_split_state_rebuild(bool select_other) {
 #endif // _WIN32
 }
 
+// Meta backend: a graph with more nodes than any before reallocates the arena of the per-device subgraphs. If it has
+// fewer subgraphs than an earlier graph, a following graph with more subgraphs (but no more nodes) must not reach a
+// subgraph that the reallocation freed.
+static ggml_backend_meta_split_state test_meta_split_state_k(const ggml_tensor * tensor, void * userdata) {
+    if (tensor->name[0] == 'w' || tensor->name[0] == 'x') {
+        return {GGML_BACKEND_SPLIT_AXIS_0, {tensor->ne[0]/2, tensor->ne[0]/2}, {1}, 1};
+    }
+    return test_meta_split_state_mirrored(tensor, userdata);
+}
+
+static void test_meta_subgraph_capacity(bool use_plan) {
+#ifndef _WIN32
+    // big enough that the freed arena is unmapped rather than kept on the heap
+    const int n_pad_small = 4000;
+    const int n_pad_big   = 8000;
+    const int n_partial_max = 3;
+
+    const pid_t pid = fork();
+    GGML_ASSERT(pid >= 0);
+    if (pid != 0) {
+        int status = 0;
+        GGML_ASSERT(waitpid(pid, &status, 0) == pid);
+        if (WIFSIGNALED(status)) {
+            fprintf(stderr, "killed by signal %d\n", WTERMSIG(status));
+        }
+        GGML_ASSERT(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+        return;
+    }
+    struct rlimit limit = {0, 0};
+    setrlimit(RLIMIT_CORE, &limit);
+
+    ggml_backend_load_all();
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+    ggml_backend_dev_t devs[2] = {cpu, cpu};
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, test_meta_split_state_k, nullptr);
+    ggml_backend_ptr backend(ggml_backend_dev_init(meta, nullptr));
+    GGML_ASSERT(backend);
+
+    // w_i x is split along the reduced dimension: each product is a PARTIAL node, which closes a subgraph
+    ggml_init_params params_w = {ggml_tensor_overhead()*(n_partial_max + 2), nullptr, true};
+    ggml_context_ptr ctx_w(ggml_init(params_w));
+    ggml_tensor * x = ggml_new_tensor_2d(ctx_w.get(), GGML_TYPE_F32, 64, 2);
+    ggml_set_name(x, "x");
+    ggml_tensor * w[n_partial_max];
+    for (int i = 0; i < n_partial_max; i++) {
+        w[i] = ggml_new_tensor_2d(ctx_w.get(), GGML_TYPE_F32, 64, 2);
+        ggml_set_name(w[i], "w");
+    }
+    ggml_tensor * m = ggml_new_tensor_1d(ctx_w.get(), GGML_TYPE_F32, 1);
+    ggml_set_name(m, "m");
+    ggml_backend_buffer_ptr buf_w(ggml_backend_alloc_ctx_tensors(ctx_w.get(), backend.get()));
+    GGML_ASSERT(buf_w);
+
+    ggml_gallocr_t galloc = ggml_gallocr_new(ggml_backend_dev_buffer_type(meta));
+    auto run_graph = [&](int n_partial, int n_pad) {
+        const int n_nodes = n_pad + n_partial + n_partial_max + 2;
+        ggml_init_params params = {ggml_tensor_overhead()*n_nodes + ggml_graph_overhead_custom(n_nodes, false), nullptr, true};
+        ggml_context_ptr ctx(ggml_init(params));
+        ggml_cgraph * gf = ggml_new_graph_custom(ctx.get(), n_nodes, false);
+        ggml_tensor * cur = m;
+        for (int i = 0; i < n_pad; i++) {
+            cur = ggml_scale(ctx.get(), cur, 1.0f);
+        }
+        ggml_build_forward_expand(gf, cur);
+        for (int i = 0; i < n_partial; i++) {
+            ggml_tensor * out = ggml_mul_mat(ctx.get(), w[i], x);
+            ggml_set_output(out);
+            ggml_build_forward_expand(gf, out);
+        }
+        gf->uid = ggml_graph_next_uid();
+        GGML_ASSERT(ggml_gallocr_alloc_graph(galloc, gf));
+        if (use_plan) {
+            ggml_backend_graph_plan_t plan = ggml_backend_graph_plan_create(backend.get(), gf);
+            GGML_ASSERT(plan);
+            GGML_ASSERT(ggml_backend_graph_plan_compute(backend.get(), plan) == GGML_STATUS_SUCCESS);
+            ggml_backend_graph_plan_free(backend.get(), plan);
+        } else {
+            GGML_ASSERT(ggml_backend_graph_compute(backend.get(), gf) == GGML_STATUS_SUCCESS);
+        }
+    };
+    run_graph(n_partial_max, n_pad_small);
+    run_graph(1, n_pad_big);
+    run_graph(n_partial_max, n_pad_small);
+    ggml_gallocr_free(galloc);
+    _exit(0);
+#else
+    GGML_UNUSED(use_plan);
+#endif // _WIN32
+}
+
 static void run(const char * name, void (*f)()) {
     printf("%s ", name);
     fflush(stdout);
@@ -1293,5 +1384,7 @@ int main() {
     run("test_meta_host_cpy(split)", []() { test_meta_host_view(GGML_OP_CPY, true); });
     run("test_meta_host_set_rows(mirrored)", []() { test_meta_host_view(GGML_OP_SET_ROWS, false); });
     run("test_meta_host_set_rows(split)", []() { test_meta_host_view(GGML_OP_SET_ROWS, true); });
+    run("test_meta_subgraph_capacity(compute)", []() { test_meta_subgraph_capacity(false); });
+    run("test_meta_subgraph_capacity(plan)", []() { test_meta_subgraph_capacity(true); });
     return 0;
 }
