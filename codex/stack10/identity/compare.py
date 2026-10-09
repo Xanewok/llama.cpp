@@ -58,7 +58,7 @@ def analyze(experiment, out):
     rows = []
     stock_records = []
     for i, arm in enumerate(x['plan']):
-        path = out / f'{i}-{arm}' / 'depth-32768.json'
+        path = out / f'{i}-{arm}' / f"depth-{spec.get('depth', 32768)}.json"
         if not path.exists():
             continue
         record = read_record(path)
