@@ -12070,6 +12070,44 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
         }
     }
 
+    // local: served decode shapes for the #24030 __restrict__ probe (Swift 1.5 on one GPU of a two-way tensor split)
+    // MMVQ/MMQ crossover widths 1..8; weights per GPU: ffn gate/up 8704x5120, ffn down 5120x8704, attn q+gate 6144x5120,
+    // GDN z 3072x5120, GDN qkv 5120x5120, out projections 5120x3072, head 124160x5120 (Q6_K, 1 and 6 columns)
+    for (ggml_type type_a : { GGML_TYPE_IQ4_XS, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0 }) {
+        for (std::array<int64_t, 2> mk : std::initializer_list<std::array<int64_t, 2>>{
+                {8704, 5120}, {5120, 8704}, {6144, 5120}, {3072, 5120}, {5120, 5120}, {5120, 3072}}) {
+            for (int n = 1; n <= 8; ++n) {
+                test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, mk[0], n, mk[1], {1, 1}, {1, 1}));
+            }
+        }
+    }
+    for (int n : { 1, 6 }) {
+        test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q6_K, GGML_TYPE_F32, 124160, n, 5120, {1, 1}, {1, 1}));
+    }
+    // decode FA, f16 KV laid out like the cache; 8k/32k nb 1 and 6 are in the verify block above
+    for (int kv : { 8192, 32768, 90112 }) {
+        for (int nb : { 1, 6, 12 }) {
+            if ((kv != 90112) && nb != 12) {
+                continue;
+            }
+            test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 1}, kv, nb, true, false, 0, 0, GGML_PREC_F32,
+                                                            GGML_TYPE_F16, GGML_TYPE_F16, {0, 2, 1, 3}, false));
+        }
+    }
+    // recurrent layers: 5120 conv channels, 8 K groups x 128 with 3 V heads per group (24 V heads), K snapshots = n_tokens
+    for (std::array<int64_t, 2> ts : std::initializer_list<std::array<int64_t, 2>>{{1, 1}, {6, 1}, {6, 2}}) {
+        test_cases.emplace_back(new test_ssm_conv(GGML_TYPE_F32, {3 + ts[0], 5120, ts[1], 1}, {4, 5120, 1, 1}));
+        test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 8, 128, ts[0], ts[1], 3, false, false, ts[0]));
+    }
+    // GDN state rollback gather (24 x 128 x 128 floats per row), hidden-row gather, KV cache writes (2 KV heads x 256)
+    for (int r : { 1, 2 }) {
+        test_cases.emplace_back(new test_get_rows(GGML_TYPE_F32, 393216, 8, r, 1, 1, false));
+    }
+    test_cases.emplace_back(new test_get_rows(GGML_TYPE_F32, 5120, 6, 6, 1, 1, false));
+    for (int r : { 1, 6, 12 }) {
+        test_cases.emplace_back(new test_set_rows(GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_I64, {512, 90112, 1, 1}, {1, 1}, r, false));
+    }
+
     for (int kv : { 4096, 8192, 16384,32768, 65536, }) {
         for (int hs : { 64, 128, 256, 512, 576, }) {
             const int  hsv    = hs == 576 ? 512 : hs;
