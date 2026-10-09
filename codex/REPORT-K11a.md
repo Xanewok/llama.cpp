@@ -66,3 +66,65 @@ gates passed (auditor replay: 211.4 / 12.0 StreamSync per round).
   the restore is overwritten by the queued decode: the fixture fails without the fix.
 - Window: the proof boot sends the request twice (cache_prompt on), so every arm saves and restores a checkpoint (gated);
   the debug arm also fails on any destructor `missed=N>0`, in the proof boot and in count.py.
+
+## Window a2 debug-arm misses (2026-10-09): all latency, no untracked enqueue; debug check is now query-based
+a2 (`codex/window/k11a-a2`) failed only `debug arm: engaged 0 missed 10`. Two separate causes:
+- `engaged 0` was a gate bug: the decode boot runs at default verbosity, where the INFO engagement line and the destructor
+  counts are not printed (they appear only in the verbosity-5 proof log). Fixed: both now log at WARN.
+- The 10 misses are host/tracer latency of the debug check's real sync on idle streams (verdicts below).
+
+Trace alignment (M): five logged events match five slow two-call `cudaStreamSynchronize` pairs (dev0 then dev1 = one meta
+sched sync) on the main thread of `debug/decode-8k.sqlite`, at a constant offset log = trace + 26.774 s (gaps 2.654 s,
+46 ms, 288 ms, 416 ms reproduced). The capture covers log 0:26.79-0:31.85, so events 7-10 are outside it. Criterion: a
+stream sync that waits for device work returns only after that stream's last kernel/memcpy/memset ends, so some activity
+must end inside the call window. Contexts: target = streams 28/29 (+30/31 staging), draft = 36/37 (+38/39).
+
+| # | log | caller | wait | trace | evidence | verdict |
+|---|-----|--------|------|-------|----------|---------|
+| 1 | 0:28.399 | sampled_token_ith | 28 us | 1.625012 | dev0 call 1.2 us while the draft's dev0 stream st36 ran its AllReduce kernel (launched 1.624669, ran to 1.625079), so the checked context is not the draft; target streams had no activity since 1.62394 (1.07 ms); the 25.4 us dev1 call ended 0.5 us after a draft graph kernel, but the draft's d1 stream st37 held a queued kernel until 1.625085, so that call was not waiting on it | latency (M) |
+| 2 | 0:31.053 | sampled_logits_count_ith | 70 us | 4.278839 | dev1 call 45.9 us; no activity ended on either GPU inside the 48.7 us window | latency (M) |
+| 3 | 0:31.099 | sampled_candidates_ith | 52 us | 4.326036 | both GPUs idle: nothing running or ending; last ends 34/45 us before | latency (M) |
+| 4 | 0:31.387 | embeddings_nextn_ith | 23 us | 4.613010 | both GPUs idle; last ends 19/40 us before | latency (M) |
+| 5 | 0:31.803 | sampled_logits_count_ith | 42 us | 5.029062 | both GPUs idle; last ends 17/33 us before | latency (M) |
+| 6 | 0:31.803 | embeddings_nextn_ith | 42 us | 5.029151 | both GPUs idle; last ends 106/141 us before | latency (M) |
+| 7-10 | 0:38.655, 0:39.398, 0:42.324 x2 | sampled_logits_ith 43, embeddings_nextn_ith 115, sampled_token_ith 43, sampled_probs_ith 25 | | outside capture | no trace; same callers and pattern as 1-6 | latency (G) |
+
+Code audit of the np2 getter path (D): every device enqueue on a context's backend streams goes through
+`graph_compute` (marked, also KV-shift graphs and the staged input copies inside `ggml_backend_sched_graph_compute_async`),
+`llama_context::tensor_get_async` (marked) or `copy_tensor_async_rows` (marked). The per-seq getters (`llama_get_sampled_*_ith`,
+`llama_get_embeddings_nextn_ith`) only `synchronize()` and read host buffers. `set_sampler`, `mtp_fold_init/arm`, state and
+KV I/O use host data or the blocking buffer API (CUDA: cudaStreamPerThread + sync). common/ and tools/server make no ggml
+backend calls. Contexts have their own simple backends and streams, so work between the seq-0 and seq-1 getters (the other
+context's graphs) is on other streams. Chain and fold were off in a2 (np2 -duo shape); their enqueues are graph computes too.
+Conclusion: no real miss, no general fix.
+
+### Commits (wt/s10-k11a)
+- `1583d15e4` local: K11a debug check queries the backends instead of timing the sync. Adds a local iface hook
+  `ggml_backend_i::query` + `ggml_backend_query()` (1 idle / 0 busy / -1 cannot tell). CUDA uses `cudaStreamQuery(stream())`,
+  the stream `synchronize()` waits on (non-HIP/MUSA). Meta reports idle only if all simple backends are idle. Backends with no
+  synchronize count as idle. In debug mode: query, then the real sync. Busy = miss
+  (`sync_elide: missed: backend busy at a skipped sync`). A backend without the hook falls back to timing. A slow sync on idle
+  backends is an INFO `idle_slow`, not a miss. Engagement (`... (backend query exact)`) and the destructor
+  `elided= missed= idle_slow=` log at WARN.
+- `fb4df2e29` codex: Mac driver's deferred backend implements the query (queue empty). Gates use the new strings. The Mac
+  mutant stage now requires the debug check to catch mutant 3 in every combo. The window adds a mutant-3 + debug proof boot
+  that must report busy-backend misses, so a blind detector fails. The debug arm must be query-based in every context.
+  count.py reads engagement and misses from the default-verbosity log. The touched ggml files are pinned in `bw-k11a.toml`.
+- `ae178dc69` codex: Mac evidence a7 (below). No general commit changed.
+
+### Mac a7 (M, `work/build-window-1007/k11a-mac-a7`, HEAD fb4df2e29, all stages rc 0)
+build 42 s; identity 380 s: tokens/counters identical in all 5 combos, all contexts `missed=0`, 28 engagements all
+`backend query exact`, 0 idle_slow lines; mutants 409 s: mutant 3 caught by tokens (3/3 combos) and by the query (3/3),
+mutant 2 by the query in 2-0-0 and 1-0-1, mutant 1 not caught (expected); state I/O 9 s: mutant 4 corrupts save and restore.
+Preflight (`env -i HOME=$HOME PATH=/usr/local/bin:/usr/bin:/bin bash codex/bw-k11a.sh --preflight`): PASS. shlint rc 0 on
+`bw-k11a.sh`, `bw-k11a-mac.sh`, `k11a/sync_count.sh`. Not run here: CUDA compile of `ggml_backend_cuda_query` (no CUDA on
+this host). Its first compile is the window's stage 40, and the mutant-3 proof boot is its functional must-fail.
+
+### stack10 port (wt/stack10, no queued item pins it)
+`ee200e4d5` (cherry-pick of 1583d15e4, clean), `9eb120d53` codex (driver query, stack10 Mac k11a stage, engagement canary
+k11a now `LLAMA_SYNC_ELIDE_DEBUG=1` + `backend query exact` + no `sync_elide: missed:`, gates.sh stamp, current
+`codex/k11a/{sync_count.sh,count.py,bw-k11a-mac.sh}`), `2df562da7` drop map (dropmap.tsv + DROPMAP.md). Drop tests on a
+scratch branch (deleted afterwards): k11a, k11b, k4, `k4,k6b,k11a` all rc 0 and `check-drop.sh` clean. The k11a drop leaves no
+`ggml_backend_query`/`sync_elide`/`backend_pending` in src or ggml. `engagement.py selftest` PASS. The stack10 Mac evidence
+(`codex/stack10/mac-evidence`, last at 0128ceadf) does not cover the K11a commits since 9afd77984. It needs a rerun before a
+stack10 window.
