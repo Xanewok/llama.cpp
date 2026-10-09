@@ -58,7 +58,9 @@ struct llama_context {
     //   - etc.
     void sched_reserve();
 
-    // returns at once when no device work was enqueued since the last real sync; force always syncs the backends
+    // returns at once when no device work was enqueued since the last real sync; force always syncs the backends.
+    // Callers that then move data with ggml_backend_tensor_get/set/copy (another stream, ordered after this context's
+    // graphs only by this sync: state save/restore, KV stream copies) use force, so they do not depend on enqueue tracking.
     void synchronize(bool force = false);
 
     const llama_model   & get_model()   const;
