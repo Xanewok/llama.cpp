@@ -179,8 +179,9 @@ if __name__ == '__main__':
         sql, op, backend, commit, params = sys.argv[2:]
         sys.exit(rerun_state(Path(sql).read_text(), op, backend, commit, params))
     elif sys.argv[1:2] == ['check']:
-        sql, backend, commit, comps = sys.argv[2:]
-        n, retry = check(Path(sql).read_text(), backend, commit, set(comps.split(',')))
+        sql, backend, commit, comps = sys.argv[2:6]
+        selftests = ''.join(Path(f).read_text() for f in sys.argv[6:])
+        n, retry = check(Path(sql).read_text() + selftests, backend, commit, set(comps.split(',')))
         Path(sql + '.retry').write_text(''.join(f'{s}\t{o}\t{p}\n' for s, o, p in retry))
         print(f'full_rows_M={n}')
         print(f'failing_rows_to_rerun_M={len(retry)}')
