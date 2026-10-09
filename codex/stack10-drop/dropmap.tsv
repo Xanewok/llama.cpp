@@ -15,6 +15,7 @@ k2	cuda : scan the flash-attention mask once per graph evaluation
 k2	local: K2 shared KV-max scan off switch and negative controls
 k10	cuda : batch top-k over rows in one launch set with a deterministic order
 k10	local: K10 top-k batching off switch, engagement log, negative-control mutants
+k10	tests : count out-of-range TOP_K output indices as failures instead of reading src through them
 k9	cuda : launch the MMQ kernel and its stream-k fixup with PDL
 k9	cuda : launch the MMQ q8_1 quantize kernel with PDL
 k9	tests : add an MMQ producer/consumer chain with byte hashes and replay checks
