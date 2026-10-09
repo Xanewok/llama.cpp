@@ -1,0 +1,10 @@
+=================================================================
+==48202==ERROR: AddressSanitizer: SEGV on unknown address 0x000153463fb4 (pc 0x0001052ec20c bp 0x00016b253420 sp 0x00016b251dc0 T0)
+==48202==The signal is caused by a WRITE memory access.
+    #0 0x0001052ec20c in ggml_backend_meta_graph_compute_impl(ggml_backend*, ggml_cgraph*, ggml_backend_meta_graph_plan*, bool)+0x2f10 (libggml-base.0.25.3.dylib:arm64+0x9420c)
+    #1 0x0001052a9ed8 in ggml_backend_graph_compute+0x3c (libggml-base.0.25.3.dylib:arm64+0x51ed8)
+    #2 0x000104bbbe94 in test_meta_subgraph_capacity(bool)::$_0::operator()(int, int) const+0x39c (test-alloc:arm64+0x100013e94)
+    #3 0x000104bbb884 in test_meta_subgraph_capacity(bool)+0x5d0 (test-alloc:arm64+0x100013884)
+    #4 0x000104bb2a68 in main+0x8058 (test-alloc:arm64+0x10000aa68)
+    #5 0x00018bfcbdfc in start+0x1b4c (dyld:arm64e+0x1fdfc)
+

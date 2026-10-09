@@ -1,5 +1,5 @@
 fake/no-staging-exports: OK (init 0, staged 0, per-rank 6, free 0)
 fake/init-refused: OK (init 1, staged 0, per-rank 6, free 0)
 fake/batch-declined: OK (init 1, staged 3, per-rank 6, free 1)
-/Users/builder/qwen38-bw/stack10-final-a3/6b61cd24a416c52b75c7d40a45001df59041f7a7/run.fgrFNL/src/codex/stack10/mac/k11b.sh: line 10:  2860 Abort trap: 6           env GGML_META_INPUT_STAGE_MUTANT=1 "$BW_GATE" build-cpu/bin/test-meta-input-stage
+/Users/builder/qwen38-bw/stack10b-mac/47cff1bbd92714c3a84c0717f15a06f05dc5aa3d/run.1it8KI/src/codex/stack10/mac/k11b.sh: line 10: 49382 Abort trap: 6           env GGML_META_INPUT_STAGE_MUTANT=1 "$BW_GATE" build-cpu/bin/test-meta-input-stage
 glue mutant killed

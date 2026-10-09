@@ -1,4 +1,4 @@
 FAIL a stale activation was reused after an alias write
-killed: /Users/builder/qwen38-bw/stack10-final-a3/6b61cd24a416c52b75c7d40a45001df59041f7a7/run.fgrFNL/out/k6a/bin/q8-cache-stale
+killed: /Users/builder/qwen38-bw/stack10b-mac/47cff1bbd92714c3a84c0717f15a06f05dc5aa3d/run.1it8KI/out/k6a/bin/q8-cache-stale
 FAIL 17 rows must fall back
-killed: /Users/builder/qwen38-bw/stack10-final-a3/6b61cd24a416c52b75c7d40a45001df59041f7a7/run.fgrFNL/out/k6a/bin/q8-cache-bound
+killed: /Users/builder/qwen38-bw/stack10b-mac/47cff1bbd92714c3a84c0717f15a06f05dc5aa3d/run.1it8KI/out/k6a/bin/q8-cache-bound

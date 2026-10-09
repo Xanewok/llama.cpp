@@ -1,0 +1,2 @@
+/Users/builder/qwen38-bw/stack10b-mac/47cff1bbd92714c3a84c0717f15a06f05dc5aa3d/run.1it8KI/src/codex/stack10/mac/mfix.sh: line 19: 48199 Abort trap: 6           "$BW_GATE" env GGML_META_SUBGRAPH_MUTANT=1 build-asan/bin/test-alloc > "$D/asan-mutant.txt" 2>&1
+pre-fix mutant killed: ==48202==ERROR: AddressSanitizer: SEGV on unknown address 0x000153463fb4 (pc 0x0001052ec20c bp 0x00016b253420 sp 0x00016b251dc0 T0)

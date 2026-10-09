@@ -1,6 +1,6 @@
 {
   "result": "PASS",
-  "commit": "6b61cd24a416c52b75c7d40a45001df59041f7a7",
+  "commit": "47cff1bbd92714c3a84c0717f15a06f05dc5aa3d",
   "source_files": [
     "common/CMakeLists.txt",
     "common/arg.cpp",
@@ -1848,14 +1848,14 @@
     "tests/test-unicode.cpp",
     "tests/testing.h"
   ],
-  "source_sha256": "8d3282da01f94c5be66e4e531efd9c1b8597d6103d514764124e5f5d2f76b2bb",
+  "source_sha256": "b9ec5dac540a3bc5762edce16b59280f924ec29ce609387f0ca06c58bf6e3707",
   "tree_dirty": "",
   "stages": [
     {
       "code": 10,
       "name": "build-cpu-build",
       "rc": 0,
-      "wall_s_M": 50
+      "wall_s_M": 55
     },
     {
       "code": 140,
@@ -1885,13 +1885,13 @@
       "code": 31,
       "name": "p55-mmvq-table-mutant",
       "rc": 0,
-      "wall_s_M": 2
+      "wall_s_M": 1
     },
     {
       "code": 33,
       "name": "p55-tp-sampling",
       "rc": 0,
-      "wall_s_M": 16
+      "wall_s_M": 18
     },
     {
       "code": 40,
@@ -1924,6 +1924,24 @@
       "wall_s_M": 1
     },
     {
+      "code": 54,
+      "name": "mfix-meta-subgraphs-unit",
+      "rc": 0,
+      "wall_s_M": 1
+    },
+    {
+      "code": 55,
+      "name": "mfix-meta-subgraphs-asan-build",
+      "rc": 0,
+      "wall_s_M": 60
+    },
+    {
+      "code": 56,
+      "name": "mfix-meta-subgraphs-asan-unit",
+      "rc": 0,
+      "wall_s_M": 2
+    },
+    {
       "code": 60,
       "name": "k6a-q8-cache-contract",
       "rc": 0,
@@ -1939,13 +1957,13 @@
       "code": 62,
       "name": "k6a-mul-mat-shared-identity",
       "rc": 0,
-      "wall_s_M": 2
+      "wall_s_M": 3
     },
     {
       "code": 65,
       "name": "k6b-add-rms-norm-matcher",
       "rc": 0,
-      "wall_s_M": 1
+      "wall_s_M": 0
     },
     {
       "code": 66,
@@ -1957,7 +1975,7 @@
       "code": 67,
       "name": "k6b-add-rms-norm-identity",
       "rc": 0,
-      "wall_s_M": 1
+      "wall_s_M": 2
     },
     {
       "code": 70,
@@ -1993,19 +2011,19 @@
       "code": 81,
       "name": "k10-emu-kernels",
       "rc": 0,
-      "wall_s_M": 91
+      "wall_s_M": 98
     },
     {
       "code": 82,
       "name": "k10-emu-mutants",
       "rc": 0,
-      "wall_s_M": 25
+      "wall_s_M": 24
     },
     {
       "code": 83,
       "name": "k10-topk-unit",
       "rc": 0,
-      "wall_s_M": 91
+      "wall_s_M": 96
     },
     {
       "code": 84,
@@ -2017,25 +2035,19 @@
       "code": 85,
       "name": "k10-canonical-control",
       "rc": 0,
-      "wall_s_M": 2
-    },
-    {
-      "code": 90,
-      "name": "k9-mmq-chain-harness",
-      "rc": 0,
-      "wall_s_M": 4
+      "wall_s_M": 1
     },
     {
       "code": 100,
       "name": "k8-stream-k-partition-model",
       "rc": 0,
-      "wall_s_M": 2
+      "wall_s_M": 3
     },
     {
       "code": 101,
       "name": "k8-mul-mat-cases",
       "rc": 0,
-      "wall_s_M": 19
+      "wall_s_M": 18
     },
     {
       "code": 102,
@@ -2047,13 +2059,13 @@
       "code": 120,
       "name": "k11b-meta-input-stage-unit",
       "rc": 0,
-      "wall_s_M": 0
+      "wall_s_M": 1
     },
     {
       "code": 121,
       "name": "k11b-meta-glue-mutant",
       "rc": 0,
-      "wall_s_M": 1
+      "wall_s_M": 0
     },
     {
       "code": 122,
@@ -2065,13 +2077,13 @@
       "code": 123,
       "name": "k11b-cuda-sim-mutants",
       "rc": 0,
-      "wall_s_M": 8
+      "wall_s_M": 9
     },
     {
       "code": 20,
       "name": "base-payload-lint",
       "rc": 0,
-      "wall_s_M": 1
+      "wall_s_M": 0
     },
     {
       "code": 21,
@@ -2089,7 +2101,7 @@
       "code": 23,
       "name": "base-recorded-parser-controls",
       "rc": 0,
-      "wall_s_M": 0
+      "wall_s_M": 1
     },
     {
       "code": 32,
@@ -2101,50 +2113,56 @@
       "code": 34,
       "name": "p55-recorded-parser-controls-stack9",
       "rc": 0,
-      "wall_s_M": 1
+      "wall_s_M": 0
     },
     {
       "code": 35,
       "name": "p55-np2-chain-identity",
       "rc": 0,
-      "wall_s_M": 102
+      "wall_s_M": 112
     },
     {
       "code": 43,
       "name": "k7-real-graph-adjacency",
       "rc": 0,
-      "wall_s_M": 2
+      "wall_s_M": 3
     },
     {
       "code": 52,
       "name": "k4-ssm-conv-rs-model-gate",
       "rc": 0,
-      "wall_s_M": 85
+      "wall_s_M": 86
     },
     {
       "code": 53,
       "name": "k4-ssm-conv-rs-np2-driver",
       "rc": 0,
-      "wall_s_M": 125
+      "wall_s_M": 127
+    },
+    {
+      "code": 57,
+      "name": "mfix-meta-subgraphs-asan-np2",
+      "rc": 0,
+      "wall_s_M": 130
     },
     {
       "code": 24,
       "name": "base-rotation-identity",
       "rc": 0,
-      "wall_s_M": 262
+      "wall_s_M": 270
     },
     {
       "code": 110,
       "name": "k11a-sync-elide-identity",
       "rc": 0,
-      "wall_s_M": 379
+      "wall_s_M": 394
     },
     {
       "code": 111,
       "name": "k11a-sync-elide-mutants",
       "rc": 0,
-      "wall_s_M": 410
+      "wall_s_M": 416
     }
   ],
-  "total_wall_s_M": 1818
+  "total_wall_s_M": 2067
 }

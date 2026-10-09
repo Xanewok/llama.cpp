@@ -1,5 +1,3 @@
-test_buft_get_alloc_size_n_alignment PASSED
-test_buft_get_alloc_size_n_custom_override PASSED
 test_buft_get_alloc_size_n_custom_override_ctx_size PASSED
 test_buft_get_alloc_size_n_does_not_allocate PASSED
 test_meta_split_state_rebuild(same) PASSED
@@ -10,3 +8,5 @@ test_meta_host_cpy(mirrored) PASSED
 test_meta_host_cpy(split) PASSED
 test_meta_host_set_rows(mirrored) PASSED
 test_meta_host_set_rows(split) PASSED
+test_meta_subgraph_capacity(compute) PASSED
+test_meta_subgraph_capacity(plan) PASSED

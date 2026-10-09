@@ -1,12 +1,12 @@
-1.20.613.502 I test_getter_gate: extra state: prefill seq 0: conv nodes 48 by id, 0 gathered; state rows gathered 0
-1.21.140.633 I test_getter_gate: extra state: prefill seq 2: gdn nodes 48 by id, 0 gathered; state rows gathered 0
-1.21.140.635 I test_getter_gate: extra state: prefill seq 2: conv nodes 48 by id, 0 gathered; state rows gathered 0
-1.21.667.972 I test_getter_gate: extra state: prefill seq 1: gdn nodes 48 by id, 0 gathered; state rows gathered 0
-1.21.667.975 I test_getter_gate: extra state: prefill seq 1: conv nodes 48 by id, 0 gathered; state rows gathered 0
-1.22.069.023 I test_getter_gate: extra state: verify batch, seqs 0 and 1: gdn nodes 0 by id, 24 gathered; state rows gathered 72
-1.22.069.025 I test_getter_gate: extra state: verify batch, seqs 0 and 1: conv nodes 24 by id, 0 gathered; state rows gathered 48
-1.22.269.361 I test_getter_gate: extra state: seq 2 after the move: gdn nodes 24 by id, 0 gathered; state rows gathered 0
-1.22.269.365 I test_getter_gate: extra state: seq 2 after the move: conv nodes 24 by id, 0 gathered; state rows gathered 0
-1.22.343.386 I test_getter_gate: extra state: decode, seqs 0 and 1: gdn nodes 24 by id, 0 gathered; state rows gathered 0
-1.22.343.389 I test_getter_gate: extra state: decode, seqs 0 and 1: conv nodes 24 by id, 0 gathered; state rows gathered 0
-1.22.350.987 I test_getter_gate: all scenarios pass structure and finite-logit checks
+1.20.939.181 I test_getter_gate: extra state: prefill seq 0: conv nodes 48 by id, 0 gathered; state rows gathered 0
+1.21.469.130 I test_getter_gate: extra state: prefill seq 2: gdn nodes 48 by id, 0 gathered; state rows gathered 0
+1.21.469.133 I test_getter_gate: extra state: prefill seq 2: conv nodes 48 by id, 0 gathered; state rows gathered 0
+1.22.005.409 I test_getter_gate: extra state: prefill seq 1: gdn nodes 48 by id, 0 gathered; state rows gathered 0
+1.22.005.412 I test_getter_gate: extra state: prefill seq 1: conv nodes 48 by id, 0 gathered; state rows gathered 0
+1.22.408.877 I test_getter_gate: extra state: verify batch, seqs 0 and 1: gdn nodes 0 by id, 24 gathered; state rows gathered 72
+1.22.408.881 I test_getter_gate: extra state: verify batch, seqs 0 and 1: conv nodes 24 by id, 0 gathered; state rows gathered 48
+1.22.610.243 I test_getter_gate: extra state: seq 2 after the move: gdn nodes 24 by id, 0 gathered; state rows gathered 0
+1.22.610.247 I test_getter_gate: extra state: seq 2 after the move: conv nodes 24 by id, 0 gathered; state rows gathered 0
+1.22.684.527 I test_getter_gate: extra state: decode, seqs 0 and 1: gdn nodes 24 by id, 0 gathered; state rows gathered 0
+1.22.684.530 I test_getter_gate: extra state: decode, seqs 0 and 1: conv nodes 24 by id, 0 gathered; state rows gathered 0
+1.22.693.805 I test_getter_gate: all scenarios pass structure and finite-logit checks

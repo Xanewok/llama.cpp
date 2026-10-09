@@ -1,0 +1,12 @@
+[198/209] Building CXX object llama/tools/server/CMakeFiles/server-context.dir/server-stream.cpp.o
+[199/209] Building CXX object llama/tools/server/CMakeFiles/server-context.dir/server-decision.cpp.o
+[200/209] Building CXX object llama/tools/server/CMakeFiles/server-context.dir/server-mcp.cpp.o
+[201/209] Creating library symlink bin/libmtmd.0.dylib bin/libmtmd.dylib
+[202/209] Building CXX object llama/tools/server/CMakeFiles/server-context.dir/server-schema.cpp.o
+[203/209] Building CXX object llama/tools/server/CMakeFiles/server-context.dir/server-tools.cpp.o
+[204/209] Building CXX object llama/tests/CMakeFiles/test-alloc.dir/test-alloc.cpp.o
+[205/209] Linking CXX executable bin/test-alloc
+[206/209] Building CXX object llama/tools/server/CMakeFiles/server-context.dir/server-context.cpp.o
+[207/209] Linking CXX static library llama/tools/server/libserver-context.a
+[208/209] Building CXX object CMakeFiles/bw-np2-driver.dir/Users/builder/qwen38-bw/stack10b-mac/47cff1bbd92714c3a84c0717f15a06f05dc5aa3d/run.1it8KI/src/codex/bw-np2-driver.cpp.o
+[209/209] Linking CXX executable bin/bw-np2-driver

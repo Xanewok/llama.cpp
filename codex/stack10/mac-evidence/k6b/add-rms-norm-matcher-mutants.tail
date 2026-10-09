@@ -3,9 +3,9 @@ FAIL rows=17 cols=24: matcher=1 expected=0
 FAIL rows=17 cols=512: matcher=1 expected=0
 FAIL rows=17 cols=1024: matcher=1 expected=0
 FAIL rows=17 cols=5120: matcher=1 expected=0
-killed: /Users/builder/qwen38-bw/stack10-final-a3/6b61cd24a416c52b75c7d40a45001df59041f7a7/run.fgrFNL/out/k6b/bin/matcher-cap
+killed: /Users/builder/qwen38-bw/stack10b-mac/47cff1bbd92714c3a84c0717f15a06f05dc5aa3d/run.1it8KI/out/k6b/bin/matcher-cap
 FAIL normalized buffer over the residual: matcher=1 expected=0
 FAIL normalized buffer over y: matcher=1 expected=0
-killed: /Users/builder/qwen38-bw/stack10-final-a3/6b61cd24a416c52b75c7d40a45001df59041f7a7/run.fgrFNL/out/k6b/bin/matcher-norm
+killed: /Users/builder/qwen38-bw/stack10b-mac/47cff1bbd92714c3a84c0717f15a06f05dc5aa3d/run.1it8KI/out/k6b/bin/matcher-norm
 FAIL result exactly over the residual: matcher=1 expected=0
-killed: /Users/builder/qwen38-bw/stack10-final-a3/6b61cd24a416c52b75c7d40a45001df59041f7a7/run.fgrFNL/out/k6b/bin/matcher-resid
+killed: /Users/builder/qwen38-bw/stack10b-mac/47cff1bbd92714c3a84c0717f15a06f05dc5aa3d/run.1it8KI/out/k6b/bin/matcher-resid
