@@ -77,7 +77,9 @@ def main():
     sha = (args.stack10_root / 'SOURCE').read_text().splitlines()[0]
     base_sha = (args.base_root / 'SOURCE').read_text().splitlines()[0]
     head = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', 'HEAD'], text=True).strip()
-    assert sha == head, f'frozen/stack10 is {sha}, HEAD is {head}'
+    # the items run the frozen build; codex/ (harness glue, proofs) may move after the freeze
+    changed = subprocess.check_output(['git', '-C', str(ROOT), 'diff', '--name-only', sha, head, '--', '.', ':!codex'], text=True).split()
+    assert not changed, f'frozen/stack10 is {sha}, HEAD {head} differs outside codex/: {changed}'
     mkitem.harness_snapshot = snapshotter(args.snapshots)
     for name in args.only or NAMES:
         source = (ROOT / f'codex/stack10/items/{name}.toml.in').read_text()
