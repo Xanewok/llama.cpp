@@ -67,7 +67,7 @@ COMP=build D=$OUT/build
 mkdir -p "$D"
 S10_KEEP_GOING=0 stage 10 cpu-build build
 
-CHEAP_ORDER=(ops p55 k7 k6a k6b k2 k10 k9 k8 k11b base)
+CHEAP_ORDER=(ops p55 k7 k4 k6a k6b k2 k10 k9 k8 k11b base)
 MODEL_ORDER=(p55 k7 k4 base k11a)
 # the words "cheap" and "model" in S10_ONLY select a phase, the others select components (none: all). macOS bash is 3.2: no empty arrays.
 only_comps=' ' only_phase=''

@@ -1,0 +1,2 @@
+identity mutant killed: identity-stale-reference
+identity mutant killed: identity-no-overwrite

@@ -1,0 +1,12 @@
+      "prompt_per_second": 568.8296330300407,
+      "predicted_n": 122,
+      "predicted_ms": 1200.672,
+      "predicted_per_token_ms": 9.92290909090909,
+      "predicted_per_second": 100.77689827030196,
+      "draft_n": 150,
+      "draft_n_accepted": 93
+    }
+  },
+  "negative_controls": "PASS"
+}
+recorded parsers, proof mutants, experiment structures and window fields PASS

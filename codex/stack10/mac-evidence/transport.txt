@@ -1,0 +1,2 @@
+HEAD=ade74ab9000d8c15e6a74bc57bfd409000dd4bcc
+REMOTE=/Users/builder/qwen38-bw/stack10-mac/ade74ab9000d8c15e6a74bc57bfd409000dd4bcc/run.hmzBzy

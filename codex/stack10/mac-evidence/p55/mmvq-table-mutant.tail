@@ -1,0 +1,2 @@
+/Users/builder/qwen38-bw/stack10-mac/ade74ab9000d8c15e6a74bc57bfd409000dd4bcc/run.hmzBzy/src/codex/stack10/mac/p55.sh: line 8: 79516 Abort trap: 6           "$d/test-mmvq-params-mutant" > "$d/run.log" 2>&1
+mutant rc=134
