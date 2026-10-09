@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stage library of bw-stack10.sh (sourced, never run alone). Contract: a component's CUDA gate is that component's own function,
 # extracted from its window by gates_table.py and run in a subshell with OUT=$OUT/<comp>; nothing here re-implements a check.
-# Needs from the caller: ROOT W EVAL OUT SHA SHORT VISIBLE COMPONENTS CPUS GPUS CCCL BUILDGATE flags S9_LIB CAND_LIB P55_LIB.
+# Needs from the caller: ROOT W EVAL OUT SHA BUILD_SHA (the commit build-cuda was built from: SHA, or the reused attempt's in the tail) SHORT VISIBLE COMPONENTS CPUS GPUS CCCL BUILDGATE flags S9_LIB CAND_LIB P55_LIB.
 
 has() { [[ " $COMPONENTS " == *" $1 "* ]]; }
 
@@ -241,7 +241,7 @@ excused() {
     if [[ $scope == out ]]; then
         for a in 1 2 3; do
             rc=0
-            rerun_case build-cuda/bin/test-backend-ops "$SHA" "$op" "$dev" "$params" "$tag.new$a" || rc=$?
+            rerun_case build-cuda/bin/test-backend-ops "$BUILD_SHA" "$op" "$dev" "$params" "$tag.new$a" || rc=$?
             if [[ $rc != 0 ]]; then ok=0; break; fi
         done
         if [[ $ok == 1 ]]; then echo "excused after 3 clean reruns: $op $params"; return 0; fi
@@ -268,7 +268,7 @@ g_full() {
         # so their markers come from a run that selects no case.
         tbo_sql build-cuda/bin/test-backend-ops 1800s "$base.self.sql" "$base.self.err" -b "$dev" \
             -o RMS_NORM_SCALE_PAIR,FLASH_ATTN_EXT -p no-such-case
-        nice -n 19 python3 codex/stack10/full_checks.py check "$base.sql" "$dev" "$SHA" "$csv" "$base.self.sql"
+        nice -n 19 python3 codex/stack10/full_checks.py check "$base.sql" "$dev" "$BUILD_SHA" "$csv" "$base.self.sql"
         while IFS=$'\t' read -r -u 3 scope op params; do
             [[ -n $params ]] || continue
             excused "$scope" "$op" "$dev" "$params" "$base.re$((++NRE))"
@@ -279,13 +279,27 @@ g_full() {
 freeze() {
     [[ $(git rev-parse HEAD) == "$SHA" && -z $(git status --porcelain --untracked-files=no) ]]
     [[ ! -e $W/frozen/stack10 ]]
-    nice -n 19 "$W/bin/wt" freeze "$ROOT" stack10 --build build-cuda --desc "stack9-p55 + K7 K4 K6a K6b K2 K10 K9 K8 K11a K11b ($COMPONENTS); CUDA gates passed on both GPUs; CUDA 13.2 120a CCCL343 NCCL OFF"
+    local desc="stack9-p55 + K7 K4 K6a K6b K2 K10 K9 K8 K11a K11b ($COMPONENTS); CUDA gates passed on both GPUs; CUDA 13.2 120a CCCL343 NCCL OFF"
+    if [[ -n $TAIL_FROM ]]; then
+        desc="$desc; build commit $BUILD_SHA, gates 40-65 in codex/window/$TAIL_FROM, full-suite K11a freeze render in codex/window/${OUT##*/} at $SHA (src ggml tests common identical)"
+    fi
+    nice -n 19 "$W/bin/wt" freeze "$ROOT" stack10 --build build-cuda --desc "$desc"
     [[ $(head -n 1 "$W/frozen/stack10/SOURCE") == "$SHA" ]]
     {
-        printf 'commit %s\nconfigure: cmake -S . -B build-cuda ' "$SHA"
+        printf 'commit %s\nconfigure: cmake -S . -B build-cuda ' "$BUILD_SHA"
         printf '%q ' "${flags[@]}"
         printf '\nbuild: bin/buildgate cmake --build build-cuda -j4 --target %s\nbuild stage: CUDA_VISIBLE_DEVICES=""; gates ran in codex/window (components: %s)\n' "$(targets)" "$COMPONENTS"
     } > "$W/frozen/stack10/RECIPE.txt"
+    if [[ -n $TAIL_FROM ]]; then
+        {
+            printf 'Tail freeze: the binaries are the build of %s (libraries embed %s); SOURCE is the tail commit %s.\n' "$BUILD_SHA" "${BUILD_SHA:0:9}" "$SHA"
+            printf 'src ggml tests common are the same git trees at both commits; other differences between the commits lie outside them.\n'
+            printf 'Gates 40-65 (build, stamps, stock-MMQ build, base ops, component gates, fafix SASS and identity): %s, all rc 0 in its stages.tsv.\n' "$A1"
+            printf 'Gates 66 full-suite, 63 K11a, freeze, render: %s.\n' "$OUT"
+            printf 'Reuse proof: %s/tail-precheck.json (stage 41 recorded no hashes; the proof re-derives the stage 42 SHA256SUMS from build-cuda/bin;\n' "$OUT"
+            printf 'llama-server, round-trace and the small test binaries are covered by mtime and stamps only). Must-fail controls: payload.log.\n'
+        } > "$W/frozen/stack10/PROVENANCE.txt"
+    fi
 }
 
 items() {
