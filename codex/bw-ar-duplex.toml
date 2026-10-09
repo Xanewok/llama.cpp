@@ -1,0 +1,48 @@
+id = "bw-ar-duplex"
+title = "AllReduce chunked kernel pipelined (store of round r with load of round r-1): CPU model, CUDA builds (this tree, base), byte identity vs base and no-wait mutant on both GPUs, compute-sanitizer, ABBA per-call perf, freeze, render np2 real J5q item (check only)"
+kind = "filler"
+priority = 15
+host_sensitive = false
+preemptible = false
+# G: 6000 s; D: 12000 s cap covers two CUDA builds (llama-server for this tree, the ggml libraries of the base) on a cold ccache, the CPU model (about 10 min), the both-GPU identity passes, sanitizers and perf arms.
+est_s = 6000
+budget_s = 12000
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-ar-duplex: FAIL" }]
+
+[run]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/bw-ar-duplex.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/window/ardup-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", OK_RCS = "0", GPUQ_BUILD_WINDOW = "1" }
+ports = []
+
+[preflight]
+cmd = ["/usr/bin/bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/bw-ar-duplex.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/window/ardup-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/window/ardup-a{attempt}/payload.log", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/window/ardup-a{attempt}/perf.tsv"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "stages", "controls"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/bw-ar-duplex.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/bw-ar-duplex.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/ar-duplex-driver.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/ar-duplex-cpumodel.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/ar-duplex-cpumodel.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/ar_duplex_summary.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/render_ardup_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/items/ardup-np2-real-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/codex/REPORT-ar-duplex.md",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-duplex/ggml/src/ggml-cuda/allreduce.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-index.py",
+]
