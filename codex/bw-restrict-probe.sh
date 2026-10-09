@@ -88,7 +88,7 @@ stamps() {
     [[ $(grep -c -- "$FORCE" "$SCR/stock/build/$f" || true) == 0 ]]
     [[ $(grep -c '120a' "$SCR/stock/build/$f" || true) -ge 1 ]]
     # same recipe: identical CUDA_FLAGS apart from the switch
-    [[ $(grep '^CUDA_FLAGS' "$SCR/forced/build/$f" | sed "s/$FORCE//; s/  */ /g") == $(grep '^CUDA_FLAGS' "$SCR/stock/build/$f" | sed 's/  */ /g') ]]
+    [[ $(grep '^CUDA_FLAGS' "$SCR/forced/build/$f" | sed "s/$FORCE//; s/  */ /g") == "$(grep '^CUDA_FLAGS' "$SCR/stock/build/$f" | sed 's/  */ /g')" ]]
     strings "$SCR/forced/build/bin/libggml-base.so" | grep -c "$(git rev-parse --short HEAD)" > /dev/null
 }
 sass() {
