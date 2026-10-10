@@ -1,0 +1,41 @@
+  2463	            int i_start = 0;
+  2464	            for (int i = 0; i < cgraph->n_nodes; i++) {
+  2465	                ggml_tensor * node = cgraph->nodes[i];
+  2466	                if (node->view_src != nullptr && node->view_src->op == GGML_OP_NONE && ggml_backend_buffer_is_host(node->view_src->buffer) &&
+  2467	                        !ggml_backend_buffer_is_meta(node->view_src->buffer)) {
+  2468	                    continue;
+  2469	                }
+  2470	                const ggml_backend_meta_split_state split_state = ggml_backend_meta_get_split_state(node, /*assume_sync =*/ false);
+  2471	                if (split_state.axis == GGML_BACKEND_SPLIT_AXIS_PARTIAL) {
+  2472	                    max_tmp_size = std::max(max_tmp_size, ggml_nbytes(node));
+  2473	                }
+  2474	                const bool new_subgraph = i + 1 == cgraph->n_nodes || split_state.axis == GGML_BACKEND_SPLIT_AXIS_PARTIAL;
+  2475	                if (!new_subgraph) {
+  2476	                    continue;
+  2477	                }
+  2478	
+  2496	                i = i_delayed;
+  2497	
+  2498	                for (size_t j = 0; j < n_backends; j++) {
+  2499	                    auto & bcj = backend_ctx->backend_configs[j];
+  2500	                    bcj.cgraphs[n_subgraphs].offset = i_start;
+  2501	                }
+  2502	                n_subgraphs++;
+  2503	                i_start = i + 1;
+  2504	            }
+  2505	            GGML_ASSERT(i_start == cgraph->n_nodes);
+  2506	        }
+  2524	        if (max_nnodes_raised || n_subgraphs > backend_ctx->max_subgraphs) {
+  2525	            backend_ctx->max_subgraphs = std::max(backend_ctx->max_subgraphs, n_subgraphs);
+  2526	            const size_t n_nodes_per_device = 3 * owner->n_reduce_steps; // tmp + ADD (+zeroing) graph per step and device
+  2527	            const size_t n_cgraphs_per_device = 2 * owner->n_reduce_steps; // ADD ( + zeroing) graph per step and device
+  2528	            const size_t mem_per_device_graphs_main = backend_ctx->max_subgraphs*ggml_graph_overhead_custom(backend_ctx->max_nnodes, cgraph->grads);
+  2529	            const size_t mem_per_device_graphs_aux = n_cgraphs_per_device*backend_ctx->max_subgraphs*ggml_graph_overhead_custom(1, cgraph->grads);
+  2536	            ggml_round_trace_scope trace_arena("meta_arena", -1, 1, params.mem_size);
+  2537	            backend_ctx->ctx.reset(ggml_init(params));
+  2538	            for (size_t j = 0; j < n_backends; j++) {
+  2539	                auto & bcj = backend_ctx->backend_configs[j];
+  2540	                for (size_t i = 0; i < n_subgraphs; i++) {
+  2541	                    bcj.cgraphs[i].cgraph_main = ggml_new_graph_custom(backend_ctx->ctx.get(), backend_ctx->max_nnodes, /*grads =*/ false);
+  2542	                }
+  2543	            }

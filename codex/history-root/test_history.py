@@ -3,12 +3,14 @@ import copy
 import json
 from pathlib import Path
 import struct
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
 import analyze
 import item
+import meta_header
 import render
 
 
@@ -19,6 +21,18 @@ class HistoryTests(unittest.TestCase):
         self.out = Path(self.tmp.name)
         item.preflight(self.out)
         self.nodes = analyze.read_trace(self.out / 'recorded-logits-trace.jsonl', draft=False)
+
+    def test_frozen_meta_layouts(self):
+        layouts = []
+        for name in ('stack9-p55', 'stack10'):
+            source = subprocess.check_output(['git', '-C', str(item.TREE), 'show',
+                                              item.base.COMMITS[name] + ':ggml/src/ggml-backend-meta.cpp'], text=True)
+            bodies = '\n'.join(meta_header.extract(source, struct_name) for struct_name in
+                               ('ggml_backend_meta_simple_tensor_container', 'ggml_backend_meta_buffer_context'))
+            header = item.TREE / f'build-history-{name}/meta-layout.h'
+            self.assertEqual(header.read_text(), '#pragma once\n' + bodies + '\n')
+            layouts.append(bodies)
+        self.assertEqual(*layouts)
 
     def test_first_node_and_source_control(self):
         source = {'name': 'weight', 'op': 'NONE', 'type': 'f32', 'shape': [1]*4,

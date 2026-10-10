@@ -3,37 +3,37 @@
     {
       "arm": "a",
       "order": "short",
-      "elapsed_s_M": 53.68795447994489
+      "elapsed_s_M": 57.56215692998376
     },
     {
       "arm": "a",
       "order": "long",
-      "elapsed_s_M": 61.0989326039562
+      "elapsed_s_M": 55.4743817410199
     },
     {
       "arm": "a",
       "order": "long",
-      "elapsed_s_M": 57.742759873042814
+      "elapsed_s_M": 79.99442591203842
     },
     {
       "arm": "a",
       "order": "short",
-      "elapsed_s_M": 50.13754412706476
+      "elapsed_s_M": 60.53222037293017
     },
     {
       "arm": "b",
       "order": "long",
-      "elapsed_s_M": 51.67799803300295
+      "elapsed_s_M": 58.91720404603984
     },
     {
       "arm": "c",
       "order": "long",
-      "elapsed_s_M": 53.45625453698449
+      "elapsed_s_M": 89.2431747650262
     },
     {
       "arm": "d",
       "order": "long",
-      "elapsed_s_M": 49.59050693002064
+      "elapsed_s_M": 50.08606163004879
     }
   ],
   "a_repeats_equal": true,

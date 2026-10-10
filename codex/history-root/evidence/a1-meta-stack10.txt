@@ -1,0 +1,45 @@
+  2579	            int i_start = 0;
+  2580	            for (int i = 0; i < cgraph->n_nodes; i++) {
+  2581	                ggml_tensor * node = cgraph->nodes[i];
+  2582	                if (node->view_src != nullptr && node->view_src->op == GGML_OP_NONE && ggml_backend_buffer_is_host(node->view_src->buffer) &&
+  2583	                        !ggml_backend_buffer_is_meta(node->view_src->buffer)) {
+  2584	                    continue;
+  2585	                }
+  2586	                const ggml_backend_meta_split_state split_state = ggml_backend_meta_get_split_state(node, /*assume_sync =*/ false);
+  2587	                if (split_state.axis == GGML_BACKEND_SPLIT_AXIS_PARTIAL) {
+  2588	                    max_tmp_size = std::max(max_tmp_size, ggml_nbytes(node));
+  2589	                }
+  2590	                const bool new_subgraph = i + 1 == cgraph->n_nodes || split_state.axis == GGML_BACKEND_SPLIT_AXIS_PARTIAL;
+  2591	                if (!new_subgraph) {
+  2592	                    continue;
+  2593	                }
+  2594	
+  2612	                i = i_delayed;
+  2613	
+  2614	                for (size_t j = 0; j < n_backends; j++) {
+  2615	                    auto & bcj = backend_ctx->backend_configs[j];
+  2616	                    bcj.cgraphs[n_subgraphs].offset = i_start;
+  2617	                }
+  2618	                n_subgraphs++;
+  2619	                i_start = i + 1;
+  2620	            }
+  2621	            GGML_ASSERT(i_start == cgraph->n_nodes);
+  2622	        }
+  2653	            backend_ctx->ctx.reset(ggml_init(params));
+  2654	            // The reset freed every main graph: a later graph with more subgraphs than this one but at most max_subgraphs
+  2655	            // does not come back here.
+  2656	            // local: GGML_META_SUBGRAPH_MUTANT=1 restores the pre-fix bound (negative control of the np2 smoke and test-alloc)
+  2657	            static const bool subgraph_mutant = getenv("GGML_META_SUBGRAPH_MUTANT") != nullptr;
+  2658	            const size_t n_main = subgraph_mutant ? n_subgraphs : backend_ctx->max_subgraphs;
+  2659	            for (size_t j = 0; j < n_backends; j++) {
+  2660	                auto & bcj = backend_ctx->backend_configs[j];
+  2661	                for (size_t i = 0; i < n_main; i++) {
+  2662	                    bcj.cgraphs[i].cgraph_main = ggml_new_graph_custom(backend_ctx->ctx.get(), backend_ctx->max_nnodes, /*grads =*/ false);
+  2663	                }
+  2664	            }
+  2665	            backend_ctx->cgraphs_aux.resize(n_backends*n_cgraphs_per_device*backend_ctx->max_subgraphs);
+  2666	            for (size_t k = 0; k < backend_ctx->cgraphs_aux.size(); k++) {
+  2667	                backend_ctx->cgraphs_aux[k] = ggml_new_graph_custom(backend_ctx->ctx.get(), 1, cgraph->grads);
+  2668	            }
+  2669	            backend_ctx->nodes_aux.resize(n_backends*n_nodes_per_device*backend_ctx->max_subgraphs);
+  2670	            for (size_t k = 0; k < backend_ctx->nodes_aux.size(); k++) {

@@ -27,8 +27,20 @@ for name in cpu stack9-p55 stack10; do
     readelf -d "$build/history-root" > "$HERE/evidence/readelf-$name.txt"
 done
 gate "$TREE/build-history-cpu/history-fingerprint-test" > "$HERE/evidence/fingerprint-test.log" 2>&1
+gate python3 - "$TREE/build-history-cpu/history-fingerprint-test" > "$HERE/evidence/host-suffix-mutant.log" 2>&1 <<'PY'
+import signal
+import subprocess
+import sys
+for mode in ('--host-suffix-mutant', '--host-callback-mutant'):
+    result = subprocess.run([sys.argv[1], mode], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    print(result.stdout)
+    if result.returncode != -signal.SIGABRT or 'GGML_ASSERT(i_start == cgraph->n_nodes) failed' not in result.stdout:
+        raise SystemExit(mode + ': negative control did not reproduce the planner assertion')
+    print(mode + ': expected SIGABRT and i_start assertion')
+PY
 gate python3 "$HERE/test_history.py" > "$HERE/evidence/python-tests-final.log" 2>&1
-gate python3 "$HERE/cpu_check.py" --binary "$TREE/build-history-cpu/history-root" --out "$TREE/build-history-cpu/cpu-model" \
+CPU_OUT=${HISTORY_CPU_OUT:-$TREE/build-history-cpu/cpu-model}
+gate python3 "$HERE/cpu_check.py" --binary "$TREE/build-history-cpu/history-root" --out "$CPU_OUT" \
     > "$HERE/evidence/cpu-model-check.log" 2>&1
-cp "$TREE/build-history-cpu/cpu-model/SUMMARY.json" "$HERE/evidence/cpu-model-summary.json"
+cp "$CPU_OUT/SUMMARY.json" "$HERE/evidence/cpu-model-summary.json"
 gate python3 "$HERE/render.py"

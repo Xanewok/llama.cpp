@@ -23,10 +23,19 @@
 
 static bool complete_meta_node = false;
 static uint64_t meta_completion_calls = 0;
+static uint64_t meta_host_suffix_calls = 0;
 static ggml_tensor * observed_node = nullptr;
 static void (*capture_inputs_hook)(ggml_tensor *) = nullptr;
 
-// A one-node callback graph must complete its AllReduce before the next callback graph assumes synchronized inputs.
+static bool plain_host_view(const ggml_tensor * node) {
+    const bool view = node->op == GGML_OP_VIEW || node->op == GGML_OP_RESHAPE ||
+                      node->op == GGML_OP_PERMUTE || node->op == GGML_OP_TRANSPOSE;
+    return view && node->view_src && node->view_src->op == GGML_OP_NONE &&
+           ggml_backend_buffer_is_host(node->view_src->buffer) &&
+           !ggml_backend_buffer_is_meta(node->view_src->buffer);
+}
+
+// Complete callback AllReduce and close Meta plans whose last nodes are skipped host views.
 extern "C" enum ggml_status ggml_backend_graph_compute_async(ggml_backend_t backend, ggml_cgraph * graph) {
     if (observed_node && graph->n_nodes == 1 && graph->nodes[0] == observed_node) {
         ggml_backend_synchronize(backend);
@@ -34,11 +43,25 @@ extern "C" enum ggml_status ggml_backend_graph_compute_async(ggml_backend_t back
         observed_node = nullptr;
         capture_inputs_hook(node);
     }
-    if (!complete_meta_node || !ggml_backend_is_meta(backend) || graph->n_nodes != 1) {
+    if (!ggml_backend_is_meta(backend)) {
+        return backend->iface.graph_compute(backend, graph);
+    }
+    int last = graph->n_nodes - 1;
+    while (last >= 0 && plain_host_view(graph->nodes[last])) {
+        --last;
+    }
+    const bool host_suffix = last + 1 < graph->n_nodes;
+    if (host_suffix) {
+        ++meta_host_suffix_calls;
+    }
+    if (last < 0 && host_suffix) {
+        return GGML_STATUS_SUCCESS;
+    }
+    if (!host_suffix && (!complete_meta_node || graph->n_nodes != 1)) {
         return backend->iface.graph_compute(backend, graph);
     }
     static std::map<ggml_tensor *, ggml_tensor> observers;
-    auto * node = graph->nodes[0];
+    auto * node = graph->nodes[last];
     auto & observer = observers[node];
     observer = *node;
     observer.op = GGML_OP_VIEW;
@@ -54,9 +77,10 @@ extern "C" enum ggml_status ggml_backend_graph_compute_async(ggml_backend_t back
         return GGML_STATUS_FAILED;
     }
     auto completed = *graph;
-    ggml_tensor * nodes[] = {node, &observer};
-    completed.nodes = nodes;
-    completed.n_nodes = completed.size = 2;
+    std::vector<ggml_tensor *> nodes(graph->nodes, graph->nodes + graph->n_nodes);
+    nodes.push_back(&observer);
+    completed.nodes = nodes.data();
+    completed.n_nodes = completed.size = int(nodes.size());
     completed.uid = 0;
     ++meta_completion_calls;
     return backend->iface.graph_compute(backend, &completed);
@@ -492,7 +516,8 @@ int main(int argc, char ** argv) {
     logits.close();
     trace.output.close();
     require(bool(logits) && bool(trace.output) && (!traced || trace.completed > 0), "incomplete output");
-    fprintf(stderr, "history-root: complete nodes=%d traced=%d requests=%zu meta_completion_calls=%llu\n",
-            trace.completed, traced, requests.size(), (unsigned long long) meta_completion_calls);
+    fprintf(stderr, "history-root: complete nodes=%d traced=%d requests=%zu meta_completion_calls=%llu meta_host_suffix_calls=%llu\n",
+            trace.completed, traced, requests.size(), (unsigned long long) meta_completion_calls,
+            (unsigned long long) meta_host_suffix_calls);
     return 0;
 }

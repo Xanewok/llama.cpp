@@ -1,0 +1,50 @@
+{
+  "canary_status_M": {
+    "rc": -6,
+    "timed_out": false,
+    "maps_checked": true,
+    "elapsed_s_M": 106.85793805122375,
+    "faults": 0
+  },
+  "requests_D": [
+    {
+      "request_D": 0,
+      "depth_D": 128,
+      "steps_D": 4
+    },
+    {
+      "request_D": 1,
+      "depth_D": 256,
+      "steps_D": 4
+    },
+    {
+      "request_D": 2,
+      "depth_D": 512,
+      "steps_D": 4
+    }
+  ],
+  "complete_native_trace_rows_M": 55,
+  "last_complete_record_M": {
+    "domain": "target",
+    "phase": "prefill",
+    "index": 54
+  },
+  "last_complete_output_M": {
+    "name": "beta_sigmoid-0",
+    "op": "UNARY"
+  },
+  "interposer_return_offset_D": "0x9ec4",
+  "interposer_call_offset_M": "0x9ec1",
+  "private_layouts": {
+    "stack9-p55": {
+      "commit": "45d90d3e4",
+      "sha256": "e375272bbd87d21cc28f23130e5b07b8002773d47d65f2d84847006420541c4f",
+      "generated_header_equal_M": true
+    },
+    "stack10": {
+      "commit": "a588f2a44",
+      "sha256": "e375272bbd87d21cc28f23130e5b07b8002773d47d65f2d84847006420541c4f",
+      "generated_header_equal_M": true
+    }
+  }
+}

@@ -1,0 +1,36 @@
+
+/mnt/scratch/work/history-root/a1/canary/build-stack9-p55/history-root:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+0000000000009e54 <ggml_backend_graph_compute_async+0x2e4>:
+    9e54:	0f 6f 5d 00          	movq   0x0(%rbp),%mm3
+    9e58:	48 8d 74 24 20       	lea    0x20(%rsp),%rsi
+    9e5d:	f3 0f 6f 6d 20       	movdqu 0x20(%rbp),%xmm5
+    9e62:	f3 0f 6f 75 30       	movdqu 0x30(%rbp),%xmm6
+    9e67:	48 89 df             	mov    %rbx,%rdi
+    9e6a:	f3 0f 6f 7d 40       	movdqu 0x40(%rbp),%xmm7
+    9e6f:	f3 0f 6f 55 50       	movdqu 0x50(%rbp),%xmm2
+    9e74:	0f 29 64 24 30       	movaps %xmm4,0x30(%rsp)
+    9e79:	66 0f 6f 0c 24       	movdqa (%rsp),%xmm1
+    9e7e:	48 89 44 24 30       	mov    %rax,0x30(%rsp)
+    9e83:	48 8b 05 f6 cb 00 00 	mov    0xcbf6(%rip),%rax        # 16a80 <_IO_stdin_used+0xa80>
+    9e8a:	0f 29 5c 24 20       	movaps %xmm3,0x20(%rsp)
+    9e8f:	0f 29 54 24 70       	movaps %xmm2,0x70(%rsp)
+    9e94:	48 83 05 04 f2 00 00 	addq   $0x1,0xf204(%rip)        # 190a0 <_ZL21meta_completion_calls>
+    9e9b:	01 
+    9e9c:	48 89 44 24 20       	mov    %rax,0x20(%rsp)
+    9ea1:	48 c7 44 24 78 00 00 	movq   $0x0,0x78(%rsp)
+    9ea8:	00 00 
+    9eaa:	0f 29 6c 24 40       	movaps %xmm5,0x40(%rsp)
+    9eaf:	0f 29 74 24 50       	movaps %xmm6,0x50(%rsp)
+    9eb4:	0f 29 7c 24 60       	movaps %xmm7,0x60(%rsp)
+    9eb9:	0f 29 8c 24 80 00 00 	movaps %xmm1,0x80(%rsp)
+    9ec0:	00 
+    9ec1:	ff 53 68             	call   *0x68(%rbx)
+    9ec4:	48                   	rex.W
+    9ec5:	8b                   	.byte 0x8b
+    9ec6:	94                   	xchg   %eax,%esp
+    9ec7:	24 98                	and    $0x98,%al
+	...
