@@ -19,27 +19,34 @@ def estimate_rows(p_ids, p, q_ids, q, tokens):
     return beta, r, 1 + (weights * beta).sum(axis=1)
 
 
-def draft_probs(ids, logits, subset=None, temp=1.0, top_k=10, suppress=()):
+def draft_candidates(ids, logits, subset=None, top_k=10, suppress=()):
     logits = np.array(logits, dtype=np.float64, copy=True)
     valid = (ids >= 0) & np.isfinite(logits) & ~np.isin(ids, suppress)
     if subset is not None:
         valid &= np.isin(ids, subset)
     count = valid.sum(axis=-1)
-    if np.any(count < top_k):
-        raise ValueError("top-128 coverage insufficient: fewer than top_k subset ids; use a real sliced-head run")
     floor = np.min(np.where((ids >= 0) & np.isfinite(logits), logits, np.inf), axis=-1)
     complete = np.any(ids < 0, axis=-1)
     logits[~valid] = -np.inf
     order_all = np.argsort(-logits, axis=-1, kind="stable")
     sorted_logits = np.take_along_axis(logits, order_all, axis=-1)
-    if subset is not None:
-        if np.any(~complete & (sorted_logits[..., top_k - 1] <= floor)):
-            raise ValueError("top-128 boundary does not prove subset top_k coverage; use a real sliced-head run")
-        if logits.shape[-1] > top_k and np.any(sorted_logits[..., top_k - 1] == sorted_logits[..., top_k]):
-            raise ValueError("top_k boundary tie: offline subset ordering is not proven equivalent")
+    enough = count >= top_k
+    boundary = enough & ~complete & (sorted_logits[..., top_k - 1] <= floor) if subset is not None else np.zeros(count.shape, dtype=bool)
+    tie = enough & (sorted_logits[..., top_k - 1] == sorted_logits[..., top_k]) if subset is not None and logits.shape[-1] > top_k else np.zeros(count.shape, dtype=bool)
+    reasons = {'insufficient': ~enough, 'boundary': boundary, 'tie': tie}
     order = order_all[..., :top_k]
-    ids = np.take_along_axis(ids, order, axis=-1)
-    logits = np.take_along_axis(logits, order, axis=-1) / temp
+    return np.take_along_axis(ids, order, axis=-1), sorted_logits[..., :top_k], reasons
+
+
+def draft_probs(ids, logits, subset=None, temp=1.0, top_k=10, suppress=()):
+    ids, logits, reasons = draft_candidates(ids, logits, subset, top_k, suppress)
+    if np.any(reasons['insufficient']):
+        raise ValueError("top-128 coverage insufficient: fewer than top_k subset ids; use a real sliced-head run")
+    if np.any(reasons['boundary']):
+        raise ValueError("top-128 boundary does not prove subset top_k coverage; use a real sliced-head run")
+    if np.any(reasons['tie']):
+        raise ValueError("top_k boundary tie: offline subset ordering is not proven equivalent")
+    logits = logits / temp
     q = np.exp(logits - logits.max(axis=-1, keepdims=True))
     q /= q.sum(axis=-1, keepdims=True)
     return ids, q
@@ -65,7 +72,7 @@ def validate_rows(ids, probs, n_vocab):
         raise ValueError("probability row has duplicate positive-mass ids")
 
 
-def load_stream(target, arm, stream, subset=None):
+def load_stream(target, arm, stream, subset=None, start_mask=None):
     a = json.loads((target / "header.json").read_text())
     b = json.loads((arm / "header.json").read_text())
     if a["format"] != "spec-tf-v1" or b["format"] != a["format"]:
@@ -79,6 +86,10 @@ def load_stream(target, arm, stream, subset=None):
     ids = array(root_b, "q_ids", "<i4", [len(starts), k, qk])
     logits = array(root_b, "q_logits", "<f4", ids.shape)
     full = starts + k < n
+    if start_mask is not None:
+        if start_mask.shape != full.shape:
+            raise ValueError("start mask shape differs from saved starts")
+        full &= start_mask
     starts = starts[full]
     ids, logits = ids[full], logits[full]
     # Stored q uses the actual common_sampler chain, including model suppress tokens.

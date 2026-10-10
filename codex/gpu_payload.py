@@ -160,7 +160,7 @@ def run(args):
     cmd = ['python3', str(ROOT / 'codex/spec_tf.py'), '--target', str(target), '--output', str(args.out / 'estimate')]
     for name in arms + ['cov99', 'full']:
         cmd += ['--arm', str(args.out / name)]
-    cmd += ['--spec-draft-vocab', str(VOCAB), '--spec-draft-vocab', str(COV99)]
+    # Sparse full-head logits cannot prove every subset row; estimate from the real slices above.
     stage('estimate', cmd)
     (args.out / 'complete.json').write_text(json.dumps({'elapsed_s_M': time.monotonic() - started, 'absolute_label': 'G'}))
 
