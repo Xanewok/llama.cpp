@@ -1467,10 +1467,11 @@ static void test_penalties(const test_params & params) {
 
 // This test verifies that it is possible to have two different backend samplers,
 // one that uses the backend dist sampler, and another that uses CPU dist sampler.
-// Sets the logits to 0 for the first n_tie tokens and -1, -2, ... after them (exact in float),
-// to get ties at the maximum. Must be first in the chain: it keys on the token index.
+// Sets the logits to 0 for the first n_tie tokens and -1, -2, ... after them (exact in float), to get
+// ties at the maximum; tokens from n_finite on get -inf. Must be first in the chain: it keys on the index.
 struct test_tie_sampler {
     int32_t n_tie;
+    int32_t n_finite;
 };
 
 static const char * test_tie_sampler_name(const llama_sampler * /*smpl*/) {
@@ -1480,7 +1481,8 @@ static const char * test_tie_sampler_name(const llama_sampler * /*smpl*/) {
 static void test_tie_sampler_apply(llama_sampler * smpl, llama_token_data_array * cur_p) {
     const auto * ctx = (const test_tie_sampler *) smpl->ctx;
     for (size_t i = 0; i < cur_p->size; ++i) {
-        cur_p->data[i].logit = 0.0f - (float) std::max<int32_t>((int32_t) i - (ctx->n_tie - 1), 0);
+        cur_p->data[i].logit = (int32_t) i >= ctx->n_finite ? -INFINITY :
+                0.0f - (float) std::max<int32_t>((int32_t) i - (ctx->n_tie - 1), 0);
     }
 }
 
@@ -1499,7 +1501,12 @@ static void test_tie_sampler_backend_apply(
     const int64_t n = ggml_nelements(data->logits);
 
     ggml_tensor * idx = ggml_arange(ctx, 0.0f, (float) n, 1.0f);
-    data->logits = ggml_neg(ctx, ggml_relu(ctx, ggml_scale_bias(ctx, idx, 1.0f, -(float) (sctx->n_tie - 1))));
+    ggml_tensor * cur = ggml_neg(ctx, ggml_relu(ctx, ggml_scale_bias(ctx, idx, 1.0f, -(float) (sctx->n_tie - 1))));
+    if (sctx->n_finite < n) {
+        // log(1) = 0 (keep), log(0) = -INF
+        cur = ggml_add(ctx, cur, ggml_log(ctx, ggml_step(ctx, ggml_scale_bias(ctx, idx, -1.0f, (float) sctx->n_finite - 0.5f))));
+    }
+    data->logits = cur;
 }
 
 static llama_sampler_i test_tie_sampler_i = {
@@ -1517,30 +1524,38 @@ static llama_sampler_i test_tie_sampler_i = {
     /* .copy_state        = */ nullptr,
 };
 
-static llama_sampler * test_tie_sampler_init(int32_t n_tie) {
-    return llama_sampler_init(&test_tie_sampler_i, new test_tie_sampler { n_tie });
+static llama_sampler * test_tie_sampler_init(int32_t n_tie, int32_t n_finite = INT32_MAX) {
+    return llama_sampler_init(&test_tie_sampler_i, new test_tie_sampler { n_tie, n_finite });
 }
 
-// kept logits in descending order; tied tokens at a cut are interchangeable, so compare these
-// instead of the token ids when the kept set is not unique
-static std::vector<float> sorted_kept_logits(const std::vector<llama_token_data> & data) {
-    std::vector<float> result;
-    for (const auto & item : data) {
-        result.push_back(item.logit);
-    }
-    std::sort(result.begin(), result.end(), std::greater<float>());
-    return result;
-}
+// Where the last sampler of the chain runs once the context has offered the chain to the backend:
+// its name starts with '+' on the backend and '-' on the CPU.
+struct backend_placement {
+    std::string name;
+    uint32_t    n_logits; // sampled logits the backend produced
+    uint32_t    n_masked; // of which -inf
+};
 
-static std::vector<float> sorted_kept_logits(const backend_sampler_output & output) {
-    std::vector<float> result;
-    for (const float logit : output.logits) {
-        if (std::isfinite(logit)) {
-            result.push_back(logit);
-        }
+static backend_placement get_backend_placement(
+        const test_params & params, const std::string & prompt, const sampler_setup_fn & add_samplers) {
+    const int seq_id = 0;
+    llama_sampler_ptr chain = make_sampler_chain(add_samplers, [](llama_sampler *) {});
+    std::vector<llama_sampler_seq_config> configs = {{ seq_id, chain.get() }};
+    test_context ctx(params, configs);
+
+    GGML_ASSERT(ctx.decode({{ seq_id, prompt }}));
+    llama_synchronize(ctx.ctx.get());
+
+    const llama_sampler * last = llama_sampler_chain_get(chain.get(), llama_sampler_chain_n(chain.get()) - 1);
+    const int32_t idx = ctx.idx_for_seq(seq_id);
+    const uint32_t n_logits = llama_get_sampled_logits_count_ith(ctx.ctx.get(), idx);
+    const float * logits = llama_get_sampled_logits_ith(ctx.ctx.get(), idx);
+
+    uint32_t n_masked = 0;
+    for (uint32_t i = 0; logits != nullptr && i < n_logits; ++i) {
+        n_masked += std::isinf(logits[i]) && logits[i] < 0.0f;
     }
-    std::sort(result.begin(), result.end(), std::greater<float>());
-    return result;
+    return { llama_sampler_name(last), n_logits, n_masked };
 }
 
 static void test_min_p_one(const test_params & params) {
@@ -1549,42 +1564,52 @@ static void test_min_p_one(const test_params & params) {
 
     struct min_p_case {
         const char * name;
-        int32_t      n_tie; // 0: the model logits
+        int32_t      n_tie;    // 0: the model logits
+        int32_t      n_finite; // tokens from here on are -inf
         float        p;
-        size_t       n_kept; // what the CPU sampler keeps on tied logits
     };
 
+    // the backend keeps every logit >= max + log(p), the same set of ids as the CPU sampler
     const min_p_case cases[] = {
-        { "model p=1",    0, 1.0f,  0 },
-        { "model p=1.05", 0, 1.05f, 0 },
-        { "ties2 p=1",    2, 1.0f,  2 }, // equality keeps every tied maximum
-        { "ties2 p=1.05", 2, 1.05f, 1 }, // nothing reaches the threshold: the CPU sampler keeps one token
-        { "ties6 p=1",    6, 1.0f,  6 },
+        { "model p=1",           0, INT32_MAX, 1.0f },
+        { "ties2 p=1",           2, INT32_MAX, 1.0f }, // equality keeps every tied maximum
+        { "ties6 p=1",           6, INT32_MAX, 1.0f },
+        { "ties1 p=0.5",         1, INT32_MAX, 0.5f }, // the first of [0, -1, ...] is not tied
+        { "ties2 -inf p=1",      2, 3,         1.0f }, // [0, 0, -1, -inf, ...]
+        { "ties2 -inf p=0.5",    2, 3,         0.5f },
+        { "ties1 only -inf p=1", 1, 1,         1.0f }, // [0, -inf, ...]
     };
 
     int n_fail = 0;
     for (const auto & c : cases) {
         const auto add_samplers = [&](llama_sampler * chain) {
             if (c.n_tie > 0) {
-                llama_sampler_chain_add(chain, test_tie_sampler_init(c.n_tie));
+                llama_sampler_chain_add(chain, test_tie_sampler_init(c.n_tie, c.n_finite));
             }
             llama_sampler_chain_add(chain, llama_sampler_init_min_p(c.p, 0));
         };
+
+        const backend_placement placement = get_backend_placement(params, prompt, add_samplers);
+        GGML_ASSERT(placement.name == "+min-p" && placement.n_masked > 0);
+
         const sampler_comparison_output output = run_sampler_comparison(
                 params, prompt, raw, add_samplers, [](llama_sampler *) {});
+        GGML_ASSERT(!output.expected.empty());
 
-        const std::vector<float> cpu_kept     = sorted_kept_logits(output.expected);
-        const std::vector<float> backend_kept = sorted_kept_logits(output.actual);
-        GGML_ASSERT(!cpu_kept.empty());
-        GGML_ASSERT(c.n_tie == 0 || cpu_kept.size() == c.n_kept);
-
-        bool ok = backend_kept == cpu_kept;
-        if (c.n_tie == 0) {
-            ok = ok && compare_sampler_outputs(c.name, map_logits(output.expected), output.actual).n_mismatch == 0;
-        }
-        printf("min_p_one case '%s': cpu kept %zu, backend kept %zu: %s\n",
-                c.name, cpu_kept.size(), backend_kept.size(), ok ? "ok" : "MISMATCH");
+        const sampler_comparison_stats stats = compare_sampler_outputs(c.name, map_logits(output.expected), output.actual);
+        const bool ok = stats.n_mismatch == 0;
+        printf("min_p_one case '%s': cpu kept %zu: %s\n", c.name, output.expected.size(), ok ? "ok" : "MISMATCH");
         n_fail += !ok;
+    }
+
+    // p > 1 can leave no logit at the threshold and the CPU sampler then keeps one of the tied maxima:
+    // the backend declines, the CPU sampler runs
+    for (const float p : { 1.05f, 1.0000001f }) {
+        const backend_placement placement = get_backend_placement(params, prompt, [&](llama_sampler * chain) {
+            llama_sampler_chain_add(chain, llama_sampler_init_min_p(p, 0));
+        });
+        printf("min_p_one case 'p=%.9g declined': last sampler '%s', backend masked %u\n", p, placement.name.c_str(), placement.n_masked);
+        n_fail += placement.name != "-min-p" || placement.n_masked != 0;
     }
 
     GGML_ASSERT(n_fail == 0);
@@ -1597,58 +1622,84 @@ static void test_min_keep(const test_params & params) {
 
     struct min_keep_case {
         const char * name;
-        bool         top_p;  // else min-p
-        int32_t      n_tie;  // 0: the model logits
+        bool         top_p;    // else min-p
+        int32_t      top_k;    // > 0: top-k in front, so the filter sees few candidates
+        int32_t      n_tie;    // 0: the model logits
+        int32_t      n_finite; // tokens from here on are -inf
         float        p;
         size_t       min_keep;
-        size_t       n_kept; // what the CPU sampler keeps on tied logits
     };
 
-    const min_keep_case cases[] = {
-        { "min-p model",         false, 0, 0.99f, 5, 0 },
-        { "min-p model keep=1",  false, 0, 1.0f,  1, 0 },
-        { "min-p ties6 keep=5",  false, 6, 1.0f,  5, 6 }, // the six tied maxima pass the threshold
-        { "min-p ties3 keep=5",  false, 3, 1.0f,  5, 5 }, // the two next logits are forced in
-        { "min-p ties2 p>1",     false, 2, 1.05f, 3, 3 }, // nothing passes the threshold: only min_keep applies
-        { "min-p ties6 p>1",     false, 6, 1.05f, 3, 3 },
-        { "top-p model",         true,  0, 0.01f, 5, 0 },
-        { "top-p ties6 keep=1",  true,  6, 0.01f, 1, 1 },
-        { "top-p ties6 keep=5",  true,  6, 0.01f, 5, 5 },
-        { "top-p ties3 keep=5",  true,  3, 0.01f, 5, 5 },
+    // min_keep <= 1 runs on the backend and must keep the ids of the CPU sampler
+    const min_keep_case backend_cases[] = {
+        { "min-p model keep=1",   false, 0, 0, INT32_MAX, 1.0f, 1 },
+        { "min-p ties6 keep=0",   false, 0, 6, INT32_MAX, 1.0f, 0 },
+        { "min-p ties6 keep=1",   false, 0, 6, INT32_MAX, 1.0f, 1 },
+        { "min-p -inf keep=1",    false, 0, 2, 3,         0.5f, 1 },
+        { "min-p top-k 2 keep=1", false, 2, 0, INT32_MAX, 0.9f, 1 },
+        { "top-p distinct keep=0", true, 0, 1, INT32_MAX, 0.9f, 0 }, // [0, -1, -2, ...]
+        { "top-p distinct keep=1", true, 0, 1, INT32_MAX, 0.9f, 1 },
+        { "top-p -inf keep=1",    true,  0, 1, 3,         0.9f, 1 },
+        { "top-p top-k 2 keep=1", true,  2, 0, INT32_MAX, 0.9f, 1 },
+    };
+
+    // min_keep > 1 stays on the CPU sampler, which keeps at least min(min_keep, n_candidates) tokens
+    const min_keep_case cpu_cases[] = {
+        { "min-p keep=5",                false, 0, 0, INT32_MAX, 0.99f, 5 },
+        { "min-p ties6 keep=5",          false, 0, 6, INT32_MAX, 1.0f,  5 },
+        { "min-p ties2 p>1 keep=3",      false, 0, 2, INT32_MAX, 1.05f, 3 },
+        { "min-p keep=SIZE_MAX",         false, 0, 0, INT32_MAX, 0.99f, SIZE_MAX },
+        { "min-p top-k 2 keep=SIZE_MAX", false, 2, 0, INT32_MAX, 0.9f,  SIZE_MAX },
+        { "top-p keep=5",                true,  0, 0, INT32_MAX, 0.01f, 5 },
+        { "top-p ties6 keep=5",          true,  0, 6, INT32_MAX, 0.01f, 5 },
+        { "top-p keep=SIZE_MAX",         true,  0, 0, INT32_MAX, 0.01f, SIZE_MAX },
+        { "top-p top-k 2 keep=SIZE_MAX", true,  2, 0, INT32_MAX, 0.5f,  SIZE_MAX },
+    };
+
+    const auto make_add_samplers = [](const min_keep_case & c) {
+        return [c](llama_sampler * chain) {
+            if (c.n_tie > 0) {
+                llama_sampler_chain_add(chain, test_tie_sampler_init(c.n_tie, c.n_finite));
+            }
+            if (c.top_k > 0) {
+                llama_sampler_chain_add(chain, llama_sampler_init_top_k(c.top_k));
+            }
+            llama_sampler_chain_add(chain, c.top_p ? llama_sampler_init_top_p(c.p, c.min_keep)
+                                                   : llama_sampler_init_min_p(c.p, c.min_keep));
+        };
     };
 
     int n_fail = 0;
-    for (const auto & c : cases) {
-        const auto init_filter = [&](size_t min_keep) {
-            return c.top_p ? llama_sampler_init_top_p(c.p, min_keep) : llama_sampler_init_min_p(c.p, min_keep);
-        };
-        const auto add_samplers = [&](llama_sampler * chain) {
-            if (c.n_tie > 0) {
-                llama_sampler_chain_add(chain, test_tie_sampler_init(c.n_tie));
-            }
-            llama_sampler_chain_add(chain, init_filter(c.min_keep));
-        };
 
-        if (c.n_tie == 0 && c.min_keep > 1) {
-            // without min_keep the filter keeps fewer tokens, so the case exercises it
-            llama_sampler_ptr cpu_sampler(init_filter(0));
-            GGML_ASSERT(apply_cpu_sampler(raw, cpu_sampler.get()).size() < c.min_keep);
-        }
+    for (const auto & c : backend_cases) {
+        const auto add_samplers = make_add_samplers(c);
+
+        const backend_placement placement = get_backend_placement(params, prompt, add_samplers);
+        GGML_ASSERT(placement.name == (c.top_p ? "+top-p" : "+min-p"));
 
         const sampler_comparison_output output = run_sampler_comparison(
                 params, prompt, raw, add_samplers, [](llama_sampler *) {});
+        GGML_ASSERT(!output.expected.empty());
 
-        const std::vector<float> cpu_kept     = sorted_kept_logits(output.expected);
-        const std::vector<float> backend_kept = sorted_kept_logits(output.actual);
-        GGML_ASSERT(cpu_kept.size() >= c.min_keep);
-        GGML_ASSERT(c.n_tie == 0 || cpu_kept.size() == c.n_kept);
+        const sampler_comparison_stats stats = compare_sampler_outputs(c.name, map_logits(output.expected), output.actual);
+        const bool ok = stats.n_mismatch == 0;
+        printf("min_keep case '%s': backend, cpu kept %zu: %s\n", c.name, output.expected.size(), ok ? "ok" : "MISMATCH");
+        n_fail += !ok;
+    }
 
-        bool ok = backend_kept == cpu_kept;
-        if (c.n_tie == 0) {
-            ok = ok && compare_sampler_outputs(c.name, map_logits(output.expected), output.actual).n_mismatch == 0;
-        }
-        printf("min_keep case '%s': cpu kept %zu, backend kept %zu: %s\n",
-                c.name, cpu_kept.size(), backend_kept.size(), ok ? "ok" : "MISMATCH");
+    for (const auto & c : cpu_cases) {
+        const auto add_samplers = make_add_samplers(c);
+
+        llama_sampler_ptr cpu_chain = make_sampler_chain(add_samplers, [](llama_sampler *) {});
+        const size_t n_cpu = apply_cpu_sampler(raw, cpu_chain.get()).size();
+        const size_t n_candidates = c.top_k > 0 ? (size_t) c.top_k : raw.size();
+        GGML_ASSERT(n_cpu >= std::min(c.min_keep, n_candidates));
+
+        // the backend declines, so nothing is masked before the CPU sampler runs
+        const backend_placement placement = get_backend_placement(params, prompt, add_samplers);
+        const bool ok = placement.name == (c.top_p ? "-top-p" : "-min-p") && placement.n_masked == 0;
+        printf("min_keep case '%s': cpu kept %zu, last sampler '%s': %s\n",
+                c.name, n_cpu, placement.name.c_str(), ok ? "ok" : "MISMATCH");
         n_fail += !ok;
     }
 
@@ -2373,7 +2424,6 @@ static std::vector<const backend_test_case *> collect_tests_to_run(const std::st
                 test.name == "test_set_sampler"                 ||
                 test.name == "test_mixed"                       ||
                 test.name == "test_top_p"                       ||
-                test.name == "test_min_p_one"                   ||
                 test.name == "test_min_keep"                    ||
                 test.name == "test_multi_output_sampling_chain" ||
                 test.name == "test_multi_output_cpu_suffix") {
