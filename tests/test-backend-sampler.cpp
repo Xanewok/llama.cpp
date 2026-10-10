@@ -1467,6 +1467,155 @@ static void test_penalties(const test_params & params) {
 
 // This test verifies that it is possible to have two different backend samplers,
 // one that uses the backend dist sampler, and another that uses CPU dist sampler.
+// Sets the logits to 0 for the first n_tie tokens and -1, -2, ... after them (exact in float), to get
+// ties at the maximum; tokens from n_finite on get -inf. Must be first in the chain: it keys on the index.
+struct test_tie_sampler {
+    int32_t n_tie;
+    int32_t n_finite;
+};
+
+static const char * test_tie_sampler_name(const llama_sampler * /*smpl*/) {
+    return "tie";
+}
+
+static void test_tie_sampler_apply(llama_sampler * smpl, llama_token_data_array * cur_p) {
+    const auto * ctx = (const test_tie_sampler *) smpl->ctx;
+    for (size_t i = 0; i < cur_p->size; ++i) {
+        cur_p->data[i].logit = (int32_t) i >= ctx->n_finite ? -INFINITY :
+                0.0f - (float) std::max<int32_t>((int32_t) i - (ctx->n_tie - 1), 0);
+    }
+}
+
+static void test_tie_sampler_free(llama_sampler * smpl) {
+    delete (test_tie_sampler *) smpl->ctx;
+}
+
+static bool test_tie_sampler_backend_init(
+        llama_sampler * /*smpl*/, ggml_backend_buffer_type_t /*buft*/, uint32_t /*n_outputs_max_per_seq*/) {
+    return true;
+}
+
+static void test_tie_sampler_backend_apply(
+        llama_sampler * smpl, ggml_context * ctx, ggml_cgraph * /*gf*/, llama_sampler_data * data) {
+    const auto * sctx = (const test_tie_sampler *) smpl->ctx;
+    const int64_t n = ggml_nelements(data->logits);
+
+    ggml_tensor * idx = ggml_arange(ctx, 0.0f, (float) n, 1.0f);
+    ggml_tensor * cur = ggml_neg(ctx, ggml_relu(ctx, ggml_scale_bias(ctx, idx, 1.0f, -(float) (sctx->n_tie - 1))));
+    if (sctx->n_finite < n) {
+        // log(1) = 0 (keep), log(0) = -INF
+        cur = ggml_add(ctx, cur, ggml_log(ctx, ggml_step(ctx, ggml_scale_bias(ctx, idx, -1.0f, (float) sctx->n_finite - 0.5f))));
+    }
+    data->logits = cur;
+}
+
+static llama_sampler_i test_tie_sampler_i = {
+    /* .name              = */ test_tie_sampler_name,
+    /* .accept            = */ nullptr,
+    /* .apply             = */ test_tie_sampler_apply,
+    /* .reset             = */ nullptr,
+    /* .clone             = */ nullptr,
+    /* .free              = */ test_tie_sampler_free,
+    /* .backend_init      = */ test_tie_sampler_backend_init,
+    /* .backend_accept    = */ nullptr,
+    /* .backend_apply     = */ test_tie_sampler_backend_apply,
+    /* .backend_set_input = */ nullptr,
+    /* .backend_reset     = */ nullptr,
+    /* .copy_state        = */ nullptr,
+};
+
+static llama_sampler * test_tie_sampler_init(int32_t n_tie, int32_t n_finite = INT32_MAX) {
+    return llama_sampler_init(&test_tie_sampler_i, new test_tie_sampler { n_tie, n_finite });
+}
+
+// Where the last sampler of the chain runs once the context has offered the chain to the backend:
+// its name starts with '+' on the backend and '-' on the CPU.
+struct backend_placement {
+    std::string name;
+    uint32_t    n_logits; // sampled logits the backend produced
+    uint32_t    n_masked; // of which -inf
+};
+
+static backend_placement get_backend_placement(
+        const test_params & params, const std::string & prompt, const sampler_setup_fn & add_samplers) {
+    const int seq_id = 0;
+    llama_sampler_ptr chain = make_sampler_chain(add_samplers, [](llama_sampler *) {});
+    std::vector<llama_sampler_seq_config> configs = {{ seq_id, chain.get() }};
+    test_context ctx(params, configs);
+
+    GGML_ASSERT(ctx.decode({{ seq_id, prompt }}));
+    llama_synchronize(ctx.ctx.get());
+
+    const llama_sampler * last = llama_sampler_chain_get(chain.get(), llama_sampler_chain_n(chain.get()) - 1);
+    const int32_t idx = ctx.idx_for_seq(seq_id);
+    const uint32_t n_logits = llama_get_sampled_logits_count_ith(ctx.ctx.get(), idx);
+    const float * logits = llama_get_sampled_logits_ith(ctx.ctx.get(), idx);
+
+    uint32_t n_masked = 0;
+    for (uint32_t i = 0; logits != nullptr && i < n_logits; ++i) {
+        n_masked += std::isinf(logits[i]) && logits[i] < 0.0f;
+    }
+    return { llama_sampler_name(last), n_logits, n_masked };
+}
+
+static void test_min_p_one(const test_params & params) {
+    const std::string prompt = "Hello";
+    const std::vector<float> raw = decode_raw_logits(params, prompt);
+
+    struct min_p_case {
+        const char * name;
+        int32_t      n_tie;    // 0: the model logits
+        int32_t      n_finite; // tokens from here on are -inf
+        float        p;
+    };
+
+    // the backend keeps every logit >= max + log(p), the same set of ids as the CPU sampler
+    const min_p_case cases[] = {
+        { "model p=1",           0, INT32_MAX, 1.0f },
+        { "ties2 p=1",           2, INT32_MAX, 1.0f }, // equality keeps every tied maximum
+        { "ties6 p=1",           6, INT32_MAX, 1.0f },
+        { "ties1 p=0.5",         1, INT32_MAX, 0.5f }, // the first of [0, -1, ...] is not tied
+        { "ties2 -inf p=1",      2, 3,         1.0f }, // [0, 0, -1, -inf, ...]
+        { "ties2 -inf p=0.5",    2, 3,         0.5f },
+        { "ties1 only -inf p=1", 1, 1,         1.0f }, // [0, -inf, ...]
+    };
+
+    int n_fail = 0;
+    for (const auto & c : cases) {
+        const auto add_samplers = [&](llama_sampler * chain) {
+            if (c.n_tie > 0) {
+                llama_sampler_chain_add(chain, test_tie_sampler_init(c.n_tie, c.n_finite));
+            }
+            llama_sampler_chain_add(chain, llama_sampler_init_min_p(c.p, 0));
+        };
+
+        const backend_placement placement = get_backend_placement(params, prompt, add_samplers);
+        GGML_ASSERT(placement.name == "+min-p" && placement.n_masked > 0);
+
+        const sampler_comparison_output output = run_sampler_comparison(
+                params, prompt, raw, add_samplers, [](llama_sampler *) {});
+        GGML_ASSERT(!output.expected.empty());
+
+        const sampler_comparison_stats stats = compare_sampler_outputs(c.name, map_logits(output.expected), output.actual);
+        const bool ok = stats.n_mismatch == 0;
+        printf("min_p_one case '%s': cpu kept %zu: %s\n", c.name, output.expected.size(), ok ? "ok" : "MISMATCH");
+        n_fail += !ok;
+    }
+
+    // p > 1 can leave no logit at the threshold and the CPU sampler then keeps one of the tied maxima:
+    // the backend declines, the CPU sampler runs
+    for (const float p : { 1.05f, 1.0000001f }) {
+        const backend_placement placement = get_backend_placement(params, prompt, [&](llama_sampler * chain) {
+            llama_sampler_chain_add(chain, llama_sampler_init_min_p(p, 0));
+        });
+        printf("min_p_one case 'p=%.9g declined': last sampler '%s', backend masked %u\n", p, placement.name.c_str(), placement.n_masked);
+        n_fail += placement.name != "-min-p" || placement.n_masked != 0;
+    }
+
+    GGML_ASSERT(n_fail == 0);
+    printf("backend min-p p >= 1 test PASSED\n");
+}
+
 static void test_mixed(const test_params & params) {
     struct llama_sampler_chain_params chain_params_0 = llama_sampler_chain_default_params();
     llama_sampler_ptr sampler_chain_0(llama_sampler_chain_init(chain_params_0));
@@ -2077,6 +2226,7 @@ static const backend_test_case BACKEND_TESTS[] = {
     { "test_top_k",                  test_top_k,                  true },
     { "test_top_p",                  test_top_p,                  true },
     { "test_min_p",                  test_min_p,                  true },
+    { "test_min_p_one",              test_min_p_one,              true },
     { "test_logit_bias",             test_logit_bias,             true },
     { "test_penalties",              test_penalties,              true },
     // multiple sequences
