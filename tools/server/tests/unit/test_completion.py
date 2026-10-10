@@ -1,6 +1,7 @@
 import pytest
 import requests
 import time
+import re
 import random
 
 from openai import OpenAI
@@ -668,6 +669,59 @@ def test_completion_prompt_cache():
         assert "tokens" in res.body and isinstance(res.body["tokens"], list)
 
 
+HEAD_TEXT = "Once upon a time there was a girl. She had a"
+TAIL_TEXT = ". They went to the park and played all day long."
+MORE_TEXT = " Then they went home."
+
+
+def tokenize(text: str) -> list[int]:
+    res = server.make_request("POST", "/tokenize", data={"content": text, "add_special": False})
+    assert res.status_code == 200
+    return res.body["tokens"]
+
+
+def detokenize(tokens: list[int]) -> str:
+    res = server.make_request("POST", "/detokenize", data={"tokens": tokens})
+    assert res.status_code == 200
+    return res.body["content"]
+
+
+def complete_tokens(prompt: list[int], **kwargs) -> dict:
+    res = server.make_request("POST", "/completion", data={
+        "prompt": prompt, "n_predict": 1, "temperature": 0.0, "cache_prompt": True, **kwargs,
+    })
+    assert res.status_code == 200
+    return res.body["timings"]
+
+
+def pieces_after(head: list[int]) -> dict[int, str]:
+    # piece of every token, measured after `head` so that a leading space is kept
+    base = detokenize(head)
+    return dict(parallel_function_calls([
+        ((lambda t=t: (t, detokenize(head + [t])[len(base):])), ()) for t in range(3, 512)
+    ]))
+
+
+def find_split(piece: dict[int, str], n_parts: int) -> tuple[int, list[int]]:
+    # a token whose piece is also spelled by `n_parts` other tokens
+    by_piece = {}
+    for t, p in piece.items():
+        by_piece.setdefault(p, t)
+
+    def cut(p: str, n: int) -> list[int] | None:
+        if n == 1:
+            return [by_piece[p]] if p in by_piece else None
+        for i in range(1, len(p)):
+            if p[:i] in by_piece and (rest := cut(p[i:], n - 1)):
+                return [by_piece[p[:i]]] + rest
+        return None
+
+    for t, p in piece.items():
+        if by_piece[p] == t and (parts := cut(p, n_parts)):
+            return t, parts
+    pytest.skip(f"no token is spelled by {n_parts} other tokens")
+
+
 # a sampled non-canonical split is not reproduced by re-tokenizing the text, the cached prefix must still be reused
 def test_prompt_cache_noncanonical_split():
     global server
@@ -676,59 +730,60 @@ def test_prompt_cache_noncanonical_split():
     server.n_batch = 512
     server.start()
 
-    def tokenize(text: str) -> list[int]:
-        res = server.make_request("POST", "/tokenize", data={"content": text, "add_special": False})
-        assert res.status_code == 200
-        return res.body["tokens"]
+    head = tokenize(HEAD_TEXT)
+    tail = tokenize(TAIL_TEXT)
+    more = tokenize(MORE_TEXT)
 
-    def detokenize(tokens: list[int]) -> str:
-        res = server.make_request("POST", "/detokenize", data={"tokens": tokens})
-        assert res.status_code == 200
-        return res.body["content"]
-
-    def complete(prompt: list[int]) -> dict:
-        res = server.make_request("POST", "/completion", data={
-            "prompt": prompt, "n_predict": 1, "temperature": 0.0, "cache_prompt": True,
-        })
-        assert res.status_code == 200
-        return res.body["timings"]
-
-    head = tokenize("Once upon a time there was a girl. She had a")
-    tail = tokenize(". They went to the park and played all day long.")
-    more = tokenize(" Then they went home.")
-
-    # piece of every token, measured after `head` so that a leading space is kept
-    base = detokenize(head)
-    piece = {t: detokenize(head + [t])[len(base):] for t in range(3, 512)}
-    by_piece = {}
-    for t, p in piece.items():
-        by_piece.setdefault(p, t)
-
-    # a token whose piece is also spelled by two other tokens
-    split = None
-    for t, p in piece.items():
-        if by_piece[p] != t:
-            continue
-        for i in range(1, len(p)):
-            if p[:i] in by_piece and p[i:] in by_piece:
-                split = (t, [by_piece[p[:i]], by_piece[p[i:]]])
-                break
-        if split:
-            break
-    assert split is not None
-    whole, parts = split
+    piece = pieces_after(head)
+    whole, parts = find_split(piece, 2)
 
     cached = head + parts + tail
     fresh  = head + [whole] + tail + more
     assert detokenize(cached) == detokenize(head + [whole] + tail)
 
-    complete(cached)
-    timings = complete(fresh)
+    complete_tokens(cached)
+    timings = complete_tokens(fresh)
     assert timings["cache_n"] == len(cached)
     assert timings["prompt_n"] == len(more)
 
     # negative control: a different text at the same place only reuses the head
     other = [t for t in piece if piece[t].strip() and piece[t] not in (piece[whole], "".join(piece[x] for x in parts))][0]
-    complete(cached)
-    timings = complete(head + [other] + tail + more)
+    complete_tokens(cached)
+    timings = complete_tokens(head + [other] + tail + more)
     assert timings["cache_n"] <= len(head)
+
+
+# n_keep that points into a span the cache spells with fewer tokens must keep the whole span
+def test_prompt_cache_noncanonical_split_n_keep(tmp_path):
+    global server
+    server.n_slots = 1
+    server.n_ctx = 256
+    server.enable_ctx_shift = True
+    server.log_path = str(tmp_path / "server.log")
+    server.start()
+
+    head = tokenize(HEAD_TEXT)
+    tail = tokenize(TAIL_TEXT)
+    more = tokenize(MORE_TEXT)
+
+    whole, parts = find_split(pieces_after(head), 3)
+    cached = head + [whole] + tail
+    fresh  = head + parts + tail + more
+
+    def n_keep_at_shift(prompt: list[int], n_keep: int) -> tuple[int, dict]:
+        timings = complete_tokens(prompt, n_keep=n_keep, n_predict=240, ignore_eos=True)
+        with open(server.log_path) as f:
+            hits = re.findall(r"slot context shift, n_keep = (\d+)", f.read())
+        assert hits
+        return int(hits[-1]), timings
+
+    # the shift keeps n_keep plus the BOS token, if the model adds one
+    n_bos = n_keep_at_shift(cached, 5)[0] - 5
+
+    # the shift dropped tokens from the slot, cache the full prompt again
+    complete_tokens(cached)
+
+    # fresh spells head + 3 tokens where cached has one: the position after the second token is inside the span
+    n_keep, timings = n_keep_at_shift(fresh, len(head) + 2 - n_bos)
+    assert timings["cache_n"] == len(cached)
+    assert n_keep == len(head) + 1 # the end of the span in the cached tokens
