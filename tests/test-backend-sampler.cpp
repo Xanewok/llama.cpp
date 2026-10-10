@@ -1616,6 +1616,97 @@ static void test_min_p_one(const test_params & params) {
     printf("backend min-p p >= 1 test PASSED\n");
 }
 
+static void test_min_keep(const test_params & params) {
+    const std::string prompt = "Hello";
+    const std::vector<float> raw = decode_raw_logits(params, prompt);
+
+    struct min_keep_case {
+        const char * name;
+        bool         top_p;    // else min-p
+        int32_t      top_k;    // > 0: top-k in front, so the filter sees few candidates
+        int32_t      n_tie;    // 0: the model logits
+        int32_t      n_finite; // tokens from here on are -inf
+        float        p;
+        size_t       min_keep;
+    };
+
+    // min_keep <= 1 runs on the backend and must keep the ids of the CPU sampler
+    const min_keep_case backend_cases[] = {
+        { "min-p model keep=1",   false, 0, 0, INT32_MAX, 1.0f, 1 },
+        { "min-p ties6 keep=0",   false, 0, 6, INT32_MAX, 1.0f, 0 },
+        { "min-p ties6 keep=1",   false, 0, 6, INT32_MAX, 1.0f, 1 },
+        { "min-p -inf keep=1",    false, 0, 2, 3,         0.5f, 1 },
+        { "min-p top-k 2 keep=1", false, 2, 0, INT32_MAX, 0.9f, 1 },
+        { "top-p distinct keep=0", true, 0, 1, INT32_MAX, 0.9f, 0 }, // [0, -1, -2, ...]
+        { "top-p distinct keep=1", true, 0, 1, INT32_MAX, 0.9f, 1 },
+        { "top-p -inf keep=1",    true,  0, 1, 3,         0.9f, 1 },
+        { "top-p top-k 2 keep=1", true,  2, 0, INT32_MAX, 0.9f, 1 },
+    };
+
+    // min_keep > 1 stays on the CPU sampler, which keeps at least min(min_keep, n_candidates) tokens
+    const min_keep_case cpu_cases[] = {
+        { "min-p keep=5",                false, 0, 0, INT32_MAX, 0.99f, 5 },
+        { "min-p ties6 keep=5",          false, 0, 6, INT32_MAX, 1.0f,  5 },
+        { "min-p ties2 p>1 keep=3",      false, 0, 2, INT32_MAX, 1.05f, 3 },
+        { "min-p keep=SIZE_MAX",         false, 0, 0, INT32_MAX, 0.99f, SIZE_MAX },
+        { "min-p top-k 2 keep=SIZE_MAX", false, 2, 0, INT32_MAX, 0.9f,  SIZE_MAX },
+        { "top-p keep=5",                true,  0, 0, INT32_MAX, 0.01f, 5 },
+        { "top-p ties6 keep=5",          true,  0, 6, INT32_MAX, 0.01f, 5 },
+        { "top-p keep=SIZE_MAX",         true,  0, 0, INT32_MAX, 0.01f, SIZE_MAX },
+        { "top-p top-k 2 keep=SIZE_MAX", true,  2, 0, INT32_MAX, 0.5f,  SIZE_MAX },
+    };
+
+    const auto make_add_samplers = [](const min_keep_case & c) {
+        return [c](llama_sampler * chain) {
+            if (c.n_tie > 0) {
+                llama_sampler_chain_add(chain, test_tie_sampler_init(c.n_tie, c.n_finite));
+            }
+            if (c.top_k > 0) {
+                llama_sampler_chain_add(chain, llama_sampler_init_top_k(c.top_k));
+            }
+            llama_sampler_chain_add(chain, c.top_p ? llama_sampler_init_top_p(c.p, c.min_keep)
+                                                   : llama_sampler_init_min_p(c.p, c.min_keep));
+        };
+    };
+
+    int n_fail = 0;
+
+    for (const auto & c : backend_cases) {
+        const auto add_samplers = make_add_samplers(c);
+
+        const backend_placement placement = get_backend_placement(params, prompt, add_samplers);
+        GGML_ASSERT(placement.name == (c.top_p ? "+top-p" : "+min-p"));
+
+        const sampler_comparison_output output = run_sampler_comparison(
+                params, prompt, raw, add_samplers, [](llama_sampler *) {});
+        GGML_ASSERT(!output.expected.empty());
+
+        const sampler_comparison_stats stats = compare_sampler_outputs(c.name, map_logits(output.expected), output.actual);
+        const bool ok = stats.n_mismatch == 0;
+        printf("min_keep case '%s': backend, cpu kept %zu: %s\n", c.name, output.expected.size(), ok ? "ok" : "MISMATCH");
+        n_fail += !ok;
+    }
+
+    for (const auto & c : cpu_cases) {
+        const auto add_samplers = make_add_samplers(c);
+
+        llama_sampler_ptr cpu_chain = make_sampler_chain(add_samplers, [](llama_sampler *) {});
+        const size_t n_cpu = apply_cpu_sampler(raw, cpu_chain.get()).size();
+        const size_t n_candidates = c.top_k > 0 ? (size_t) c.top_k : raw.size();
+        GGML_ASSERT(n_cpu >= std::min(c.min_keep, n_candidates));
+
+        // the backend declines, so nothing is masked before the CPU sampler runs
+        const backend_placement placement = get_backend_placement(params, prompt, add_samplers);
+        const bool ok = placement.name == (c.top_p ? "-top-p" : "-min-p") && placement.n_masked == 0;
+        printf("min_keep case '%s': cpu kept %zu, last sampler '%s': %s\n",
+                c.name, n_cpu, placement.name.c_str(), ok ? "ok" : "MISMATCH");
+        n_fail += !ok;
+    }
+
+    GGML_ASSERT(n_fail == 0);
+    printf("backend min_keep sampling test PASSED\n");
+}
+
 static void test_mixed(const test_params & params) {
     struct llama_sampler_chain_params chain_params_0 = llama_sampler_chain_default_params();
     llama_sampler_ptr sampler_chain_0(llama_sampler_chain_init(chain_params_0));
@@ -2227,6 +2318,7 @@ static const backend_test_case BACKEND_TESTS[] = {
     { "test_top_p",                  test_top_p,                  true },
     { "test_min_p",                  test_min_p,                  true },
     { "test_min_p_one",              test_min_p_one,              true },
+    { "test_min_keep",               test_min_keep,               true },
     { "test_logit_bias",             test_logit_bias,             true },
     { "test_penalties",              test_penalties,              true },
     // multiple sequences
@@ -2332,6 +2424,7 @@ static std::vector<const backend_test_case *> collect_tests_to_run(const std::st
                 test.name == "test_set_sampler"                 ||
                 test.name == "test_mixed"                       ||
                 test.name == "test_top_p"                       ||
+                test.name == "test_min_keep"                    ||
                 test.name == "test_multi_output_sampling_chain" ||
                 test.name == "test_multi_output_cpu_suffix") {
                 fprintf(stderr, "Skipping test '%s' on HIP backend (no backend TOP_K support)\n", test.name.c_str());
