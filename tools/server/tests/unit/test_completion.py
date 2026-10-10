@@ -787,3 +787,22 @@ def test_prompt_cache_noncanonical_split_n_keep(tmp_path):
     n_keep, timings = n_keep_at_shift(fresh, len(head) + 2 - n_bos)
     assert timings["cache_n"] == len(cached)
     assert n_keep == len(head) + 1 # the end of the span in the cached tokens
+
+
+# token ids come from the client and are not validated yet when the prompt is compared with the cache
+@pytest.mark.parametrize("bad_id", [-7, 512, 2**31 - 1])
+def test_prompt_cache_resync_invalid_token_id(bad_id: int):
+    global server
+    server.n_slots = 1
+    server.n_ctx = 1024
+    server.start()
+
+    head = tokenize(HEAD_TEXT)
+    tail = tokenize(TAIL_TEXT)
+
+    complete_tokens(head + tail)
+    res = server.make_request("POST", "/completion", data={
+        "prompt": head + [bad_id] + tail, "n_predict": 1, "cache_prompt": True,
+    })
+    assert res.status_code < 500
+    assert server.make_request("GET", "/health").status_code == 200
