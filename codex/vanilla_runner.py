@@ -112,6 +112,7 @@ def must_fail(fn):
 
 def fixtures():
     depth.fixture_test(EVAL / 'orchestration/gpuq/fixtures')
+    alarm_mid_stream_control()
     log = (EVAL / 'results/2026-10-05-stack6-depth-j5q/full-a1/1-s6/server.log').read_text()
     patterns = [r'backend sampling .*SPLIT_MODE_TENSOR.*using CPU']
     lib.verify_log_patterns(log, patterns, 'recorded CPU fallback')
@@ -179,14 +180,43 @@ def fixtures():
     print('real SSE, np1/np2 timing, token, cache, overlap, history and summary controls PASS')
 
 
+class BootWallExpired(BaseException):
+    """Not a ValueError (lib.Fail is): http.client rewrites a ValueError raised while it waits for a chunk size into
+    IncompleteRead(b''), so an alarm raising lib.Fail mid-stream reads as a cut SSE stream (np2 90k, 10-10). BaseException
+    also passes the harness's `except Exception` sites; `main` maps it to the 'timeout' rc."""
+
+
+def expire_boot_wall(signum, frame):
+    raise BootWallExpired('budget: boot wall expired')
+
+
+def alarm_mid_stream_control():
+    """The alarm firing while the client waits for the next SSE chunk must surface as BootWallExpired, not IncompleteRead."""
+    import socket, threading, time
+    srv = socket.socket(); srv.bind(('127.0.0.1', 0)); srv.listen(1)
+    def serve():
+        conn, _ = srv.accept(); conn.recv(65536)
+        conn.sendall(b'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n')
+        time.sleep(0.05); conn.sendall(b'3\r\n:\n\n\r\n'); time.sleep(4); conn.close(); srv.close()
+    threading.Thread(target=serve, daemon=True).start()
+    old = signal.signal(signal.SIGALRM, expire_boot_wall)
+    signal.setitimer(signal.ITIMER_REAL, 0.5)
+    try:
+        depth.stream_depth(f'http://127.0.0.1:{srv.getsockname()[1]}', {}, 10, lambda: None)
+    except BootWallExpired:
+        return
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old)
+    raise AssertionError('boot-wall alarm was absorbed by the stream client')
+
+
 def runtime_guards(x, canary):
     start, stop, journal = lib.Server.start, lib.Server.stop, lib.record_journal
-    def expire(signum, frame):
-        raise lib.Fail('budget: boot wall expired', 'timeout')
     def start_capped(server):
         pid = start(server)
-        signal.signal(signal.SIGALRM, expire)
-        signal.setitimer(signal.ITIMER_REAL, x['budget']['canary_s'] - 60 if canary else x['depth']['boot_timeout_s'])
+        signal.signal(signal.SIGALRM, expire_boot_wall)
+        signal.setitimer(signal.ITIMER_REAL, x['budget']['canary_s'] - 60 if canary else x['depth'].get('boot_wall_s', x['depth']['boot_timeout_s']))
         return pid
     def stop_capped(server, grace=30):
         signal.setitimer(signal.ITIMER_REAL, 0)
@@ -212,7 +242,11 @@ def main():
         depth.check_inputs(x, full_model_sha=False)
         return 0
     runtime_guards(x, '--canary' in argv)
-    rc = harness_main(argv)
+    try:
+        rc = harness_main(argv)
+    except BootWallExpired as error:
+        print(f'FAILED timeout rc={lib.RC["timeout"]}: {error}', file=sys.stderr)
+        return lib.RC['timeout']
     if rc == 0 and x.get('history') and '--canary' in argv:
         out = Path(argv[argv.index('--out') + 1])
         record = (out / '0-long/depth-90112.json').read_bytes()

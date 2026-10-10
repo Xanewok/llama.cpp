@@ -86,9 +86,12 @@ min_predicted = 256
 slot_ctx = 102400
 min_overlap = 0.8
 fixtures = "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures"
-wall_s = 220
+wall_s = 450
 identity_off_reason = "Full draft vocabulary and upstream kernels versus served subset vocabulary and stack kernels; this is a configuration comparison, not an exactness gate."
 boot_timeout_s = 320
+# D: whole-boot alarm. Measured J5q a4: 268 s to the slot-1 90k launch (boot + 8k + 32k + slot-0 90k prefill 135 s), + slot-1 90k prefill ~120 s,
+# + joint 512-token decode and stop ~60 s = ~450 s (wall_s); x1.5 margin. Sized from work, not boot_timeout_s (320 s alarmed mid-stream 10-10).
+boot_wall_s = 675
 
 [depth.prompt]
 path = "/home/xanewok/repos/qwen38-eval/recipes/_common/kld/tokens64k.bin"
@@ -112,7 +115,7 @@ proofs = []
 canary_s = 240
 margin = 1.5
 cleanup_s = 60
-est_s = 1620
+est_s = 2700
 startup_grace_s = 120
 preflight_s = 300
 
