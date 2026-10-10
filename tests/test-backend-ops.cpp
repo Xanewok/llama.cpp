@@ -1381,7 +1381,7 @@ struct test_case {
         return false;
     }
 
-    test_status_t eval(ggml_backend_t backend1,
+    virtual test_status_t eval(ggml_backend_t backend1,
                        ggml_backend_t backend2,
                        const char *   op_names_filter,
                        printer *      output_printer) {
@@ -8519,6 +8519,210 @@ struct test_flash_attn_ext : public test_case {
     }
 };
 
+
+// Masked cache bytes must not affect the output, including graph capture and replay.
+struct test_flash_attn_ext_padding : public test_flash_attn_ext {
+    const int64_t visible;
+    const int64_t capacity;
+    const int q_scale;
+    const bool head_major;
+
+    test_flash_attn_ext_padding(int64_t nh, int64_t visible, int64_t kv, int q_scale = 1, bool head_major = false)
+        : test_flash_attn_ext(256, 256, nh, {6, 1}, kv, 1, true, false, 0, 0, GGML_PREC_F32,
+                              GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}),
+          visible(visible), capacity(102400), q_scale(q_scale), head_major(head_major) {}
+
+    std::string vars() override {
+        return "padding=1," + test_flash_attn_ext::vars() + "," + VARS_TO_STR4(visible, capacity, q_scale, head_major);
+    }
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        ggml_tensor * q = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, hsk, nb, nh*nr23[0], 1);
+        ggml_set_name(q, "q");
+        auto cache_view = [&](const char * name) {
+            const size_t row = ggml_row_size(type_K, hsk);
+            ggml_tensor * cache = ggml_new_tensor_4d(ctx, type_K, hsk, head_major ? capacity : nh, head_major ? nh : capacity, 1);
+            ggml_format_name(cache, "%s_cache", name);
+            ggml_tensor * view = ggml_view_4d(ctx, cache, hsk, nh, kv, 1,
+                head_major ? capacity*row : row, head_major ? row : nh*row, capacity*nh*row, 0);
+            view = ggml_permute(ctx, view, 0, 2, 1, 3);
+            ggml_set_name(view, name);
+            return view;
+        };
+        ggml_tensor * k = cache_view("k");
+        ggml_tensor * v = cache_view("v");
+        ggml_tensor * m = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, kv, 1, 1, 1);
+        ggml_set_name(m, "m");
+        ggml_tensor * out = ggml_flash_attn_ext(ctx, q, k, v, m, 1.0f/sqrtf(hsk), 0, 0);
+        ggml_prec_set_acc(out, GGML_PREC_F32);
+        ggml_set_name(out, "out");
+        return out;
+    }
+
+    void set_cache(ggml_context * ctx, bool garbage) {
+        const size_t row_size = ggml_row_size(type_K, hsk);
+        auto from_float = ggml_get_type_traits(type_K)->from_float_ref;
+        for (const char * name : {"k", "v"}) {
+            const bool is_k = strcmp(name, "k") == 0;
+            ggml_tensor * view = ggml_get_tensor(ctx, name);
+            ggml_tensor * cache = view->view_src;
+            std::vector<uint8_t> data(ggml_nbytes(cache), 0);
+            std::vector<uint8_t> rows(256*row_size);
+            std::vector<float> values(hsk);
+            for (int r = 0; r < 256; ++r) {
+                uint32_t state = 1234567u + 104729u*r + (is_k ? 0u : 99991u);
+                for (float & x : values) {
+                    state = 1664525u*state + 1013904223u;
+                    x = float(int((state >> 16) & 2047) - 1024)/1024.0f;
+                }
+                from_float(values.data(), rows.data() + r*row_size, hsk);
+            }
+            for (int64_t h = 0; h < nh; ++h) {
+                for (int64_t r = 0; r < capacity; ++r) {
+                    if (r >= visible && !garbage) {
+                        continue;
+                    }
+                    const size_t offset = h*view->nb[2] + r*view->nb[1];
+                    const int pattern = (r*73 + h*19 + (r >> 8)*31) % 256;
+                    memcpy(data.data() + offset, rows.data() + pattern*row_size, row_size);
+                }
+                if (garbage && visible < capacity) {
+                    std::fill(values.begin(), values.end(), is_k ? 32.0f : 3.0f);
+                    from_float(values.data(), data.data() + h*view->nb[2] + visible*view->nb[1], hsk);
+                }
+            }
+            ggml_backend_tensor_set(cache, data.data(), 0, data.size());
+        }
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        ggml_tensor * q = ggml_get_tensor(ctx, "q");
+        std::vector<float> queries(ggml_nelements(q));
+        for (size_t i = 0; i < queries.size(); ++i) {
+            queries[i] = q_scale*(0.125f + float((i*17 + i/hsk*13) % 113)/128.0f);
+        }
+        ggml_backend_tensor_set(q, queries.data(), 0, ggml_nbytes(q));
+        ggml_tensor * m = ggml_get_tensor(ctx, "m");
+        std::vector<ggml_fp16_t> masks(kv, ggml_fp32_to_fp16(-INFINITY));
+        std::fill(masks.begin(), masks.begin() + visible, ggml_fp32_to_fp16(0));
+        ggml_backend_tensor_set(m, masks.data(), 0, ggml_nbytes(m));
+        set_cache(ctx, false);
+    }
+
+    test_status_t eval(ggml_backend_t backend, ggml_backend_t cpu, const char * filter, printer * output_printer) override {
+        mode = MODE_TEST;
+        current_op_name = "FLASH_ATTN_EXT";
+        for (ggml_backend_t b : {backend, cpu}) {
+            auto reg = ggml_backend_dev_backend_reg(ggml_backend_get_device(b));
+            auto set_threads = (ggml_backend_set_n_threads_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_set_n_threads");
+            if (set_threads) {
+                set_threads(b, 1);
+            }
+        }
+        ggml_init_params params = {128*ggml_tensor_overhead() + 2*ggml_graph_overhead(), nullptr, true};
+        ggml_context_ptr ctx(ggml_init(params));
+        ggml_tensor * out = build_graph(ctx.get());
+        if (!matches_filter(out, filter)) {
+            return test_status_t::SKIPPED;
+        }
+        if (!ggml_backend_supports_op(backend, out)) {
+            print_test_result_locked(output_printer, test_result(ggml_backend_name(backend), current_op_name, vars(), "test", false, false, "not supported"));
+            return test_status_t::NOT_SUPPORTED;
+        }
+        ggml_cgraph * graph = ggml_new_graph(ctx.get());
+        ggml_build_forward_expand(graph, out);
+        ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors(ctx.get(), backend));
+        if (!buffer) {
+            return test_status_t::FAIL;
+        }
+        initialize_tensors(ctx.get());
+        std::vector<float> baseline;
+        bool finite = true;
+        bool invariant = true;
+        bool compute_ok = true;
+        for (int replay = 0; replay < 4; ++replay) {
+            set_cache(ctx.get(), replay & 1);
+            if (ggml_backend_graph_compute(backend, graph) != GGML_STATUS_SUCCESS) {
+                compute_ok = false;
+                break;
+            }
+            const auto values = tensor_to_float(out);
+            for (float x : values) {
+                finite &= std::isfinite(x);
+            }
+            if (replay == 0) {
+                baseline = values;
+            } else {
+                invariant &= memcmp(baseline.data(), values.data(), ggml_nbytes(out)) == 0;
+            }
+        }
+
+        // Make one garbage row visible. It must dominate the bounded active keys.
+        const int64_t control_row = std::min(visible, kv - 1);
+        const size_t row_size = ggml_row_size(type_K, hsk);
+        std::vector<float> row(hsk);
+        std::vector<uint8_t> encoded(row_size);
+        for (const char * name : {"k", "v"}) {
+            ggml_tensor * view = ggml_get_tensor(ctx.get(), name);
+            std::fill(row.begin(), row.end(), strcmp(name, "k") == 0 ? 32.0f : 3.0f);
+            ggml_get_type_traits(type_K)->from_float_ref(row.data(), encoded.data(), hsk);
+            for (int64_t h = 0; h < nh; ++h) {
+                ggml_backend_tensor_set(view->view_src, encoded.data(), h*view->nb[2] + control_row*view->nb[1], row_size);
+            }
+        }
+        ggml_fp16_t zero = ggml_fp32_to_fp16(0);
+        ggml_backend_tensor_set(ggml_get_tensor(ctx.get(), "m"), &zero, control_row*sizeof(zero), sizeof(zero));
+        bool control = false;
+        if (compute_ok && ggml_backend_graph_compute(backend, graph) == GGML_STATUS_SUCCESS) {
+            const auto values = tensor_to_float(out);
+            for (size_t i = 0; i < values.size(); ++i) {
+                finite &= std::isfinite(values[i]);
+                control |= fabsf(values[i] - baseline[i]) > 2e-3f;
+            }
+        } else {
+            compute_ok = false;
+        }
+
+        ggml_context_ptr ctx_ref(ggml_init(params));
+        ggml_tensor * ref_q8 = build_graph(ctx_ref.get());
+        ggml_tensor * ref = ggml_flash_attn_ext(ctx_ref.get(), ref_q8->src[0],
+            ggml_cast(ctx_ref.get(), ref_q8->src[1], GGML_TYPE_F32),
+            ggml_cast(ctx_ref.get(), ref_q8->src[2], GGML_TYPE_F32), ref_q8->src[3], 1.0f/sqrtf(hsk), 0, 0);
+        ggml_prec_set_acc(ref, GGML_PREC_F32);
+        ggml_cgraph * graph_ref = ggml_new_graph(ctx_ref.get());
+        ggml_build_forward_expand(graph_ref, ref);
+        ggml_backend_buffer_ptr buffer_ref(ggml_backend_alloc_ctx_tensors(ctx_ref.get(), cpu));
+        std::vector<float> reference;
+        if (buffer_ref && compute_ok) {
+            initialize_tensors(ctx_ref.get());
+            compute_ok = ggml_backend_graph_compute(cpu, graph_ref) == GGML_STATUS_SUCCESS;
+            if (compute_ok) {
+                reference = tensor_to_float(ref);
+                for (float x : reference) {
+                    finite &= std::isfinite(x);
+                }
+            }
+        } else {
+            compute_ok = false;
+        }
+        const bool ok = compute_ok && finite && invariant && control;
+        std::string evidence = "{\"finite\":" + std::to_string(finite) + ",\"invariant\":" + std::to_string(invariant) +
+            ",\"control\":" + std::to_string(control) + ",\"compute\":" + std::to_string(compute_ok);
+        for (const auto * values : {&baseline, &reference}) {
+            evidence += values == &baseline ? ",\"output\":[" : ",\"reference\":[";
+            for (size_t i = 0; i < values->size(); ++i) {
+                char value[64];
+                snprintf(value, sizeof(value), "%s%.9g", i ? "," : "", double((*values)[i]));
+                evidence += value;
+            }
+            evidence += "]";
+        }
+        evidence += "}";
+        print_test_result_locked(output_printer, test_result(ggml_backend_name(backend), current_op_name, vars(), "test", true, ok, evidence));
+        return ok ? test_status_t::OK : test_status_t::FAIL;
+    }
+};
+
 // large Q values, so the online softmax has to rescale the partial results
 struct test_flash_attn_ext_large_logits : public test_flash_attn_ext {
     static constexpr int q_range = 20;
@@ -11709,6 +11913,20 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
             test_cases.emplace_back(new test_flash_attn_ext_shared_mask(256, 2, 6, {512, 512}, nb, 2, 4, type_KV));
         }
     }
+    for (int64_t nh : {2, 4}) {
+        for (bool head_major : {false, true}) {
+            for (int64_t depth : {8192, 32768, 90112}) {
+                for (int64_t delta : {-1, 0, 1, 5, 64}) {
+                    const int64_t visible = depth + delta;
+                    test_cases.emplace_back(new test_flash_attn_ext_padding(nh, visible, GGML_PAD(visible, 4096), 1, head_major));
+                }
+            }
+            test_cases.emplace_back(new test_flash_attn_ext_padding(nh, 8252, 12288, 1, head_major));
+            test_cases.emplace_back(new test_flash_attn_ext_padding(nh, 8193, 12288, 20, head_major));
+            test_cases.emplace_back(new test_flash_attn_ext_padding(nh, 1, 94208, 1, head_major));
+        }
+    }
+
     test_cases.emplace_back(new test_flash_attn_ext_shared_mask(128, 4, 1, {512, 256}, 8, 2, 6, GGML_TYPE_F16));
     test_cases.emplace_back(new test_flash_attn_ext_shared_mask(128, 4, 2, {768, 768}, 8, 3, 4, GGML_TYPE_F16));
     test_cases.emplace_back(new test_flash_attn_ext_shared_mask(128, 1, 1, {2048, 2048}, 1024, 1, 3, GGML_TYPE_F16));
