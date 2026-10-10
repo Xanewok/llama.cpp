@@ -1623,6 +1623,13 @@ static bool llama_sampler_top_p_backend_init(
     auto * sctx = (llama_sampler_top_p *) smpl->ctx;
     GGML_UNUSED(n_outputs_max_per_seq);
 
+    // the backend ignores min_keep, and forcing the first min_keep sorted entries would pick other
+    // ids than the CPU sampler among tied logits: leave min_keep > 1 to the CPU sampler
+    if (sctx->min_keep > 1) {
+        sctx->init(false);
+        return false;
+    }
+
     const bool res = llama_sampler_backend_support(smpl, buft);
 
     sctx->init(res);
@@ -1823,8 +1830,9 @@ static bool llama_sampler_min_p_backend_init(
     GGML_UNUSED(n_outputs_max_per_seq);
 
     // p > 1 can leave no logit at the threshold, and the CPU sampler then keeps one of the tied
-    // maxima that its sort puts first, which the backend cannot reproduce: leave it to the CPU
-    if (sctx->p > 1.0f) {
+    // maxima that its sort puts first, which the backend cannot reproduce: leave it to the CPU.
+    // The same goes for min_keep > 1, which the backend ignores and which picks among tied logits.
+    if (sctx->p > 1.0f || sctx->min_keep > 1) {
         sctx->init(false);
         return false;
     }
