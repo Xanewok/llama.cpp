@@ -1,0 +1,59 @@
+{
+  "running_at_start": [
+    "s10-history-iq4"
+  ],
+  "commands": [
+    {
+      "command": [
+        "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+        "cmake",
+        "-S",
+        "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/kld-v2",
+        "-B",
+        "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/build-cpu-s10-kld-v2-stack10",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DENGINE=/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity",
+        "-DFROZEN=/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin",
+        "-DGGML_CUDA=OFF",
+        "-DGGML_CCACHE=ON"
+      ],
+      "rc": 0
+    },
+    {
+      "command": [
+        "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+        "cmake",
+        "--build",
+        "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/build-cpu-s10-kld-v2-stack10",
+        "-j4"
+      ],
+      "rc": 0
+    },
+    {
+      "command": [
+        "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+        "cmake",
+        "-S",
+        "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/kld-v2",
+        "-B",
+        "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/build-cpu-s10-kld-v2-stack9-p55",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DENGINE=/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity",
+        "-DFROZEN=/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack9-p55/build/bin",
+        "-DGGML_CUDA=OFF",
+        "-DGGML_CCACHE=ON"
+      ],
+      "rc": 0
+    },
+    {
+      "command": [
+        "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+        "cmake",
+        "--build",
+        "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/build-cpu-s10-kld-v2-stack9-p55",
+        "-j4"
+      ],
+      "rc": 0
+    }
+  ]
+}

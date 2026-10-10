@@ -1,0 +1,7 @@
+{
+  "real_fixture": "/mnt/scratch/work/kld-s9-gdn4/out/kld-s9-gdn4/a1/canary/canary.klf",
+  "real_fixture_sha": "595675d9fa4a22b25ff149f48e4bc6d5c8703b4af63c6db31e6fb1a3c56e9ee3",
+  "rows_D": 2,
+  "vocab_D": 248320,
+  "mutation_max_kld_D": 0.0006779840253135366
+}

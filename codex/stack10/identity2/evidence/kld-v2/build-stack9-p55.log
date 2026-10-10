@@ -1,0 +1,12 @@
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (0.2s)
+-- Generating done (0.0s)
+-- Build files have been written to: /home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/build-cpu-s10-kld-v2-stack9-p55
+[ 50%] Building CXX object CMakeFiles/s10-kld.dir/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/kld-window-v2.cpp.o
+[100%] Linking CXX executable s10-kld
+[100%] Built target s10-kld

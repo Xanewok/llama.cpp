@@ -1,0 +1,94 @@
+[
+  {
+    "command": [
+      "python3",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/test_kld_v2.py"
+    ],
+    "rc": 0,
+    "stdout": "",
+    "stderr": "...\n----------------------------------------------------------------------\nRan 3 tests in 0.129s\n\nOK\n"
+  },
+  {
+    "command": [
+      "bash",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/kld_v2_ab.sh",
+      "preflight",
+      "--out",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/evidence/kld-v2/queue-preflight"
+    ],
+    "rc": 0,
+    "stdout": "{\"real_fixture\": \"/mnt/scratch/work/kld-s9-gdn4/out/kld-s9-gdn4/a1/canary/canary.klf\", \"real_fixture_sha\": \"595675d9fa4a22b25ff149f48e4bc6d5c8703b4af63c6db31e6fb1a3c56e9ee3\", \"rows_D\": 2, \"vocab_D\": 248320, \"mutation_max_kld_D\": 0.0006779840253135366}\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "gpuq",
+      "submit",
+      "--check",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/s10-kld-iq4-v2.gpuq.toml"
+    ],
+    "rc": 0,
+    "stdout": "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/s10-kld-iq4-v2.gpuq.toml: s10-kld-iq4-v2: valid\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "env",
+      "-i",
+      "HOME=/home/xanewok",
+      "PATH=/usr/local/bin:/usr/bin:/bin",
+      "CUDA_VISIBLE_DEVICES=",
+      "GIT_NO_LAZY_FETCH=1",
+      "PYTHONDONTWRITEBYTECODE=1",
+      "/home/xanewok/repos/gpuq/bin/gpuq",
+      "submit",
+      "--check",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/s10-kld-iq4-v2.gpuq.toml"
+    ],
+    "rc": 0,
+    "stdout": "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/s10-kld-iq4-v2.gpuq.toml: s10-kld-iq4-v2: valid\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "python3",
+      "-m",
+      "gpuq.shlint",
+      "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh"
+    ],
+    "rc": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "-n",
+      "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh"
+    ],
+    "rc": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "python3",
+      "-m",
+      "gpuq.shlint",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/kld_v2_ab.sh"
+    ],
+    "rc": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "bash",
+      "-n",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/kld_v2_ab.sh"
+    ],
+    "rc": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]
