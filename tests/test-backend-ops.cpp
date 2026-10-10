@@ -12454,6 +12454,25 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
         test_cases.emplace_back(new test_l2_norm_batch(GGML_TYPE_F32, { n, 16, 16, 1 }, 4, 1e-12f, true));
     }
 
+    // CONCAT, conv-state shape of recurrent models (state {3, channels, n_seqs} + transposed
+    // activation {tokens, channels, n_seqs}): short dst rows (ne0 = 3 + tokens), non-contiguous input
+    for (int64_t channels : {5120, 10240}) {
+        for (int64_t n_seqs : {1, 2}) {
+            for (int64_t tokens : {1, 6}) {
+                test_cases.emplace_back(new test_concat(GGML_TYPE_F32, {3, channels, n_seqs, 1}, tokens, 0, 16));
+            }
+        }
+    }
+    // row-length sweep (ne0 = 3 + tokens = 5 ... 512) at a large and a small row count
+    for (int64_t channels : {5120, 512}) {
+        for (int64_t tokens : {2, 5, 13, 29, 30, 45, 61, 125, 253, 509}) {
+            test_cases.emplace_back(new test_concat(GGML_TYPE_F32, {3, channels, 1, 1}, tokens, 0, 16));
+        }
+    }
+    // long rows with the same non-contiguous input (prompt-sized batches) and a contiguous control
+    test_cases.emplace_back(new test_concat(GGML_TYPE_F32, {3, 5120, 1, 1}, 2048, 0, 16));
+    test_cases.emplace_back(new test_concat(GGML_TYPE_F32, {4096, 256, 2, 1}, 4096, 0, 16));
+    test_cases.emplace_back(new test_concat(GGML_TYPE_F32, {3, 5120, 2, 1}, 6, 0, 0));
 
     return test_cases;
 }
