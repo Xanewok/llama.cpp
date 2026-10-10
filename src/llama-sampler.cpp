@@ -1822,6 +1822,13 @@ static bool llama_sampler_min_p_backend_init(
     auto * sctx = (llama_sampler_min_p *) smpl->ctx;
     GGML_UNUSED(n_outputs_max_per_seq);
 
+    // p > 1 can leave no logit at the threshold, and the CPU sampler then keeps one of the tied
+    // maxima that its sort puts first, which the backend cannot reproduce: leave it to the CPU
+    if (sctx->p > 1.0f) {
+        sctx->init(false);
+        return false;
+    }
+
     const bool res = llama_sampler_backend_support(smpl, buft);
 
     sctx->init(res);
@@ -1855,8 +1862,9 @@ static void llama_sampler_min_p_backend_apply(
     struct ggml_tensor * sub = ggml_sub(ctx, logits, threshold);
 
     // Create a mask where logits below the threshold are 0 (discard),
-    // and others are 1 (keep).
-    struct ggml_tensor * mask = ggml_step(ctx, sub);
+    // and others are 1 (keep). The CPU sampler keeps logits >= threshold (so the max for p <= 1
+    // and its ties), but ggml_step is strict: use 1 - step(-x).
+    struct ggml_tensor * mask = ggml_scale_bias(ctx, ggml_step(ctx, ggml_neg(ctx, sub)), -1.0f, 1.0f);
     ggml_set_name(mask, "min_p_mask");
 
     // Apply -INFINITY bias for masked-out tokens
