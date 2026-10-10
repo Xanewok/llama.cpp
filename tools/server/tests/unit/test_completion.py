@@ -1,6 +1,7 @@
 import pytest
 import requests
 import time
+import re
 import random
 
 from openai import OpenAI
@@ -666,3 +667,98 @@ def test_completion_prompt_cache():
         assert "prompt_n" in timings and timings["prompt_n"] + timings["cache_n"] == n_prompt
         assert "predicted_n" in timings and timings["predicted_n"] == n_predict
         assert "tokens" in res.body and isinstance(res.body["tokens"], list)
+
+
+HEAD_TEXT = "Once upon a time there was a girl. She had a"
+TAIL_TEXT = ". They went to the park and played all day long."
+MORE_TEXT = " Then they went home."
+
+
+def tokenize(text: str, parse_special: bool = True) -> list[int]:
+    res = server.make_request("POST", "/tokenize", data={"content": text, "add_special": False, "parse_special": parse_special})
+    assert res.status_code == 200
+    return res.body["tokens"]
+
+
+def detokenize(tokens: list[int]) -> str:
+    res = server.make_request("POST", "/detokenize", data={"tokens": tokens})
+    assert res.status_code == 200
+    return res.body["content"]
+
+
+def complete_tokens(prompt: list[int], **kwargs) -> dict:
+    res = server.make_request("POST", "/completion", data={
+        "prompt": prompt, "n_predict": 1, "temperature": 0.0, "cache_prompt": True, **kwargs,
+    })
+    assert res.status_code == 200
+    return res.body["timings"]
+
+
+def pieces_after(head: list[int]) -> dict[int, str]:
+    # piece of every token, measured after `head` so that a leading space is kept
+    base = detokenize(head)
+    return dict(parallel_function_calls([
+        ((lambda t=t: (t, detokenize(head + [t])[len(base):])), ()) for t in range(3, 512)
+    ]))
+
+
+def find_split(piece: dict[int, str], n_parts: int) -> tuple[int, list[int]]:
+    # a token whose piece is also spelled by `n_parts` other tokens
+    by_piece = {}
+    for t, p in piece.items():
+        by_piece.setdefault(p, t)
+
+    def cut(p: str, n: int) -> list[int] | None:
+        if n == 1:
+            return [by_piece[p]] if p in by_piece else None
+        for i in range(1, len(p)):
+            if p[:i] in by_piece and (rest := cut(p[i:], n - 1)):
+                return [by_piece[p[:i]]] + rest
+        return None
+
+    for t, p in piece.items():
+        if by_piece[p] == t and (parts := cut(p, n_parts)):
+            return t, parts
+    pytest.skip(f"no token is spelled by {n_parts} other tokens")
+
+
+# a sampled non-canonical split is not reproduced by re-tokenizing the text, the cached prefix must still be reused
+def test_prompt_cache_noncanonical_split():
+    global server
+    server.n_slots = 1
+    server.n_ctx = 1024
+    server.n_batch = 512
+    server.start()
+
+    head = tokenize(HEAD_TEXT)
+    tail = tokenize(TAIL_TEXT)
+    more = tokenize(MORE_TEXT)
+
+    piece = pieces_after(head)
+    whole, parts = find_split(piece, 2)
+
+    cached = head + parts + tail
+    fresh  = head + [whole] + tail + more
+    assert detokenize(cached) == detokenize(head + [whole] + tail)
+
+    complete_tokens(cached)
+    timings = complete_tokens(fresh)
+    assert timings["cache_n"] == len(cached)
+    assert timings["prompt_n"] == len(more)
+
+    # negative control: a different text at the same place only reuses the head
+    other = [t for t in piece if piece[t].strip() and piece[t] not in (piece[whole], "".join(piece[x] for x in parts))][0]
+    complete_tokens(cached)
+    timings = complete_tokens(head + [other] + tail + more)
+    assert timings["cache_n"] <= len(head)
+
+    # negative control: a control token and its spelling are different prompts. the head differs from the above,
+    # so that no earlier prompt shares more of it
+    head2 = tokenize("Tom has a red ball and a small blue kite")
+    control = tokenize("<s>")
+    spelled = tokenize("<s>", parse_special=False)[1:] # without the dummy prefix space
+    assert len(control) == 1 and len(spelled) > 1
+    assert detokenize(spelled) == detokenize(control)
+    complete_tokens(head2 + control + tail)
+    timings = complete_tokens(head2 + spelled + tail + more)
+    assert timings["cache_n"] <= len(head2)
