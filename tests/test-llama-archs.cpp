@@ -495,7 +495,8 @@ static std::pair<llama_model_ptr, llama_context_ptr> get_model_and_ctx(
         struct gguf_context * gguf_ctx, FILE * file, const size_t seed, const float stdev,
         const std::vector<ggml_backend_dev_t> & devs,
         const llama_split_mode split_mode = LLAMA_SPLIT_MODE_LAYER, bool encode = false,
-        const llama_model_tensor_buft_override * tensor_buft_overrides = nullptr, const size_t moe_cache_size = 0) {
+        const llama_model_tensor_buft_override * tensor_buft_overrides = nullptr, const size_t moe_cache_size = 0,
+        uint32_t n_seq_max = 1) {
     GGML_ASSERT((gguf_ctx == nullptr) != (file == nullptr));
     llama_model_params model_params = llama_model_default_params();
     model_params.progress_callback = silent_model_load_progress;
@@ -509,6 +510,7 @@ static std::pair<llama_model_ptr, llama_context_ptr> get_model_and_ctx(
     ctx_params.n_ctx = 0;
     ctx_params.n_threads = 4;
     ctx_params.n_threads_batch = 4;
+    ctx_params.n_seq_max = n_seq_max;
     if (!encode) {
         ctx_params.n_ubatch = 64;
     }
@@ -649,6 +651,42 @@ static bool check_causal_attn_toggle(
     }
 
     return ok;
+}
+
+// seq_cp between KV streams copies whole KV buffers on the next decode: both sequences must then decode identically
+static bool check_seq_cp(llama_model * model, llama_context * lctx, const std::vector<llama_token> & tokens) {
+    const uint32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
+    const uint32_t n_past  = std::min<uint32_t>(tokens.size(), llama_n_ubatch(lctx));
+
+    common_batch batch(lctx);
+    for (uint32_t i = 0; i < n_past; i++) {
+        batch.add(tokens[i], i, 0, i + 1 == n_past);
+    }
+    if (llama_process(lctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+        LOG_ERR("%s: failed to decode the prompt\n", __func__);
+        return false;
+    }
+
+    llama_memory_seq_cp(llama_get_memory(lctx), 0, 1, -1, -1);
+
+    batch.clear();
+    batch.add(tokens[n_past % tokens.size()], n_past, 0, true);
+    batch.add(tokens[n_past % tokens.size()], n_past, 1, true);
+    if (llama_process(lctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+        LOG_ERR("%s: failed to decode after seq_cp\n", __func__);
+        return false;
+    }
+
+    const float * logits_0 = llama_get_logits_ith(lctx, 0);
+    const float * logits_1 = llama_get_logits_ith(lctx, 1);
+    const std::vector<float> l0(logits_0, logits_0 + n_vocab);
+    const std::vector<float> l1(logits_1, logits_1 + n_vocab);
+    const double nmse_val = nmse(l0, l1);
+    if (!(nmse_val <= 1e-6)) {
+        LOG_ERR("%s: logits of the copied sequence differ (nmse %.2e)\n", __func__, nmse_val);
+        return false;
+    }
+    return true;
 }
 
 static bool moe_mandatory(const llm_arch arch) {
@@ -941,15 +979,15 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
         max_arch_name_length = std::max(max_arch_name_length, strlen(llm_arch_name(arch)));
     }
 
-    const std::string template_header  = std::string("|%" + std::to_string(max_arch_name_length) + "s|%") + std::to_string(max_device_label_length) + "s|%6s|%15s|%9s|%15s|\n";
+    const std::string template_header  = std::string("|%" + std::to_string(max_arch_name_length) + "s|%") + std::to_string(max_device_label_length) + "s|%6s|%15s|%9s|%15s|%9s|\n";
     const std::string template_row_cfg = std::string("|%" + std::to_string(max_arch_name_length) + "s|%") + std::to_string(max_device_label_length) + "s|%6s|";
-    const std::string template_row_res = "%15s %10s|%20s|%15s %10s|\n";
+    const std::string template_row_res = "%15s %10s|%20s|%15s %10s|%20s|\n";
 
     bool all_ok = true;
     size_t n_tests = 0;
     size_t n_failed = 0;
     common_log_flush(common_log_main());
-    LOG(template_header.c_str(), "Model arch.", "Device", "Config", "NMSE vs. CPU", "Roundtrip", "Mixed batch");
+    LOG(template_header.c_str(), "Model arch.", "Device", "Config", "NMSE vs. CPU", "Roundtrip", "Mixed batch", "Seq. copy");
     LOG("|");
     for (size_t i = 0; i < max_arch_name_length; i++) {
         LOG("-");
@@ -958,7 +996,7 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
     for (size_t i = 0; i < max_device_label_length; i++) {
         LOG("-");
     }
-    LOG("|------|---------------|---------|---------------|\n");
+    LOG("|------|---------------|---------|---------------|---------|\n");
     for (const llm_arch & arch : llm_arch_all()) {
         if (arch == LLM_ARCH_UNKNOWN) {
             continue;
@@ -1003,6 +1041,7 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
                 std::string status_nmse      = "\033[1;33mSKIP\033[0m";
                 std::string status_roundtrip = "\033[1;33mSKIP\033[0m";
                 std::string status_mixed     = "\033[1;33mSKIP\033[0m";
+                std::string status_seq_cp    = "\033[1;33mSKIP\033[0m";
                 char nmse_str[12] = {0};
                 char mixed_str[12] = {0};
 
@@ -1061,6 +1100,15 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
                             }
                         }
 
+                        if (!encode && dc.split_mode == LLAMA_SPLIT_MODE_TENSOR && llama_get_memory(lctx_dev) != nullptr) {
+                            auto model_and_ctx_seq = get_model_and_ctx(gguf_ctx.get(), nullptr, seed, stdev, dc.devs, dc.split_mode, encode, nullptr, 0, 2);
+                            status_seq_cp = "\033[1;32mOK\033[0m";
+                            if (!check_seq_cp(model_and_ctx_seq.first.get(), model_and_ctx_seq.second.get(), tokens)) {
+                                test_ok = false;
+                                status_seq_cp = "\033[1;31mFAIL\033[0m";
+                            }
+                        }
+
                         // runs after the mixed batch check, as it leaves the context with non-causal attention
                         if (!encode && !check_causal_attn_toggle(model_and_ctx_dev.first.get(), model_and_ctx_dev.second.get(), tokens)) {
                             if (test_ok) {
@@ -1106,7 +1154,7 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
                 }
 
                 // log the results for this test case
-                LOG(template_row_res.c_str(), status_nmse.c_str(), nmse_str, status_roundtrip.c_str(), status_mixed.c_str(), mixed_str);
+                LOG(template_row_res.c_str(), status_nmse.c_str(), nmse_str, status_roundtrip.c_str(), status_mixed.c_str(), mixed_str, status_seq_cp.c_str());
             }
         }
     }
