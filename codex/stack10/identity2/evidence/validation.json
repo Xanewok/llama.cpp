@@ -1,0 +1,67 @@
+[
+  {
+    "command": [
+      "/home/xanewok/repos/gpuq/bin/gpuq",
+      "submit",
+      "--check",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/s10-history-iq4.gpuq.toml"
+    ],
+    "clean_env": false,
+    "rc": 0,
+    "stdout": "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/s10-history-iq4.gpuq.toml: s10-history-iq4: valid\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/home/xanewok/repos/gpuq/bin/gpuq",
+      "submit",
+      "--check",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/s10-history-iq4.gpuq.toml"
+    ],
+    "clean_env": true,
+    "rc": 0,
+    "stdout": "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/s10-history-iq4.gpuq.toml: s10-history-iq4: valid\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/home/xanewok/repos/gpuq/bin/gpuq",
+      "submit",
+      "--check",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/s10-kld-iq4.gpuq.toml"
+    ],
+    "clean_env": false,
+    "rc": 0,
+    "stdout": "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/s10-kld-iq4.gpuq.toml: s10-kld-iq4: valid\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "/home/xanewok/repos/gpuq/bin/gpuq",
+      "submit",
+      "--check",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/s10-kld-iq4.gpuq.toml"
+    ],
+    "clean_env": true,
+    "rc": 0,
+    "stdout": "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/s10-kld-iq4.gpuq.toml: s10-kld-iq4: valid\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "python3",
+      "-m",
+      "gpuq.shlint",
+      "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/gpu/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-385c353bf0ab87df00dc6b9773c80ae4827f0dec25cf821cb88c76e57d3393a9/harness/bw-run.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity/snapshots/harness-385c353bf0ab87df00dc6b9773c80ae4827f0dec25cf821cb88c76e57d3393a9/harness/run.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/s10-identity/codex/stack10/identity2/history_ab.sh"
+    ],
+    "rc": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]
