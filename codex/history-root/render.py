@@ -25,16 +25,16 @@ def render():
     item = {k: v for k, v in old.items() if k not in ('run', 'canary', 'preflight', 'outputs', 'pins', 'fix')}
     item.update(id='history-root', priority=23,
                 title='Teacher-forced request history: first differing tensor, clears, draft and graph ablations',
-                budget_s=9600, est_s=28*200 + 720,  # est_s (G); budget: 28 boots x 270 s + builds, waits
+                budget_s=26700, est_s=18700,  # est_s (D, a2 rates): 20 traced-draft arms ~740-770 s, 4 no-draft ~530-570, 4 untraced ~130-165, + gaps; budget = est/0.7
                 note=NOTE)
     output = '/mnt/scratch/work/history-root/a{attempt}'
     wrapper = str(WT / 'work/aa-load/ccx01.sh')
-    for stage, budget in [('run', 9000), ('canary', 280)]:
+    for stage, budget in [('run', 24000), ('canary', 420)]:
         item[stage] = {'cmd': ['bash', wrapper, 'bash', str(HERE / 'gpu_ab.sh'), stage,
                               '--out', output + '/' + stage, '--budget-s', str(budget)],
                        'env': {'GPUQ_ACTIVE': '1'}}
     item['run'].update(cwd=str(TREE), ports=[])
-    item['canary']['timeout_s'] = 300
+    item['canary']['timeout_s'] = 450
     item['preflight'] = {'cmd': ['bash', str(HERE / 'gpu_ab.sh'), 'preflight', '--out',
                                 str(HERE / 'evidence/queue-preflight')], 'timeout_s': 300}
     item['outputs'] = {'paths': [output + '/run', output + '/canary']}

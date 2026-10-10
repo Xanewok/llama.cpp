@@ -177,7 +177,7 @@ class HistoryTests(unittest.TestCase):
         manifest = tomllib.loads(render.render())
         self.assertEqual(manifest['id'], 'history-root')
         self.assertEqual(manifest['priority'], 23)
-        self.assertLessEqual(manifest['budget_s'], 9600)
+        self.assertLessEqual(manifest['budget_s'], 26700)
         self.assertLessEqual(len(manifest['note']), 600)
         self.assertLessEqual(manifest['est_s'], .7*manifest['budget_s'])
         for stage in ('run', 'canary'):

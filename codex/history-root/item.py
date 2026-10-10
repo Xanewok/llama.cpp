@@ -32,7 +32,10 @@ ARMS = {
 PLAN = [(arm, order, 0) for arm in ARMS for order in ('short', 'long')]
 PLAN += [(arm, order, 1) for arm in reversed(ARMS) for order in ('long', 'short')]
 DRAFT_STEPS = 5
-ARM_CAP_S = 420  # one boot: ~270 s at 90k depth (G), headroom for slow prefill
+# Per-arm wall cap by (traced, draft), >= 1.5x the D estimate. 00:11 a2 M: traced draft short arm needs ~740 s
+# (boot+untraced prefill ~130, traced 90k final chunk ~200, 4 traced decode steps ~100 each; a decode step with
+# draft is ~2x the target-only ~51 s). Untraced ~130-165 s; the cap only bounds hangs.
+ARM_CAP_S = {(False, True): 420, (True, False): 900, (True, True): 1250}
 DRAFT_VOCAB = Path('/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json')
 DEPTHS = {'short': [8192, 90112], 'long': [8192, 32768, 90112]}
 CANARY_DEPTHS = [128, 256, 512]
@@ -293,7 +296,7 @@ def execute(args):
                 proc = subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                         preexec_fn=lambda: lib._own_group(os.getppid()))
                 (dest / 'pid').write_text(str(proc.pid))
-                arm_deadline = time.monotonic() + min(ARM_CAP_S, remaining())
+                arm_deadline = time.monotonic() + min(ARM_CAP_S[(ARMS[arm][3], ARMS[arm][2])], remaining())
                 while proc.poll() is None:
                     if time.monotonic() > arm_deadline:
                         timed_out = True

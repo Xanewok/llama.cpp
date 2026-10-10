@@ -5,8 +5,8 @@ kind = "measure"
 host_sensitive = false
 ab = true
 retry = "fresh"
-budget_s = 9600
-est_s = 6320
+budget_s = 26700
+est_s = 18700
 startup_grace_s = 90
 signatures = [{ "class" = "hazard", "regex" = "\\bXid\\b|fallen off the bus" }]
 note = "why: IQ4 np1 90k output depends on earlier requests (cache_n 0) on vanilla and stacks; find the first differing node on GPU. | expect (D, from the CPU 4B replay in codex/REPORT-history-root.md): target logits identical across orders; draft/catchup tensors or recurrent-state bytes differ. Likely (G): the teacher-forced one-row path reproduces nothing, so the served 4-row verify / rejection path is implicated. | falsifier: target logits differ on GPU (stale memory bytes or CUDA-graph reading). | answers: first differing node per arm/domain; target vs draft-only dependence."
@@ -20,15 +20,15 @@ note = "why: IQ4 np1 90k output depends on earlier requests (cache_n 0) on vanil
 "8" = "deterministic"
 
 [run]
-"cmd" = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/history-root/codex/history-root/gpu_ab.sh", "run", "--out", "/mnt/scratch/work/history-root/a{attempt}/run", "--budget-s", "9000"]
+"cmd" = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/history-root/codex/history-root/gpu_ab.sh", "run", "--out", "/mnt/scratch/work/history-root/a{attempt}/run", "--budget-s", "24000"]
 "env" = { "GPUQ_ACTIVE" = "1" }
 "cwd" = "/home/xanewok/repos/qwen38-eval-worktrees/wt/history-root"
 "ports" = []
 
 [canary]
-"cmd" = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/history-root/codex/history-root/gpu_ab.sh", "canary", "--out", "/mnt/scratch/work/history-root/a{attempt}/canary", "--budget-s", "280"]
+"cmd" = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/history-root/codex/history-root/gpu_ab.sh", "canary", "--out", "/mnt/scratch/work/history-root/a{attempt}/canary", "--budget-s", "420"]
 "env" = { "GPUQ_ACTIVE" = "1" }
-"timeout_s" = 300
+"timeout_s" = 450
 
 [preflight]
 "cmd" = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/history-root/codex/history-root/gpu_ab.sh", "preflight", "--out", "/home/xanewok/repos/qwen38-eval-worktrees/wt/history-root/codex/history-root/evidence/queue-preflight"]
