@@ -2332,7 +2332,6 @@ static std::vector<const backend_test_case *> collect_tests_to_run(const std::st
                 test.name == "test_set_sampler"                 ||
                 test.name == "test_mixed"                       ||
                 test.name == "test_top_p"                       ||
-                test.name == "test_min_p_one"                   ||
                 test.name == "test_multi_output_sampling_chain" ||
                 test.name == "test_multi_output_cpu_suffix") {
                 fprintf(stderr, "Skipping test '%s' on HIP backend (no backend TOP_K support)\n", test.name.c_str());
