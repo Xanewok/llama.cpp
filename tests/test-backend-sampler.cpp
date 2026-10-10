@@ -1467,6 +1467,130 @@ static void test_penalties(const test_params & params) {
 
 // This test verifies that it is possible to have two different backend samplers,
 // one that uses the backend dist sampler, and another that uses CPU dist sampler.
+// Sets the logits to 0 for the first n_tie tokens and -1, -2, ... after them (exact in float),
+// to get ties at the maximum. Must be first in the chain: it keys on the token index.
+struct test_tie_sampler {
+    int32_t n_tie;
+};
+
+static const char * test_tie_sampler_name(const llama_sampler * /*smpl*/) {
+    return "tie";
+}
+
+static void test_tie_sampler_apply(llama_sampler * smpl, llama_token_data_array * cur_p) {
+    const auto * ctx = (const test_tie_sampler *) smpl->ctx;
+    for (size_t i = 0; i < cur_p->size; ++i) {
+        cur_p->data[i].logit = 0.0f - (float) std::max<int32_t>((int32_t) i - (ctx->n_tie - 1), 0);
+    }
+}
+
+static void test_tie_sampler_free(llama_sampler * smpl) {
+    delete (test_tie_sampler *) smpl->ctx;
+}
+
+static bool test_tie_sampler_backend_init(
+        llama_sampler * /*smpl*/, ggml_backend_buffer_type_t /*buft*/, uint32_t /*n_outputs_max_per_seq*/) {
+    return true;
+}
+
+static void test_tie_sampler_backend_apply(
+        llama_sampler * smpl, ggml_context * ctx, ggml_cgraph * /*gf*/, llama_sampler_data * data) {
+    const auto * sctx = (const test_tie_sampler *) smpl->ctx;
+    const int64_t n = ggml_nelements(data->logits);
+
+    ggml_tensor * idx = ggml_arange(ctx, 0.0f, (float) n, 1.0f);
+    data->logits = ggml_neg(ctx, ggml_relu(ctx, ggml_scale_bias(ctx, idx, 1.0f, -(float) (sctx->n_tie - 1))));
+}
+
+static llama_sampler_i test_tie_sampler_i = {
+    /* .name              = */ test_tie_sampler_name,
+    /* .accept            = */ nullptr,
+    /* .apply             = */ test_tie_sampler_apply,
+    /* .reset             = */ nullptr,
+    /* .clone             = */ nullptr,
+    /* .free              = */ test_tie_sampler_free,
+    /* .backend_init      = */ test_tie_sampler_backend_init,
+    /* .backend_accept    = */ nullptr,
+    /* .backend_apply     = */ test_tie_sampler_backend_apply,
+    /* .backend_set_input = */ nullptr,
+    /* .backend_reset     = */ nullptr,
+    /* .copy_state        = */ nullptr,
+};
+
+static llama_sampler * test_tie_sampler_init(int32_t n_tie) {
+    return llama_sampler_init(&test_tie_sampler_i, new test_tie_sampler { n_tie });
+}
+
+// kept logits in descending order; tied tokens at a cut are interchangeable, so compare these
+// instead of the token ids when the kept set is not unique
+static std::vector<float> sorted_kept_logits(const std::vector<llama_token_data> & data) {
+    std::vector<float> result;
+    for (const auto & item : data) {
+        result.push_back(item.logit);
+    }
+    std::sort(result.begin(), result.end(), std::greater<float>());
+    return result;
+}
+
+static std::vector<float> sorted_kept_logits(const backend_sampler_output & output) {
+    std::vector<float> result;
+    for (const float logit : output.logits) {
+        if (std::isfinite(logit)) {
+            result.push_back(logit);
+        }
+    }
+    std::sort(result.begin(), result.end(), std::greater<float>());
+    return result;
+}
+
+static void test_min_p_one(const test_params & params) {
+    const std::string prompt = "Hello";
+    const std::vector<float> raw = decode_raw_logits(params, prompt);
+
+    struct min_p_case {
+        const char * name;
+        int32_t      n_tie; // 0: the model logits
+        float        p;
+        size_t       n_kept; // what the CPU sampler keeps on tied logits
+    };
+
+    const min_p_case cases[] = {
+        { "model p=1",    0, 1.0f,  0 },
+        { "model p=1.05", 0, 1.05f, 0 },
+        { "ties2 p=1",    2, 1.0f,  2 }, // equality keeps every tied maximum
+        { "ties2 p=1.05", 2, 1.05f, 1 }, // nothing reaches the threshold: the CPU sampler keeps one token
+        { "ties6 p=1",    6, 1.0f,  6 },
+    };
+
+    int n_fail = 0;
+    for (const auto & c : cases) {
+        const auto add_samplers = [&](llama_sampler * chain) {
+            if (c.n_tie > 0) {
+                llama_sampler_chain_add(chain, test_tie_sampler_init(c.n_tie));
+            }
+            llama_sampler_chain_add(chain, llama_sampler_init_min_p(c.p, 0));
+        };
+        const sampler_comparison_output output = run_sampler_comparison(
+                params, prompt, raw, add_samplers, [](llama_sampler *) {});
+
+        const std::vector<float> cpu_kept     = sorted_kept_logits(output.expected);
+        const std::vector<float> backend_kept = sorted_kept_logits(output.actual);
+        GGML_ASSERT(!cpu_kept.empty());
+        GGML_ASSERT(c.n_tie == 0 || cpu_kept.size() == c.n_kept);
+
+        bool ok = backend_kept == cpu_kept;
+        if (c.n_tie == 0) {
+            ok = ok && compare_sampler_outputs(c.name, map_logits(output.expected), output.actual).n_mismatch == 0;
+        }
+        printf("min_p_one case '%s': cpu kept %zu, backend kept %zu: %s\n",
+                c.name, cpu_kept.size(), backend_kept.size(), ok ? "ok" : "MISMATCH");
+        n_fail += !ok;
+    }
+
+    GGML_ASSERT(n_fail == 0);
+    printf("backend min-p p >= 1 test PASSED\n");
+}
+
 static void test_mixed(const test_params & params) {
     struct llama_sampler_chain_params chain_params_0 = llama_sampler_chain_default_params();
     llama_sampler_ptr sampler_chain_0(llama_sampler_chain_init(chain_params_0));
@@ -2077,6 +2201,7 @@ static const backend_test_case BACKEND_TESTS[] = {
     { "test_top_k",                  test_top_k,                  true },
     { "test_top_p",                  test_top_p,                  true },
     { "test_min_p",                  test_min_p,                  true },
+    { "test_min_p_one",              test_min_p_one,              true },
     { "test_logit_bias",             test_logit_bias,             true },
     { "test_penalties",              test_penalties,              true },
     // multiple sequences
@@ -2182,6 +2307,7 @@ static std::vector<const backend_test_case *> collect_tests_to_run(const std::st
                 test.name == "test_set_sampler"                 ||
                 test.name == "test_mixed"                       ||
                 test.name == "test_top_p"                       ||
+                test.name == "test_min_p_one"                   ||
                 test.name == "test_multi_output_sampling_chain" ||
                 test.name == "test_multi_output_cpu_suffix") {
                 fprintf(stderr, "Skipping test '%s' on HIP backend (no backend TOP_K support)\n", test.name.c_str());
