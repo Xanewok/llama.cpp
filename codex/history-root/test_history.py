@@ -101,12 +101,70 @@ class HistoryTests(unittest.TestCase):
         self.assertIn('MTP/draft-context', result['reading'][1])
         self.assertIn('CUDA graph', result['reading'][2])
 
+    def _summarize(self, differs, nodes_for=None):
+        with item.base.REAL_KLF.open('rb') as stream:
+            stream.seek(4)
+            vocab, _ = struct.unpack('<2i', stream.read(8))
+            stream.seek(20)
+            values = item.base.np.tile(item.base.np.frombuffer(stream.read(vocab*4), '<f4'), (4, 1))
+        changed = values.copy()
+        changed[0, int(values[0].argmax())] += 1
+        def logits(path):
+            _, arm, order, _ = path.parent.name.split('-')
+            return (90112, 4, vocab), changed if order == 'long' and arm in differs else values
+        nodes_for = nodes_for or (lambda dest, arm: self.nodes)
+        with patch.object(item, 'validate', side_effect=nodes_for), patch.object(item.base, 'read_logits', side_effect=logits):
+            return item.summarize(self.out, item.PLAN)
+
+    def test_traced_only_dependence_is_inconclusive(self):
+        result = self._summarize({'a', 'b', 'c', 'd', 'e', 'f'})
+        self.assertEqual(len(result['reading']), 1)
+        self.assertIn('callback induced', result['reading'][0])
+        self.assertTrue(result['arms']['a']['logits_differ'])
+        self.assertFalse(result['arms']['untraced']['logits_differ'])
+
+    def test_draft_only_difference_reading(self):
+        def nodes(dest, arm):
+            rows = copy.deepcopy(self.nodes)
+            if arm != 'untraced' and '-long-' in dest.name:
+                row = copy.deepcopy(rows[0])
+                row['domain'], row['phase'] = 'catchup', 'prefill'
+                rows.append(row)
+                other = copy.deepcopy(row)
+                other['output']['slices'][0]['data']['sha256'] = '1'*64
+                rows[-1] = other
+            elif arm != 'untraced':
+                row = copy.deepcopy(rows[0])
+                row['domain'], row['phase'] = 'catchup', 'prefill'
+                rows.append(row)
+            return rows
+        result = self._summarize(set(), nodes)
+        self.assertIn('catchup', result['arms']['a']['draft_first'])
+        self.assertEqual(len(result['reading']), 2)
+        self.assertIn('target logits equal, draft/catchup differ', result['reading'][1])
+
+    def test_partial_summary_records_repeat_failure(self):
+        plan = [('a', 'short', 0), ('a', 'long', 0), ('a', 'long', 1)]
+        base_values = item.base.np.zeros((4, 248320), dtype='<f4')
+        changed = base_values.copy()
+        changed[0, 0] = 1
+        def logits(path):
+            return (90112, 4, 248320), changed if path.parent.name.startswith('2-') else base_values
+        with patch.object(item, 'validate', return_value=self.nodes), patch.object(item.base, 'read_logits', side_effect=logits):
+            result = item.summarize(self.out, plan, partial=True)
+            self.assertTrue(result['partial'])
+            self.assertEqual(len(result['repeat_failures']), 1)
+            self.assertIsNone(result['reading'])
+            with self.assertRaises(item.lib.Fail):
+                item.summarize(self.out, plan)
+
     def test_manifest_and_environment(self):
         import tomllib
         manifest = tomllib.loads(render.render())
         self.assertEqual(manifest['id'], 'history-root')
         self.assertEqual(manifest['priority'], 23)
-        self.assertLessEqual(manifest['budget_s'], 7200)
+        self.assertLessEqual(manifest['budget_s'], 9600)
+        self.assertLessEqual(len(manifest['note']), 600)
         self.assertLessEqual(manifest['est_s'], .7*manifest['budget_s'])
         for stage in ('run', 'canary'):
             self.assertIn(str(item.WT / 'work/aa-load/ccx01.sh'), manifest[stage]['cmd'])

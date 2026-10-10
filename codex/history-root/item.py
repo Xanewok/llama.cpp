@@ -32,6 +32,7 @@ ARMS = {
 PLAN = [(arm, order, 0) for arm in ARMS for order in ('short', 'long')]
 PLAN += [(arm, order, 1) for arm in reversed(ARMS) for order in ('long', 'short')]
 DRAFT_STEPS = 5
+ARM_CAP_S = 420  # one boot: ~270 s at 90k depth (G), headroom for slow prefill
 DRAFT_VOCAB = Path('/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json')
 DEPTHS = {'short': [8192, 90112], 'long': [8192, 32768, 90112]}
 CANARY_DEPTHS = [128, 256, 512]
@@ -77,10 +78,10 @@ def build(out, name, remaining):
     env = dict(os.environ, CUDA_VISIBLE_DEVICES='', TMPDIR=str(target), CCACHE_TEMPDIR=str(target),
                OMP_NUM_THREADS='4', OPENBLAS_NUM_THREADS='1', GGML_CCACHE='ON')
     gate = str(WT / 'bin/buildgate')
-    commands = [['nice', '-n', '19', 'taskset', '-c', '6-11,18-23', gate, 'cmake', '-S', str(HERE), '-B', str(target),
+    commands = [['nice', '-n', '19', gate, 'cmake', '-S', str(HERE), '-B', str(target),
                  '-DCMAKE_BUILD_TYPE=Release', '-DENGINE=' + str(TREE), '-DCOMMIT=' + base.COMMITS[name],
                  '-DFROZEN=' + str(base.frozen(name)['bindir']), '-DGGML_CUDA=OFF', '-DGGML_CCACHE=ON'],
-                ['nice', '-n', '19', 'taskset', '-c', '6-11,18-23', gate, 'cmake', '--build', str(target), '-j4']]
+                ['nice', '-n', '19', gate, 'cmake', '--build', str(target), '-j4']]
     with (target / 'build.log').open('w') as log:
         for cmd in commands:
             subprocess.run(cmd, env=env, stdout=log, stderr=subprocess.STDOUT,
@@ -108,37 +109,36 @@ def validate(dest, arm, depth=90112):
     return nodes
 
 
-def summarize(out, plan):
-    records = {}
-    for i, (arm, order, repeat) in enumerate(plan):
-        dest = out / f'{i}-{arm}-{order}-r{repeat}'
-        nodes = validate(dest, arm)
-        _, logits = base.read_logits(dest / 'logits.bin')
-        key = arm, order
-        if key in records:
-            previous, previous_logits = records[key]
-            if nodes != previous or not base.np.array_equal(logits.view('<u4'), previous_logits.view('<u4')):
-                write_json(out / 'SUMMARY.json', {'valid': False, 'repeat_failure': {'arm': arm, 'order': order,
-                           'trace': trace.compare(previous, nodes), 'logits': base.compare_rows(previous_logits, logits)}})
-                raise lib.Fail(f'repeat differs: {arm}/{order}', 'integrity')
-        records[key] = nodes, logits
-    results = {}
-    for arm in dict.fromkeys(a for a, _, _ in plan):
-        short, short_logits = records[arm, 'short']
-        long, long_logits = records[arm, 'long']
-        results[arm] = {'repeats_equal': True, 'logits_differ': not base.np.array_equal(short_logits.view('<u4'), long_logits.view('<u4')),
-                        'logits': base.compare_rows(short_logits, long_logits),
-                        'trace': trace.compare(short, long) if ARMS[arm][3] else None}
-    baseline = results['a']['logits_differ']
+LIMITS = ['Callback execution changes scheduler partitioning, cached meta plans, fusion and graph reuse.',
+          'Physical slice drift can be masked KV padding, inactive rank data, or a PARTIAL representation.',
+          'Identical observed arithmetic inputs are a drift candidate, not proof of benign reassociation.',
+          'The last prefill ubatch is the first observed interval, not necessarily the first causal divergence.',
+          'No sampled proposals, rejection verification, reduced-vocabulary chain, or four-row target verify is replayed.']
+
+
+def draft_first(comparison):
+    """First differing node per non-target domain (draft-N, catchup): the second dependent variable."""
+    return {domain: {k: finding.get(k) for k in ('class', 'phase', 'index', 'name', 'op', 'layer_D')}
+            for domain, finding in comparison['by_domain'].items() if domain != 'target' and finding}
+
+
+def interpret(results):
+    """Contract: ablation readings (b..e) apply only when traced and untraced agree that the dependence exists."""
+    traced, untraced = results['a']['logits_differ'], results['untraced']['logits_differ']
     readings = []
-    if results['untraced']['logits_differ'] and not baseline:
+    if untraced and not traced:
         readings.append('inconclusive: callback instrumentation removes target-logit history dependence')
-    if not baseline:
+    if traced and not untraced:
+        readings.append('inconclusive: the callback induced the dependence (traced arms differ, untraced does not); '
+                        'b/c/d/e ablation readings do not apply')
+    if not traced:
         readings.append('not reproduced in traced teacher-forced target logits; no root-cause conclusion')
-        if results['a']['trace']['by_domain'].get('target') is None and any(
-                finding for domain, finding in results['a']['trace']['by_domain'].items() if domain != 'target'):
-            readings.append('only draft/catchup tensors differ at the observed prefix; inspect draft state before attributing target arithmetic')
-    else:
+        draft = results['a']['draft_first']
+        if not untraced and results['a']['trace']['by_domain'].get('target') is None and draft:
+            where = '; '.join(f"{d}: {f['class']} at {f['phase']}/{f['name']}" for d, f in draft.items())
+            readings.append('target logits equal, draft/catchup differ (' + where + '): inspect draft/catchup tensors '
+                            'and recurrent-state bytes before attributing target arithmetic')
+    elif untraced:
         if not results['b']['logits_differ'] and results['c']['logits_differ']:
             readings.append('stale-memory-byte bug class: data clear removes target dependence, metadata clear does not')
         if not results['d']['logits_differ']:
@@ -147,12 +147,44 @@ def summarize(out, plan):
             readings.append('CUDA graph state under callback instrumentation; confirm without tracing')
         if not readings:
             readings.append('dependence survives all included s9p ablations')
-    result = {'arms': results, 'reading': readings,
-              'limits': ['Callback execution changes scheduler partitioning, cached meta plans, fusion and graph reuse.',
-                         'Physical slice drift can be masked KV padding, inactive rank data, or a PARTIAL representation.',
-                         'Identical observed arithmetic inputs are a drift candidate, not proof of benign reassociation.',
-                         'The last prefill ubatch is the first observed interval, not necessarily the first causal divergence.',
-                         'No sampled proposals, rejection verification, reduced-vocabulary chain, or four-row target verify is replayed.']}
+    return readings
+
+
+def summarize(out, plan, partial=False, loaded=None):
+    """partial: never raises on a repeat mismatch (records it), covers only the runs in `plan`."""
+    loaded = {} if loaded is None else loaded
+    records, failures = {}, []
+    for i, (arm, order, repeat) in enumerate(plan):
+        dest = out / f'{i}-{arm}-{order}-r{repeat}'
+        if dest not in loaded:
+            nodes = validate(dest, arm)
+            _, logits = base.read_logits(dest / 'logits.bin')
+            loaded[dest] = nodes, logits
+        nodes, logits = loaded[dest]
+        key = arm, order
+        if key in records:
+            previous, previous_logits = records[key]
+            if nodes != previous or not base.np.array_equal(logits.view('<u4'), previous_logits.view('<u4')):
+                failure = {'arm': arm, 'order': order, 'trace': trace.compare(previous, nodes),
+                           'logits': base.compare_rows(previous_logits, logits)}
+                if not partial:
+                    write_json(out / 'SUMMARY.json', {'valid': False, 'repeat_failure': failure})
+                    raise lib.Fail(f'repeat differs: {arm}/{order}', 'integrity')
+                failures.append(failure)
+            continue
+        records[key] = nodes, logits
+    results = {}
+    for arm in dict.fromkeys(a for a, _, _ in plan):
+        if (arm, 'short') not in records or (arm, 'long') not in records:
+            continue
+        short, short_logits = records[arm, 'short']
+        long, long_logits = records[arm, 'long']
+        comparison = trace.compare(short, long) if ARMS[arm][3] else None
+        results[arm] = {'repeats_equal': True, 'logits_differ': not base.np.array_equal(short_logits.view('<u4'), long_logits.view('<u4')),
+                        'logits': base.compare_rows(short_logits, long_logits),
+                        'trace': comparison, 'draft_first': draft_first(comparison) if comparison else None}
+    result = {'partial': partial, 'repeat_failures': failures, 'arms': results,
+              'reading': interpret(results) if set(ARMS) <= set(results) else None, 'limits': LIMITS}
     write_json(out / 'SUMMARY.json', result)
     return result
 
@@ -235,6 +267,7 @@ def execute(args):
     write_json(out / 'plan.json', {'plan': plan, 'arms': ARMS, 'frozen': pins,
                                  'draft_steps_D': DRAFT_STEPS, 'inputs_sha256': {k: lib.file_sha(v) for k, v in inputs.items()}})
     binaries = {}
+    loaded = {}
     lib.event('measure_start')
     for i, (arm, order, repeat) in enumerate(plan):
         name = ARMS[arm][0]
@@ -260,7 +293,7 @@ def execute(args):
                 proc = subprocess.Popen(cmd, env=env, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                                         preexec_fn=lambda: lib._own_group(os.getppid()))
                 (dest / 'pid').write_text(str(proc.pid))
-                arm_deadline = time.monotonic() + min(240, remaining())
+                arm_deadline = time.monotonic() + min(ARM_CAP_S, remaining())
                 while proc.poll() is None:
                     if time.monotonic() > arm_deadline:
                         timed_out = True
@@ -302,8 +335,15 @@ def execute(args):
             # The same whole-run parsers and real-artifact negative controls run before full work.
             preflight(out / 'parser-checks')
             write_json(out / 'SUMMARY.json', {'canary': 'valid', 'nodes_D': len(nodes), 'comparison_negative_control': 'passed'})
+        half = len(plan) // 2
+        # Partial SUMMARY.json once pass 1 is complete, then after each finished repeat pair.
+        if not canary and i + 1 < len(plan) and (i + 1 == half or (i + 1 > half and repeat)):
+            try:
+                summarize(out, plan[:i + 1], partial=True, loaded=loaded)
+            except (OSError, ValueError, KeyError) as error:
+                (out / 'partial-summary-error.txt').write_text(str(error) + '\n')
     if not canary:
-        summarize(out, plan)
+        summarize(out, plan, loaded=loaded)
 
 
 def main():

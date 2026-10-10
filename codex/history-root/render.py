@@ -11,16 +11,25 @@ BASE = TREE / 'codex/stack10/identity2'
 sys.path.insert(0, str(BASE))
 from render_kld_v2 import value
 
+NOTE = (
+    'why: IQ4 np1 90k output depends on earlier requests (cache_n 0) on vanilla and stacks; find the first differing node on GPU. '
+    '| expect (D, from the CPU 4B replay in codex/REPORT-history-root.md): target logits identical across orders; '
+    'draft/catchup tensors or recurrent-state bytes differ. Likely (G): the teacher-forced one-row path reproduces nothing, '
+    'so the served 4-row verify / rejection path is implicated. '
+    '| falsifier: target logits differ on GPU (stale memory bytes or CUDA-graph reading). '
+    '| answers: first differing node per arm/domain; target vs draft-only dependence.')
+
 
 def render():
     old = tomllib.loads((BASE / 's10-kld-iq4-v2.gpuq.toml').read_text())
     item = {k: v for k, v in old.items() if k not in ('run', 'canary', 'preflight', 'outputs', 'pins', 'fix')}
     item.update(id='history-root', priority=23,
                 title='Teacher-forced request history: first differing tensor, clears, draft and graph ablations',
-                budget_s=7000, est_s=4500)
+                budget_s=9600, est_s=28*200 + 720,  # est_s (G); budget: 28 boots x 270 s + builds, waits
+                note=NOTE)
     output = '/mnt/scratch/work/history-root/a{attempt}'
     wrapper = str(WT / 'work/aa-load/ccx01.sh')
-    for stage, budget in [('run', 6600), ('canary', 280)]:
+    for stage, budget in [('run', 9000), ('canary', 280)]:
         item[stage] = {'cmd': ['bash', wrapper, 'bash', str(HERE / 'gpu_ab.sh'), stage,
                               '--out', output + '/' + stage, '--budget-s', str(budget)],
                        'env': {'GPUQ_ACTIVE': '1'}}
