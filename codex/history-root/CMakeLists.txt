@@ -1,0 +1,27 @@
+cmake_minimum_required(VERSION 3.19)
+project(history_root LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 17)
+option(GGML_CCACHE "Use the shared compiler cache" ON)
+option(GGML_CUDA "Build a CUDA backend" OFF)
+if(GGML_CUDA)
+    message(FATAL_ERROR "This tool links existing libraries; it does not build a backend")
+endif()
+find_package(OpenSSL REQUIRED COMPONENTS Crypto)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+find_program(CCACHE ccache)
+if(GGML_CCACHE AND CCACHE)
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE}")
+endif()
+execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/meta_header.py"
+    --engine "${ENGINE}" --commit "${COMMIT}" --out "${CMAKE_CURRENT_BINARY_DIR}/meta-layout.h"
+    COMMAND_ERROR_IS_FATAL ANY)
+add_executable(history-root history-root.cpp)
+add_executable(history-fingerprint-test EXCLUDE_FROM_ALL fingerprint-test.cpp)
+foreach(TARGET history-root history-fingerprint-test)
+target_include_directories(${TARGET} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}" "${ENGINE}/common"
+    "${ENGINE}/include" "${ENGINE}/ggml/include" "${ENGINE}/ggml/src" "${ENGINE}/src")
+target_link_libraries(${TARGET} PRIVATE OpenSSL::Crypto "${FROZEN}/libllama-common.so"
+    "${FROZEN}/libllama.so" "${FROZEN}/libggml.so" "${FROZEN}/libggml-base.so")
+target_link_options(${TARGET} PRIVATE "-Wl,-rpath-link,${FROZEN}" "-Wl,--export-dynamic-symbol=ggml_backend_graph_compute_async")
+set_target_properties(${TARGET} PROPERTIES BUILD_RPATH "${FROZEN}")
+endforeach()
