@@ -17,6 +17,27 @@ sys.path.insert(0, os.environ['HARNESS_CODE_ROOT'])
 from harness import lib, depth, campaign
 from harness.__main__ import main as harness_main
 
+BudgetExpired = getattr(lib, 'BudgetExpired', None)
+if BudgetExpired is None:  # harness snapshot older than lib.BudgetExpired
+    class BudgetExpired(BaseException):
+        """Contract: never a ValueError (lib.Fail is one) or an Exception. http.client turns a ValueError raised while it
+        waits for a chunk size into IncompleteRead(b''), so an alarm raising lib.Fail mid-stream reads as a cut SSE stream."""
+
+
+def expire_budget(signum, frame):
+    raise BudgetExpired('budget: boot wall expired')
+
+
+def guarded(run):
+    """Budget expiry is rc 7 (timeout); the alarm is disarmed on every exit path."""
+    try:
+        return run()
+    except BudgetExpired as error:
+        print(f'FAILED timeout rc={lib.RC["timeout"]}: {error}', file=sys.stderr, flush=True)
+        return lib.RC['timeout']
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+
 
 def fixture_checks():
     depth.fixture_test(FIXTURES)
@@ -77,13 +98,10 @@ def install_runtime_guards(argv):
     x = lib.read_experiment(argv[1])
     cap = 520 if '--canary' in argv else (x['depth']['wall_s'] - 60 if x['kind'] == 'depth' else 0)
 
-    def expire(signum, frame):
-        raise lib.Fail('budget: boot wall expired', 'timeout')
-
     def start(server):
         pid = original_start(server)
         if cap:
-            signal.signal(signal.SIGALRM, expire)
+            signal.signal(signal.SIGALRM, expire_budget)
             signal.setitimer(signal.ITIMER_REAL, cap)
         return pid
 
@@ -108,4 +126,4 @@ if __name__ == '__main__':
     if sys.argv[1:] == ['--fixtures']:
         sys.exit(fixture_checks())
     install_runtime_guards(sys.argv[1:])
-    sys.exit(harness_main())
+    sys.exit(guarded(harness_main))
