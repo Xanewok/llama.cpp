@@ -1,5 +1,5 @@
 id = "history-root"
-priority = 23
+priority = 10
 title = "Teacher-forced request history: first differing tensor, clears, draft and graph ablations"
 kind = "measure"
 host_sensitive = false
