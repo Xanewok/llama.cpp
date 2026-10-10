@@ -1,0 +1,3 @@
+fingerprint controls passed: {"sha256":"b56f1bcea104206b3581af0c889000f70050bced0687d87015a23115c8675a32","bytes":48,"sum_bytes":1828,"absmax_bytes":224,"value_stats":{"sum":78,"absmax":12,"min":1,"max":12,"finite":12,"nonfinite":0}}
+CPU meta full result=32 nodes=2
+meta completion controls passed: full=32 bare=16 completed=32

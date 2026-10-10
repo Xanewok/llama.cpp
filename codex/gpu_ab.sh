@@ -4,6 +4,9 @@ set -euo pipefail
 unset PYTHONOPTIMIZE LD_PRELOAD LD_LIBRARY_PATH
 export GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+case ${1:-} in
+    preflight|canary|run) exec bash "$ROOT/codex/history-root/gpu_ab.sh" "$@" ;;
+esac
 saved=${1:?saved harness/run.sh}; shift
 code=$(cd "$(dirname "$saved")/.." && pwd)
 data=$(cat "$code/source-root.txt")

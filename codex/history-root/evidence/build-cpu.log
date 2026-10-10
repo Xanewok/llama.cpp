@@ -1,0 +1,6 @@
+[ 50%] Building CXX object CMakeFiles/history-root.dir/history-root.cpp.o
+[100%] Linking CXX executable history-root
+[100%] Built target history-root
+[ 50%] Building CXX object CMakeFiles/history-fingerprint-test.dir/fingerprint-test.cpp.o
+[100%] Linking CXX executable history-fingerprint-test
+[100%] Built target history-fingerprint-test

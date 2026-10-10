@@ -1,0 +1,32 @@
+{
+  "cuda_execution": false,
+  "submitted": false,
+  "cpu_engine_build": "passed",
+  "diagnostic_link_sets": [
+    "cpu",
+    "stack9-p55",
+    "stack10"
+  ],
+  "frozen_binaries_executed": false,
+  "cpu_model_processes_M": 7,
+  "cpu_a_repeats_equal_M": true,
+  "cpu_a_order_target_logit_rows_bitwise_equal_M": 4,
+  "cpu_b_c_d_long_target_logit_rows_bitwise_equal_M": 4,
+  "negative_controls": [
+    "active-byte mutation",
+    "stride-gap mutation ignored",
+    "bare meta graph misses AllReduce (16 vs 32)",
+    "trace hash mutation",
+    "missing phase",
+    "same-order logit mutation",
+    "recorded GPU parser controls"
+  ],
+  "python_tests_M": 6,
+  "shell_files_checked_M": 4,
+  "queue_check": "passed",
+  "clean_env_queue_check": "passed",
+  "manifest_sha256": "319214aacb5194a0c2faec994162ea26a95169e9caf16fca5457ea50c390e313",
+  "validation_shell_postlude": "failed after all model runs; current bash syntax and separately resumed postlude checks pass",
+  "initial_gate_violation": "parser tests 1.874 s M plus unknown imports during vanilla-depth-iq4; completed 2026-10-10 16:38:13 UTC",
+  "native_gpu_callback_capture": "pending parent canary"
+}
