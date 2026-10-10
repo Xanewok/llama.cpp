@@ -1707,6 +1707,12 @@ static void llama_sampler_top_p_backend_apply(
     mask_reshaped = ggml_set_rows(ctx, mask_reshaped, ones, ggml_cast(ctx, idxf, GGML_TYPE_I32));
     mask = ggml_reshape_1d(ctx, mask_reshaped, mask->ne[0]);
 
+    if (sctx->min_keep > 1) {
+        // the logits are sorted, so keep the first min_keep
+        const int64_t n_keep = std::min<int64_t>(sctx->min_keep, mask->ne[0]);
+        mask = llama_sampler_backend_mask_keep(ctx, mask, ggml_cast(ctx, ggml_arange(ctx, 0.0f, (float) n_keep, 1.0f), GGML_TYPE_I32));
+    }
+
     // Apply -INFINITY bias for masked-out tokens
     // log(1) = 0 (keep), log(0) = -INF (discard)
     struct ggml_tensor * top_p_bias = ggml_log(ctx, mask);
@@ -1871,9 +1877,11 @@ static void llama_sampler_min_p_backend_apply(
     struct ggml_tensor * mask = ggml_scale_bias(ctx, ggml_step(ctx, ggml_neg(ctx, sub)), -1.0f, 1.0f);
     ggml_set_name(mask, "min_p_mask");
 
-    // For p > 1 no logit reaches the threshold; the CPU sampler then still keeps the first (top) token.
-    if (sctx->p > 1.0f) {
-        mask = llama_sampler_backend_mask_keep(ctx, mask, ggml_top_k(ctx, logits, 1));
+    // The CPU sampler keeps at least min_keep tokens and always the first (top) one, which for p > 1
+    // is not in the mask. For p <= 1 the max and its ties already are.
+    const int64_t n_keep = std::min<int64_t>(std::max<size_t>(sctx->min_keep, 1), logits->ne[0]);
+    if (n_keep > 1 || sctx->p > 1.0f) {
+        mask = llama_sampler_backend_mask_keep(ctx, mask, ggml_top_k(ctx, logits, (int) n_keep));
     }
 
     // Apply -INFINITY bias for masked-out tokens

@@ -1591,6 +1591,71 @@ static void test_min_p_one(const test_params & params) {
     printf("backend min-p p >= 1 test PASSED\n");
 }
 
+static void test_min_keep(const test_params & params) {
+    const std::string prompt = "Hello";
+    const std::vector<float> raw = decode_raw_logits(params, prompt);
+
+    struct min_keep_case {
+        const char * name;
+        bool         top_p;  // else min-p
+        int32_t      n_tie;  // 0: the model logits
+        float        p;
+        size_t       min_keep;
+        size_t       n_kept; // what the CPU sampler keeps on tied logits
+    };
+
+    const min_keep_case cases[] = {
+        { "min-p model",         false, 0, 0.99f, 5, 0 },
+        { "min-p model keep=1",  false, 0, 1.0f,  1, 0 },
+        { "min-p ties6 keep=5",  false, 6, 1.0f,  5, 6 }, // the six tied maxima pass the threshold
+        { "min-p ties3 keep=5",  false, 3, 1.0f,  5, 5 }, // the two next logits are forced in
+        { "min-p ties2 p>1",     false, 2, 1.05f, 3, 3 }, // nothing passes the threshold: only min_keep applies
+        { "min-p ties6 p>1",     false, 6, 1.05f, 3, 3 },
+        { "top-p model",         true,  0, 0.01f, 5, 0 },
+        { "top-p ties6 keep=1",  true,  6, 0.01f, 1, 1 },
+        { "top-p ties6 keep=5",  true,  6, 0.01f, 5, 5 },
+        { "top-p ties3 keep=5",  true,  3, 0.01f, 5, 5 },
+    };
+
+    int n_fail = 0;
+    for (const auto & c : cases) {
+        const auto init_filter = [&](size_t min_keep) {
+            return c.top_p ? llama_sampler_init_top_p(c.p, min_keep) : llama_sampler_init_min_p(c.p, min_keep);
+        };
+        const auto add_samplers = [&](llama_sampler * chain) {
+            if (c.n_tie > 0) {
+                llama_sampler_chain_add(chain, test_tie_sampler_init(c.n_tie));
+            }
+            llama_sampler_chain_add(chain, init_filter(c.min_keep));
+        };
+
+        if (c.n_tie == 0 && c.min_keep > 1) {
+            // without min_keep the filter keeps fewer tokens, so the case exercises it
+            llama_sampler_ptr cpu_sampler(init_filter(0));
+            GGML_ASSERT(apply_cpu_sampler(raw, cpu_sampler.get()).size() < c.min_keep);
+        }
+
+        const sampler_comparison_output output = run_sampler_comparison(
+                params, prompt, raw, add_samplers, [](llama_sampler *) {});
+
+        const std::vector<float> cpu_kept     = sorted_kept_logits(output.expected);
+        const std::vector<float> backend_kept = sorted_kept_logits(output.actual);
+        GGML_ASSERT(cpu_kept.size() >= c.min_keep);
+        GGML_ASSERT(c.n_tie == 0 || cpu_kept.size() == c.n_kept);
+
+        bool ok = backend_kept == cpu_kept;
+        if (c.n_tie == 0) {
+            ok = ok && compare_sampler_outputs(c.name, map_logits(output.expected), output.actual).n_mismatch == 0;
+        }
+        printf("min_keep case '%s': cpu kept %zu, backend kept %zu: %s\n",
+                c.name, cpu_kept.size(), backend_kept.size(), ok ? "ok" : "MISMATCH");
+        n_fail += !ok;
+    }
+
+    GGML_ASSERT(n_fail == 0);
+    printf("backend min_keep sampling test PASSED\n");
+}
+
 static void test_mixed(const test_params & params) {
     struct llama_sampler_chain_params chain_params_0 = llama_sampler_chain_default_params();
     llama_sampler_ptr sampler_chain_0(llama_sampler_chain_init(chain_params_0));
@@ -2202,6 +2267,7 @@ static const backend_test_case BACKEND_TESTS[] = {
     { "test_top_p",                  test_top_p,                  true },
     { "test_min_p",                  test_min_p,                  true },
     { "test_min_p_one",              test_min_p_one,              true },
+    { "test_min_keep",               test_min_keep,               true },
     { "test_logit_bias",             test_logit_bias,             true },
     { "test_penalties",              test_penalties,              true },
     // multiple sequences
@@ -2308,6 +2374,7 @@ static std::vector<const backend_test_case *> collect_tests_to_run(const std::st
                 test.name == "test_mixed"                       ||
                 test.name == "test_top_p"                       ||
                 test.name == "test_min_p_one"                   ||
+                test.name == "test_min_keep"                    ||
                 test.name == "test_multi_output_sampling_chain" ||
                 test.name == "test_multi_output_cpu_suffix") {
                 fprintf(stderr, "Skipping test '%s' on HIP backend (no backend TOP_K support)\n", test.name.c_str());
