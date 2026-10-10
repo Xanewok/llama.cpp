@@ -762,3 +762,39 @@ def test_prompt_cache_noncanonical_split():
     complete_tokens(head2 + control + tail)
     timings = complete_tokens(head2 + spelled + tail + more)
     assert timings["cache_n"] <= len(head2)
+
+
+# n_keep that points into a span the cache spells with fewer tokens must keep the whole span
+def test_prompt_cache_noncanonical_split_n_keep(tmp_path):
+    global server
+    server.n_slots = 1
+    server.n_ctx = 256
+    server.enable_ctx_shift = True
+    server.log_path = str(tmp_path / "server.log")
+    server.start()
+
+    head = tokenize(HEAD_TEXT)
+    tail = tokenize(TAIL_TEXT)
+    more = tokenize(MORE_TEXT)
+
+    whole, parts = find_split(pieces_after(head), 3)
+    cached = head + [whole] + tail
+    fresh  = head + parts + tail + more
+
+    def n_keep_at_shift(prompt: list[int], n_keep: int) -> tuple[int, dict]:
+        timings = complete_tokens(prompt, n_keep=n_keep, n_predict=240, ignore_eos=True)
+        with open(server.log_path) as f:
+            hits = re.findall(r"slot context shift, n_keep = (\d+)", f.read())
+        assert hits
+        return int(hits[-1]), timings
+
+    # the shift keeps n_keep plus the BOS token, if the model adds one
+    n_bos = n_keep_at_shift(cached, 5)[0] - 5
+
+    # the shift dropped tokens from the slot, cache the full prompt again
+    complete_tokens(cached)
+
+    # fresh spells head + 3 tokens where cached has one: the position after the second token is inside the span
+    n_keep, timings = n_keep_at_shift(fresh, len(head) + 2 - n_bos)
+    assert timings["cache_n"] == len(cached)
+    assert n_keep == len(head) + 1 # the end of the span in the cached tokens
