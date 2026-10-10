@@ -95,7 +95,8 @@ def history_manifest():
             first.append(key)
     x['plan'] = first + list(reversed(first))
     x['depth']['wall_s'] = 300
-    x['canary'] = dict(plan=['stock_long'], depths=[8192], proofs=[])
+    # keep the source's canary env: the fold proof line is LLAMA_LOG_DEBUG and needs verbosity 5
+    x['canary'] = x['canary'] | dict(plan=['stock_long'], depths=[8192], proofs=[])
     x['budget'] |= dict(canary_s=300, margin=1.05, cleanup_s=60, est_s=4200)
     x['server']['knobs'] = list(dict.fromkeys(x['server']['knobs'] + ['GGML_CUDA_DISABLE_GRAPHS']))
     own = common_pins() + [str(source), str(HERE / 's10-history-iq4.toml')]

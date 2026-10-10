@@ -234,6 +234,12 @@ plan = ["stock_long"]
 depths = [8192]
 proofs = []
 
+[canary.env]
+LLAMA_ARG_LOG_VERBOSITY = "5"
+GGML_SSM_CONV_RS_LOG = "1"
+GGML_CUDA_TOPK_LOG = "1"
+GGML_CUDA_MMQ_TILES_LOG = "1"
+
 [budget]
 canary_s = 300
 margin = 1.05
