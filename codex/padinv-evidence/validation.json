@@ -1,0 +1,14 @@
+{
+  "CUDA_VISIBLE_DEVICES": "",
+  "GPU_execution": false,
+  "CPU_cases_M": 72,
+  "CPU_threads_D": 1,
+  "OpenMP": false,
+  "mutant_returncode_M": 1,
+  "shell_lint": "pass",
+  "bash_syntax": "pass",
+  "python_AST": "pass",
+  "normal_submit_check": "valid",
+  "clean_env_submit_check": "valid",
+  "preflight": "pass"
+}

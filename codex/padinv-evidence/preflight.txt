@@ -1,0 +1,2 @@
+{"real_SQL": "/home/xanewok/repos/qwen38-eval-worktrees/wt/restrict-probe/codex/window/restrict-a2/perf-CUDA0-stock-1-fa.out", "real_SQL_rows_M": 9, "real_engagement": "/mnt/scratch/work/s10-identity2/s10-kld-iq4-v2/a1/canary/0-stock/tool.log", "real_engagement_markers_M": 64, "fault_fixture": "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures/xid-lines.txt", "cpu_cases_M": 72, "cpu_max_nmse_M": 0.00015368687148309583, "cpu_max_abs_M": 0.019425898800000008}
+bw-pkg54-padinv: PASS preflight

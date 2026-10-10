@@ -1,0 +1,7 @@
+{
+  "returncode_M": 1,
+  "invariant_M": 0,
+  "control_M": 1,
+  "finite_M": 1,
+  "mutation": "all suffix mask entries set to zero"
+}

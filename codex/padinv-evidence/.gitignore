@@ -1,0 +1,4 @@
+*.sql
+*.err
+*.log
+summary-fixture/
