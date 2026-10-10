@@ -1,0 +1,325 @@
+{
+  "shell-syntax": {
+    "cmd": [
+      "bash",
+      "-n",
+      "codex/bw-vanilla.sh",
+      "codex/gpu_ab.sh"
+    ],
+    "rc": 0,
+    "output": ""
+  },
+  "shlint": {
+    "cmd": [
+      "/usr/bin/python3",
+      "-m",
+      "gpuq.shlint",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/bw-vanilla.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/gpu_ab.sh"
+    ],
+    "rc": 0,
+    "output": ""
+  },
+  "window-preflight": {
+    "cmd": [
+      "bash",
+      "codex/bw-vanilla.sh",
+      "--preflight"
+    ],
+    "rc": 0,
+    "output": "bw-vanilla: PASS preflight\n"
+  },
+  "window-contract": {
+    "cmd": [
+      "gpuq",
+      "submit",
+      "--check",
+      "codex/bw-vanilla.toml"
+    ],
+    "rc": 0,
+    "output": "codex/bw-vanilla.toml: bw-vanilla: valid\n"
+  },
+  "window-clean-contract": {
+    "cmd": [
+      "/home/xanewok/repos/gpuq/bin/gpuq",
+      "submit",
+      "--check",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/bw-vanilla.toml"
+    ],
+    "rc": 0,
+    "output": "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/bw-vanilla.toml: bw-vanilla: valid\n"
+  },
+  "window-clean-preflight": {
+    "cmd": [
+      "bash",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/bw-vanilla.sh",
+      "--preflight"
+    ],
+    "rc": 0,
+    "output": "bw-vanilla: PASS preflight\n"
+  },
+  "vanilla-cold-prefill-iq4.gpuq-clean-contract": {
+    "cmd": [
+      "/home/xanewok/repos/gpuq/bin/gpuq",
+      "submit",
+      "--check",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-cold-prefill-iq4.gpuq.toml"
+    ],
+    "rc": 0,
+    "output": "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-cold-prefill-iq4.gpuq.toml: dry-vanilla-cold-prefill-iq4: valid\n"
+  },
+  "vanilla-cold-prefill-iq4.gpuq-preflight": {
+    "cmd": [
+      "bash",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-35659b195562af8a48053902741598edeacf6171d6a21b70306430945a8908c1/harness/run.sh",
+      "depth",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-35659b195562af8a48053902741598edeacf6171d6a21b70306430945a8908c1/experiment.toml",
+      "--preflight",
+      "--out",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/results/vanilla-cold-prefill-iq4/preflight-plan"
+    ],
+    "rc": 0,
+    "output": "{\n  \"recorded_fixture\": \"/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures\",\n  \"parser_result\": {\n    \"intervals_M\": 24,\n    \"steady_ms_per_round_D\": 37.19825,\n    \"timings\": {\n      \"cache_n\": 0,\n      \"prompt_n\": 684,\n      \"prompt_ms\": 1202.469,\n      \"prompt_per_token_ms\": 1.7579956140350879,\n      \"prompt_per_second\": 568.8296330300407,\n      \"predicted_n\": 122,\n      \"predicted_ms\": 1200.672,\n      \"predicted_per_token_ms\": 9.92290909090909,\n      \"predicted_per_second\": 100.77689827030196,\n      \"draft_n\": 150,\n      \"draft_n_accepted\": 93\n    },\n    \"untrimmed_periods\": [\n      {\n        \"first_round\": 1,\n        \"last_round\": 2,\n        \"ms_D\": 39.165000000000006,\n        \"excluded\": [\n          \"warmup\"\n        ]\n      },\n      {\n        \"first_round\": 2,\n        \"last_round\": 3,\n        \"ms_D\": 33.428,\n        \"excluded\": [\n          \"warmup\"\n        ]\n      },\n      {\n        \"first_round\": 3,\n        \"last_round\": 4,\n        \"ms_D\": 36.17699999999999,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 4,\n        \"last_round\": 5,\n        \"ms_D\": 33.360000000000014,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 5,\n        \"last_round\": 7,\n        \"ms_D\": 67.93399999999997,\n        \"excluded\": [\n          \"missing-round-boundary\"\n        ]\n      },\n      {\n        \"first_round\": 7,\n        \"last_round\": 8,\n        \"ms_D\": 35.13000000000005,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 8,\n        \"last_round\": 9,\n        \"ms_D\": 34.86499999999995,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 9,\n        \"last_round\": 10,\n        \"ms_D\": 38.49400000000003,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 10,\n        \"last_round\": 11,\n        \"ms_D\": 33.827,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 11,\n        \"last_round\": 12,\n        \"ms_D\": 34.161,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 12,\n        \"last_round\": 13,\n        \"ms_D\": 34.19400000000002,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 13,\n        \"last_round\": 14,\n        \"ms_D\": 36.30599999999998,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 14,\n        \"last_round\": 15,\n        \"ms_D\": 35.18700000000001,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 15,\n        \"last_round\": 16,\n        \"ms_D\": 33.68799999999999,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 16,\n        \"last_round\": 17,\n        \"ms_D\": 33.649,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 17,\n        \"last_round\": 18,\n        \"ms_D\": 33.45600000000002,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 18,\n        \"last_round\": 19,\n        \"ms_D\": 33.341999999999985,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 19,\n        \"last_round\": 20,\n        \"ms_D\": 33.823999999999955,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 20,\n        \"last_round\": 21,\n        \"ms_D\": 60.888000000000034,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 21,\n        \"last_round\": 22,\n        \"ms_D\": 58.041000000000054,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 22,\n        \"last_round\": 23,\n        \"ms_D\": 33.91999999999996,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 23,\n        \"last_round\": 24,\n        \"ms_D\": 40.31700000000001,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 24,\n        \"last_round\": 25,\n        \"ms_D\": 34.077999999999975,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 25,\n        \"last_round\": 26,\n        \"ms_D\": 44.985000000000014,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 26,\n        \"last_round\": 27,\n        \"ms_D\": 33.650999999999954,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 27,\n        \"last_round\": 28,\n        \"ms_D\": 33.625999999999976,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 28,\n        \"last_round\": 29,\n        \"ms_D\": 33.5920000000001,\n        \"excluded\": [\n          \"tail\"\n        ]\n      },\n      {\n        \"first_round\": 29,\n        \"last_round\": 30,\n        \"ms_D\": 103.00999999999999,\n        \"excluded\": [\n          \"tail\"\n        ]\n      }\n    ],\n    \"median_trimmed_rounds_D\": 0,\n    \"excluded_periods_D\": 5\n  },\n  \"negative_controls\": \"PASS\"\n}\nreal SSE, np1/np2 timing, token, cache, overlap, history and summary controls PASS\n"
+  },
+  "vanilla-cold-prefill-iq4.gpuq-capture": {
+    "cmd": [
+      "bash",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-35659b195562af8a48053902741598edeacf6171d6a21b70306430945a8908c1/harness/run.sh",
+      "depth",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-35659b195562af8a48053902741598edeacf6171d6a21b70306430945a8908c1/experiment.toml",
+      "--capture",
+      "--port",
+      "18199",
+      "--out",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/capture/vanilla-cold-prefill-iq4.gpuq"
+    ],
+    "rc": 0,
+    "output": ""
+  },
+  "vanilla-cold-prefill-iq4.gpuq-dry-refusal": {
+    "rc": 6,
+    "output": "DRY STAND-IN refuses GPU execution\n"
+  },
+  "vanilla-depth-iq4.gpuq-clean-contract": {
+    "cmd": [
+      "/home/xanewok/repos/gpuq/bin/gpuq",
+      "submit",
+      "--check",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-depth-iq4.gpuq.toml"
+    ],
+    "rc": 0,
+    "output": "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-depth-iq4.gpuq.toml: dry-vanilla-depth-iq4: valid\n"
+  },
+  "vanilla-depth-iq4.gpuq-preflight": {
+    "cmd": [
+      "bash",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-d28640691c8c30fad2d7a1eac70cb83e38b089e6a88d3d7cd8dd5d2042e670e0/harness/run.sh",
+      "depth",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-d28640691c8c30fad2d7a1eac70cb83e38b089e6a88d3d7cd8dd5d2042e670e0/experiment.toml",
+      "--preflight",
+      "--out",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/results/vanilla-depth-iq4/preflight-plan"
+    ],
+    "rc": 0,
+    "output": "{\n  \"recorded_fixture\": \"/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures\",\n  \"parser_result\": {\n    \"intervals_M\": 24,\n    \"steady_ms_per_round_D\": 37.19825,\n    \"timings\": {\n      \"cache_n\": 0,\n      \"prompt_n\": 684,\n      \"prompt_ms\": 1202.469,\n      \"prompt_per_token_ms\": 1.7579956140350879,\n      \"prompt_per_second\": 568.8296330300407,\n      \"predicted_n\": 122,\n      \"predicted_ms\": 1200.672,\n      \"predicted_per_token_ms\": 9.92290909090909,\n      \"predicted_per_second\": 100.77689827030196,\n      \"draft_n\": 150,\n      \"draft_n_accepted\": 93\n    },\n    \"untrimmed_periods\": [\n      {\n        \"first_round\": 1,\n        \"last_round\": 2,\n        \"ms_D\": 39.165000000000006,\n        \"excluded\": [\n          \"warmup\"\n        ]\n      },\n      {\n        \"first_round\": 2,\n        \"last_round\": 3,\n        \"ms_D\": 33.428,\n        \"excluded\": [\n          \"warmup\"\n        ]\n      },\n      {\n        \"first_round\": 3,\n        \"last_round\": 4,\n        \"ms_D\": 36.17699999999999,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 4,\n        \"last_round\": 5,\n        \"ms_D\": 33.360000000000014,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 5,\n        \"last_round\": 7,\n        \"ms_D\": 67.93399999999997,\n        \"excluded\": [\n          \"missing-round-boundary\"\n        ]\n      },\n      {\n        \"first_round\": 7,\n        \"last_round\": 8,\n        \"ms_D\": 35.13000000000005,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 8,\n        \"last_round\": 9,\n        \"ms_D\": 34.86499999999995,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 9,\n        \"last_round\": 10,\n        \"ms_D\": 38.49400000000003,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 10,\n        \"last_round\": 11,\n        \"ms_D\": 33.827,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 11,\n        \"last_round\": 12,\n        \"ms_D\": 34.161,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 12,\n        \"last_round\": 13,\n        \"ms_D\": 34.19400000000002,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 13,\n        \"last_round\": 14,\n        \"ms_D\": 36.30599999999998,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 14,\n        \"last_round\": 15,\n        \"ms_D\": 35.18700000000001,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 15,\n        \"last_round\": 16,\n        \"ms_D\": 33.68799999999999,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 16,\n        \"last_round\": 17,\n        \"ms_D\": 33.649,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 17,\n        \"last_round\": 18,\n        \"ms_D\": 33.45600000000002,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 18,\n        \"last_round\": 19,\n        \"ms_D\": 33.341999999999985,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 19,\n        \"last_round\": 20,\n        \"ms_D\": 33.823999999999955,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 20,\n        \"last_round\": 21,\n        \"ms_D\": 60.888000000000034,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 21,\n        \"last_round\": 22,\n        \"ms_D\": 58.041000000000054,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 22,\n        \"last_round\": 23,\n        \"ms_D\": 33.91999999999996,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 23,\n        \"last_round\": 24,\n        \"ms_D\": 40.31700000000001,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 24,\n        \"last_round\": 25,\n        \"ms_D\": 34.077999999999975,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 25,\n        \"last_round\": 26,\n        \"ms_D\": 44.985000000000014,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 26,\n        \"last_round\": 27,\n        \"ms_D\": 33.650999999999954,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 27,\n        \"last_round\": 28,\n        \"ms_D\": 33.625999999999976,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 28,\n        \"last_round\": 29,\n        \"ms_D\": 33.5920000000001,\n        \"excluded\": [\n          \"tail\"\n        ]\n      },\n      {\n        \"first_round\": 29,\n        \"last_round\": 30,\n        \"ms_D\": 103.00999999999999,\n        \"excluded\": [\n          \"tail\"\n        ]\n      }\n    ],\n    \"median_trimmed_rounds_D\": 0,\n    \"excluded_periods_D\": 5\n  },\n  \"negative_controls\": \"PASS\"\n}\nreal SSE, np1/np2 timing, token, cache, overlap, history and summary controls PASS\n"
+  },
+  "vanilla-depth-iq4.gpuq-capture": {
+    "cmd": [
+      "bash",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-d28640691c8c30fad2d7a1eac70cb83e38b089e6a88d3d7cd8dd5d2042e670e0/harness/run.sh",
+      "depth",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-d28640691c8c30fad2d7a1eac70cb83e38b089e6a88d3d7cd8dd5d2042e670e0/experiment.toml",
+      "--capture",
+      "--port",
+      "18199",
+      "--out",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/capture/vanilla-depth-iq4.gpuq"
+    ],
+    "rc": 0,
+    "output": ""
+  },
+  "vanilla-depth-iq4.gpuq-dry-refusal": {
+    "rc": 6,
+    "output": "DRY STAND-IN refuses GPU execution\n"
+  },
+  "vanilla-depth-j5q.gpuq-clean-contract": {
+    "cmd": [
+      "/home/xanewok/repos/gpuq/bin/gpuq",
+      "submit",
+      "--check",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-depth-j5q.gpuq.toml"
+    ],
+    "rc": 0,
+    "output": "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-depth-j5q.gpuq.toml: dry-vanilla-depth-j5q: valid\n"
+  },
+  "vanilla-depth-j5q.gpuq-preflight": {
+    "cmd": [
+      "bash",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-2f8bb44b50a1f486fefc66ea52f7dba61c3e26b11337f83d85196f5e4ffede49/harness/run.sh",
+      "depth",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-2f8bb44b50a1f486fefc66ea52f7dba61c3e26b11337f83d85196f5e4ffede49/experiment.toml",
+      "--preflight",
+      "--out",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/results/vanilla-depth-j5q/preflight-plan"
+    ],
+    "rc": 0,
+    "output": "{\n  \"recorded_fixture\": \"/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures\",\n  \"parser_result\": {\n    \"intervals_M\": 24,\n    \"steady_ms_per_round_D\": 37.19825,\n    \"timings\": {\n      \"cache_n\": 0,\n      \"prompt_n\": 684,\n      \"prompt_ms\": 1202.469,\n      \"prompt_per_token_ms\": 1.7579956140350879,\n      \"prompt_per_second\": 568.8296330300407,\n      \"predicted_n\": 122,\n      \"predicted_ms\": 1200.672,\n      \"predicted_per_token_ms\": 9.92290909090909,\n      \"predicted_per_second\": 100.77689827030196,\n      \"draft_n\": 150,\n      \"draft_n_accepted\": 93\n    },\n    \"untrimmed_periods\": [\n      {\n        \"first_round\": 1,\n        \"last_round\": 2,\n        \"ms_D\": 39.165000000000006,\n        \"excluded\": [\n          \"warmup\"\n        ]\n      },\n      {\n        \"first_round\": 2,\n        \"last_round\": 3,\n        \"ms_D\": 33.428,\n        \"excluded\": [\n          \"warmup\"\n        ]\n      },\n      {\n        \"first_round\": 3,\n        \"last_round\": 4,\n        \"ms_D\": 36.17699999999999,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 4,\n        \"last_round\": 5,\n        \"ms_D\": 33.360000000000014,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 5,\n        \"last_round\": 7,\n        \"ms_D\": 67.93399999999997,\n        \"excluded\": [\n          \"missing-round-boundary\"\n        ]\n      },\n      {\n        \"first_round\": 7,\n        \"last_round\": 8,\n        \"ms_D\": 35.13000000000005,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 8,\n        \"last_round\": 9,\n        \"ms_D\": 34.86499999999995,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 9,\n        \"last_round\": 10,\n        \"ms_D\": 38.49400000000003,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 10,\n        \"last_round\": 11,\n        \"ms_D\": 33.827,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 11,\n        \"last_round\": 12,\n        \"ms_D\": 34.161,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 12,\n        \"last_round\": 13,\n        \"ms_D\": 34.19400000000002,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 13,\n        \"last_round\": 14,\n        \"ms_D\": 36.30599999999998,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 14,\n        \"last_round\": 15,\n        \"ms_D\": 35.18700000000001,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 15,\n        \"last_round\": 16,\n        \"ms_D\": 33.68799999999999,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 16,\n        \"last_round\": 17,\n        \"ms_D\": 33.649,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 17,\n        \"last_round\": 18,\n        \"ms_D\": 33.45600000000002,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 18,\n        \"last_round\": 19,\n        \"ms_D\": 33.341999999999985,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 19,\n        \"last_round\": 20,\n        \"ms_D\": 33.823999999999955,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 20,\n        \"last_round\": 21,\n        \"ms_D\": 60.888000000000034,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 21,\n        \"last_round\": 22,\n        \"ms_D\": 58.041000000000054,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 22,\n        \"last_round\": 23,\n        \"ms_D\": 33.91999999999996,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 23,\n        \"last_round\": 24,\n        \"ms_D\": 40.31700000000001,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 24,\n        \"last_round\": 25,\n        \"ms_D\": 34.077999999999975,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 25,\n        \"last_round\": 26,\n        \"ms_D\": 44.985000000000014,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 26,\n        \"last_round\": 27,\n        \"ms_D\": 33.650999999999954,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 27,\n        \"last_round\": 28,\n        \"ms_D\": 33.625999999999976,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 28,\n        \"last_round\": 29,\n        \"ms_D\": 33.5920000000001,\n        \"excluded\": [\n          \"tail\"\n        ]\n      },\n      {\n        \"first_round\": 29,\n        \"last_round\": 30,\n        \"ms_D\": 103.00999999999999,\n        \"excluded\": [\n          \"tail\"\n        ]\n      }\n    ],\n    \"median_trimmed_rounds_D\": 0,\n    \"excluded_periods_D\": 5\n  },\n  \"negative_controls\": \"PASS\"\n}\nreal SSE, np1/np2 timing, token, cache, overlap, history and summary controls PASS\n"
+  },
+  "vanilla-depth-j5q.gpuq-capture": {
+    "cmd": [
+      "bash",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-2f8bb44b50a1f486fefc66ea52f7dba61c3e26b11337f83d85196f5e4ffede49/harness/run.sh",
+      "depth",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-2f8bb44b50a1f486fefc66ea52f7dba61c3e26b11337f83d85196f5e4ffede49/experiment.toml",
+      "--capture",
+      "--port",
+      "18199",
+      "--out",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/capture/vanilla-depth-j5q.gpuq"
+    ],
+    "rc": 0,
+    "output": ""
+  },
+  "vanilla-depth-j5q.gpuq-dry-refusal": {
+    "rc": 6,
+    "output": "DRY STAND-IN refuses GPU execution\n"
+  },
+  "vanilla-history-iq4.gpuq-clean-contract": {
+    "cmd": [
+      "/home/xanewok/repos/gpuq/bin/gpuq",
+      "submit",
+      "--check",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-history-iq4.gpuq.toml"
+    ],
+    "rc": 0,
+    "output": "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-history-iq4.gpuq.toml: dry-vanilla-history-iq4: valid\n"
+  },
+  "vanilla-history-iq4.gpuq-preflight": {
+    "cmd": [
+      "bash",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-93789614f951df787dd600db36bf08665d7d0f63d5ea2f52ff90b377718a01c1/harness/run.sh",
+      "depth",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-93789614f951df787dd600db36bf08665d7d0f63d5ea2f52ff90b377718a01c1/experiment.toml",
+      "--preflight",
+      "--out",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/results/vanilla-history-iq4/preflight-plan"
+    ],
+    "rc": 0,
+    "output": "{\n  \"recorded_fixture\": \"/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures\",\n  \"parser_result\": {\n    \"intervals_M\": 24,\n    \"steady_ms_per_round_D\": 37.19825,\n    \"timings\": {\n      \"cache_n\": 0,\n      \"prompt_n\": 684,\n      \"prompt_ms\": 1202.469,\n      \"prompt_per_token_ms\": 1.7579956140350879,\n      \"prompt_per_second\": 568.8296330300407,\n      \"predicted_n\": 122,\n      \"predicted_ms\": 1200.672,\n      \"predicted_per_token_ms\": 9.92290909090909,\n      \"predicted_per_second\": 100.77689827030196,\n      \"draft_n\": 150,\n      \"draft_n_accepted\": 93\n    },\n    \"untrimmed_periods\": [\n      {\n        \"first_round\": 1,\n        \"last_round\": 2,\n        \"ms_D\": 39.165000000000006,\n        \"excluded\": [\n          \"warmup\"\n        ]\n      },\n      {\n        \"first_round\": 2,\n        \"last_round\": 3,\n        \"ms_D\": 33.428,\n        \"excluded\": [\n          \"warmup\"\n        ]\n      },\n      {\n        \"first_round\": 3,\n        \"last_round\": 4,\n        \"ms_D\": 36.17699999999999,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 4,\n        \"last_round\": 5,\n        \"ms_D\": 33.360000000000014,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 5,\n        \"last_round\": 7,\n        \"ms_D\": 67.93399999999997,\n        \"excluded\": [\n          \"missing-round-boundary\"\n        ]\n      },\n      {\n        \"first_round\": 7,\n        \"last_round\": 8,\n        \"ms_D\": 35.13000000000005,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 8,\n        \"last_round\": 9,\n        \"ms_D\": 34.86499999999995,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 9,\n        \"last_round\": 10,\n        \"ms_D\": 38.49400000000003,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 10,\n        \"last_round\": 11,\n        \"ms_D\": 33.827,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 11,\n        \"last_round\": 12,\n        \"ms_D\": 34.161,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 12,\n        \"last_round\": 13,\n        \"ms_D\": 34.19400000000002,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 13,\n        \"last_round\": 14,\n        \"ms_D\": 36.30599999999998,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 14,\n        \"last_round\": 15,\n        \"ms_D\": 35.18700000000001,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 15,\n        \"last_round\": 16,\n        \"ms_D\": 33.68799999999999,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 16,\n        \"last_round\": 17,\n        \"ms_D\": 33.649,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 17,\n        \"last_round\": 18,\n        \"ms_D\": 33.45600000000002,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 18,\n        \"last_round\": 19,\n        \"ms_D\": 33.341999999999985,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 19,\n        \"last_round\": 20,\n        \"ms_D\": 33.823999999999955,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 20,\n        \"last_round\": 21,\n        \"ms_D\": 60.888000000000034,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 21,\n        \"last_round\": 22,\n        \"ms_D\": 58.041000000000054,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 22,\n        \"last_round\": 23,\n        \"ms_D\": 33.91999999999996,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 23,\n        \"last_round\": 24,\n        \"ms_D\": 40.31700000000001,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 24,\n        \"last_round\": 25,\n        \"ms_D\": 34.077999999999975,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 25,\n        \"last_round\": 26,\n        \"ms_D\": 44.985000000000014,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 26,\n        \"last_round\": 27,\n        \"ms_D\": 33.650999999999954,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 27,\n        \"last_round\": 28,\n        \"ms_D\": 33.625999999999976,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 28,\n        \"last_round\": 29,\n        \"ms_D\": 33.5920000000001,\n        \"excluded\": [\n          \"tail\"\n        ]\n      },\n      {\n        \"first_round\": 29,\n        \"last_round\": 30,\n        \"ms_D\": 103.00999999999999,\n        \"excluded\": [\n          \"tail\"\n        ]\n      }\n    ],\n    \"median_trimmed_rounds_D\": 0,\n    \"excluded_periods_D\": 5\n  },\n  \"negative_controls\": \"PASS\"\n}\nreal SSE, np1/np2 timing, token, cache, overlap, history and summary controls PASS\n"
+  },
+  "vanilla-history-iq4.gpuq-capture": {
+    "cmd": [
+      "bash",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-93789614f951df787dd600db36bf08665d7d0f63d5ea2f52ff90b377718a01c1/harness/run.sh",
+      "depth",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-93789614f951df787dd600db36bf08665d7d0f63d5ea2f52ff90b377718a01c1/experiment.toml",
+      "--capture",
+      "--port",
+      "18199",
+      "--out",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/capture/vanilla-history-iq4.gpuq"
+    ],
+    "rc": 0,
+    "output": ""
+  },
+  "vanilla-history-iq4.gpuq-dry-refusal": {
+    "rc": 6,
+    "output": "DRY STAND-IN refuses GPU execution\n"
+  },
+  "vanilla-np2-real-iq4.gpuq-clean-contract": {
+    "cmd": [
+      "/home/xanewok/repos/gpuq/bin/gpuq",
+      "submit",
+      "--check",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-np2-real-iq4.gpuq.toml"
+    ],
+    "rc": 0,
+    "output": "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-np2-real-iq4.gpuq.toml: dry-vanilla-np2-real-iq4: valid\n"
+  },
+  "vanilla-np2-real-iq4.gpuq-preflight": {
+    "cmd": [
+      "bash",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-1d8eb91d5aba47a0c353d4824e7e426e2673198fbb88b533e02965a0d853da47/harness/run.sh",
+      "depth",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-1d8eb91d5aba47a0c353d4824e7e426e2673198fbb88b533e02965a0d853da47/experiment.toml",
+      "--preflight",
+      "--out",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/results/vanilla-np2-real-iq4/preflight-plan"
+    ],
+    "rc": 0,
+    "output": "{\n  \"recorded_fixture\": \"/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures\",\n  \"parser_result\": {\n    \"intervals_M\": 24,\n    \"steady_ms_per_round_D\": 37.19825,\n    \"timings\": {\n      \"cache_n\": 0,\n      \"prompt_n\": 684,\n      \"prompt_ms\": 1202.469,\n      \"prompt_per_token_ms\": 1.7579956140350879,\n      \"prompt_per_second\": 568.8296330300407,\n      \"predicted_n\": 122,\n      \"predicted_ms\": 1200.672,\n      \"predicted_per_token_ms\": 9.92290909090909,\n      \"predicted_per_second\": 100.77689827030196,\n      \"draft_n\": 150,\n      \"draft_n_accepted\": 93\n    },\n    \"untrimmed_periods\": [\n      {\n        \"first_round\": 1,\n        \"last_round\": 2,\n        \"ms_D\": 39.165000000000006,\n        \"excluded\": [\n          \"warmup\"\n        ]\n      },\n      {\n        \"first_round\": 2,\n        \"last_round\": 3,\n        \"ms_D\": 33.428,\n        \"excluded\": [\n          \"warmup\"\n        ]\n      },\n      {\n        \"first_round\": 3,\n        \"last_round\": 4,\n        \"ms_D\": 36.17699999999999,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 4,\n        \"last_round\": 5,\n        \"ms_D\": 33.360000000000014,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 5,\n        \"last_round\": 7,\n        \"ms_D\": 67.93399999999997,\n        \"excluded\": [\n          \"missing-round-boundary\"\n        ]\n      },\n      {\n        \"first_round\": 7,\n        \"last_round\": 8,\n        \"ms_D\": 35.13000000000005,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 8,\n        \"last_round\": 9,\n        \"ms_D\": 34.86499999999995,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 9,\n        \"last_round\": 10,\n        \"ms_D\": 38.49400000000003,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 10,\n        \"last_round\": 11,\n        \"ms_D\": 33.827,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 11,\n        \"last_round\": 12,\n        \"ms_D\": 34.161,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 12,\n        \"last_round\": 13,\n        \"ms_D\": 34.19400000000002,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 13,\n        \"last_round\": 14,\n        \"ms_D\": 36.30599999999998,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 14,\n        \"last_round\": 15,\n        \"ms_D\": 35.18700000000001,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 15,\n        \"last_round\": 16,\n        \"ms_D\": 33.68799999999999,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 16,\n        \"last_round\": 17,\n        \"ms_D\": 33.649,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 17,\n        \"last_round\": 18,\n        \"ms_D\": 33.45600000000002,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 18,\n        \"last_round\": 19,\n        \"ms_D\": 33.341999999999985,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 19,\n        \"last_round\": 20,\n        \"ms_D\": 33.823999999999955,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 20,\n        \"last_round\": 21,\n        \"ms_D\": 60.888000000000034,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 21,\n        \"last_round\": 22,\n        \"ms_D\": 58.041000000000054,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 22,\n        \"last_round\": 23,\n        \"ms_D\": 33.91999999999996,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 23,\n        \"last_round\": 24,\n        \"ms_D\": 40.31700000000001,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 24,\n        \"last_round\": 25,\n        \"ms_D\": 34.077999999999975,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 25,\n        \"last_round\": 26,\n        \"ms_D\": 44.985000000000014,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 26,\n        \"last_round\": 27,\n        \"ms_D\": 33.650999999999954,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 27,\n        \"last_round\": 28,\n        \"ms_D\": 33.625999999999976,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 28,\n        \"last_round\": 29,\n        \"ms_D\": 33.5920000000001,\n        \"excluded\": [\n          \"tail\"\n        ]\n      },\n      {\n        \"first_round\": 29,\n        \"last_round\": 30,\n        \"ms_D\": 103.00999999999999,\n        \"excluded\": [\n          \"tail\"\n        ]\n      }\n    ],\n    \"median_trimmed_rounds_D\": 0,\n    \"excluded_periods_D\": 5\n  },\n  \"negative_controls\": \"PASS\"\n}\nreal SSE, np1/np2 timing, token, cache, overlap, history and summary controls PASS\n"
+  },
+  "vanilla-np2-real-iq4.gpuq-capture": {
+    "cmd": [
+      "bash",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-1d8eb91d5aba47a0c353d4824e7e426e2673198fbb88b533e02965a0d853da47/harness/run.sh",
+      "depth",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-1d8eb91d5aba47a0c353d4824e7e426e2673198fbb88b533e02965a0d853da47/experiment.toml",
+      "--capture",
+      "--port",
+      "18199",
+      "--out",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/capture/vanilla-np2-real-iq4.gpuq"
+    ],
+    "rc": 0,
+    "output": ""
+  },
+  "vanilla-np2-real-iq4.gpuq-dry-refusal": {
+    "rc": 6,
+    "output": "DRY STAND-IN refuses GPU execution\n"
+  },
+  "vanilla-np2-real-j5q.gpuq-clean-contract": {
+    "cmd": [
+      "/home/xanewok/repos/gpuq/bin/gpuq",
+      "submit",
+      "--check",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-np2-real-j5q.gpuq.toml"
+    ],
+    "rc": 0,
+    "output": "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-np2-real-j5q.gpuq.toml: dry-vanilla-np2-real-j5q: valid\n"
+  },
+  "vanilla-np2-real-j5q.gpuq-preflight": {
+    "cmd": [
+      "bash",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-dc03adab7b2eac5080bafefd0e9df5c8cae0130dd8e3ffecea7a571c0dabbfc1/harness/run.sh",
+      "depth",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-dc03adab7b2eac5080bafefd0e9df5c8cae0130dd8e3ffecea7a571c0dabbfc1/experiment.toml",
+      "--preflight",
+      "--out",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/results/vanilla-np2-real-j5q/preflight-plan"
+    ],
+    "rc": 0,
+    "output": "{\n  \"recorded_fixture\": \"/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures\",\n  \"parser_result\": {\n    \"intervals_M\": 24,\n    \"steady_ms_per_round_D\": 37.19825,\n    \"timings\": {\n      \"cache_n\": 0,\n      \"prompt_n\": 684,\n      \"prompt_ms\": 1202.469,\n      \"prompt_per_token_ms\": 1.7579956140350879,\n      \"prompt_per_second\": 568.8296330300407,\n      \"predicted_n\": 122,\n      \"predicted_ms\": 1200.672,\n      \"predicted_per_token_ms\": 9.92290909090909,\n      \"predicted_per_second\": 100.77689827030196,\n      \"draft_n\": 150,\n      \"draft_n_accepted\": 93\n    },\n    \"untrimmed_periods\": [\n      {\n        \"first_round\": 1,\n        \"last_round\": 2,\n        \"ms_D\": 39.165000000000006,\n        \"excluded\": [\n          \"warmup\"\n        ]\n      },\n      {\n        \"first_round\": 2,\n        \"last_round\": 3,\n        \"ms_D\": 33.428,\n        \"excluded\": [\n          \"warmup\"\n        ]\n      },\n      {\n        \"first_round\": 3,\n        \"last_round\": 4,\n        \"ms_D\": 36.17699999999999,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 4,\n        \"last_round\": 5,\n        \"ms_D\": 33.360000000000014,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 5,\n        \"last_round\": 7,\n        \"ms_D\": 67.93399999999997,\n        \"excluded\": [\n          \"missing-round-boundary\"\n        ]\n      },\n      {\n        \"first_round\": 7,\n        \"last_round\": 8,\n        \"ms_D\": 35.13000000000005,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 8,\n        \"last_round\": 9,\n        \"ms_D\": 34.86499999999995,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 9,\n        \"last_round\": 10,\n        \"ms_D\": 38.49400000000003,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 10,\n        \"last_round\": 11,\n        \"ms_D\": 33.827,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 11,\n        \"last_round\": 12,\n        \"ms_D\": 34.161,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 12,\n        \"last_round\": 13,\n        \"ms_D\": 34.19400000000002,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 13,\n        \"last_round\": 14,\n        \"ms_D\": 36.30599999999998,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 14,\n        \"last_round\": 15,\n        \"ms_D\": 35.18700000000001,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 15,\n        \"last_round\": 16,\n        \"ms_D\": 33.68799999999999,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 16,\n        \"last_round\": 17,\n        \"ms_D\": 33.649,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 17,\n        \"last_round\": 18,\n        \"ms_D\": 33.45600000000002,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 18,\n        \"last_round\": 19,\n        \"ms_D\": 33.341999999999985,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 19,\n        \"last_round\": 20,\n        \"ms_D\": 33.823999999999955,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 20,\n        \"last_round\": 21,\n        \"ms_D\": 60.888000000000034,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 21,\n        \"last_round\": 22,\n        \"ms_D\": 58.041000000000054,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 22,\n        \"last_round\": 23,\n        \"ms_D\": 33.91999999999996,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 23,\n        \"last_round\": 24,\n        \"ms_D\": 40.31700000000001,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 24,\n        \"last_round\": 25,\n        \"ms_D\": 34.077999999999975,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 25,\n        \"last_round\": 26,\n        \"ms_D\": 44.985000000000014,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 26,\n        \"last_round\": 27,\n        \"ms_D\": 33.650999999999954,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 27,\n        \"last_round\": 28,\n        \"ms_D\": 33.625999999999976,\n        \"excluded\": []\n      },\n      {\n        \"first_round\": 28,\n        \"last_round\": 29,\n        \"ms_D\": 33.5920000000001,\n        \"excluded\": [\n          \"tail\"\n        ]\n      },\n      {\n        \"first_round\": 29,\n        \"last_round\": 30,\n        \"ms_D\": 103.00999999999999,\n        \"excluded\": [\n          \"tail\"\n        ]\n      }\n    ],\n    \"median_trimmed_rounds_D\": 0,\n    \"excluded_periods_D\": 5\n  },\n  \"negative_controls\": \"PASS\"\n}\nreal SSE, np1/np2 timing, token, cache, overlap, history and summary controls PASS\n"
+  },
+  "vanilla-np2-real-j5q.gpuq-capture": {
+    "cmd": [
+      "bash",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/gpu_ab.sh",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-dc03adab7b2eac5080bafefd0e9df5c8cae0130dd8e3ffecea7a571c0dabbfc1/harness/run.sh",
+      "depth",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/snapshots/harness-dc03adab7b2eac5080bafefd0e9df5c8cae0130dd8e3ffecea7a571c0dabbfc1/experiment.toml",
+      "--capture",
+      "--port",
+      "18199",
+      "--out",
+      "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/capture/vanilla-np2-real-j5q.gpuq"
+    ],
+    "rc": 0,
+    "output": ""
+  },
+  "vanilla-np2-real-j5q.gpuq-dry-refusal": {
+    "rc": 6,
+    "output": "DRY STAND-IN refuses GPU execution\n"
+  }
+}

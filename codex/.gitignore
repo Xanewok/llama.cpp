@@ -1,0 +1,7 @@
+__pycache__/
+window/
+rendered/
+results/
+evidence/dry-render/
+evidence/stand-in-vanilla/
+evidence/capture/

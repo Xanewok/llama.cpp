@@ -1,0 +1,6 @@
+checked, NOT submitted: /home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-cold-prefill-iq4.gpuq.toml; est_s_G=450; budget_s_D=740
+checked, NOT submitted: /home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-depth-iq4.gpuq.toml; est_s_G=1380; budget_s_D=2000
+checked, NOT submitted: /home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-depth-j5q.gpuq.toml; est_s_G=1380; budget_s_D=2000
+checked, NOT submitted: /home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-history-iq4.gpuq.toml; est_s_G=900; budget_s_D=1360
+checked, NOT submitted: /home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-np2-real-iq4.gpuq.toml; est_s_G=1620; budget_s_D=2350
+checked, NOT submitted: /home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/evidence/dry-render/vanilla-np2-real-j5q.gpuq.toml; est_s_G=1620; budget_s_D=2350

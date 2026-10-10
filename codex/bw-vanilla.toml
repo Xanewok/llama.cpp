@@ -1,0 +1,52 @@
+id = "bw-vanilla"
+title = "Vanilla upstream 08246a28f: CUDA 13.2 120a CCCL343 NCCL OFF build, freeze, render/check comparisons; no GPU execution"
+kind = "filler"
+priority = 17
+host_sensitive = false
+preemptible = false
+# G: single CUDA server build with shared ccache; stack10b recipe, no GPU suites.
+est_s = 2400
+budget_s = 7200
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-vanilla: FAIL" }]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/bw-vanilla.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/window/vanilla-a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_HOME = "/usr/local/cuda-13.2", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", GPUQ_BUILD_WINDOW = "1" }
+ports = []
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/bw-vanilla.sh", "--preflight"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/window/vanilla-a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/window/vanilla-a{attempt}/stages.tsv"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "source", "recipe"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/items/vanilla-cold-prefill-iq4.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/bw-vanilla.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/REPORT-vanilla.md",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/gpu_ab.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/bw-vanilla.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/vanilla_runner.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/render_vanilla_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/items/vanilla-history-iq4.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/items/vanilla-np2-real-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/items/vanilla-depth-iq4.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/items/vanilla-np2-real-iq4.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/items/vanilla-depth-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-index.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/CMakeLists.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/ggml/src/ggml-cuda/CMakeLists.txt"
+]
