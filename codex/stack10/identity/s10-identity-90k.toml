@@ -60,7 +60,7 @@ boot_cap_s = 300
 request_cap_s = 600
 
 [depth]
-depths = [8192, 90112]
+depths = [8192, 32768, 90112]
 k = 5
 streams = 1
 identity = "within-arm"
@@ -69,7 +69,7 @@ min_predicted = 256
 slot_ctx = 102400
 min_overlap = 0.8
 fixtures = "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/fixtures"
-wall_s = 400
+wall_s = 600
 
 [depth.prompt]
 path = "/home/xanewok/repos/qwen38-eval/recipes/_common/kld/tokens64k.bin"

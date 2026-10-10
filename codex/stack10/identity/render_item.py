@@ -73,7 +73,9 @@ def main():
         text += section('arms.' + name + '.env', env)
     text += section('server', old['server'] | {'knobs': list(dict.fromkeys(old['server']['knobs'] + ['GGML_META_SUBGRAPH_MUTANT']))})
     d = {k: v for k, v in old['depth'].items() if not isinstance(v, dict)}
-    d |= {'depths': [8192, DEPTH], 'identity': 'within-arm', 'wall_s': 130 if DEPTH == 32768 else 400}
+    # the archived arms ran 8k → 32k → 90k on one server; output at a depth depends on the earlier requests (10-10 90k a2)
+    d |= {'depths': [8192, 32768, 90112][:[8192, 32768, 90112].index(DEPTH) + 1], 'identity': 'within-arm',
+          'wall_s': 130 if DEPTH == 32768 else 600}
     text += section('depth', d)
     text += section('depth.prompt', old['depth']['prompt'])
     text += section('depth.request', old['depth']['request'])
