@@ -516,7 +516,7 @@ void common_sampler_reset(struct common_sampler * gsmpl) {
 }
 
 struct common_sampler * common_sampler_clone(common_sampler * gsmpl) {
-    return new common_sampler {
+    auto * res = new common_sampler {
         /* .params  = */ gsmpl->params,
         /* .grmr    = */ llama_sampler_clone(gsmpl->grmr),
         /* .rbudget = */ llama_sampler_clone(gsmpl->rbudget),
@@ -526,6 +526,11 @@ struct common_sampler * common_sampler_clone(common_sampler * gsmpl) {
         /* .cur_p   = */ gsmpl->cur_p,
         /* .rng     = */ gsmpl->rng,
     };
+
+    // re-point to the clone's buffer, keeping the offset (samplers such as XTC advance cur_p.data)
+    res->cur_p.data = gsmpl->cur_p.data ? res->cur.data() + (gsmpl->cur_p.data - gsmpl->cur.data()) : nullptr;
+
+    return res;
 }
 
 void common_sampler_copy(const common_sampler * src, common_sampler * dst) {
@@ -544,7 +549,7 @@ void common_sampler_copy(const common_sampler * src, common_sampler * dst) {
     dst->prev       = src->prev;
     dst->cur        = src->cur;
     dst->cur_p      = src->cur_p;
-    dst->cur_p.data = src->cur_p.data ? dst->cur.data() : nullptr; // re-point to dst's buffer
+    dst->cur_p.data = src->cur_p.data ? dst->cur.data() + (src->cur_p.data - src->cur.data()) : nullptr; // re-point to dst's buffer, keeping the offset
     dst->rng        = src->rng;
     dst->t_total_us = src->t_total_us;
 }
