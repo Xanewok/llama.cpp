@@ -4506,7 +4506,7 @@ int32_t llama_hostless_level(void) {
 static std::atomic<llama_context *> g_hostless_source{nullptr};
 
 // defined in ggml-backend.cpp (hostless spike, deliberately not in ggml-backend.h)
-extern "C" GGML_API void ggml_backend_order_after(ggml_backend_t dst, ggml_backend_t src);
+extern "C" { GGML_API void ggml_backend_order_after(ggml_backend_t dst, ggml_backend_t src); }
 
 bool llama_hostless_verify_on(void) {
     static const bool on = [] {
