@@ -23,7 +23,8 @@ model)
     run() { # name meta [mutant]
         local out=$B/model-$1; shift
         env ${2:+LLAMA_EMBD_ROWS_MUTANT=$2} nice -n 19 "$B/bin/embd-driver" "$MODEL" "$1" 24 > "$out.txt" 2> "$out.log"
-        echo "$(basename "$out") rc=$? engaged=$(grep -ac 'embd_rows: engaged' "$out.log")"
+        local rc=$?
+        echo "$(basename "$out") rc=$rc engaged=$(grep -ac 'embd_rows: engaged' "$out.log")"
     }
     run meta-patch 1; run meta-off 1 off; run meta-row 1 row; run plain 0
     cmp "$B/model-meta-patch.txt" "$B/model-meta-off.txt" && echo "IDENT patch==off"
