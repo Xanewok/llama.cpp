@@ -95,6 +95,8 @@ void common_speculative_draft(common_speculative * spec);
 // hostless spike (LLAMA_HOSTLESS >= 2): a draft may leave LLAMA_HOSTLESS_SLOT placeholders in its result whose ids stay on
 // the device; this reads them (and their candidates) into the same result vectors. Returns false if nothing was pending.
 bool common_speculative_draft_finish(common_speculative * spec);
+// the pending deferred draft of seq_id is for a round that never verifies (L3 stop): reading it commits no sampler state
+void common_speculative_draft_discard(common_speculative * spec, llama_seq_id seq_id);
 
 // informs the speculative context that n_accepted tokens were accepted by the target model
 void common_speculative_accept(common_speculative * spec, llama_seq_id, uint16_t n_accepted);

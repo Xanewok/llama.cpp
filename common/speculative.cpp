@@ -21,6 +21,7 @@
 #include <cstring>
 #include <iomanip>
 #include <map>
+#include <set>
 #include <cinttypes>
 
 #define SPC_DBG(fmt, ...) LOG_DBG("spec %12.*s: " fmt, 12, __func__, __VA_ARGS__)
@@ -213,6 +214,7 @@ struct common_speculative_impl {
 
     // hostless spike: reads the results of a draft() that left placeholders, see common_speculative_draft_finish
     virtual bool draft_finish(common_speculative_draft_params_vec & /*dparams*/) { return false; }
+    virtual void draft_discard(llama_seq_id /*seq_id*/) {}
 
     virtual void accept(llama_seq_id seq_id, uint16_t n_accepted, bool is_other) = 0;
 
@@ -1907,10 +1909,13 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
                 const auto * cur_p = common_sampler_get_candidates(smpl, true);
 
-                mtp_chain_dump_step(s, id, cur_p);
-                common_sampler_accept(smpl, id, true);
-                // commits the uniform behind this token, or the next round draws it again
-                llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
+                // a discarded round commits nothing, as if it was never drafted
+                if (!replace || !hostless_discard.count(seq_id)) {
+                    mtp_chain_dump_step(s, id, cur_p);
+                    common_sampler_accept(smpl, id, true);
+                    // commits the uniform behind this token, or the next round draws it again
+                    llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
+                }
 
                 if (replace) {
                     // common_speculative_draft may have truncated the placeholders to n_max
@@ -1928,6 +1933,13 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     }
 
     int32_t                   hostless_k = 0; // > 0: a chain decode whose results draft_finish has not read yet
+    std::set<llama_seq_id>    hostless_discard; // seqs whose deferred round never verifies
+
+    void draft_discard(llama_seq_id seq_id) override {
+        if (hostless_k > 0) {
+            hostless_discard.insert(seq_id);
+        }
+    }
     std::vector<llama_seq_id> hostless_seqs;
 
     bool draft_finish(common_speculative_draft_params_vec & dparams) override {
@@ -1936,6 +1948,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         }
         read_chain(dparams, hostless_k, hostless_seqs, true);
         hostless_k = 0;
+        hostless_discard.clear();
         return true;
     }
 
@@ -3371,6 +3384,15 @@ void common_speculative_draft(common_speculative * spec) {
         if (dp.drafting) {
             dp.drafting = false;
         }
+    }
+}
+
+void common_speculative_draft_discard(common_speculative * spec, llama_seq_id seq_id) {
+    if (spec == nullptr) {
+        return;
+    }
+    for (auto & impl : spec->impls) {
+        impl->draft_discard(seq_id);
     }
 }
 

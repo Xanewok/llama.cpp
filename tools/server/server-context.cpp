@@ -4020,6 +4020,7 @@ private:
             }
             if (stopped) {
                 slot.hostless_stopped = true;
+                common_speculative_draft_discard(spec.get(), slot.id);
                 continue;
             }
             slot.stats.n_gen = n_gen_end;
