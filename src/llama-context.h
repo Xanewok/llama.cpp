@@ -375,8 +375,10 @@ private:
         ggml_tensor * t = nullptr;
         int64_t row0 = 0;
         int64_t n = 0;
+        std::vector<std::pair<uint32_t, uint32_t>> swaps; // output_reorder's row swaps, applied after the copy
     };
     logits_deferred_info logits_deferred;
+    bool logits_produced = true; // the last decode wrote or deferred logits rows; false: output_reorder leaves them alone
     void logits_deferred_fetch();
 
     // Every device-to-host copy and graph enqueue of this context goes through here or graph_compute(), which set the flag.

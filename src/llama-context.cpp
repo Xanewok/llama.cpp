@@ -1026,6 +1026,14 @@ void llama_context::logits_deferred_fetch() {
                 0, logits_deferred.n*n_vocab*sizeof(float));
     }
     synchronize();
+    for (const auto & [i0, i1] : logits_deferred.swaps) {
+        if (has_draft_vocab()) {
+            const size_t n_draft = model.draft_vocab_ids.size();
+            std::swap_ranges(draft_logits.data + i0*n_draft, draft_logits.data + (i0 + 1)*n_draft, draft_logits.data + i1*n_draft);
+        } else {
+            std::swap_ranges(logits.data + i0*n_vocab, logits.data + (i0 + 1)*n_vocab, logits.data + i1*n_vocab);
+        }
+    }
     logits_deferred = {};
 }
 
@@ -1969,6 +1977,7 @@ static bool needs_raw_logits(const llama_ubatch & ubatch, const std::map<llama_s
 
 int llama_context::decode(const llama_batch_ext & batch_inp) {
     logits_deferred = {};
+    logits_produced = false;
 
     // an armed fold applies to this decode only, whatever its outcome
     const float * fold_h = mtp_fold_h;
@@ -2233,6 +2242,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
         }
 
         // extract logits
+        logits_produced = logits_produced || (logits.data && t_logits && n_outputs > 0);
         if (logits.data && t_logits && n_outputs > 0 && needs_raw_logits(ubatch, sampling.samplers)) {
             ggml_backend_t backend_res = ggml_backend_sched_get_tensor_backend(get_sched_graph(), t_logits);
             GGML_ASSERT(backend_res != nullptr);
@@ -2722,7 +2732,14 @@ bool llama_context::extract_layer_inputs(const llm_graph_result * res, size_t to
 }
 
 void llama_context::output_reorder() {
-    if (!output_swaps.empty()) {
+    // Logits rows a batch did not produce hold stale data and are not swapped. Rows still on the device take their
+    // swaps at the fetch, so a batch read only through its backend-sampled rows never copies or expands its logits.
+    const auto deferred_row = [&](uint32_t i) {
+        return (int64_t) i >= logits_deferred.row0 && (int64_t) i < logits_deferred.row0 + logits_deferred.n;
+    };
+    const bool defer_logits = logits_deferred.t && std::all_of(output_swaps.begin(), output_swaps.end(),
+            [&](const swap_info & sw) { return deferred_row(sw.i0) && deferred_row(sw.i1); });
+    if (!output_swaps.empty() && !defer_logits) {
         logits_deferred_fetch();
     }
     expand_draft_logits();
@@ -2734,7 +2751,9 @@ void llama_context::output_reorder() {
         const uint64_t i0 = output_swaps[s].i0;
         const uint64_t i1 = output_swaps[s].i1;
 
-        if (logits.size > 0) {
+        if (logits.size > 0 && logits_produced && defer_logits) {
+            logits_deferred.swaps.emplace_back(i0, i1);
+        } else if (logits.size > 0 && logits_produced) {
             for (uint64_t k = 0; k < n_vocab; k++) {
                 std::swap(logits.data[i0*n_vocab + k], logits.data[i1*n_vocab + k]);
             }
