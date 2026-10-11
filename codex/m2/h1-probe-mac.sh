@@ -8,7 +8,7 @@ OUT=${1:?out}
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
 MODEL=${BW_MODEL:-$HOME/qwen38-stack7/models/Qwen3.5-4B-UD-Q4_K_XL.gguf}
-GATE=$ROOT/codex/m2/gate.sh
+GATE=$ROOT/codex/m2/model-gate.sh
 # shellcheck disable=SC2086
 cmake -S codex/stack7-test -B build-cpu -G Ninja \
     -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_METAL=OFF -DGGML_ACCELERATE=OFF -DGGML_BLAS=OFF \
@@ -25,7 +25,7 @@ run() { # tag chain [ENV=VAL ...]
     (
         export LLAMA_MTP_CHAIN="$chain" NP2_N_MAX=5 NP2_THREADS=4 NP2_ALLOW_SHORT=1 GGML_SCHED_INPUT_STAGING=1 HOST_KV_Q8=1 \
             LLAMA_H1_PROBE=1 LLAMA_MTP_CHAIN_DUMP="$OUT/$tag.dump.txt" "$@"
-        bash "$GATE" perl -e 'alarm 600; exec @ARGV or die' "$ROOT/build-cpu/bin/bw-np2-driver" "$MODEL" "$OUT/$tag.json" 0 2 1729 64
+        bash "$GATE" "$ROOT/build-cpu/bin/bw-np2-driver" "$MODEL" "$OUT/$tag.json" 0 2 1729 64
     ) > "$OUT/$tag.log" 2>&1 || rc=$?
     echo "$tag rc=$rc"
     [[ $rc == 75 ]] && exit 75
