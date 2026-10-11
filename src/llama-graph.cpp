@@ -2535,8 +2535,8 @@ ggml_tensor * llm_graph_context::build_tok_rows(ggml_tensor * table, ggml_tensor
 
     ggml_tensor * cur = ggml_get_rows(ctx0, inp->rows, inp->iota);
 
-    bool on_device = false;
-    for (int i = 0; i < ggml_backend_sched_get_n_backends(sched) && !on_device; ++i) {
+    ggml_backend_t device = nullptr;
+    for (int i = 0; i < ggml_backend_sched_get_n_backends(sched) && !device; ++i) {
         ggml_backend_t backend = ggml_backend_sched_get_backend(sched, i);
         ggml_backend_dev_t dev = ggml_backend_get_device(backend);
         if (!dev) {
@@ -2546,15 +2546,18 @@ ggml_tensor * llm_graph_context::build_tok_rows(ggml_tensor * table, ggml_tensor
             case GGML_BACKEND_DEVICE_TYPE_GPU:
             case GGML_BACKEND_DEVICE_TYPE_IGPU:
             case GGML_BACKEND_DEVICE_TYPE_META:
-                on_device = ggml_backend_supports_op(backend, cur);
+                device = ggml_backend_supports_op(backend, cur) ? backend : nullptr;
                 break;
             default:
                 break;
         }
     }
-    if (!on_device) {
+    if (!device) {
         return ggml_get_rows(ctx0, table, ids);
     }
+
+    // the sched places the gather by its neighbours, and the token lookup of the other select branches is CPU-assigned
+    ggml_backend_sched_set_tensor_backend(sched, cur, device);
 
     ggml_set_input(inp->rows);
     ggml_set_input(inp->iota);
