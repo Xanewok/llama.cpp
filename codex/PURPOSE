@@ -1,6 +1,6 @@
-purpose: stack10 minus K9 plus K4 np2 fix
-base: 198cec7439b63688b3b96aed8ff90d00ed34ee51
+purpose: pkg 87 history-root rev: carry reset arm (zero previous_h at request start) vs arm f control on frozen/stack10
+base: d6b7e2fbb526d32b89b457c62828206a841623b9
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack10b
-created: 2026-10-09T14:38:36+02:00
+branch: topic/mtp-state-hr
+created: 2026-10-11T09:32:14+02:00
 creator: xanewok

@@ -75,7 +75,7 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(final(self.out / 'short.bin'), final(self.out / 'long.bin'))
 
     def test_repeats_and_reading(self):
-        plan = [('a', 'short', 0), ('a', 'long', 0), ('a', 'long', 1), ('a', 'short', 1)]
+        plan = [('f', 'short', 0), ('f', 'long', 0), ('f', 'long', 1), ('f', 'short', 1)]
         real = (self.out / 'recorded-logits-trace.jsonl').read_text()
         raw = item.base.np.zeros((4, 248320), dtype='<f4')
         for i, (arm, order, repeat) in enumerate(plan):
@@ -83,37 +83,12 @@ class HistoryTests(unittest.TestCase):
             dest.mkdir()
             (dest / 'trace.jsonl').write_text(real)
             (dest / 'logits.bin').write_bytes(b'KLDL' + struct.pack('<3i', 90112, 4, 248320) + raw.tobytes())
-            (dest / 'tool.log').write_text('history-root: complete nodes=5 traced=1 requests=2\n')
         with patch.object(item, 'validate', side_effect=lambda dest, arm: analyze.read_trace(dest / 'trace.jsonl', draft=False)):
-            with patch.dict(item.ARMS, {k: item.ARMS['a'] for k in ('b', 'c', 'd', 'e', 'f', 'untraced')}):
-                # Repeat checks must run before missing-arm interpretation.
-                dest = self.out / '3-a-short-r1/logits.bin'
-                changed = raw.copy()
-                changed[0, 0] = 1
-                dest.write_bytes(b'KLDL' + struct.pack('<3i', 90112, 4, 248320) + changed.tobytes())
-                with self.assertRaises(item.lib.Fail):
-                    item.summarize(self.out, plan)
-
-    def test_pre_registered_reading_on_real_logits(self):
-        with item.base.REAL_KLF.open('rb') as stream:
-            stream.seek(4)
-            vocab, _ = struct.unpack('<2i', stream.read(8))
-            stream.seek(20)
-            values = item.base.np.tile(item.base.np.frombuffer(stream.read(vocab*4), '<f4'), (4, 1))
-        changed = values.copy()
-        changed[0, int(values[0].argmax())] += 1
-        def logits(path):
-            _, arm, order, _ = path.parent.name.split('-')
-            return (90112, 4, vocab), changed if order == 'long' and arm not in ('b', 'd', 'e') else values
-        with patch.object(item, 'validate', return_value=self.nodes), patch.object(item.base, 'read_logits', side_effect=logits):
-            result = item.summarize(self.out, item.PLAN)
-        self.assertTrue(result['arms']['a']['logits_differ'])
-        self.assertFalse(result['arms']['b']['logits_differ'])
-        self.assertTrue(result['arms']['c']['logits_differ'])
-        self.assertEqual(len(result['reading']), 3)
-        self.assertIn('stale-memory-byte', result['reading'][0])
-        self.assertIn('MTP/draft-context', result['reading'][1])
-        self.assertIn('CUDA graph', result['reading'][2])
+            changed = raw.copy()
+            changed[0, 0] = 1
+            (self.out / '3-f-short-r1/logits.bin').write_bytes(b'KLDL' + struct.pack('<3i', 90112, 4, 248320) + changed.tobytes())
+            with self.assertRaises(item.lib.Fail):
+                item.summarize(self.out, plan)
 
     def _summarize(self, differs, nodes_for=None):
         with item.base.REAL_KLF.open('rb') as stream:
@@ -130,35 +105,62 @@ class HistoryTests(unittest.TestCase):
         with patch.object(item, 'validate', side_effect=nodes_for), patch.object(item.base, 'read_logits', side_effect=logits):
             return item.summarize(self.out, item.PLAN)
 
-    def test_traced_only_dependence_is_inconclusive(self):
-        result = self._summarize({'a', 'b', 'c', 'd', 'e', 'f'})
-        self.assertEqual(len(result['reading']), 1)
-        self.assertIn('callback induced', result['reading'][0])
-        self.assertTrue(result['arms']['a']['logits_differ'])
-        self.assertFalse(result['arms']['untraced']['logits_differ'])
-
-    def test_draft_only_difference_reading(self):
+    def _catchup_nodes(self, differing_arms):
         def nodes(dest, arm):
             rows = copy.deepcopy(self.nodes)
-            if arm != 'untraced' and '-long-' in dest.name:
-                row = copy.deepcopy(rows[0])
-                row['domain'], row['phase'] = 'catchup', 'prefill'
-                rows.append(row)
-                other = copy.deepcopy(row)
-                other['output']['slices'][0]['data']['sha256'] = '1'*64
-                rows[-1] = other
-            elif arm != 'untraced':
-                row = copy.deepcopy(rows[0])
-                row['domain'], row['phase'] = 'catchup', 'prefill'
-                rows.append(row)
+            row = copy.deepcopy(rows[0])
+            row['domain'], row['phase'] = 'catchup', 'prefill'
+            if arm in differing_arms and '-long-' in dest.name:
+                row['output']['slices'][0]['data']['sha256'] = '1'*64
+            rows.append(row)
             return rows
-        result = self._summarize(set(), nodes)
-        self.assertIn('catchup', result['arms']['a']['draft_first'])
-        self.assertEqual(len(result['reading']), 2)
-        self.assertIn('target logits equal, draft/catchup differ', result['reading'][1])
+        return nodes
+
+    def test_reset_confirmed_reading(self):
+        result = self._summarize(set(), self._catchup_nodes({'f'}))
+        self.assertIn('catchup', result['arms']['f']['draft_first'])
+        self.assertEqual(result['arms']['g']['draft_first'], {})
+        self.assertEqual(result['reading'], [result['reading'][0]])
+        self.assertIn('confirmed', result['reading'][0])
+
+    def test_reset_leak_elsewhere_reading(self):
+        result = self._summarize(set(), self._catchup_nodes({'f', 'g'}))
+        self.assertEqual(len(result['reading']), 1)
+        self.assertIn('leak elsewhere', result['reading'][0])
+
+    def test_control_not_reproduced_reading(self):
+        result = self._summarize(set(), self._catchup_nodes(set()))
+        self.assertEqual(len(result['reading']), 1)
+        self.assertIn('control f did not reproduce', result['reading'][0])
+
+    def test_target_logits_differ_reading(self):
+        result = self._summarize({'f', 'g'}, self._catchup_nodes({'f'}))
+        self.assertIn('target logits differ', result['reading'][0])
+
+    def test_validate_requires_reset_proof(self):
+        class Parsed(Exception):
+            pass
+        dest = self.out / 'v'
+        dest.mkdir()
+        raw = item.base.np.zeros((4, 248320), dtype='<f4')
+        (dest / 'logits.bin').write_bytes(b'KLDL' + struct.pack('<3i', 90112, 4, 248320) + raw.tobytes())
+        done = 'history-root: complete nodes=5 traced=1 requests=2 meta_completion_calls=3\n'
+        logs = {'f': 'history-root: reset_carry=0\n' + done,
+                'g': 'history-root: reset_carry=1\nhistory-root: carry reset request=1\n' + done}
+        with patch.object(item.trace, 'read_trace', side_effect=Parsed):
+            for arm, log in logs.items():
+                (dest / 'tool.log').write_text(log)
+                with self.assertRaises(Parsed):
+                    item.validate(dest, arm)
+            (dest / 'tool.log').write_text('history-root: reset_carry=1\n' + done)
+            with self.assertRaises(item.lib.Fail):
+                item.validate(dest, 'g')
+            (dest / 'tool.log').write_text(logs['g'].replace('reset_carry=1', 'reset_carry=0'))
+            with self.assertRaises(ValueError):
+                item.validate(dest, 'f')
 
     def test_partial_summary_records_repeat_failure(self):
-        plan = [('a', 'short', 0), ('a', 'long', 0), ('a', 'long', 1)]
+        plan = [('f', 'short', 0), ('f', 'long', 0), ('f', 'long', 1)]
         base_values = item.base.np.zeros((4, 248320), dtype='<f4')
         changed = base_values.copy()
         changed[0, 0] = 1
@@ -175,23 +177,22 @@ class HistoryTests(unittest.TestCase):
     def test_manifest_and_environment(self):
         import tomllib
         manifest = tomllib.loads(render.render())
-        self.assertEqual(manifest['id'], 'history-root')
-        self.assertEqual(manifest['priority'], 23)
-        self.assertLessEqual(manifest['budget_s'], 26700)
+        self.assertEqual(manifest['id'], 'mtp-reset-hr')
+        self.assertLessEqual(manifest['budget_s'], 8500)
         self.assertLessEqual(len(manifest['note']), 600)
         self.assertLessEqual(manifest['est_s'], .7*manifest['budget_s'])
         for stage in ('run', 'canary'):
             self.assertIn(str(item.WT / 'work/aa-load/ccx01.sh'), manifest[stage]['cmd'])
         for arm in item.ARMS:
-            env = item.environment('stack9-p55', self.out / 'short.bin', self.out, arm)
-            self.assertEqual(env['HISTORY_CLEAR'], item.ARMS[arm][1])
-            self.assertEqual(env['HISTORY_DRAFT'], str(int(item.ARMS[arm][2])))
-            self.assertEqual(env['HISTORY_TRACE'], str(int(item.ARMS[arm][3])))
-            if arm == 'e':
-                self.assertEqual(env['GGML_CUDA_DISABLE_GRAPHS'], '1')
-            else:
-                self.assertNotIn('GGML_CUDA_DISABLE_GRAPHS', env)
-        self.assertEqual(len(item.PLAN), 28)
+            env = item.environment('stack10', self.out / 'short.bin', self.out, arm)
+            self.assertEqual(env['HISTORY_CLEAR'], 'none')
+            self.assertEqual(env['HISTORY_DRAFT'], '1')
+            self.assertEqual(env['HISTORY_TRACE'], '1')
+            self.assertEqual(env['HISTORY_RESET_CARRY'], '1' if arm == 'g' else '0')
+            self.assertEqual(env['LLAMA_MTP_FOLD_C'], '1')
+        self.assertEqual([(a, o) for a, o, _ in item.PLAN],
+                         [('f', 'short'), ('f', 'long'), ('g', 'short'), ('g', 'long'),
+                          ('g', 'long'), ('g', 'short'), ('f', 'long'), ('f', 'short')])
 
 
 if __name__ == '__main__':

@@ -12,24 +12,23 @@ sys.path.insert(0, str(BASE))
 from render_kld_v2 import value
 
 NOTE = (
-    'why: IQ4 np1 90k output depends on earlier requests (cache_n 0) on vanilla and stacks; find the first differing node on GPU. '
-    '| expect (D, from the CPU 4B replay in codex/REPORT-history-root.md): target logits identical across orders; '
-    'draft/catchup tensors or recurrent-state bytes differ. Likely (G): the teacher-forced one-row path reproduces nothing, '
-    'so the served 4-row verify / rejection path is implicated. '
-    '| falsifier: target logits differ on GPU (stale memory bytes or CUDA-graph reading). '
-    '| answers: first differing node per arm/domain; target vs draft-only dependence.')
+    'why: pkg 87 says the MTP carry (pending_h; here previous_h) survives across requests; a3 saw draft-only history dependence. '
+    '| expect: g (f + carry zeroed at request start): draft/catchup domains equal across orders (no first diff); '
+    'f: differs at catchup FLASH_ATTN_EXT L64 as in a3; target logits equal in both. '
+    '| falsifier: g still differs in a draft domain -> leak elsewhere. '
+    '| answers: is the carry the only draft history state.')
 
 
 def render():
     old = tomllib.loads((BASE / 's10-kld-iq4-v2.gpuq.toml').read_text())
     item = {k: v for k, v in old.items() if k not in ('run', 'canary', 'preflight', 'outputs', 'pins', 'fix')}
-    item.update(id='history-root', priority=23,
-                title='Teacher-forced request history: first differing tensor, clears, draft and graph ablations',
-                budget_s=26700, est_s=18700,  # est_s (D, a2 rates): 20 traced-draft arms ~740-770 s, 4 no-draft ~530-570, 4 untraced ~130-165, + gaps; budget = est/0.7
-                note=NOTE)
-    output = '/mnt/scratch/work/history-root/a{attempt}'
+    # est_s (D, a3 M): 8 traced-draft stack10 processes at 669-705 s + tool build + idle gaps; budget = est/0.7
+    item.update(id='mtp-reset-hr', priority=21,
+                title='pkg 87 teacher-forced history: carry reset (g) vs a3 arm f control, stack10',
+                budget_s=8500, est_s=5900, note=NOTE)
+    output = '/mnt/scratch/work/mtp-state-hr/a{attempt}'
     wrapper = str(WT / 'work/aa-load/ccx01.sh')
-    for stage, budget in [('run', 24000), ('canary', 420)]:
+    for stage, budget in [('run', 8000), ('canary', 420)]:
         item[stage] = {'cmd': ['bash', wrapper, 'bash', str(HERE / 'gpu_ab.sh'), stage,
                               '--out', output + '/' + stage, '--budget-s', str(budget)],
                        'env': {'GPUQ_ACTIVE': '1'}}
@@ -39,8 +38,8 @@ def render():
                                 str(HERE / 'evidence/queue-preflight')], 'timeout_s': 300}
     item['outputs'] = {'paths': [output + '/run', output + '/canary']}
     item['fix'] = {'editable': [], 'protected': ['frozen', 'budget', 'arms', 'reading']}
-    files = {p.replace('/wt/s10-identity/', '/wt/history-root/') for p in old['pins']['files']
-             if '/wt/s10-identity/codex/stack10/identity2/' not in p}
+    files = {p.replace('/wt/s10-identity/', f'/wt/{TREE.name}/') for p in old['pins']['files']
+             if '/wt/s10-identity/codex/stack10/identity2/' not in p and '/frozen/stack9-p55/' not in p}
     files |= {str(BASE / name) for name in ('kld_item_v2.py', 'render_kld_v2.py')}
     files |= {str(TREE / 'codex/gpu_ab.sh')}
     files |= {str(p) for p in HERE.iterdir() if p.suffix in ('.py', '.cpp', '.sh') or p.name == 'CMakeLists.txt'}
@@ -58,4 +57,4 @@ def render():
 
 
 if __name__ == '__main__':
-    (HERE / 'history-root.gpuq.toml').write_text(render())
+    (HERE / 'mtp-reset-hr.gpuq.toml').write_text(render())

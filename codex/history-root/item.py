@@ -1,4 +1,4 @@
-"""Frozen-library request-history diagnostic. Model execution is gpuq-only."""
+"""Frozen-library request-history diagnostic, pkg 87 rev: carry reset vs the a3 arm f control. Model execution is gpuq-only."""
 import argparse
 import hashlib
 import json
@@ -19,14 +19,10 @@ import kld_item_v2 as base
 import analyze as trace
 
 lib = base.lib
+# f = a3 arm f (in-run control); g = f + zero carry at each new request (the pkg 87 rule).
 ARMS = {
-    'a': ('stack9-p55', 'none', True, True, {}),
-    'b': ('stack9-p55', 'data', True, True, {}),
-    'c': ('stack9-p55', 'meta', True, True, {}),
-    'd': ('stack9-p55', 'none', False, True, {}),
-    'e': ('stack9-p55', 'none', True, True, {'GGML_CUDA_DISABLE_GRAPHS': '1'}),
-    'f': ('stack10', 'none', True, True, {}),
-    'untraced': ('stack9-p55', 'none', True, False, {}),
+    'f': ('stack10', 'none', True, True, {'HISTORY_RESET_CARRY': '0'}),
+    'g': ('stack10', 'none', True, True, {'HISTORY_RESET_CARRY': '1'}),
 }
 # Reverse both arm and order traversal for the second repeat.
 PLAN = [(arm, order, 0) for arm in ARMS for order in ('short', 'long')]
@@ -99,6 +95,12 @@ def validate(dest, arm, depth=90112):
         raise ValueError('invalid logits shape or values')
     text = (dest / 'tool.log').read_text()
     lib.verify_log_patterns(text, [r'history-root: complete nodes=\d+ traced=\d requests=[23]'], 'completion')
+    reset = ARMS[arm][4]['HISTORY_RESET_CARRY'] == '1'
+    lib.verify_log_patterns(text, [rf'history-root: reset_carry={int(reset)}\b'], 'carry reset mode')
+    if reset:
+        lib.verify_log_patterns(text, [r'history-root: carry reset request=1\b'], 'carry reset engaged')
+    elif 'carry reset request=' in text:
+        raise ValueError('control arm reset the carry')
     if traced:
         lib.verify_log_patterns(text, [r'meta_completion_calls=[1-9]\d*'], 'meta AllReduce completion hook')
     if not traced:
@@ -126,30 +128,21 @@ def draft_first(comparison):
 
 
 def interpret(results):
-    """Contract: ablation readings (b..e) apply only when traced and untraced agree that the dependence exists."""
-    traced, untraced = results['a']['logits_differ'], results['untraced']['logits_differ']
+    """Contract: the reset reading applies only when the control f reproduces a3 (draft/catchup differ across orders)."""
+    f, g = results['f'], results['g']
     readings = []
-    if untraced and not traced:
-        readings.append('inconclusive: callback instrumentation removes target-logit history dependence')
-    if traced and not untraced:
-        readings.append('inconclusive: the callback induced the dependence (traced arms differ, untraced does not); '
-                        'b/c/d/e ablation readings do not apply')
-    if not traced:
-        readings.append('not reproduced in traced teacher-forced target logits; no root-cause conclusion')
-        draft = results['a']['draft_first']
-        if not untraced and results['a']['trace']['by_domain'].get('target') is None and draft:
-            where = '; '.join(f"{d}: {f['class']} at {f['phase']}/{f['name']}" for d, f in draft.items())
-            readings.append('target logits equal, draft/catchup differ (' + where + '): inspect draft/catchup tensors '
-                            'and recurrent-state bytes before attributing target arithmetic')
-    elif untraced:
-        if not results['b']['logits_differ'] and results['c']['logits_differ']:
-            readings.append('stale-memory-byte bug class: data clear removes target dependence, metadata clear does not')
-        if not results['d']['logits_differ']:
-            readings.append('MTP/draft-context state or allocation interaction')
-        if not results['e']['logits_differ']:
-            readings.append('CUDA graph state under callback instrumentation; confirm without tracing')
-        if not readings:
-            readings.append('dependence survives all included s9p ablations')
+    if f['logits_differ'] or g['logits_differ']:
+        readings.append('target logits differ across orders (f %s, g %s): not the a3 state; carry reading does not apply'
+                        % (f['logits_differ'], g['logits_differ']))
+    if not f['draft_first']:
+        readings.append('inconclusive: control f did not reproduce the a3 draft/catchup difference')
+    elif g['draft_first']:
+        where = '; '.join(f"{d}: {x['class']} at {x['phase']}/{x['name']}" for d, x in g['draft_first'].items())
+        readings.append('carry reset does not remove the draft dependence (' + where + '): leak elsewhere')
+    elif g['trace']['first'] is None and not g['logits_differ']:
+        readings.append('confirmed: zeroing the carry at request start removes all observed history dependence (f differs, g none)')
+    else:
+        readings.append('draft domains equal under reset, but a target-domain node still differs: inspect g trace')
     return readings
 
 
@@ -258,7 +251,7 @@ def execute(args):
             raise lib.Fail('budget expired', 'timeout')
         return value
     canary = args.mode == 'canary'
-    plan = [('a', 'long', 0)] if canary else PLAN
+    plan = [('g', 'long', 0)] if canary else PLAN
     inputs = {}
     for order in dict.fromkeys(order for _, order, _ in plan):
         inputs[order] = out / (order + '.bin')

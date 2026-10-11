@@ -354,6 +354,9 @@ int main(int argc, char ** argv) {
     require(clear == "none" || clear == "data" || clear == "meta", "invalid clear mode");
     const bool use_draft = std::string(std::getenv("HISTORY_DRAFT") ? std::getenv("HISTORY_DRAFT") : "1") == "1";
     const bool traced = std::string(std::getenv("HISTORY_TRACE") ? std::getenv("HISTORY_TRACE") : "1") == "1";
+    const std::string reset_mode = std::getenv("HISTORY_RESET_CARRY") ? std::getenv("HISTORY_RESET_CARRY") : "0";
+    require(reset_mode == "0" || reset_mode == "1", "invalid carry reset mode");
+    const bool reset_carry = reset_mode == "1";
     require(params.n_ctx > 0 && params.n_ctx <= 102400, "invalid explicit context");
     require(params.n_parallel == 1 && params.n_batch >= 512 && params.n_batch <= 2048, "invalid batch shape");
     require(params.n_ubatch >= 1 && params.n_ubatch <= 512, "invalid ubatch");
@@ -418,6 +421,7 @@ int main(int argc, char ** argv) {
     llama_batch batch = llama_batch_init(params.n_batch, 0, 1);
     auto * draft_batch = draft ? llama_batch_ext_init(draft.get()) : nullptr;
     std::vector<float> previous_h(n_embd, 0.0f);
+    fprintf(stderr, "history-root: reset_carry=%d\n", int(reset_carry));
     std::ofstream logits(std::string(output_path) + "/logits.bin", std::ios::binary);
     require(bool(logits), "cannot open logits");
     const int32_t header[] = {requests.back().depth, requests.back().steps, n_vocab};
@@ -441,6 +445,11 @@ int main(int argc, char ** argv) {
                 } else {
                     llama_memory_clear(mem, clear == "data");
                 }
+            }
+            // pkg 87 rule: a sequence whose draft memory is empty pairs position 0 with a zero row, as on the first request.
+            if (reset_carry) {
+                std::fill(previous_h.begin(), previous_h.end(), 0.0f);
+                fprintf(stderr, "history-root: carry reset request=%zu\n", ri);
             }
         }
         for (int start = 0; start < r.depth + r.steps;) {
