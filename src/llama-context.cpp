@@ -15,6 +15,7 @@
 #include "llama-sampler.h"
 #include "llama.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cmath>
 #include <cstdlib>
@@ -2760,17 +2761,14 @@ void llama_context::output_reorder() {
             assert(sampling.probs_count.size() > 0);
             assert(sampling.candidates_count.size() > 0);
 
-            for (uint64_t k = 0; k < n_vocab; ++k) {
-                std::swap(sampling.logits.data[i0*n_vocab + k], sampling.logits.data[i1*n_vocab + k]);
-            }
-
-            for (uint64_t k = 0; k < n_vocab; ++k) {
-                std::swap(sampling.probs.data[i0*n_vocab + k], sampling.probs.data[i1*n_vocab + k]);
-            }
-
-            for (uint64_t k = 0; k < n_vocab; ++k) {
-                std::swap(sampling.candidates.data[i0*n_vocab + k], sampling.candidates.data[i1*n_vocab + k]);
-            }
+            // a row holds count entries and nothing reads past them: swapping the n_vocab stride costs ms per batch
+            const auto swap_rows = [&](auto * data, const std::vector<uint32_t> & count) {
+                const uint64_t n = std::max(count[i0], count[i1]);
+                std::swap_ranges(data + i0*n_vocab, data + i0*n_vocab + n, data + i1*n_vocab);
+            };
+            swap_rows(sampling.logits.data,     sampling.logits_count);
+            swap_rows(sampling.probs.data,      sampling.probs_count);
+            swap_rows(sampling.candidates.data, sampling.candidates_count);
 
             std::swap(sampling.sampled.data[i0],     sampling.sampled.data[i1]);
             std::swap(sampling.logits_count[i0],     sampling.logits_count[i1]);
