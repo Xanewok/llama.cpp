@@ -180,7 +180,8 @@ static int run_scatter(const std::string & scenario) {
     ggml_backend_t raw[2] = { &base[0].backend, &base[1].backend };
     void * stage = stage_mode ? ggml_backend_cuda_input_stage_init(raw, 2) : nullptr;
     REQUIRE(!stage_mode || stage != nullptr);
-    int expect_memcpy = 0, expect_launch = 0;
+    // The link probe of the stage init copies too.
+    int expect_memcpy = sim().memcpy_calls, expect_launch = 0;
     for (int i = 0; i < n_rounds; ++i) {
         const size_t n = rounds[i].src.size();
         std::vector<ggml_backend_tensor_transfer> tr[2];
