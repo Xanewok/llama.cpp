@@ -1,6 +1,6 @@
-purpose: stack10 minus K9 plus K4 np2 fix
-base: 198cec7439b63688b3b96aed8ff90d00ed34ee51
+purpose: pkg 88 port onto stack10: incremental spec_prompt
+base: a588f2a44382a361df3e2a456be0c80ca10dd1d6
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack10b
-created: 2026-10-09T14:38:36+02:00
+branch: topic/spec-prompt-s10
+created: 2026-10-11T14:18:22+02:00
 creator: xanewok
