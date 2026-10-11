@@ -14,7 +14,7 @@ MODEL=/mnt/scratch/work/models/reference/Qwen3.5-4B-UD-Q4_K_XL.gguf
 NAME=hostless-spike
 BASE=eedee42c50f928e48a28a030a73238e4e25efa64
 # the last source commit; commits after it may touch codex/ only (this window and its items live there)
-EXPECT=6c0646065e1c4ec462dbc24a2aee8344e75a8f97
+EXPECT=7719a307a3656733e23886d9e2e9ca25ed94a32a
 RECIPE=$W/frozen/chain-m2-s10/RECIPE.txt
 flags=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_COMPILER_FORCED=ON -DCMAKE_CUDA_COMPILER=/usr/local/cuda-13.2/bin/nvcc
     -DGGML_CUDA=ON -DCUDAToolkit_ROOT=/usr/local/cuda-13.2 -DGGML_CUDA_NCCL=OFF -DCMAKE_CUDA_ARCHITECTURES=120a
