@@ -176,6 +176,10 @@ public:
     const int64_t i0;
     const bool    all_tokens; // n == ubatch.n_tokens
 
+    // local: engagement proof
+    ggml_backend_sched_t       sched = nullptr;
+    std::vector<ggml_tensor *> outs; // [0] owns the rows, the rest share them
+
 private:
     std::vector<uint8_t> staging; // only for non-host input buffers
 };

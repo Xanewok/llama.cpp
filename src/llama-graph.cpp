@@ -20,6 +20,8 @@
 #include <cmath>
 #include <cstring>
 #include <numeric>
+#include <mutex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -155,6 +157,39 @@ bool llm_graph_input_embd_h::can_reuse(const llm_graph_params & params) {
     return res;
 }
 
+// local: LLAMA_EMBD_ROWS_MUTANT=off keeps the CPU path (A/B in one build), =row gathers a wrong first row
+static int llama_embd_rows_mutant() {
+    static const int mode = [] {
+        const char * v = getenv("LLAMA_EMBD_ROWS_MUTANT");
+        if (!v || !*v) {
+            return 0;
+        }
+        if (strcmp(v, "off") == 0) {
+            return 1;
+        }
+        if (strcmp(v, "row") == 0) {
+            return 2;
+        }
+        GGML_ABORT("LLAMA_EMBD_ROWS_MUTANT: expected off or row, got '%s'", v);
+    }();
+    return mode;
+}
+
+// local: once per (node name, backend), at WARN so default-verbosity boots carry the proof
+static void llama_embd_rows_log_engaged(ggml_backend_sched_t sched, ggml_tensor * out, bool shared, const ggml_tensor * table, int64_t n) {
+    static std::mutex mtx;
+    static std::set<std::string> seen;
+    ggml_backend_t backend = ggml_backend_sched_get_tensor_backend(sched, out);
+    const std::string backend_name = backend ? ggml_backend_name(backend) : "none";
+    const std::string key = std::string(ggml_get_name(out)) + "@" + backend_name + (shared ? "+shared" : "");
+    std::lock_guard<std::mutex> lock(mtx);
+    if (seen.insert(key).second) {
+        LLAMA_LOG_WARN("embd_rows: engaged node=%s backend=%s shared=%d type=%s rows=%lld row_bytes=%zu mutant=%d\n",
+            ggml_get_name(out), backend_name.c_str(), shared ? 1 : 0, ggml_type_name(table->type), (long long) n,
+            table->nb[1], llama_embd_rows_mutant());
+    }
+}
+
 void llm_graph_input_tok_rows::set_input(const llama_ubatch * ubatch) {
     if (!ubatch->token) {
         return;
@@ -172,10 +207,16 @@ void llm_graph_input_tok_rows::set_input(const llama_ubatch * ubatch) {
     }
     uint8_t * dst = host ? (uint8_t *) rows->data : staging.data();
 
+    const bool mutant_row = llama_embd_rows_mutant() == 2;
     for (int64_t i = 0; i < n; ++i) {
         const llama_token t = ubatch->token[i0 + i];
         GGML_ASSERT(t >= 0 && t < table->ne[1]);
-        memcpy(dst + i*rs, (const uint8_t *) table->data + t*table->nb[1], rs);
+        // local mutant: the first row of each batch is the next token's row
+        const int64_t r = mutant_row && i == 0 ? (t + 1) % table->ne[1] : t;
+        memcpy(dst + i*rs, (const uint8_t *) table->data + r*table->nb[1], rs);
+    }
+    for (size_t k = 0; k < outs.size(); ++k) {
+        llama_embd_rows_log_engaged(sched, outs[k], k > 0, table, n);
     }
     if (!host) {
         ggml_backend_tensor_set(rows, dst, 0, n*rs);
@@ -2514,15 +2555,17 @@ ggml_tensor * llm_graph_context::build_tok_rows(ggml_tensor * table, ggml_tensor
     const bool plain_host_rows = sched && table->buffer && ggml_backend_buffer_is_host(table->buffer) &&
         table->data && ggml_nrows(table) == table->ne[1] && table->nb[0] == ggml_type_size(table->type) &&
         table->nb[1] == ggml_row_size(table->type, table->ne[0]);
-    if (!plain_host_rows) {
+    if (!plain_host_rows || llama_embd_rows_mutant() == 1) {
         return ggml_get_rows(ctx0, table, ids);
     }
 
     // the same rows feed the target and, through the MTP fold, the draft head
     for (const auto & input : res->inputs) {
-        const auto * prev = dynamic_cast<const llm_graph_input_tok_rows *>(input.get());
+        auto * prev = dynamic_cast<llm_graph_input_tok_rows *>(input.get());
         if (prev && prev->table == table && prev->i0 == i0 && prev->rows->ne[1] == n) {
-            return ggml_get_rows(ctx0, prev->rows, prev->iota);
+            ggml_tensor * shared = ggml_get_rows(ctx0, prev->rows, prev->iota);
+            prev->outs.push_back(shared);
+            return shared;
         }
     }
 
@@ -2558,6 +2601,9 @@ ggml_tensor * llm_graph_context::build_tok_rows(ggml_tensor * table, ggml_tensor
     ggml_set_input(inp->iota);
     ggml_format_name(inp->rows, "inp_tok_rows");
     ggml_format_name(inp->iota, "inp_tok_rows_iota");
+    ggml_format_name(cur, "tok_rows");
+    inp->sched = sched;
+    inp->outs.push_back(cur);
 
     res->add_input(std::move(inp));
 
