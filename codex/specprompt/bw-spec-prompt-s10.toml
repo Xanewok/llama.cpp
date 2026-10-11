@@ -1,0 +1,54 @@
+id = "bw-spec-prompt-s10"
+title = "spec-prompt-s10 (STEP fix 5: speculative prompt copy built only for drafters that read it) on stack10: CUDA 13.2 120a CCCL343 NCCL OFF build (frozen/stack10 recipe), test-speculative on the host CPU, freeze, render/check spec-prompt-np2-real-iq4, spec-prompt-np1-identity-j5q and spec-prompt-np2-real-j5q; never submits"
+kind = "filler"
+priority = 40
+host_sensitive = false
+preemptible = false
+# G: frozen/stack10 recipe with the shared ccache; only common/speculative.cpp, server-context.cpp and one test change, so the CUDA TUs hit the cache (pkg 87 window, same flags: 1500 s cold-ish M); CPU test < 5 s.
+est_s = 1200
+budget_s = 3600
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-spec-prompt-s10: FAIL" }]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/codex/specprompt/bw-spec-prompt-s10.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/codex/specprompt/window/a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_HOME = "/usr/local/cuda-13.2", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", GPUQ_BUILD_WINDOW = "1", TMPDIR = "/mnt/scratch/tmp-build" }
+ports = []
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/codex/specprompt/bw-spec-prompt-s10.sh", "--preflight"]
+timeout_s = 60
+
+[selftest]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/codex/specprompt/bw-spec-prompt-s10.sh", "--selftest"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/codex/specprompt/window/a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/codex/specprompt/window/a{attempt}/stages.tsv"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "source", "recipe", "controls"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/codex/specprompt/bw-spec-prompt-s10.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/codex/specprompt/bw-spec-prompt-s10.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/codex/specprompt/render_specprompt.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/codex/specprompt/postrun_proofs.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/common/speculative.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/common/speculative.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/tools/server/server-context.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/tests/CMakeLists.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/tests/test-speculative.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-index.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/spec-prompt-s10-mac-a1/mac-run.txt",
+]
