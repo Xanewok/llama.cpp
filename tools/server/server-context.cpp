@@ -4443,10 +4443,19 @@ private:
             slot.mem.seq_rm(slot.id, slot.prompt.tokens.pos_next(), -1);
 
             if (llama_hostless_level() >= 3) {
-                // emitted by hostless_flush_lagged once the next round is queued; n_gen counts them now for the draft budget
+                // emitted by hostless_flush_lagged once the next round is queued; n_gen counts them now for the draft budget.
+                // A stop known from ids alone (EOS, budget, context) is emitted now: a late one leaves a round in the cache
+                // that a recurrent state cannot roll back (> n_rs_seq). A stop string still stops one round late.
                 slot.stats.n_gen += ids.size();
-                slot.hostless_lag = ids;
-                return;
+                bool eager = !slot.has_budget() || (!params_base.ctx_shift && slot.prompt.n_tokens() + 1 >= slot.n_ctx);
+                for (const llama_token t : ids) {
+                    eager = eager || llama_vocab_is_eog(vocab, t);
+                }
+                if (!eager) {
+                    slot.hostless_lag = ids;
+                    return;
+                }
+                slot.stats.n_gen -= ids.size();
             }
 
             for (size_t i = 0; i < ids.size(); ++i) {

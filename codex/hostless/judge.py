@@ -1,7 +1,7 @@
 """Judge cells.sh OUT. Unit: one slot of one phase (tokens + draft/accepted/rounds), plus the chain dump rows (ids exact,
 probabilities |dq| <= 2e-7). Each level cell vs the L0 cell of its group (0, 0d, 1); the floor (0-L0-repeat) must match and the
 slotshift mutant must differ. Engagement: the hostless log strings of each level, none at L0, and on Meta(CPU,CPU) L1+ a
-tok_embd buffer that is not the CPU one. L3 dumps compare without the round index column. Exit 0 pass, 2 identity, 3 engagement, 4 mutant escaped, 5 floor, 6 failed cell.
+tok_embd buffer that is not the CPU one. Exit 0 pass, 2 identity, 3 engagement, 4 mutant escaped, 5 floor, 6 failed cell.
 Writes OUT/summary.json."""
 import json
 import re
@@ -84,8 +84,7 @@ for tag, c in cells.items():
     engaged(tag, c, level, group == "1")
     if tag == f"{group}-L0":
         continue
-    # L3: a slot that stops still has its next round in flight; that round's chain decode counts in the dump's round index
-    cmp = compare(ref, c, 1 if level >= 3 else 0)
+    cmp = compare(ref, c)
     summary[tag] = cmp
     if suffix.startswith("-mut-"):
         print(("ok   differs" if not cmp["identical"] else "FAIL escaped"), tag, json.dumps(cmp))
