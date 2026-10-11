@@ -1569,6 +1569,13 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         // if kv is shared with target (e.g Gemma4), then we can skip this catch-up decode
         if (!is_mem_shared) {
+            // PR #28333 rule (ported): zero the carry when the sequence's first batch token is at pos 0
+            for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
+                if (i_batch_beg[seq_id] >= 0 && batch_in.tokens[i_batch_beg[seq_id]].pos[0] == 0) {
+                    std::fill(pending_h[seq_id].begin(), pending_h[seq_id].end(), 0.0f);
+                }
+            }
+
             batch.clear();
 
             // pair each token with the tgt embedding shifted right by one position, and
