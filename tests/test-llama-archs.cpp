@@ -653,18 +653,29 @@ static bool check_causal_attn_toggle(
 }
 
 // draft logits for `prompt` on seq_id after the sequence was cleared, i.e. as at the start of a new request
+// the request starts at pos0; a non-empty `img` (n_prompt embd rows) replaces the prompt tokens with one image chunk
 static std::vector<float> get_mtp_draft_logits(
         llama_context * ctx_tgt, llama_context * ctx_dft, common_speculative * spec,
-        const std::vector<llama_token> & prompt, const llama_seq_id seq_id, const uint32_t n_split) {
+        const std::vector<llama_token> & prompt, const llama_seq_id seq_id, const uint32_t n_split,
+        const llama_pos pos0 = 0, const std::vector<float> & img = {}) {
     llama_memory_seq_rm(llama_get_memory(ctx_tgt), seq_id, -1, -1);
     llama_memory_seq_rm(llama_get_memory(ctx_dft), seq_id, -1, -1);
 
     const uint32_t n_prompt = prompt.size() - 1;
+    const uint32_t n_embd   = llama_model_n_embd_inp(llama_get_model(ctx_tgt));
+    constexpr llama_pos img_w = 4; // the chunk is a grid img_w wide: M-RoPE positions {pos0, pos0 + row, pos0 + col}
+    GGML_ASSERT(img.empty() || img.size() == (size_t) n_prompt*n_embd);
+
     common_batch batch(ctx_tgt);
     for (uint32_t i0 = 0; i0 < n_prompt; i0 += n_split) {
         batch.clear();
         for (uint32_t i = i0; i < std::min(i0 + n_split, n_prompt); i++) {
-            batch.add(prompt[i], i, seq_id, false);
+            if (img.empty()) {
+                batch.add(prompt[i], pos0 + i, seq_id, false);
+            } else {
+                const llama_pos pos[4] = { pos0, pos0 + (llama_pos) (i / img_w), pos0 + (llama_pos) (i % img_w), 0 };
+                batch.add_embd({ img.data() + (size_t) i*n_embd, 1, n_embd }, pos, seq_id, false);
+            }
         }
         if (llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0 || !common_speculative_process(spec, batch)) {
             throw std::runtime_error("failed to process prompt");
@@ -677,7 +688,7 @@ static std::vector<float> get_mtp_draft_logits(
     llama_tokens draft;
     auto & dp = common_speculative_get_draft_params(spec, seq_id);
     dp.drafting = true;
-    dp.pos0     = n_prompt;
+    dp.pos0     = pos0 + (img.empty() ? n_prompt : img_w);
     dp.id_last  = prompt.back();
     dp.prompt   = &prompt_tgt;
     dp.result   = &draft;
@@ -717,8 +728,9 @@ static bool check_mtp_draft_reset(const llm_arch arch, const size_t seed, const 
     const std::vector<llama_token> prompt_a = get_tokens(48, n_vocab, seed + 1);
     const std::vector<llama_token> prompt_b = get_tokens(8, n_vocab, seed + 2);
 
-    // fresh contexts per run so that only the request history differs
-    auto run = [&](const std::vector<std::vector<llama_token>> & prompts, const uint32_t n_split) {
+    // fresh contexts per run so that only the request history differs; `img` is the prompt body of the last request only
+    auto run = [&](const std::vector<std::vector<llama_token>> & prompts, const uint32_t n_split,
+                   const llama_pos pos0 = 0, const std::vector<float> & img = {}) {
         llama_context_params cparams = llama_context_default_params();
         cparams.n_ctx           = 256;
         cparams.n_seq_max       = n_seq;
@@ -744,28 +756,48 @@ static bool check_mtp_draft_reset(const llm_arch arch, const size_t seed, const 
 
         std::vector<float> logits;
         for (const auto & prompt : prompts) {
-            logits = get_mtp_draft_logits(ctx_tgt.get(), ctx_dft.get(), spec, prompt, seq_id, n_split);
+            const bool last = &prompt == &prompts.back();
+            logits = get_mtp_draft_logits(ctx_tgt.get(), ctx_dft.get(), spec, prompt, seq_id, n_split, pos0,
+                    last ? img : std::vector<float>());
         }
         common_speculative_free(spec);
         return logits;
     };
 
-    const std::vector<float> logits_fresh   = run({ prompt_b },           prompt_b.size());
-    const std::vector<float> logits_history = run({ prompt_a, prompt_b }, prompt_b.size());
-    const std::vector<float> logits_split   = run({ prompt_b },           prompt_b.size()/2);
+    const uint32_t n_embd = llama_model_n_embd_inp(model.get());
+    std::vector<float> img((size_t) (prompt_b.size() - 1)*n_embd);
+    std::mt19937 gen(seed + 3);
+    std::normal_distribution<float> dis(0.0f, stdev);
+    for (float & v : img) {
+        v = dis(gen);
+    }
 
     bool ok = true;
-    if (logits_fresh != logits_history) {
-        LOG_ERR("%s: %s: MTP draft logits depend on the previous request (NMSE %.2e)\n",
-                __func__, arch_name.c_str(), nmse(logits_fresh, logits_history));
-        ok = false;
-    }
-    const double nmse_split = nmse(logits_fresh, logits_split);
-    if (nmse_split > 1e-9) {
-        LOG_ERR("%s: %s: MTP draft logits change when the prompt is split (NMSE %.2e)\n",
-                __func__, arch_name.c_str(), nmse_split);
-        ok = false;
-    }
+    // exact: only the request history differs; otherwise only the batch split does and rounding may differ
+    auto expect_same = [&](const char * what, const std::vector<float> & a, const std::vector<float> & b, const bool exact) {
+        const double err = nmse(a, b);
+        if (exact ? a != b : err > 1e-9) {
+            LOG_ERR("check_mtp_draft_reset: %s: %s (NMSE %.2e)\n", arch_name.c_str(), what, err);
+            ok = false;
+        }
+    };
+
+    const std::vector<float> logits_fresh = run({ prompt_b }, prompt_b.size());
+    expect_same("MTP draft logits depend on the previous request",
+            logits_fresh, run({ prompt_a, prompt_b }, prompt_b.size()), true);
+    expect_same("MTP draft logits change when the prompt is split",
+            logits_fresh, run({ prompt_b }, prompt_b.size()/2), false);
+
+    // a sequence can start at pos > 0 with an empty draft memory, e.g. after a restore that skipped the draft context
+    expect_same("MTP draft logits depend on the previous request when starting at pos > 0",
+            run({ prompt_b }, prompt_b.size(), 16), run({ prompt_a, prompt_b }, prompt_b.size(), 16), true);
+
+    // the tokens of an image chunk share pos[0], so a later batch of a chunk at pos 0 starts at pos 0 too
+    const std::vector<float> logits_img = run({ prompt_b }, prompt_b.size(), 0, img);
+    expect_same("MTP draft logits change when an image chunk is split",
+            logits_img, run({ prompt_b }, prompt_b.size()/2, 0, img), false);
+    expect_same("MTP draft logits depend on the previous request for an image chunk",
+            logits_img, run({ prompt_a, prompt_b }, prompt_b.size(), 0, img), true);
     return ok;
 }
 
