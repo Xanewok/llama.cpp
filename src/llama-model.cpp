@@ -3048,10 +3048,12 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                     } else if (cparams.swa_window > 0) {
                         GGML_ASSERT(!hparams.is_swa_any());
 
-                        // each sequence keeps its window and sinks; one ubatch is written before older cells are freed
+                        // each sequence keeps its window and sinks; one ubatch is written before older cells are freed.
+                        // Sized like the iSWA window cache: padded to 256 and no larger n_pad, which would only add masked
+                        // cells to every read of a ring that stops growing after one window.
                         const uint32_t n_seq_cells = cparams.kv_unified ? cparams.n_seq_max : 1;
                         const uint32_t n_cells     = (cparams.swa_window + cparams.swa_sinks)*n_seq_cells + cparams.n_ubatch;
-                        const uint32_t kv_size     = std::min(cparams.n_ctx_seq, (n_cells + cparams.n_kv_pad - 1)/cparams.n_kv_pad*cparams.n_kv_pad);
+                        const uint32_t kv_size     = GGML_PAD(std::min(cparams.n_ctx_seq, n_cells), 256);
 
                         res = new llama_kv_cache(
                                 *this,
@@ -3063,7 +3065,7 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                                 cparams.kv_unified,
                                 kv_size,
                                 cparams.n_seq_max,
-                                cparams.n_kv_pad,
+                                1,
                                 cparams.swa_window,
                                 LLAMA_SWA_TYPE_STANDARD,
                                 nullptr,
