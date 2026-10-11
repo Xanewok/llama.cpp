@@ -2674,7 +2674,7 @@ static void ggml_cuda_input_copies_enqueue(ggml_backend_cuda_context * ctx, bool
         static const bool mutant = getenv("GGML_CUDA_INPUT_SCATTER_MUTANT") != nullptr;
         static std::atomic<bool> logged[GGML_CUDA_MAX_DEVICES];
         if (!logged[ctx->device].exchange(true)) {
-            GGML_LOG_INFO("input_scatter: engaged device=%d entries=%zu bytes=%zu mutant=%d\n", ctx->device, n, span, (int) mutant);
+            GGML_LOG_WARN("input_scatter: engaged device=%d entries=%zu bytes=%zu mutant=%d\n", ctx->device, n, span, (int) mutant);
         }
         ggml_round_trace_count("input_api", ctx->device);
         CUDA_CHECK(cudaMemcpyAsync(ctx->input_scatter_buf, base, span, cudaMemcpyHostToDevice, ctx->input_stream));
