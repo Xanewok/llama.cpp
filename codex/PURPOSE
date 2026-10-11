@@ -1,6 +1,6 @@
-purpose: M2 multi-slot MTP draft chain (np2): one chain graph drafting D1..Dk for every drafting slot; Opus spike 10-08
-base: 374a465b89630252d7a3bbf9f36117cfd26e274d
+purpose: H1 probe: time chain-M2 per-row draft sampling and output_reorder on the Mac (brief 2026-10-11-chain-m2-s10); probe commits only
+base: 7e9704e92434ba14590d6a6bddbcdb5087090361
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/chain-m2
-created: 2026-10-08T00:53:40+02:00
+branch: topic/chain-m2-h1
+created: 2026-10-11T11:31:11+02:00
 creator: xanewok
