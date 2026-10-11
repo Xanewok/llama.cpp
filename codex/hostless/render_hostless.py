@@ -31,12 +31,14 @@ POSTRUN = HERE / 'postrun_proofs.sh'
 TRACE_SH = HERE / 'trace_hostless.sh'
 FIXED, M2 = WT / 'frozen/hostless-spike', WT / 'frozen/chain-m2-s10'
 M2_SHA = 'eedee42c50f928e48a28a030a73238e4e25efa64'
-MAC = [WT / 'work/build-window-1007/hostless-spike-mac-a7', WT / 'work/build-window-1007/hostless-spike-mac-a8']
+MAC = [WT / 'work/build-window-1007/hostless-spike-mac-a9', WT / 'work/build-window-1007/hostless-spike-mac-a10']
 TRACED = [EVAL / 'results/2026-10-11-chain-m2-s10-np2-real-iq4/canary-a1/1-patch/server.log']
 DATE = '2026-10-12'
 sys.path.insert(0, str(SNAPSHOT))
 from harness import mkitem
 
+# every script of this dir (the contract wants each entry or library a pinned script names)
+OWN = sorted(p for p in HERE.iterdir() if p.suffix in ('.sh', '.py'))
 KNOBS = ['LLAMA_HOSTLESS', 'LLAMA_HOSTLESS_MUTANT', 'LLAMA_HOSTLESS_VERIFY']
 FUSION = ['gdn_cache_fusion: graph device=0 graph=\\d+ tokens=6 seqs=2 indexed=([1-9]\\d*) gdn=\\1 fused=\\1\\b',
           'gdn_cache_fusion: graph device=1 graph=\\d+ tokens=6 seqs=2 indexed=([1-9]\\d*) gdn=\\1 fused=\\1\\b']
@@ -132,7 +134,7 @@ def ab_experiment(root, draft):
                        env={'LLAMA_ARG_LOG_VERBOSITY': '5', 'GGML_CUDA_DEBUG_GDN_STATE': '1', 'LLAMA_HOSTLESS_VERIFY': '1'})
     x['budget'] |= dict(canary_s=600, est_s=1400)
     x['cpu_evidence'] = cpu_evidence()
-    own = [HERE / n for n in ('render_hostless.py', 'postrun_proofs.sh', 'bw-hostless-spike.sh', 'judge.py', 'cells.sh')]
+    own = OWN
     keep = [p for p in x['extra_pins'] if '/frozen/' not in p and '/wt/chain-m2-s10/' not in p]
     pins = keep + [str(p) for p in [*own, M2_AB, *TRACED, *(m / 'judge.log' for m in MAC)]]
     pins += [str(p) for p in frozen_files(root, draft)]
@@ -172,7 +174,7 @@ def render_trace(root, draft, dest_dir):
     commit = commit_of(root, draft)
     common = dict(XID_SINCE=base['run']['env']['XID_SINCE'], ITEM=name, FROZEN=str(root), FROZEN_COMMIT=commit)
     keep = [p for p in base['pins']['files'] if '/frozen/' not in p and not p.endswith('trace_m2s10.sh')]
-    pins = [str(TRACE_SH), *keep, str(HERE / 'render_hostless.py'), *(str(p) for p in frozen_files(root, draft))]
+    pins = [str(TRACE_SH), *keep, *(str(p) for p in OWN), *(str(p) for p in frozen_files(root, draft))]
     sig = copy.deepcopy(base['signatures'])
     sig[0]['regex'] = sig[0]['regex'].replace('unknown arm', 'unknown arm|hostless proof failed')
     item = {
@@ -182,7 +184,7 @@ def render_trace(root, draft, dest_dir):
                   '--cache-ram 0, fold C + chain env, k=5), both slots decoding at 8k and ~90k under nsys CUDA trace (no CPU '
                   'sampling) plus the unprofiled twin per window; proof boot per arm at verbosity 5 with LLAMA_HOSTLESS_VERIFY=1; '
                   'VRAM per GPU per arm; mechanism capture, not a timing A/B'),
-        'note': NOTE_TRACE, 'kind': 'measure', 'budget_s': 3600, 'est_s': 1400, 'ab': False, 'retry': 'fresh',
+        'note': NOTE_TRACE, 'kind': 'measure', 'budget_s': 3900, 'est_s': 1400, 'ab': False, 'retry': 'fresh',
         'startup_grace_s': 600, 'exit_codes': base['exit_codes'], 'signatures': sig,
         'run': {'cmd': ['bash', str(TRACE_SH)], 'cwd': base['run']['cwd'],
                 'env': dict(DRY_RUN='0', CANARY='0', **common, BUDGET_S='3000', OUT=f'{out}/full-a{{attempt}}', PORT='{port}'),
@@ -232,7 +234,7 @@ def main():
     parser.add_argument('--draft', action='store_true', help='build not frozen yet: expected pins, check may fail')
     parser.add_argument('--standin', type=Path, help='scratch dir: both items on frozen/chain-m2-s10, check must pass')
     args = parser.parse_args()
-    root, dest = (M2, args.standin) if args.standin else (FIXED, HERE)
+    root, dest = (M2, args.standin.resolve()) if args.standin else (FIXED, HERE)
     if not args.draft and not args.standin:
         assert FIXED.exists() and (FIXED / 'STAMPS.txt').exists()
     if args.standin:
