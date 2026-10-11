@@ -61,6 +61,7 @@ int main(int argc, char ** argv) {
         params.speculative.draft.p_min = 0;
         params.speculative.draft.probabilistic = true;
         params.speculative.draft.backend_sampling = true;
+        params.speculative.draft.mtp_chain = std::getenv("LLAMA_MTP_CHAIN") && std::atoi(std::getenv("LLAMA_MTP_CHAIN"));
         params.speculative.draft.cpuparams = params.cpuparams;
         params.speculative.draft.cpuparams_batch = params.cpuparams_batch;
         for (int id = 248319; id >= 12288; id -= 17) {

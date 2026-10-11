@@ -39,28 +39,36 @@ build() {
     "${BW_BUILDGATE:-nice}" cmake --build build-cpu --target "${targets[@]}" -j "${BW_JOBS:-4}"
 }
 
-# target logits and drafts: OUT/tgt/<tag>.{tgt,dft}.txt
+# served draft path: fold C writes the draft K/V from the target graph, the chain drafts k tokens in one decode
+FOLD=(LLAMA_MTP_FOLD_C=1 LLAMA_MTP_CHAIN=1)
+
+# target logits and drafts: OUT/tgt/<tag>.{tgt,dft}.txt; a tag containing "fold" runs the served draft path
 tgt() {
-    local tag=$1 meta=$2 w=$3 s=$4
+    local tag=$1 meta=$2 w=$3 s=$4 envs=()
+    [[ $tag == *fold* ]] && envs=("${FOLD[@]}")
     mkdir -p "$OUT/tgt"
-    "$GATE" "$BIN/swa-target" "$MODEL" "$OUT/tgt/$tag" "$meta" "$w" "$s" > "$OUT/tgt/$tag.log" 2>&1
+    "$GATE" env ${envs[@]+"${envs[@]}"} "$BIN/swa-target" "$MODEL" "$OUT/tgt/$tag" "$meta" "$w" "$s" > "$OUT/tgt/$tag.log" 2>&1
     grep -c 'swa-target: .* done' "$OUT/tgt/$tag.log" > /dev/null
 }
 
 # server path, two phases (cold, prefix reuse): OUT/srv/<tag>.json
 srv() {
-    local tag=$1 meta=$2 np=$3 w=$4 s=$5
+    local tag=$1 meta=$2 np=$3 w=$4 s=$5 envs=()
+    [[ $tag == *fold* ]] && envs=("${FOLD[@]}")
     mkdir -p "$OUT/srv"
-    "$GATE" env SWA_W="$w" SWA_S="$s" NP2_THREADS=4 NP2_N_MAX=5 "$BIN/bw-np2-driver" "$MODEL" "$OUT/srv/$tag.json" "$meta" "$np" 1729 96 \
+    "$GATE" env ${envs[@]+"${envs[@]}"} SWA_W="$w" SWA_S="$s" NP2_THREADS=4 NP2_N_MAX=5 "$BIN/bw-np2-driver" "$MODEL" "$OUT/srv/$tag.json" "$meta" "$np" 1729 96 \
         > "$OUT/srv/$tag.log" 2>&1
 }
 
 reference() {
     tgt plain-w0 0 0 0
     tgt meta-w0 1 0 0
+    tgt fold-w0 0 0 0
     srv np1-w0 0 1 0 0
     srv np2-w0 0 2 0 0
     srv np2meta-w0 1 2 0 0
+    srv np1fold-w0 0 1 0 0
+    srv np2fold-w0 0 2 0 0
 }
 
 same() { cmp "$1" "$2" && echo "SAME $1 $2"; }
@@ -80,8 +88,10 @@ unit() {
 
 off_vs_base() {
     reference
-    for f in plain-w0.tgt.txt plain-w0.dft.txt meta-w0.tgt.txt meta-w0.dft.txt; do same "$OUT/tgt/$f" "$REF/tgt/$f"; done
-    for f in np1-w0 np2-w0 np2meta-w0; do same "$OUT/srv/$f.json" "$REF/srv/$f.json"; done
+    for t in plain-w0 meta-w0 fold-w0; do
+        for f in tgt dft; do same "$OUT/tgt/$t.$f.txt" "$REF/tgt/$t.$f.txt"; done
+    done
+    for f in np1-w0 np2-w0 np2meta-w0 np1fold-w0 np2fold-w0; do same "$OUT/srv/$f.json" "$REF/srv/$f.json"; done
 }
 
 window_on() {
@@ -89,9 +99,15 @@ window_on() {
     tgt meta-w16s4 1 16 4
     tgt plain-w16s0 0 16 0
     tgt plain-w4096s0 0 4096 0
+    tgt fold-w16s4 0 16 4
     for t in plain-w16s4 plain-w16s0 plain-w4096s0; do same "$OUT/tgt/$t.tgt.txt" "$OUT/tgt/plain-w0.tgt.txt"; done
     same "$OUT/tgt/meta-w16s4.tgt.txt" "$OUT/tgt/meta-w0.tgt.txt"
-    differ "$OUT/tgt/plain-w16s4.dft.txt" "$OUT/tgt/plain-w0.dft.txt"
+    same "$OUT/tgt/fold-w16s4.tgt.txt" "$OUT/tgt/fold-w0.tgt.txt"
+    for t in plain meta fold; do differ "$OUT/tgt/$t-w16s4.dft.txt" "$OUT/tgt/$t-w0.dft.txt"; done
+    for f in fold-w0 fold-w16s4; do
+        grep -c 'mtp_fold_decode: engaged n_seq=1' "$OUT/tgt/$f.log" > /dev/null
+        grep -c 'MTP chain: k=5' "$OUT/tgt/$f.log" > /dev/null
+    done
     differ "$OUT/tgt/plain-w16s4.dft.txt" "$OUT/tgt/plain-w16s0.dft.txt"
     # nothing leaves a window wider than the context: the windowed cache must then draft exactly like the full one
     diff <(grep -v '^draft pos_min' "$OUT/tgt/plain-w4096s0.dft.txt") <(grep -v '^draft pos_min' "$OUT/tgt/plain-w0.dft.txt")
@@ -103,7 +119,10 @@ server_on() {
     srv np1-w32s4 0 1 32 4
     srv np2-w32s4 0 2 32 4
     srv np2meta-w32s4 1 2 32 4
-    for t in np1 np2 np2meta; do
+    srv np1fold-w32s4 0 1 32 4
+    srv np2fold-w32s4 0 2 32 4
+    grep -c 'mtp_fold_decode: engaged n_seq=2' "$OUT/srv/np2fold-w32s4.log" > /dev/null
+    for t in np1 np2 np2meta np1fold np2fold; do
         grep -c 'swa_window            = 32, swa_sinks = 4' "$OUT/srv/$t-w32s4.log" > /dev/null
         python3 - "$OUT/srv/$t-w32s4.json" "$OUT/srv/$t-w0.json" <<'PY'
 import json, sys
