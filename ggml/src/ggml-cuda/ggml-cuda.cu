@@ -2670,6 +2670,12 @@ static void ggml_cuda_input_copies_enqueue(ggml_backend_cuda_context * ctx, bool
     // One copy of the packed range and a device scatter: two API calls whatever the entry count, where a batch copy
     // costs host time per entry. The scatter has no order between entries, hence not for overlapping destinations.
     if (!overlap && n > 0 && ggml_cuda_input_scatter_reserve(ctx, span)) {
+        // local: GGML_CUDA_INPUT_SCATTER_MUTANT=1 shifts every entry by one byte (negative control); the log line proves engagement.
+        static const bool mutant = getenv("GGML_CUDA_INPUT_SCATTER_MUTANT") != nullptr;
+        static std::atomic<bool> logged[GGML_CUDA_MAX_DEVICES];
+        if (!logged[ctx->device].exchange(true)) {
+            GGML_LOG_INFO("input_scatter: engaged device=%d entries=%zu bytes=%zu mutant=%d\n", ctx->device, n, span, (int) mutant);
+        }
         ggml_round_trace_count("input_api", ctx->device);
         CUDA_CHECK(cudaMemcpyAsync(ctx->input_scatter_buf, base, span, cudaMemcpyHostToDevice, ctx->input_stream));
         ggml_cuda_input_scatter_args args;
@@ -2682,6 +2688,10 @@ static void ggml_cuda_input_copies_enqueue(ggml_backend_cuda_context * ctx, bool
             args.dst[args.n]  = (char *) ctx->input_dsts[i];
             args.offs[args.n] = (size_t) (src - base);
             args.size[args.n] = ctx->input_sizes[i];
+            if (mutant && args.size[args.n] > 1) {
+                args.offs[args.n] += 1;
+                args.size[args.n] -= 1;
+            }
             max_size = std::max(max_size, ctx->input_sizes[i]);
             if (++args.n == GGML_CUDA_INPUT_SCATTER_MAX || i + 1 == n) {
                 ggml_round_trace_count("input_api", ctx->device);
