@@ -2484,6 +2484,10 @@ llama_memory_context_ptr llama_context::mtp_fold_prepare(const llama_ubatch & ub
         }
         seen[seq] = true;
         const llama_pos p0 = kv->seq_pos_max(seq) + 1;
+        // a fresh sequence must not see the armed row of the previous run: the caller's catch-up zeroes it
+        if (p0 == 0) {
+            return nullptr;
+        }
         uint32_t end = begin;
         while (end < ubatch.n_tokens && ubatch.n_seq_id[end] == 1 && ubatch.seq_id[end][0] == seq) {
             if (ubatch.pos[end] != p0 + (llama_pos) (end - begin)) {
