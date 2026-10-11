@@ -10,7 +10,7 @@ build)
     cmake -S . -B "$B" -G Ninja -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_METAL=OFF -DGGML_BLAS=OFF -DGGML_NATIVE=OFF \
         -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_TOOLS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
         -DLLAMA_BUILD_SERVER=OFF -DLLAMA_BUILD_APP=OFF -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF \
-        -DFETCHCONTENT_FULLY_DISCONNECTED=ON -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache || exit 1
+        -DFETCHCONTENT_FULLY_DISCONNECTED=ON || exit 1
     nice -n 19 cmake --build "$B" --target test-tok-rows test-backend-ops llama -j4 || exit 1
     nice -n 19 clang++ -std=c++17 -O1 -Iinclude -Iggml/include gate/embd/driver.cpp -o "$B/bin/embd-driver" \
         -L"$B/bin" -lllama -lggml -lggml-base -Wl,-rpath,"$B/bin" || exit 1
