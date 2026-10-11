@@ -121,17 +121,21 @@ server_on() {
     srv np2meta-w32s4 1 2 32 4
     srv np1fold-w32s4 0 1 32 4
     srv np2fold-w32s4 0 2 32 4
+    srv np1-w4s0 0 1 4 0
     grep -c 'mtp_fold_decode: engaged n_seq=2' "$OUT/srv/np2fold-w32s4.log" > /dev/null
-    for t in np1 np2 np2meta np1fold np2fold; do
-        grep -c 'swa_window            = 32, swa_sinks = 4' "$OUT/srv/$t-w32s4.log" > /dev/null
-        python3 - "$OUT/srv/$t-w32s4.json" "$OUT/srv/$t-w0.json" <<'PY'
+    # slot 0 counts integers: at W = 32 its drafts keep their argmax (Mac a1: tokens and counters equal to off), so the np1
+    # runs at W = 32 check the path (window line, prefix reuse) and W = 4 checks that the window reaches the server's draft
+    for t in np1-w32s4 np2-w32s4 np2meta-w32s4 np1fold-w32s4 np2fold-w32s4 np1-w4s0; do
+        local wv=${t##*-w} sv=${t##*s}
+        grep -c "swa_window            = ${wv%s*}, swa_sinks = $sv," "$OUT/srv/$t.log" > /dev/null
+        python3 - "$OUT/srv/$t.json" "$OUT/srv/${t%-w*}-w0.json" "$t" <<'PY'
 import json, sys
-on, off = (json.load(open(p)) for p in sys.argv[1:])
+on, off = (json.load(open(p)) for p in sys.argv[1:3])
 for ph_on, ph_off in zip(on["phases"], off["phases"]):
     for a, b in zip(ph_on["stats"], ph_off["stats"]):
         print(f"phase {ph_on['phase']} slot {a['slot']}: on accepted/draft {a['accepted']}/{a['draft']} rounds {a['rounds']} cached {a['cached']}"
               f" | off {b['accepted']}/{b['draft']} rounds {b['rounds']} cached {b['cached']}")
-assert on != off, "window changed nothing"
+assert on != off or sys.argv[3] in ("np1-w32s4", "np1fold-w32s4"), "window changed nothing"
 assert any(s["cached"] > 0 for s in on["phases"][1]["stats"]), "phase 2 did not reuse the prompt"
 PY
     done
