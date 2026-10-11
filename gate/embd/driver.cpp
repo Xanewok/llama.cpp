@@ -74,6 +74,25 @@ int main(int argc, char ** argv) {
         printf("\n");
     }
     llama_batch_free(b);
+
+    // raw-embedding batch (ubatch.token == nullptr): the other select branch; the gathered-rows input stays unused
+    llama_memory_clear(llama_get_memory(ctx), true);
+    const int n_embd = llama_model_n_embd_inp(model), n_e = 6;
+    llama_batch be = llama_batch_init(n_e, n_embd, 1);
+    uint32_t lcg = 12345;
+    for (int i = 0; i < n_e*n_embd; ++i) {
+        lcg = lcg*1664525u + 1013904223u;
+        be.embd[i] = ((lcg >> 8) & 0xffff)/65536.0f - 0.5f;
+    }
+    for (int i = 0; i < n_e; ++i) {
+        be.pos[i] = i; be.n_seq_id[i] = 1; be.seq_id[i][0] = 0; be.logits[i] = i + 1 == n_e;
+    }
+    be.n_tokens = n_e;
+    if (llama_decode(ctx, be) != 0) { fprintf(stderr, "embd decode failed\n"); return 7; }
+    const float * lg = llama_get_logits_ith(ctx, n_e - 1);
+    printf("embd: %d\n", (int) (std::max_element(lg, lg + llama_vocab_n_tokens(vocab)) - lg));
+    llama_batch_free(be);
+
     llama_free(ctx);
     llama_model_free(model);
     return 0;
