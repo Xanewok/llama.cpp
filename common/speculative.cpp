@@ -1913,7 +1913,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
 
                 if (replace) {
-                    GGML_ASSERT((int32_t) dp.result->size() == k && (*dp.result)[s] == LLAMA_HOSTLESS_SLOT(seq_id*LLAMA_MTP_CHAIN_MAX + s));
+                    // common_speculative_draft may have truncated the placeholders to n_max
+                    if (s >= (int32_t) dp.result->size()) {
+                        continue;
+                    }
+                    GGML_ASSERT((*dp.result)[s] == LLAMA_HOSTLESS_SLOT(seq_id*LLAMA_MTP_CHAIN_MAX + s));
                     (*dp.result)[s] = id;
                 } else {
                     dp.result->push_back(id);
