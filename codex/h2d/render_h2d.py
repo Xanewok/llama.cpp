@@ -110,7 +110,7 @@ def arms(stock, up_log, patch_log, draft):
 
 def pins(x, source, traced_logs, draft, extra=()):
     own = [HERE / n for n in ('render_h2d.py', 'postrun_proofs.sh', 'bw-h2d-contig.sh')]
-    p = x['extra_pins'] + [str(f) for f in [*own, source, *extra, *traced_logs]]
+    p = x.get('extra_pins', []) + [str(f) for f in [*own, source, *extra, *traced_logs]]
     p += [str(f) for f in frozen_files(FIXED, draft) + frozen_files(STOCK, draft)]
     return list(dict.fromkeys(p))
 
