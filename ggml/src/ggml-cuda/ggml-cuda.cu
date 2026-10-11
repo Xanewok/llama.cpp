@@ -34,6 +34,7 @@
 #include "ggml-cuda/fwht.cuh"
 #include "ggml-cuda/getrows.cuh"
 #include "ggml-cuda/im2col.cuh"
+#include "ggml-cuda/input-scatter.cuh"
 #include "ggml-cuda/mmf.cuh"
 #include "ggml-cuda/mmq.cuh"
 #include "ggml-cuda/mmvf.cuh"
@@ -722,6 +723,9 @@ ggml_backend_cuda_context::~ggml_backend_cuda_context() {
     }
     if (input_stream) {
         CUDA_CHECK(cudaStreamDestroy(input_stream));
+    }
+    if (input_scatter_buf) {
+        CUDA_CHECK(cudaFree(input_scatter_buf));
     }
 #endif
     if (copy_event != nullptr) {
@@ -2629,8 +2633,65 @@ static void ggml_cuda_input_stream_ensure(ggml_backend_cuda_context * ctx) {
     }
 }
 
-// Enqueues ctx->input_{dsts,srcs,sizes} on the input stream, in list order.
-static void ggml_cuda_input_copies_enqueue(ggml_backend_cuda_context * ctx, bool overlap) {
+// The caller has selected ctx->device. On false the context holds no device region.
+static bool ggml_cuda_input_scatter_reserve(ggml_backend_cuda_context * ctx, size_t size) {
+    if (ctx->input_scatter_capacity >= size) {
+        return true;
+    }
+    size_t capacity = ctx->input_scatter_capacity ? ctx->input_scatter_capacity : size;
+    while (capacity < size) {
+        capacity = capacity <= SIZE_MAX / 2 ? capacity * 2 : size;
+    }
+    if (ctx->input_scatter_buf) {
+        // Earlier uploads on the input stream may still read the old region.
+        CUDA_CHECK(cudaStreamSynchronize(ctx->input_stream));
+        CUDA_CHECK(cudaFree(ctx->input_scatter_buf));
+        ctx->input_scatter_buf = nullptr;
+        ctx->input_scatter_capacity = 0;
+    }
+    void * buf = nullptr;
+    if (cudaMalloc(&buf, capacity) != cudaSuccess) {
+        (void) cudaGetLastError();
+        capacity = size;
+        if (cudaMalloc(&buf, capacity) != cudaSuccess) {
+            (void) cudaGetLastError();
+            return false;
+        }
+    }
+    ctx->input_scatter_buf = buf;
+    ctx->input_scatter_capacity = capacity;
+    return true;
+}
+
+// Enqueues ctx->input_{dsts,srcs,sizes} on the input stream; later entries win where destinations overlap.
+// Every source lies in the pinned host range [base, base + span).
+static void ggml_cuda_input_copies_enqueue(ggml_backend_cuda_context * ctx, bool overlap, const char * base, size_t span) {
+    const size_t n = ctx->input_dsts.size();
+    // One copy of the packed range and a device scatter: two API calls whatever the entry count, where a batch copy
+    // costs host time per entry. The scatter has no order between entries, hence not for overlapping destinations.
+    if (!overlap && n > 0 && ggml_cuda_input_scatter_reserve(ctx, span)) {
+        ggml_round_trace_count("input_api", ctx->device);
+        CUDA_CHECK(cudaMemcpyAsync(ctx->input_scatter_buf, base, span, cudaMemcpyHostToDevice, ctx->input_stream));
+        ggml_cuda_input_scatter_args args;
+        args.src = (const char *) ctx->input_scatter_buf;
+        args.n = 0;
+        size_t max_size = 0;
+        for (size_t i = 0; i < n; ++i) {
+            const char * src = (const char *) ctx->input_srcs[i];
+            GGML_ASSERT(src >= base && ctx->input_sizes[i] <= span && (size_t) (src - base) <= span - ctx->input_sizes[i]);
+            args.dst[args.n]  = (char *) ctx->input_dsts[i];
+            args.offs[args.n] = (size_t) (src - base);
+            args.size[args.n] = ctx->input_sizes[i];
+            max_size = std::max(max_size, ctx->input_sizes[i]);
+            if (++args.n == GGML_CUDA_INPUT_SCATTER_MAX || i + 1 == n) {
+                ggml_round_trace_count("input_api", ctx->device);
+                ggml_cuda_input_scatter(args, max_size, ctx->input_stream);
+                args.n = 0;
+                max_size = 0;
+            }
+        }
+        return;
+    }
 #if CUDART_VERSION >= 13000
     // Batch copies are unordered; overlapping destinations need stream-ordered copies.
     if (!overlap) {
@@ -2661,8 +2722,8 @@ static bool ggml_backend_cuda_set_tensor_batch_owned(ggml_backend_t backend, con
             return false;
         }
         GGML_ASSERT(t.offset <= ggml_nbytes(t.tensor) && t.size <= ggml_nbytes(t.tensor) - t.offset);
-        GGML_ASSERT(t.size <= SIZE_MAX - total);
-        total += t.size;
+        GGML_ASSERT(t.size <= SIZE_MAX - 15 - total);
+        total += GGML_PAD(t.size, 16);
     }
     if (total == 0) {
         return true;
@@ -2730,9 +2791,9 @@ static bool ggml_backend_cuda_set_tensor_batch_owned(ggml_backend_t backend, con
         ctx->input_dsts.push_back(dst);
         ctx->input_srcs.push_back(src);
         ctx->input_sizes.push_back(t.size);
-        offset += t.size;
+        offset += GGML_PAD(t.size, 16);
     }
-    ggml_cuda_input_copies_enqueue(ctx, overlap);
+    ggml_cuda_input_copies_enqueue(ctx, overlap, (const char *) slot.data, offset);
     CUDA_CHECK(cudaEventRecord(slot.uploaded, ctx->input_stream));
     CUDA_CHECK(cudaStreamWaitEvent(ctx->stream(), slot.uploaded, 0));
     slot.pending = true;
@@ -2906,8 +2967,8 @@ static bool ggml_backend_cuda_input_stage_set_batch(void * stage, ggml_backend_t
             }
             GGML_ASSERT(t.offset <= ggml_nbytes(t.tensor) && t.size <= ggml_nbytes(t.tensor) - t.offset);
             if (r == 0) {
-                GGML_ASSERT(t.size <= SIZE_MAX - total);
-                total += t.size;
+                GGML_ASSERT(t.size <= SIZE_MAX - 15 - total);
+                total += GGML_PAD(t.size, 16);
             } else if (t.data != transfers[0][i].data || t.size != transfers[0][i].size) {
                 return false;
             }
@@ -2978,7 +3039,7 @@ static bool ggml_backend_cuda_input_stage_set_batch(void * stage, ggml_backend_t
             if (transfers[0][i].size != 0) {
                 memcpy((char *) slot.data + offset, transfers[0][i].data, st->mutant ? transfers[0][i].size / 2 : transfers[0][i].size);
             }
-            offset += transfers[0][i].size;
+            offset += GGML_PAD(transfers[0][i].size, 16);
         }
     }
 
@@ -3007,7 +3068,7 @@ static bool ggml_backend_cuda_input_stage_set_batch(void * stage, ggml_backend_t
             ctx->input_srcs.push_back((char *) slot.data + st->offsets[i]);
             ctx->input_sizes.push_back(t.size);
         }
-        ggml_cuda_input_copies_enqueue(ctx, overlap);
+        ggml_cuda_input_copies_enqueue(ctx, overlap, (const char *) slot.data, total);
         CUDA_CHECK(cudaEventRecord(slot.uploaded[r], ctx->input_stream));
         CUDA_CHECK(cudaStreamWaitEvent(ctx->stream(), slot.uploaded[r], 0));
     }

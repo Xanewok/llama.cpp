@@ -1,5 +1,6 @@
 // Shared input staging of the meta backend. Part 1 (CPU): the meta glue on two fake ranks. Part 2: the CUDA group upload
-// on CUDA0 and CUDA1 (skipped without two CUDA devices unless INPUT_STAGE_REQUIRE_CUDA=1).
+// on CUDA0 and CUDA1. Part 3: disjoint uploads (the packed copy + device scatter path), per rank and shared. Parts 2 and 3
+// are skipped without two CUDA devices unless INPUT_STAGE_REQUIRE_CUDA=1.
 #include "ggml-alloc.h"
 #include "../ggml/src/ggml-backend-impl.h"
 #include "ggml-cpp.h"
@@ -9,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <random>
 #include <vector>
 
 #define CHECK(cond, ...)                                                    \
@@ -349,6 +351,113 @@ static bool run_cuda(bool require) {
     return true;
 }
 
+//
+// Part 3: disjoint uploads on CUDA0 and CUDA1
+//
+
+// One destination tensor per entry, so no two writes overlap. Entry counts cross the scatter's per-launch table, sizes
+// and offsets hit its 16-byte, 4-byte and byte paths, and the largest upload grows so the device region is reallocated.
+static bool run_cuda_scatter(bool require, bool shared) {
+    const char * name = shared ? "cuda scatter shared" : "cuda scatter per rank";
+    ggml_backend_dev_t d[2] = { ggml_backend_dev_by_name("CUDA0"), ggml_backend_dev_by_name("CUDA1") };
+    if (!d[0] || !d[1]) {
+        printf("%s: %s, fewer than two CUDA devices\n", name, require ? "FAIL" : "SKIP");
+        return !require;
+    }
+    ggml_backend_ptr be[2] = { ggml_backend_ptr(ggml_backend_dev_init(d[0], nullptr)), ggml_backend_ptr(ggml_backend_dev_init(d[1], nullptr)) };
+    CHECK(be[0] && be[1]);
+    ggml_backend_t raw[2] = { be[0].get(), be[1].get() };
+    ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(d[0]);
+    auto init = (ggml_backend_input_stage_init_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_input_stage_init");
+    auto stage_free = (ggml_backend_input_stage_free_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_input_stage_free");
+    auto set = (ggml_backend_input_stage_set_batch_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_input_stage_set_batch");
+    CHECK(init && stage_free && set);
+    CHECK(raw[0]->iface.set_tensor_batch_owned && raw[1]->iface.set_tensor_batch_owned);
+
+    constexpr int n_rounds = 48;
+    std::mt19937 gen(shared ? 29 : 17);
+    std::vector<std::vector<std::vector<uint8_t>>> src(n_rounds);
+    std::vector<std::vector<size_t>> offs(n_rounds), sizes(n_rounds);
+    size_t n_total = 0;
+    for (int i = 0; i < n_rounds; ++i) {
+        const int n = i == 0 ? 1 : i == 1 ? 32 : i == 2 ? 33 : 1 + (int) (gen() % 70);
+        for (int e = 0; e < n; ++e) {
+            size_t size;
+            switch (gen() % 4) {
+                case 0:  size = 16*(1 + gen() % (8 + 64*i)); break;
+                case 1:  size = 4*(1 + gen() % 300);         break;
+                case 2:  size = 1 + gen() % 700;             break;
+                default: size = 1 + gen() % 15;              break;
+            }
+            const size_t off = gen() % 3 == 0 ? 0 : gen() % 2 ? 4*(gen() % 8) : gen() % 37;
+            std::vector<uint8_t> v(size);
+            fill_random(v);
+            src[i].push_back(std::move(v));
+            offs[i].push_back(off);
+            sizes[i].push_back(off + size + gen() % 9);
+        }
+        n_total += n;
+    }
+    ggml_context_ptr ctx[2];
+    ggml_backend_buffer_ptr buffers[2];
+    std::vector<std::vector<ggml_tensor *>> dst[2];
+    for (int r = 0; r < 2; ++r) {
+        ggml_init_params params = { (n_total + 1)*ggml_tensor_overhead(), nullptr, true };
+        ctx[r].reset(ggml_init(params));
+        dst[r].resize(n_rounds);
+        for (int i = 0; i < n_rounds; ++i) {
+            for (size_t e = 0; e < src[i].size(); ++e) {
+                dst[r][i].push_back(ggml_new_tensor_1d(ctx[r].get(), GGML_TYPE_I8, (int64_t) sizes[i][e]));
+            }
+        }
+        buffers[r].reset(ggml_backend_alloc_ctx_tensors(ctx[r].get(), raw[r]));
+        CHECK(buffers[r]);
+        ggml_backend_buffer_clear(buffers[r].get(), 0);
+    }
+    void * stage = shared ? init(raw, 2) : nullptr;
+    CHECK(!shared || stage);
+
+    std::vector<std::vector<std::vector<uint8_t>>> expect(n_rounds);
+    for (int i = 0; i < n_rounds; ++i) {
+        const size_t n = src[i].size();
+        std::vector<ggml_backend_tensor_transfer> tr[2];
+        for (size_t e = 0; e < n; ++e) {
+            std::vector<uint8_t> want(sizes[i][e], 0);
+            memcpy(want.data() + offs[i][e], src[i][e].data(), src[i][e].size());
+            expect[i].push_back(std::move(want));
+            for (int r = 0; r < 2; ++r) {
+                tr[r].push_back({ dst[r][i][e], src[i][e].data(), offs[i][e], src[i][e].size() });
+            }
+        }
+        if (shared) {
+            const ggml_backend_tensor_transfer * per_rank[2] = { tr[0].data(), tr[1].data() };
+            CHECK(set(stage, raw, 2, per_rank, n), "round %d refused", i);
+        } else {
+            for (int r = 0; r < 2; ++r) {
+                CHECK(raw[r]->iface.set_tensor_batch_owned(raw[r], tr[r].data(), n), "CUDA%d round %d refused", r, i);
+            }
+        }
+        // The host bytes are consumed before the call returns.
+        for (auto & v : src[i]) {
+            memset(v.data(), 0xA5, v.size());
+        }
+    }
+    ggml_backend_synchronize(raw[0]);
+    ggml_backend_synchronize(raw[1]);
+    for (int r = 0; r < 2; ++r) {
+        for (int i = 0; i < n_rounds; ++i) {
+            for (size_t e = 0; e < expect[i].size(); ++e) {
+                CHECK(tensor_equals(dst[r][i][e], expect[i][e]), "%s: CUDA%d round %d entry %zu differs", name, r, i, e);
+            }
+        }
+    }
+    if (stage) {
+        stage_free(stage);
+    }
+    printf("%s: OK (%d rounds, %zu disjoint writes per rank, byte-identical)\n", name, n_rounds, n_total);
+    return true;
+}
+
 int main() {
     ggml_backend_load_all();
     g_reg.iface.get_proc_address = fake_reg_proc;
@@ -361,6 +470,8 @@ int main() {
     ok = ok && run_fake("fake/mutant-drops-a-write", STAGE_MUTANT, 1);
     const char * require = getenv("INPUT_STAGE_REQUIRE_CUDA");
     ok = ok && run_cuda(require && atoi(require) != 0);
+    ok = ok && run_cuda_scatter(require && atoi(require) != 0, false);
+    ok = ok && run_cuda_scatter(require && atoi(require) != 0, true);
     printf("test-meta-input-stage: %s\n", ok ? "PASS" : "FAIL");
     return ok ? 0 : 1;
 }

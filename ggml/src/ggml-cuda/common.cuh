@@ -1468,6 +1468,9 @@ struct ggml_backend_cuda_context {
     std::vector<void *> input_dsts;
     std::vector<const void *> input_srcs;
     std::vector<size_t> input_sizes;
+    // Device copy of a packed upload; only the input stream touches it.
+    void * input_scatter_buf = nullptr;
+    size_t input_scatter_capacity = 0;
 #endif
 
     cudaStream_t streams[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = { { nullptr } };
