@@ -157,6 +157,29 @@ public:
     const int64_t n_embd = 0;
 };
 
+// Token-embedding rows [i0, i0 + n) of ubatch->token, copied from a host-resident table without conversion, so that
+// the dequantizing GET_ROWS runs on a device backend and the upload carries the table's (quantized) bytes.
+class llm_graph_input_tok_rows : public llm_graph_input_i {
+public:
+    llm_graph_input_tok_rows(const ggml_tensor * table, int64_t i0, bool all_tokens) :
+        table(table), i0(i0), all_tokens(all_tokens) {}
+    virtual ~llm_graph_input_tok_rows() = default;
+
+    void set_input(const llama_ubatch * ubatch) override;
+
+    bool can_reuse(const llm_graph_params & params) override;
+
+    ggml_tensor * rows = nullptr; // table->type [table->ne[0], n]
+    ggml_tensor * iota = nullptr; // I32 [n]: 0 .. n-1
+
+    const ggml_tensor * table;
+    const int64_t i0;
+    const bool    all_tokens; // n == ubatch.n_tokens
+
+private:
+    std::vector<uint8_t> staging; // only for non-host input buffers
+};
+
 class llm_graph_input_pos : public llm_graph_input_i {
 public:
     llm_graph_input_pos(uint32_t n_pos_per_embd) : n_pos_per_embd(n_pos_per_embd) {}
@@ -1209,6 +1232,9 @@ struct llm_graph_context {
     //
 
     ggml_tensor * build_inp_embd(ggml_tensor * tok_embd) const;
+
+    // ggml_get_rows(table, ids), where ids holds ubatch.token[i0, i0 + ids->ne[0])
+    ggml_tensor * build_tok_rows(ggml_tensor * table, ggml_tensor * ids, int64_t i0 = 0) const;
     ggml_tensor * build_inp_pos() const;
     ggml_tensor * build_inp_attn_scale() const;
     ggml_tensor * build_inp_out_ids() const;

@@ -288,7 +288,7 @@ void llama_model_qwen35::graph::build_mtp_fold(
     cb(h_embd, "mtp_fold_h", il);
 
     ggml_tensor * tok_embd_w = layer.nextn.embed_tokens ? layer.nextn.embed_tokens : model.tok_embd;
-    ggml_tensor * tok_embd   = ggml_get_rows(ctx0, tok_embd_w, res->t_inp_tokens);
+    ggml_tensor * tok_embd   = build_tok_rows(tok_embd_w, res->t_inp_tokens);
     cb(tok_embd, "mtp_tok_embd", il);
 
     // from here to the cache write: the same nodes as graph_mtp
@@ -643,7 +643,7 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
     } else if (ubatch.token) {
         ggml_tensor * tok_embd_w = layer.nextn.embed_tokens ? layer.nextn.embed_tokens : model.tok_embd;
 
-        tok_embd = ggml_get_rows(ctx0, tok_embd_w, inp->tokens);
+        tok_embd = build_tok_rows(tok_embd_w, inp->tokens);
     } else {
         tok_embd = inp->embd;
     }
@@ -797,7 +797,7 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
             ggml_tensor * e_in;
             ggml_tensor * h_in;
             if (s == 0) {
-                e_in = ggml_get_rows(ctx0, tok_embd_w, ggml_view_1d(ctx0, inp_tokens, 1, 0));
+                e_in = build_tok_rows(tok_embd_w, ggml_view_1d(ctx0, inp_tokens, 1, 0));
                 h_in = ggml_view_2d(ctx0, h_embd, h_embd->ne[0], 1, h_embd->nb[1], 0);
             } else {
                 ggml_tensor * row = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, vocab_map, ggml_reshape_1d(ctx0, sampled, 1)), 1);

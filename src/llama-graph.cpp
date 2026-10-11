@@ -95,7 +95,8 @@ static bool can_reuse_kq_mask(
 // impl
 
 void llm_graph_input_embd::set_input(const llama_ubatch * ubatch) {
-    if (ubatch->token) {
+    // tokens is left out of the graph (unallocated) when build_tok_rows() gathers the rows on the host
+    if (ubatch->token && tokens->buffer) {
         const int64_t n_tokens = ubatch->n_tokens;
 
         ggml_backend_tensor_set(tokens, ubatch->token, 0, n_tokens*ggml_element_size(tokens));
@@ -123,7 +124,9 @@ void llm_graph_input_embd_h::set_input(const llama_ubatch * ubatch) {
     const int64_t n_tokens = ubatch->n_tokens;
 
     if (ubatch->token) {
-        ggml_backend_tensor_set(tokens, ubatch->token, 0, n_tokens*ggml_element_size(tokens));
+        if (tokens->buffer) {
+            ggml_backend_tensor_set(tokens, ubatch->token, 0, n_tokens*ggml_element_size(tokens));
+        }
     } else {
         // note: mtmd embedding input goes through here
         GGML_ASSERT(ubatch->embd);
@@ -150,6 +153,47 @@ bool llm_graph_input_embd_h::can_reuse(const llm_graph_params & params) {
     res &= (!params.ubatch.embd)  || (h      && h->ne[1]      == params.ubatch.n_tokens);
 
     return res;
+}
+
+void llm_graph_input_tok_rows::set_input(const llama_ubatch * ubatch) {
+    if (!ubatch->token) {
+        return;
+    }
+
+    const int64_t n  = rows->ne[1];
+    const size_t  rs = rows->nb[1];
+
+    GGML_ASSERT(i0 + n <= ubatch->n_tokens);
+    GGML_ASSERT(rs == table->nb[1]);
+
+    const bool host = ggml_backend_buffer_is_host(rows->buffer);
+    if (!host) {
+        staging.resize(n*rs);
+    }
+    uint8_t * dst = host ? (uint8_t *) rows->data : staging.data();
+
+    for (int64_t i = 0; i < n; ++i) {
+        const llama_token t = ubatch->token[i0 + i];
+        GGML_ASSERT(t >= 0 && t < table->ne[1]);
+        memcpy(dst + i*rs, (const uint8_t *) table->data + t*table->nb[1], rs);
+    }
+    if (!host) {
+        ggml_backend_tensor_set(rows, dst, 0, n*rs);
+    }
+
+    std::vector<int32_t> idx(n);
+    std::iota(idx.begin(), idx.end(), 0);
+    ggml_backend_tensor_set(iota, idx.data(), 0, n*sizeof(int32_t));
+}
+
+bool llm_graph_input_tok_rows::can_reuse(const llm_graph_params & params) {
+    if (!params.ubatch.token) {
+        return true;
+    }
+
+    const int64_t n = rows->ne[1];
+
+    return all_tokens ? n == params.ubatch.n_tokens : i0 + n <= params.ubatch.n_tokens;
 }
 
 void llm_graph_input_pos::set_input(const llama_ubatch * ubatch) {
@@ -2459,6 +2503,67 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
     return moe_out;
 }
 
+// A table in host memory (the default placement of the input layer) is otherwise dequantized by the CPU backend and
+// crosses to the device as F32 rows. When a device backend can run GET_ROWS on the table's type, the host only copies
+// the raw rows and the device dequantizes them. Values are unchanged where the device and CPU dequantize alike.
+ggml_tensor * llm_graph_context::build_tok_rows(ggml_tensor * table, ggml_tensor * ids, int64_t i0) const {
+    GGML_ASSERT(ids->type == GGML_TYPE_I32 && ggml_nrows(ids) == 1);
+
+    const int64_t n = ids->ne[0];
+
+    const bool plain_host_rows = sched && table->buffer && ggml_backend_buffer_is_host(table->buffer) &&
+        table->data && ggml_nrows(table) == table->ne[1] && table->nb[0] == ggml_type_size(table->type) &&
+        table->nb[1] == ggml_row_size(table->type, table->ne[0]);
+    if (!plain_host_rows) {
+        return ggml_get_rows(ctx0, table, ids);
+    }
+
+    // the same rows feed the target and, through the MTP fold, the draft head
+    for (const auto & input : res->inputs) {
+        const auto * prev = dynamic_cast<const llm_graph_input_tok_rows *>(input.get());
+        if (prev && prev->table == table && prev->i0 == i0 && prev->rows->ne[1] == n) {
+            return ggml_get_rows(ctx0, prev->rows, prev->iota);
+        }
+    }
+
+    auto inp = std::make_unique<llm_graph_input_tok_rows>(table, i0, i0 == 0 && n == ubatch.n_tokens);
+
+    inp->rows = ggml_new_tensor_2d(ctx0, table->type, table->ne[0], n);
+    inp->iota = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, n);
+
+    ggml_tensor * cur = ggml_get_rows(ctx0, inp->rows, inp->iota);
+
+    bool on_device = false;
+    for (int i = 0; i < ggml_backend_sched_get_n_backends(sched) && !on_device; ++i) {
+        ggml_backend_t backend = ggml_backend_sched_get_backend(sched, i);
+        ggml_backend_dev_t dev = ggml_backend_get_device(backend);
+        if (!dev) {
+            continue;
+        }
+        switch (ggml_backend_dev_type(dev)) {
+            case GGML_BACKEND_DEVICE_TYPE_GPU:
+            case GGML_BACKEND_DEVICE_TYPE_IGPU:
+            case GGML_BACKEND_DEVICE_TYPE_META:
+                on_device = ggml_backend_supports_op(backend, cur);
+                break;
+            default:
+                break;
+        }
+    }
+    if (!on_device) {
+        return ggml_get_rows(ctx0, table, ids);
+    }
+
+    ggml_set_input(inp->rows);
+    ggml_set_input(inp->iota);
+    ggml_format_name(inp->rows, "inp_tok_rows");
+    ggml_format_name(inp->iota, "inp_tok_rows_iota");
+
+    res->add_input(std::move(inp));
+
+    return cur;
+}
+
 // input embeddings with optional lora
 ggml_tensor * llm_graph_context::build_inp_embd(ggml_tensor * tok_embd) const {
     const int64_t n_embd_inp = hparams.n_embd_inp();
@@ -2485,7 +2590,7 @@ ggml_tensor * llm_graph_context::build_inp_embd(ggml_tensor * tok_embd) const {
     {
         auto & cur = inps[0];
 
-        cur = ggml_get_rows(ctx0, tok_embd, inp->tokens);
+        cur = build_tok_rows(tok_embd, inp->tokens);
 
         // apply lora for embedding tokens if needed
         for (const auto & lora : *loras) {
