@@ -19,6 +19,7 @@
 
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <numeric>
 #include <sstream>
@@ -171,6 +172,15 @@ bool llm_graph_input_embd_h::can_reuse(const llm_graph_params & params) {
     return res;
 }
 
+// gate-only: LLAMA_EMBD_ROWS_MUTANT=off keeps the CPU path (A/B in one build), =row gathers a wrong first row
+static int llama_embd_rows_mutant() {
+    static const int mode = [] {
+        const char * v = getenv("LLAMA_EMBD_ROWS_MUTANT");
+        return !v || !*v ? 0 : strcmp(v, "off") == 0 ? 1 : strcmp(v, "row") == 0 ? 2 : (GGML_ABORT("LLAMA_EMBD_ROWS_MUTANT"), 0);
+    }();
+    return mode;
+}
+
 void llm_graph_input_tok_rows::set_input(const llama_ubatch * ubatch) {
     // the other select branches keep this input in the graph, unused
     if (!ubatch->token || ubatch->is_mixed()) {
@@ -189,10 +199,17 @@ void llm_graph_input_tok_rows::set_input(const llama_ubatch * ubatch) {
     }
     uint8_t * dst = host ? (uint8_t *) rows->data : staging.data();
 
+    static bool logged = false;
+    if (!logged) {
+        logged = true;
+        LLAMA_LOG_WARN("embd_rows: engaged buf=%s type=%s rows=%lld mutant=%d\n", ggml_backend_buffer_name(rows->buffer),
+            ggml_type_name(table->type), (long long) n, llama_embd_rows_mutant());
+    }
     for (int64_t i = 0; i < n; ++i) {
         const llama_token t = ubatch->token[i];
         GGML_ASSERT(t >= 0 && t < table->ne[1]);
-        memcpy(dst + i*rs, (const uint8_t *) table->data + t*table->nb[1], rs);
+        const int64_t r = llama_embd_rows_mutant() == 2 && i == 0 ? (t + 1) % table->ne[1] : t;
+        memcpy(dst + i*rs, (const uint8_t *) table->data + r*table->nb[1], rs);
     }
     if (!host) {
         ggml_backend_tensor_set(rows, dst, 0, n*rs);
@@ -2507,7 +2524,7 @@ ggml_tensor * llm_graph_context::build_tok_rows(ggml_tensor * table, ggml_tensor
     const bool plain_host_rows = sched && !cparams.training && table->buffer && ggml_backend_buffer_is_host(table->buffer) &&
         table->data && ggml_nrows(table) == table->ne[1] && table->nb[0] == ggml_type_size(table->type) &&
         table->nb[1] == ggml_row_size(table->type, table->ne[0]);
-    if (!plain_host_rows) {
+    if (!plain_host_rows || llama_embd_rows_mutant() == 1) {
         return ggml_get_rows(ctx0, table, ids);
     }
 
