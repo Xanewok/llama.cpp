@@ -2507,6 +2507,9 @@ ggml_tensor * llm_graph_context::build_inp_embd(ggml_tensor * tok_embd, ggml_ten
                 ggml_reshape_2d(ctx0, dev_ids, 1, dev_ids->ne[0]), 1);
         tokens = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, all, inp->sel), ubatch.n_tokens);
         ggml_set_name(tokens, "inp_tokens_hostless");
+        if (llama_hostless_verify_on()) {
+            ggml_set_output(tokens);
+        }
         res->t_inp_tokens = tokens;
     }
 

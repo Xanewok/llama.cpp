@@ -4505,6 +4505,40 @@ int32_t llama_hostless_level(void) {
 
 static std::atomic<llama_context *> g_hostless_source{nullptr};
 
+bool llama_hostless_verify_on(void) {
+    static const bool on = [] {
+        const char * env = std::getenv("LLAMA_HOSTLESS_VERIFY");
+        return env != nullptr && std::atoi(env) != 0;
+    }();
+    return on;
+}
+
+bool llama_hostless_verify(llama_context * ctx, const llama_token * ids, int32_t n) {
+    static int64_t n_checked = 0, n_rows = 0, n_bad = 0;
+    llm_graph_result * res = llama_hostless_verify_on() ? ctx->hostless_last_result() : nullptr;
+    ggml_tensor * t = res ? res->t_inp_tokens : nullptr;
+    if (t == nullptr || std::strcmp(t->name, "inp_tokens_hostless") != 0 || t->ne[0] != n) {
+        return true;
+    }
+    llama_synchronize(ctx);
+    std::vector<int32_t> got(n);
+    ggml_backend_tensor_get(t, got.data(), 0, n*sizeof(int32_t));
+    bool ok = true;
+    for (int32_t i = 0; i < n; ++i) {
+        if (got[i] != ids[i]) {
+            ok = false;
+            LLAMA_LOG_WARN("hostless verify: MISMATCH row=%d device=%d host=%d\n", i, got[i], ids[i]);
+        }
+    }
+    n_checked += 1;
+    n_rows    += n;
+    n_bad     += !ok;
+    if (n_checked == 1 || n_checked % 256 == 0 || !ok) {
+        LLAMA_LOG_WARN("hostless verify: batches=%" PRId64 " rows=%" PRId64 " mismatches=%" PRId64 "\n", n_checked, n_rows, n_bad);
+    }
+    return ok;
+}
+
 void llama_hostless_mark_source(llama_context * ctx) {
     g_hostless_source = ctx;
 }

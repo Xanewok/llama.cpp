@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Hostless spike CPU identity cells through bw-np2-driver (np2, k5, seed 1729, chain on). Usage: cells.sh BIN MODEL OUT PART
-# PART a: plain CPU L0, L0 repeat (floor), L2, L3, L2 slotshift mutant (must differ).
+# PART a: plain CPU L0, L0 repeat (floor), L2, L3, L2 slotshift mutant (must differ). L2+ cells run LLAMA_HOSTLESS_VERIFY=1.
 # PART b: HOST_DEFER (CPU backends as streams) L0, L2, L3; Meta(CPU,CPU) tensor split L0..L3 (L1 engages only there).
 # PART all: both. HL_GATE replaces the Mac gate (e.g. bin/cpugate). A gate skip (rc 75) stops with rc 75.
 set -euo pipefail
@@ -24,21 +24,21 @@ run() { # tag meta level [ENV=VAL ...]
     [[ $rc == 75 ]] && { grep 'skipped: RAM' "$OUT/$tag.log"; exit 75; }
     echo "$rc" > "$OUT/$tag.rc"
 }
-unset LLAMA_HOSTLESS LLAMA_HOSTLESS_MUTANT HOST_DEFER LLAMA_MTP_FOLD_C
+unset LLAMA_HOSTLESS LLAMA_HOSTLESS_MUTANT LLAMA_HOSTLESS_VERIFY HOST_DEFER LLAMA_MTP_FOLD_C
 if [[ $PART == a || $PART == all ]]; then
     run 0-L0 0 0
     run 0-L0-repeat 0 0
-    run 0-L2 0 2
-    run 0-L3 0 3
-    run 0-L2-mut-slotshift 0 2 LLAMA_HOSTLESS_MUTANT=slotshift
+    run 0-L2 0 2 LLAMA_HOSTLESS_VERIFY=1
+    run 0-L3 0 3 LLAMA_HOSTLESS_VERIFY=1
+    run 0-L2-mut-slotshift 0 2 LLAMA_HOSTLESS_MUTANT=slotshift LLAMA_HOSTLESS_VERIFY=1
 fi
 if [[ $PART == b || $PART == all ]]; then
     run 0d-L0 0 0 HOST_DEFER=1
-    run 0d-L2 0 2 HOST_DEFER=1
-    run 0d-L3 0 3 HOST_DEFER=1
+    run 0d-L2 0 2 HOST_DEFER=1 LLAMA_HOSTLESS_VERIFY=1
+    run 0d-L3 0 3 HOST_DEFER=1 LLAMA_HOSTLESS_VERIFY=1
     run 1-L0 1 0
     run 1-L1 1 1
-    run 1-L2 1 2
-    run 1-L3 1 3
+    run 1-L2 1 2 LLAMA_HOSTLESS_VERIFY=1
+    run 1-L3 1 3 LLAMA_HOSTLESS_VERIFY=1
 fi
 echo "hostless cells done ($PART)"

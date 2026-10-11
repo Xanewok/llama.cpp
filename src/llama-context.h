@@ -268,6 +268,7 @@ public:
 
     // hostless spike: orders this context's device work after llama_hostless_mark_source's context
     void hostless_order_after_source();
+    llm_graph_result * hostless_last_result() const { return gf_res_prev_active; }
 
     // returns the result of ggml_backend_sched_graph_compute_async execution
     ggml_status graph_compute(ggml_cgraph * gf, bool batched);

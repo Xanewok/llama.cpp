@@ -4105,6 +4105,13 @@ private:
         }
         if (ret == 0 && spec && common_speculative_draft_finish(spec.get())) {
             hostless_patch_drafts(off);
+            if (llama_hostless_verify_on()) {
+                std::vector<llama_token> ids(batch.view.size());
+                for (int32_t i = 0; i < (int32_t) ids.size(); ++i) {
+                    ids[i] = batch.view.tokens[i].id;
+                }
+                llama_hostless_verify(ctx_tgt, ids.data(), (int32_t) ids.size());
+            }
         }
         hostless_release_stopped();
 

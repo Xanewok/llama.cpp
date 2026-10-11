@@ -1,6 +1,6 @@
 """Judge cells.sh OUT. Unit: one slot of one phase (tokens + draft/accepted/rounds), plus the chain dump rows (ids exact,
 probabilities |dq| <= 2e-7). Each level cell vs the L0 cell of its group (0, 0d, 1); the floor (0-L0-repeat) must match and the
-slotshift mutant must differ. Engagement: the hostless log strings of each level, none at L0, and on Meta(CPU,CPU) L1+ a
+slotshift mutant must differ and trip LLAMA_HOSTLESS_VERIFY. Engagement: the hostless log strings of each level, none at L0, and on Meta(CPU,CPU) L1+ a
 tok_embd buffer that is not the CPU one. Exit 0 pass, 2 identity, 3 engagement, 4 mutant escaped, 5 floor, 6 failed cell.
 Writes OUT/summary.json."""
 import json
@@ -42,7 +42,7 @@ def compare(a, b, c0=0):
                 identical=not bad and ids and len(a["dump"]) > 0 and dq <= Q_TOL)
 
 
-def engaged(tag, c, level, meta):
+def engaged(tag, c, level, meta, mutant):
     log = c["log"]
     want = ["MTP chain: k=5 seqs=2"]
     if level >= 1:
@@ -50,9 +50,13 @@ def engaged(tag, c, level, meta):
     if level >= 2:
         want += ["hostless: draft id slots=64", "hostless: chain drafts deferred k=5 seqs=",
                  "hostless: target batch reads device draft ids", "hostless: device order engaged"]
+        # the device-gathered ids equal the patched host ids; the slotshift mutant must trip it
+        want.append("hostless verify: MISMATCH" if mutant else "hostless verify: batches=")
     if level >= 3:
         want.append("hostless: output lag engaged")
     missing = [w for w in want if w not in log]
+    if level >= 2 and not mutant and "hostless verify: MISMATCH" in log:
+        missing.append("no verify mismatch")
     if level == 0 and "hostless:" in log:
         missing.append("no hostless strings at L0")
     m = re.search(r"hostless: tok_embd buffer=(\S+)", log)
@@ -81,7 +85,7 @@ for tag, c in cells.items():
     if ref is None:
         fail(6, f"{tag}: no {group}-L0 reference")
         continue
-    engaged(tag, c, level, group == "1")
+    engaged(tag, c, level, group == "1", suffix.startswith("-mut-"))
     if tag == f"{group}-L0":
         continue
     cmp = compare(ref, c)

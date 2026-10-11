@@ -123,6 +123,10 @@ static inline bool llama_hostless_is_slot(llama_token id) {
 }
 // the next decode of another context orders its device work after the work queued on ctx so far, without a host wait
 LLAMA_API void    llama_hostless_mark_source(struct llama_context * ctx);
+// LLAMA_HOSTLESS_VERIFY=1: the last target graph keeps the token ids it gathered; this compares them with ids (the batch after
+// the placeholders were patched) and logs a mismatch. Returns false on a mismatch; true when off or nothing to compare.
+LLAMA_API bool    llama_hostless_verify(struct llama_context * ctx, const llama_token * ids, int32_t n);
+LLAMA_API bool    llama_hostless_verify_on(void);
 
 // top-k whose backend candidates come out in descending logit order, as the host top-k leaves them, so that a dist
 // sampler after it picks the token the host chain would for the same uniform. Host behaviour is the same as llama_sampler_init_top_k.
