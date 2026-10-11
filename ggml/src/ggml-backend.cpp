@@ -752,6 +752,12 @@ void ggml_backend_event_wait(ggml_backend_t backend, ggml_backend_event_t event)
     backend->iface.event_wait(backend, event);
 }
 
+// local (hostless spike): work queued on dst after this call starts after the work queued on src so far. Device-side (an event
+// per device pair) when src and dst are backends of the same event-capable device, or meta backends over such devices in the
+// same order; otherwise src is synchronized. Declared here and at its caller, not in ggml-backend.h, so that the CUDA objects
+// keep their ccache entries.
+extern "C" GGML_API void ggml_backend_order_after(ggml_backend_t dst, ggml_backend_t src);
+
 void ggml_backend_order_after(ggml_backend_t dst, ggml_backend_t src) {
     if (ggml_backend_is_meta(dst) && ggml_backend_is_meta(src) &&
             ggml_backend_meta_n_backends(dst) == ggml_backend_meta_n_backends(src)) {
