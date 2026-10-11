@@ -21,6 +21,18 @@ static void require(bool ok, const char * message) {
     }
 }
 
+// SWA_W / SWA_S: draft attention window; compiles against a tree without it too, for the base reference
+template <typename T>
+static auto set_window(T & draft, int w, int s, int) -> decltype(draft.swa_window, void()) {
+    draft.swa_window = w;
+    draft.swa_sinks  = s;
+}
+
+template <typename T>
+static void set_window(T &, int w, int s, long) {
+    require(w == 0 && s == 0, "this tree has no draft window");
+}
+
 static ggml_backend_t (*cpu_init)(ggml_backend_dev_t, const char *);
 
 static bool owned_cpu(ggml_backend_t, const ggml_backend_tensor_transfer * transfers, size_t count) {
@@ -131,6 +143,8 @@ int main(int argc, char ** argv) {
     params.speculative.draft.mtp_chain = std::getenv("LLAMA_MTP_CHAIN") && std::atoi(std::getenv("LLAMA_MTP_CHAIN"));
     params.speculative.draft.cpuparams = params.cpuparams;
     params.speculative.draft.cpuparams_batch = params.cpuparams_batch;
+    set_window(params.speculative.draft, std::getenv("SWA_W") ? std::atoi(std::getenv("SWA_W")) : 0,
+               std::getenv("SWA_S") ? std::atoi(std::getenv("SWA_S")) : 0, 0);
     // sparse high ids keep the reduced-head path; the dense low block holds the byte tokens and common merges the
     // prompts produce, so drafts get accepted and the bulk verify rows are exercised (stride-only gave ~2 % acceptance)
     for (int id = 248319; id >= 12288; id -= 17) {

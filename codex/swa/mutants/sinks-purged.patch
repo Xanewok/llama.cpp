@@ -1,0 +1,13 @@
+diff --git a/src/llama-kv-cache.cpp b/src/llama-kv-cache.cpp
+index 2640a1cea..a1be311a0 100644
+--- a/src/llama-kv-cache.cpp
++++ b/src/llama-kv-cache.cpp
+@@ -1290,7 +1290,7 @@ void llama_kv_cache::apply_ubatch(const slot_info & sinfo, const llama_ubatch &
+         auto & cells = v_cells[seq_to_stream[s]];
+ 
+         // the sinks stay: the invariant becomes [0, n_swa_sinks) plus [pos_min, pos_max] past them
+-        const llama_pos pos_min = std::max(cells.seq_pos_min(s), (llama_pos) n_swa_sinks);
++        const llama_pos pos_min = cells.seq_pos_min(s);
+ 
+         if (pos_min <= seq_pos_max_rm[s]) {
+             LLAMA_LOG_DEBUG("%s: purging positions [%d, %d] of sequence %d from KV cache\n",
