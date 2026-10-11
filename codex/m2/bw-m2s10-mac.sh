@@ -32,6 +32,8 @@ grep -aq 'mtp_fold_decode: engaged n_seq=2' "$OUT/np2/0-k5-s1729-on.log" || eng=
 grep -aq 'mtp_fold_decode: engaged n_seq=2' "$OUT/np2/0-k5-s1729-off.log" || eng=1
 [[ $(grep -ac 'MTP chain: k=' "$OUT/np2/0-k5-s1729-off.log") == 0 ]] || eng=1
 echo "np2 engagement strings rc=$eng"
+# post-DC host gap by DC rows (old M2: 1.1 ms at 10 rows vs 0.09 at 5, output_reorder): report only
+python3 codex/m2/dcgap.py "$OUT"/np2/0-k5-s*-on.trace.jsonl "$OUT"/np2/0-k3-s1729-uni-on.trace.jsonl | tee "$OUT/dcgap.txt"
 
 export S7_GATE=$MGATE S7_MODEL=$MODEL S7_VOCAB=$HOME/qwen38-stack7/models/swift_draft_vocab_ids.json CHAIN_THREADS=4 GPUQ_BUILD_WINDOW=1
 python3 codex/chain_cpu_identity.py --out "$OUT/np1" --n-predict 48 > "$OUT/np1.log" 2>&1
