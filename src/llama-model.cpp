@@ -2078,12 +2078,17 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
     }
     // hostless spike: the MTP chain's sampled ids, read by the next target batch on the device
     if (llama_hostless_level() >= 2 && draft_token_embd) {
-        ggml_context_ptr ctx { ggml_init({ggml_tensor_overhead(), nullptr, true}) };
+        // a meta buffer allows 16 views per tensor between evals; a chain graph alone views hostless_ids 2*n_chain times
+        constexpr int n_pad = 15;
+        ggml_context_ptr ctx { ggml_init({(1 + n_pad)*ggml_tensor_overhead(), nullptr, true}) };
         if (!ctx) {
             throw std::runtime_error("failed to allocate hostless id context");
         }
         hostless_ids = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I32, LLAMA_HOSTLESS_N_IDS);
         ggml_set_name(hostless_ids, "hostless_ids");
+        for (int i = 0; i < n_pad; ++i) {
+            ggml_format_name(ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I32, 1), "hostless_pad.%d", i);
+        }
         if (params.split_mode == LLAMA_SPLIT_MODE_TENSOR) {
             GGML_ASSERT(llama_meta_device_get_split_state(hostless_ids, &get_split_state_ud).axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED);
         }
