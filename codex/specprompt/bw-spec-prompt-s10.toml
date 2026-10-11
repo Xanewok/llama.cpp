@@ -39,6 +39,7 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/codex/specprompt/bw-spec-prompt-s10.toml",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/codex/specprompt/render_specprompt.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/codex/specprompt/postrun_proofs.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/codex/specprompt/bw-spec-prompt-mac.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/common/speculative.cpp",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/common/speculative.h",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/spec-prompt-s10/tools/server/server-context.cpp",
