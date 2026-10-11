@@ -1,5 +1,6 @@
 #include "common.h"
 #include "log.h"
+#include "speculative.h"
 #include "ggml-backend.h"
 #include "ggml.h"
 #include "gguf.h"
@@ -651,6 +652,123 @@ static bool check_causal_attn_toggle(
     return ok;
 }
 
+// draft logits for `prompt` on seq_id after the sequence was cleared, i.e. as at the start of a new request
+static std::vector<float> get_mtp_draft_logits(
+        llama_context * ctx_tgt, llama_context * ctx_dft, common_speculative * spec,
+        const std::vector<llama_token> & prompt, const llama_seq_id seq_id, const uint32_t n_split) {
+    llama_memory_seq_rm(llama_get_memory(ctx_tgt), seq_id, -1, -1);
+    llama_memory_seq_rm(llama_get_memory(ctx_dft), seq_id, -1, -1);
+
+    const uint32_t n_prompt = prompt.size() - 1;
+    common_batch batch(ctx_tgt);
+    for (uint32_t i0 = 0; i0 < n_prompt; i0 += n_split) {
+        batch.clear();
+        for (uint32_t i = i0; i < std::min(i0 + n_split, n_prompt); i++) {
+            batch.add(prompt[i], i, seq_id, false);
+        }
+        if (llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0 || !common_speculative_process(spec, batch)) {
+            throw std::runtime_error("failed to process prompt");
+        }
+    }
+
+    const llama_tokens prompt_tgt(prompt.begin(), prompt.end() - 1);
+    common_speculative_begin(spec, seq_id, prompt_tgt);
+
+    llama_tokens draft;
+    auto & dp = common_speculative_get_draft_params(spec, seq_id);
+    dp.drafting = true;
+    dp.pos0     = n_prompt;
+    dp.id_last  = prompt.back();
+    dp.prompt   = &prompt_tgt;
+    dp.result   = &draft;
+    common_speculative_draft(spec);
+
+    const float * logits = llama_get_logits_ith(ctx_dft, 0);
+    if (draft.size() != 1 || logits == nullptr) {
+        throw std::runtime_error("no MTP draft");
+    }
+    const int32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(llama_get_model(ctx_dft)));
+    return std::vector<float>(logits, logits + n_vocab);
+}
+
+// the MTP draft of a request must not depend on what its sequence held before;
+// a prompt split over several batches must still carry the hidden state across them
+static bool check_mtp_draft_reset(const llm_arch arch, const size_t seed, const float stdev) {
+    gguf_context_ptr gguf_ctx = get_gguf_ctx(arch, false);
+    const std::string arch_name = llm_arch_name(arch);
+    const uint32_t n_layer = gguf_get_val_u32(gguf_ctx.get(), gguf_find_key(gguf_ctx.get(), (arch_name + ".block_count").c_str()));
+    gguf_set_val_u32(gguf_ctx.get(), (arch_name + ".block_count").c_str(), n_layer + 1);
+    gguf_set_val_u32(gguf_ctx.get(), (arch_name + ".nextn_predict_layers").c_str(), 1);
+
+    llama_model_params model_params = llama_model_default_params();
+    model_params.progress_callback = silent_model_load_progress;
+    model_params.load_mtp = true;
+    ggml_backend_dev_t devs[] = { ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU), nullptr };
+    model_params.devices = devs;
+    tensor_data_params tensor_params = { seed, stdev };
+    llama_model_ptr model(llama_model_init_from_user(gguf_ctx.get(), set_tensor_data, &tensor_params, model_params));
+    if (!model) {
+        throw std::runtime_error("failed to create MTP model");
+    }
+
+    const uint32_t n_seq = 2;
+    const llama_seq_id seq_id = 1;
+    const uint32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model.get()));
+    const std::vector<llama_token> prompt_a = get_tokens(48, n_vocab, seed + 1);
+    const std::vector<llama_token> prompt_b = get_tokens(8, n_vocab, seed + 2);
+
+    // fresh contexts per run so that only the request history differs
+    auto run = [&](const std::vector<std::vector<llama_token>> & prompts, const uint32_t n_split) {
+        llama_context_params cparams = llama_context_default_params();
+        cparams.n_ctx           = 256;
+        cparams.n_seq_max       = n_seq;
+        cparams.n_threads       = 4;
+        cparams.n_threads_batch = 4;
+        llama_context_ptr ctx_tgt(llama_init_from_model(model.get(), cparams));
+
+        cparams.ctx_type  = LLAMA_CONTEXT_TYPE_MTP;
+        cparams.n_rs_seq  = 0;
+        cparams.ctx_other = ctx_tgt.get();
+        llama_context_ptr ctx_dft(llama_init_from_model(model.get(), cparams));
+        if (!ctx_tgt || !ctx_dft) {
+            throw std::runtime_error("failed to create MTP contexts");
+        }
+
+        common_params_speculative params;
+        params.types = { COMMON_SPECULATIVE_TYPE_DRAFT_MTP };
+        params.draft.ctx_tgt          = ctx_tgt.get();
+        params.draft.ctx_dft          = ctx_dft.get();
+        params.draft.n_max            = 1;
+        params.draft.backend_sampling = false;
+        common_speculative * spec = common_speculative_init(params, n_seq);
+
+        std::vector<float> logits;
+        for (const auto & prompt : prompts) {
+            logits = get_mtp_draft_logits(ctx_tgt.get(), ctx_dft.get(), spec, prompt, seq_id, n_split);
+        }
+        common_speculative_free(spec);
+        return logits;
+    };
+
+    const std::vector<float> logits_fresh   = run({ prompt_b },           prompt_b.size());
+    const std::vector<float> logits_history = run({ prompt_a, prompt_b }, prompt_b.size());
+    const std::vector<float> logits_split   = run({ prompt_b },           prompt_b.size()/2);
+
+    bool ok = true;
+    if (logits_fresh != logits_history) {
+        LOG_ERR("%s: %s: MTP draft logits depend on the previous request (NMSE %.2e)\n",
+                __func__, arch_name.c_str(), nmse(logits_fresh, logits_history));
+        ok = false;
+    }
+    const double nmse_split = nmse(logits_fresh, logits_split);
+    if (nmse_split > 1e-9) {
+        LOG_ERR("%s: %s: MTP draft logits change when the prompt is split (NMSE %.2e)\n",
+                __func__, arch_name.c_str(), nmse_split);
+        ok = false;
+    }
+    return ok;
+}
+
 static bool moe_mandatory(const llm_arch arch) {
     switch (arch) {
         case LLM_ARCH_LLAMA4:
@@ -1100,6 +1218,19 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
                 // log the results for this test case
                 LOG(template_row_res.c_str(), status_nmse.c_str(), nmse_str, status_roundtrip.c_str(), status_mixed.c_str(), mixed_str);
             }
+        }
+    }
+
+    for (const llm_arch arch : { LLM_ARCH_QWEN35 }) {
+        if (!arch_matches(arch_filter, arch) || (target_backend != nullptr && strcmp(target_backend, "CPU") != 0)) {
+            continue;
+        }
+        n_tests++;
+        const bool ok = check_mtp_draft_reset(arch, seed, stdev);
+        LOG("%s: MTP draft state reset: %s\n", llm_arch_name(arch), ok ? "\033[1;32mOK\033[0m" : "\033[1;31mFAIL\033[0m");
+        if (!ok) {
+            n_failed++;
+            all_ok = false;
         }
     }
 
