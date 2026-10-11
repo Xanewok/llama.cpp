@@ -1401,6 +1401,10 @@ private:
         if (ctx_tgt_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_NO) {
             try {
                 spec.reset(common_speculative_init(params_base.speculative, params_base.n_parallel));
+                // local: boot-time proof that the per-round prompt copy is skipped
+                if (spec && !common_speculative_uses_prompt(spec.get())) {
+                    SRV_WRN("%s", "spec_prompt: engaged, no drafter reads the prompt, per-round copy skipped\n");
+                }
             } catch (const std::exception & e) {
                 SRV_ERR("failed to initialize speculative decoding context: %s\n", e.what());
                 if (params_base.speculative.has_synth()) {
