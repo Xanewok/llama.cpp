@@ -98,7 +98,7 @@ build() {
 stamps() {
     [[ $(git rev-parse HEAD) == "$SHA" && -z $(git status --porcelain --untracked-files=no) ]] || return 6
     strings build-cuda/bin/libggml-base.so | grep -x "$SHORT" > /dev/null || return 6
-    strings build-cuda/bin/llama-server | grep -F 'spec_prompt: engaged' > /dev/null || return 6
+    strings build-cuda/bin/libllama-server-impl.so | grep -F 'spec_prompt: engaged' > /dev/null || return 6
     grep -ax 'GGML_CUDA:BOOL=ON' build-cuda/CMakeCache.txt || return 6
     grep -ax 'GGML_CUDA_NCCL:BOOL=OFF' build-cuda/CMakeCache.txt || return 6
     grep -aEx 'CMAKE_CUDA_ARCHITECTURES:(STRING|UNINITIALIZED)=120a' build-cuda/CMakeCache.txt || return 6
