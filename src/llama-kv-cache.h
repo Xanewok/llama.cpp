@@ -114,7 +114,9 @@ public:
         const  layer_reuse_cb & reuse,
         const  layer_share_cb & share,
         // a model can hold more than one cache, so the tensor names have to stay unique
-                 const char *   name_tag = "");
+                 const char *   name_tag = "",
+        // with n_swa: positions [0, n_swa_sinks) of every sequence stay visible and are never evicted
+                     uint32_t   n_swa_sinks = 0);
 
     ~llama_kv_cache() = default;
 
@@ -158,6 +160,9 @@ public:
     uint32_t get_size()     const;
     uint32_t get_n_seq_max() const;
     uint32_t get_n_stream() const;
+
+    uint32_t get_n_swa()       const { return n_swa; }
+    uint32_t get_n_swa_sinks() const { return n_swa_sinks; }
 
     bool get_has_shift() const;
 
@@ -278,6 +283,9 @@ private:
 
     // SWA
     const uint32_t n_swa = 0;
+    const uint32_t n_swa_sinks = 0;
+
+    bool is_masked_swa(llama_pos p0, llama_pos p1) const;
 
     // env: LLAMA_ATTN_ROT_DISABLE
     bool attn_rot_k = false;

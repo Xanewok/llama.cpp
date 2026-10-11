@@ -80,9 +80,10 @@ llama_kv_cache::llama_kv_cache(
     const layer_filter_cb & filter,
     const  layer_reuse_cb & reuse,
     const  layer_share_cb & share,
-             const char *   name_tag) :
+             const char *   name_tag,
+                 uint32_t   n_swa_sinks) :
     model(model), hparams(hparams), v_trans(v_trans),
-    n_seq_max(n_seq_max), n_stream(unified ? 1 : n_seq_max), n_pad(n_pad), n_swa(n_swa), swa_type(swa_type),
+    n_seq_max(n_seq_max), n_stream(unified ? 1 : n_seq_max), n_pad(n_pad), n_swa(n_swa), n_swa_sinks(n_swa_sinks), swa_type(swa_type),
     other(static_cast<llama_kv_cache *>(mem_other)),
     v_cells_impl(other ? other->v_cells_impl : std::make_shared<llama_kv_cells_vec>()),
     v_cells(*v_cells_impl) {
@@ -436,6 +437,16 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
         p1 = std::numeric_limits<llama_pos>::max();
     }
 
+    // a truncation below the window leaves only the sinks, with a gap the next position cannot continue from
+    const bool sink_gap = n_swa_sinks > 0 && p0 > (llama_pos) n_swa_sinks && p1 == std::numeric_limits<llama_pos>::max();
+
+    llama_pos pos_max_old[LLAMA_MAX_SEQ];
+    if (sink_gap) {
+        for (llama_seq_id s = 0; s < (llama_seq_id) seq_to_stream.size(); ++s) {
+            pos_max_old[s] = v_cells[seq_to_stream[s]].seq_pos_max(s);
+        }
+    }
+
     if (seq_id >= 0) {
         auto & cells = v_cells[seq_to_stream[seq_id]];
         auto & head  = v_heads[seq_to_stream[seq_id]];
@@ -535,7 +546,26 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
         }
     }
 
+    if (sink_gap) {
+        // drop the sinks as well: the sequence then restarts at any position, like a windowed cache without sinks
+        // that lost its whole window
+        for (llama_seq_id s = 0; s < (llama_seq_id) seq_to_stream.size(); ++s) {
+            if (seq_id >= 0 && s != seq_id) {
+                continue;
+            }
+            const llama_pos pos_max = v_cells[seq_to_stream[s]].seq_pos_max(s);
+            if (pos_max_old[s] >= p0 && pos_max >= 0 && pos_max + 1 < p0) {
+                LLAMA_LOG_DEBUG("%s: seq %d truncated at %d below its window, dropping its sinks\n", __func__, s, p0);
+                seq_rm(s, -1, -1);
+            }
+        }
+    }
+
     return true;
+}
+
+bool llama_kv_cache::is_masked_swa(llama_pos p0, llama_pos p1) const {
+    return p0 >= (llama_pos) n_swa_sinks && llama_hparams::is_masked_swa(n_swa, swa_type, p0, p1);
 }
 
 void llama_kv_cache::seq_cp(llama_seq_id seq_id_src, llama_seq_id seq_id_dst, llama_pos p0, llama_pos p1) {
@@ -1144,7 +1174,7 @@ llama_kv_cache::slot_info llama_kv_cache::find_slot(const llama_ubatch & ubatch,
                         const llama_seq_id seq_id_cell = cells.seq_get(idx);
 
                         // SWA mask
-                        if (llama_hparams::is_masked_swa(n_swa, swa_type, pos_cell, cells.seq_pos_max(seq_id_cell) + 1)) {
+                        if (is_masked_swa(pos_cell, cells.seq_pos_max(seq_id_cell) + 1)) {
                             can_use = true;
                         }
                     }
@@ -1259,11 +1289,14 @@ void llama_kv_cache::apply_ubatch(const slot_info & sinfo, const llama_ubatch & 
 
         auto & cells = v_cells[seq_to_stream[s]];
 
-        if (cells.seq_pos_min(s) <= seq_pos_max_rm[s]) {
-            LLAMA_LOG_DEBUG("%s: purging positions [%d, %d] of sequence %d from KV cache\n",
-                    __func__, cells.seq_pos_min(s), seq_pos_max_rm[s], s);
+        // the sinks stay: the invariant becomes [0, n_swa_sinks) plus [pos_min, pos_max] past them
+        const llama_pos pos_min = std::max(cells.seq_pos_min(s), (llama_pos) n_swa_sinks);
 
-            seq_rm(s, cells.seq_pos_min(s), seq_pos_max_rm[s] + 1);
+        if (pos_min <= seq_pos_max_rm[s]) {
+            LLAMA_LOG_DEBUG("%s: purging positions [%d, %d] of sequence %d from KV cache\n",
+                    __func__, pos_min, seq_pos_max_rm[s], s);
+
+            seq_rm(s, pos_min, seq_pos_max_rm[s] + 1);
         }
     }
 
@@ -1693,6 +1726,7 @@ struct args_set_input_kq_mask {
     const std::vector<uint32_t>       & seq_to_stream;
 
     uint32_t       n_swa;
+    uint32_t       n_swa_sinks;
     llama_swa_type swa_type;
 
     int64_t n_kv;
@@ -1710,6 +1744,7 @@ static void set_input_kq_mask_impl(const args_set_input_kq_mask & args, T * data
     const auto & seq_to_stream = args.seq_to_stream;
 
     const uint32_t       n_swa    = args.n_swa;
+    const llama_pos      n_sinks  = args.n_swa_sinks;
     const llama_swa_type swa_type = args.swa_type;
 
     const int64_t n_kv     = args.n_kv;
@@ -1866,7 +1901,7 @@ static void set_input_kq_mask_impl(const args_set_input_kq_mask & args, T * data
                 if (swa) {
                     // see llama_non_causal_type
                     const bool in_span = !causal && args.hparams.non_causal_type == LLAMA_NON_CAUSAL_TYPE_SWA_FULL && p0 >= seq_pos_min[seq_id];
-                    if (!in_span && llama_hparams::is_masked_swa(n_swa, swa_type, p0, p1)) {
+                    if (!in_span && p0 >= n_sinks && llama_hparams::is_masked_swa(n_swa, swa_type, p0, p1)) {
                         goto skip;
                     }
                 }
@@ -1953,6 +1988,7 @@ void llama_kv_cache::set_input_kq_mask(ggml_tensor * dst, const llama_ubatch * u
         /*.v_cells          =*/ v_cells,
         /*.seq_to_stream    =*/ seq_to_stream,
         /*.n_swa            =*/ n_swa,
+        /*.n_swa_sinks      =*/ n_swa_sinks,
         /*.swa_type         =*/ swa_type,
         /*.n_kv             =*/ n_kv,
         /*.n_stream         =*/ n_stream,
@@ -2275,7 +2311,7 @@ void llama_kv_cache::state_write(llama_io_write_i & io, llama_seq_id seq_id, lla
 
             // check the cell is not SWA-masked
             if (add_cell && seq_id != -1) {
-                const bool is_masked = llama_hparams::is_masked_swa(n_swa, swa_type, cells.pos_get(i), cells.seq_pos_max(seq_id));
+                const bool is_masked = is_masked_swa(cells.pos_get(i), cells.seq_pos_max(seq_id));
 
                 add_cell = !is_masked;
             }

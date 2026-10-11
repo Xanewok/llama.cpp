@@ -3045,6 +3045,33 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                                     reuse,
                                     share);
                         }
+                    } else if (cparams.swa_window > 0) {
+                        GGML_ASSERT(!hparams.is_swa_any());
+
+                        // each sequence keeps its window and sinks; one ubatch is written before older cells are freed
+                        const uint32_t n_seq_cells = cparams.kv_unified ? cparams.n_seq_max : 1;
+                        const uint32_t n_cells     = (cparams.swa_window + cparams.swa_sinks)*n_seq_cells + cparams.n_ubatch;
+                        const uint32_t kv_size     = std::min(cparams.n_ctx_seq, (n_cells + cparams.n_kv_pad - 1)/cparams.n_kv_pad*cparams.n_kv_pad);
+
+                        res = new llama_kv_cache(
+                                *this,
+                                hparams,
+                                params.type_k,
+                                params.type_v,
+                                !cparams.flash_attn,
+                                cparams.offload_kqv,
+                                cparams.kv_unified,
+                                kv_size,
+                                cparams.n_seq_max,
+                                cparams.n_kv_pad,
+                                cparams.swa_window,
+                                LLAMA_SWA_TYPE_STANDARD,
+                                nullptr,
+                                filter,
+                                nullptr,
+                                nullptr,
+                                "",
+                                cparams.swa_sinks);
                     } else {
                         GGML_ASSERT(!hparams.is_swa_any());
 

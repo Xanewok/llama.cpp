@@ -17,6 +17,8 @@ struct llama_cparams {
     uint32_t n_outputs_max;   // max outputs supported by the context
     uint32_t n_outputs_max_per_seq;
     uint32_t n_kv_pad;        // n_kv granularity, multiple of 256; n_ctx_seq is a multiple of it
+    uint32_t swa_window;      // 0 when the memory does not apply it
+    uint32_t swa_sinks;
     int32_t  n_threads;       // number of threads to use for generation
     int32_t  n_threads_batch; // number of threads to use for batch processing
 
