@@ -211,6 +211,9 @@ struct common_speculative_impl {
 
     virtual void accept(llama_seq_id seq_id, uint16_t n_accepted, bool is_other) = 0;
 
+    // true if draft() reads common_speculative_draft_params::prompt; callers skip building it otherwise
+    virtual bool uses_prompt() const { return false; }
+
     // (optional) serialize/restore per-seq internal state (e.g. eagle3's deferred boundary).
     virtual bool get_state(llama_seq_id /*seq_id*/, std::vector<uint8_t> & /*data*/) const { return false; }
     virtual void set_state(llama_seq_id /*seq_id*/, const std::vector<uint8_t> & /*data*/) {}
@@ -2065,6 +2068,8 @@ struct common_speculative_impl_ngram_simple : public common_speculative_impl {
         return true;
     }
 
+    bool uses_prompt() const override { return true; }
+
     void draft(common_speculative_draft_params_vec & dparams) override {
         assert(dparams.size() == n_seq);
 
@@ -2112,6 +2117,8 @@ struct common_speculative_impl_ngram_map_k : public common_speculative_impl {
         // TODO: implement
         return true;
     }
+
+    bool uses_prompt() const override { return true; }
 
     void draft(common_speculative_draft_params_vec & dparams) override {
         assert(dparams.size() == n_seq);
@@ -2270,6 +2277,8 @@ struct common_speculative_impl_ngram_mod : public common_speculative_impl {
         // TODO: implement
         return true;
     }
+
+    bool uses_prompt() const override { return true; }
 
     void draft(common_speculative_draft_params_vec & dparams) override {
         assert(dparams.size() == n_seq);
@@ -2432,6 +2441,8 @@ struct common_speculative_impl_ngram_cache : public common_speculative_impl {
         // TODO: implement
         return true;
     }
+
+    bool uses_prompt() const override { return true; }
 
     void draft(common_speculative_draft_params_vec & dparams) override {
         assert(dparams.size() == n_seq);
@@ -3062,6 +3073,20 @@ common_speculative_draft_params & common_speculative_get_draft_params(
     return spec->dparams[seq_id];
 }
 
+bool common_speculative_uses_prompt(const common_speculative * spec) {
+    if (spec == nullptr) {
+        return false;
+    }
+
+    for (const auto & impl : spec->impls) {
+        if (impl->uses_prompt()) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, const llama_tokens & prompt) {
     if (spec == nullptr) {
         return;
@@ -3112,6 +3137,12 @@ void common_speculative_draft(common_speculative * spec) {
     }
 
     for (auto & impl : spec->impls) {
+        if (impl->uses_prompt()) {
+            for (const auto & dp : dparams) {
+                GGML_ASSERT(!dp.drafting || dp.prompt);
+            }
+        }
+
         {
             common_time_meas tm(impl->t_draft_us, !impl->gen_perf);
             impl->draft(dparams);
@@ -3147,7 +3178,7 @@ void common_speculative_draft(common_speculative * spec) {
 
                 if (!result.empty()) {
                     SPC_DBG("called impl %s, hist size = %zu, call_count = %zu, gen = %zu\n",
-                            common_speculative_type_to_str(impl.get()->type).c_str(), dp.prompt->size(),
+                            common_speculative_type_to_str(impl.get()->type).c_str(), dp.prompt ? dp.prompt->size() : 0,
                             impl.get()->n_call_draft, result.size());
 
                     // remember which implementation was used
