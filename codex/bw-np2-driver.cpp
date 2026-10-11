@@ -5,6 +5,7 @@
 #include "../ggml/src/ggml-backend-impl.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <stdexcept>
@@ -98,6 +99,23 @@ int main(int argc, char ** argv) {
         letters + "List the lowercase letters repeatedly, starting with a, b, c, d. Continue for fifty entries:",
     };
 
+    // NP2_IGNORE_EOS=1: what the server does for ignore_eos (an EOG -inf logit bias), as the GPU harness sends it
+    std::vector<llama_logit_bias> eog_bias;
+    if (std::getenv("NP2_IGNORE_EOS") && std::atoi(std::getenv("NP2_IGNORE_EOS"))) {
+        auto mp = llama_model_default_params();
+        mp.vocab_only = true;
+        llama_model * vm = llama_model_load_from_file(argv[1], mp);
+        require(vm != nullptr, "vocab load failed");
+        const llama_vocab * vocab = llama_model_get_vocab(vm);
+        for (llama_token t = 0; t < llama_vocab_n_tokens(vocab); ++t) {
+            if (llama_vocab_is_eog(vocab, t)) {
+                eog_bias.push_back({t, -INFINITY});
+            }
+        }
+        llama_model_free(vm);
+        std::fprintf(stderr, "H1EOG n=%zu\n", eog_bias.size());
+    }
+
     std::thread inference;
     json phases = json::array();
     try {
@@ -120,6 +138,10 @@ int main(int argc, char ** argv) {
                 task.params.sampling.top_p = 0.95f;
                 task.params.sampling.min_p = 0.05f;
                 task.params.sampling.backend_sampling = true;
+                if (!eog_bias.empty()) {
+                    task.params.sampling.ignore_eos = true;
+                    task.params.sampling.logit_bias.insert(task.params.sampling.logit_bias.end(), eog_bias.begin(), eog_bias.end());
+                }
                 tasks.push_back(std::move(task));
             }
             // Both slots are posted in one call; phase 1 before the decode thread runs, so batch composition is deterministic.

@@ -1962,10 +1962,20 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                         auto & dp   = dparams[seq_id];
                         auto * smpl = smpls[seq_id].get();
 
+                        static const bool h1 = std::getenv("LLAMA_H1_PROBE") != nullptr;
+                        const int64_t h1_t0 = ggml_time_us();
                         const llama_token id = common_sampler_sample(smpl, ctx_dft, idx, true);
+                        const int64_t h1_t1 = ggml_time_us();
                         GGML_ASSERT(id != LLAMA_TOKEN_NULL && llama_get_sampled_token_ith(ctx_dft, idx) == id);
 
                         const auto * cur_p = common_sampler_get_candidates(smpl, true);
+                        if (h1) {
+                            std::fprintf(stderr, "H1ROW round=%d nd=%d s=%d j=%d us=%lld size=%zu probs=%d logits=%d ncand=%u\n",
+                                    mtp_chain_round, n_d, s, j, (long long) (h1_t1 - h1_t0), cur_p->size,
+                                    llama_get_sampled_probs_ith(ctx_dft, idx) != nullptr,
+                                    llama_get_sampled_logits_ith(ctx_dft, idx) != nullptr,
+                                    llama_get_sampled_probs_count_ith(ctx_dft, idx));
+                        }
 
                         mtp_chain_dump_step(s, id, cur_p);
                         common_sampler_accept(smpl, id, true);
@@ -2087,10 +2097,19 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
                 auto * smpl = smpls[seq_id].get();
 
+                static const bool h1 = std::getenv("LLAMA_H1_PROBE") != nullptr;
+                const int64_t h1_t0 = ggml_time_us();
                 const llama_token id_sampled = common_sampler_sample(smpl, ctx_dft, i_last[seq_id], true);
+                const int64_t h1_t1 = ggml_time_us();
                 const float * h_row = llama_get_embeddings_nextn_ith(ctx_dft, i_last[seq_id]);
 
                 const auto * cur_p = common_sampler_get_candidates(smpl, true);
+                if (h1) {
+                    std::fprintf(stderr, "H1STEP round=%d nd=%d s=%d j=%d us=%lld size=%zu probs=%d logits=%d\n",
+                            mtp_chain_round, n_drafting, i, (int) seq_id, (long long) (h1_t1 - h1_t0), cur_p->size,
+                            llama_get_sampled_probs_ith(ctx_dft, i_last[seq_id]) != nullptr,
+                            llama_get_sampled_logits_ith(ctx_dft, i_last[seq_id]) != nullptr);
+                }
 
                 for (int k = 0; k < std::min(3, (int) cur_p->size); ++k) {
                     SPC_DBG(" - seq_id %d, draft candidate %3d, pos %3d: %6d (%8.3f) '%s'\n",

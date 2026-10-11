@@ -2606,10 +2606,31 @@ bool llama_context::extract_layer_inputs(const llm_graph_result * res, size_t to
 }
 
 void llama_context::output_reorder() {
+    static const bool h1 = std::getenv("LLAMA_H1_PROBE") != nullptr;
+    const size_t  h1_swaps = output_swaps.size();
+    const bool    h1_deferred = logits_deferred.t != nullptr;
+    const int64_t h1_t0 = ggml_time_us();
     if (!output_swaps.empty()) {
         logits_deferred_fetch();
     }
+    const int64_t h1_t1 = ggml_time_us();
+    size_t h1_expand = 0;
+    if (h1 && has_draft_vocab()) {
+        for (uint32_t i = 0; i < n_outputs; ++i) {
+            h1_expand += draft_logits_pending[i] ? 1 : 0;
+        }
+    }
     expand_draft_logits();
+    const int64_t h1_t2 = ggml_time_us();
+    struct h1_report {
+        bool on; size_t swaps; bool deferred; size_t expand; int64_t t0, t1, t2; int n_out; bool mtp;
+        ~h1_report() {
+            if (on && (swaps || expand)) {
+                std::fprintf(stderr, "H1REORDER mtp=%d n_out=%d swaps=%zu deferred=%d expand_rows=%zu fetch_us=%lld expand_us=%lld total_us=%lld\n",
+                        mtp, n_out, swaps, deferred, expand, (long long) (t1 - t0), (long long) (t2 - t1), (long long) (ggml_time_us() - t0));
+            }
+        }
+    } h1_rep { h1, h1_swaps, h1_deferred, h1_expand, h1_t0, h1_t1, h1_t2, (int) n_outputs, cparams.ctx_type == LLAMA_CONTEXT_TYPE_MTP };
     const uint64_t n_vocab     = model.vocab.n_tokens();
     const uint64_t n_embd      = model.hparams.n_embd;
     const uint64_t n_embd_out  = model.hparams.n_embd_out();
