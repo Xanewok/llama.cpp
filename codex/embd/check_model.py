@@ -22,12 +22,12 @@ def check(d):
     need(j['np1-chain-patch'] == j['np1-chain-off'], 'np1 chain: patch and the old CPU path differ')
     need(j['np2-row'] != j['np2-patch'], 'np2: the row mutant left tokens and counters unchanged')
     for arm in ('np2-patch', 'np1-chain-patch'):
-        need(engaged(log[arm], 'tok_rows', 0), f'{arm}: target rows not on the meta backend')
+        need(engaged(log[arm], '(?!mtp_)\\S+', 0), f'{arm}: target rows not on the meta backend')
         need(engaged(log[arm], 'mtp_tok_embd-\\d+', 0), f'{arm}: draft rows not on the meta backend')
     need(engaged(log['np2-patch'], 'mtp_tok_embd-\\d+', 1), 'np2-patch: fold rows not shared on the meta backend')
     need('mtp_fold_decode: engaged n_seq=2' in log['np2-patch'], 'np2-patch: fold not engaged')
     need(re.search('MTP chain: k=\\d+', log['np1-chain-patch']) is not None, 'np1-chain-patch: chain not engaged')
-    need(engaged(log['np2-row'], 'tok_rows', 0, 2), 'np2-row: mutant not engaged')
+    need(engaged(log['np2-row'], '(?!mtp_)\\S+', 0, 2), 'np2-row: mutant not engaged')
     for arm in ('np2-off', 'np1-chain-off', 'np2-plain'):
         need('embd_rows:' not in log[arm], f'{arm}: device path engaged')
     return errors
@@ -40,16 +40,16 @@ def selftest():
         good = {'phases': [{'tokens': [[1, 2]]}]}
         line = 'W embd_rows: engaged node={} backend=Meta(CPU,CPU) shared={} type=q6_K rows=4 row_bytes=2100 mutant={}\n'
         logs = {
-            'np2-patch': line.format('tok_rows', 0, 0) + line.format('mtp_tok_embd-32', 0, 0) + line.format('mtp_tok_embd-32', 1, 0)
+            'np2-patch': line.format('model.input_embed', 0, 0) + line.format('mtp_tok_embd-32', 0, 0) + line.format('mtp_tok_embd-32', 1, 0)
                          + 'mtp_fold_decode: engaged n_seq=2\n',
-            'np1-chain-patch': line.format('tok_rows', 0, 0) + line.format('mtp_tok_embd-32', 0, 0) + 'MTP chain: k=3\n',
-            'np2-row': line.format('tok_rows', 0, 2), 'np2-off': '', 'np1-chain-off': '', 'np2-plain': ''}
+            'np1-chain-patch': line.format('model.input_embed', 0, 0) + line.format('mtp_tok_embd-32', 0, 0) + 'MTP chain: k=3\n',
+            'np2-row': line.format('model.input_embed', 0, 2), 'np2-off': '', 'np1-chain-off': '', 'np2-plain': ''}
         for k, v in logs.items():
             (d / f'{k}.log').write_text(v)
             (d / f'{k}.json').write_text(json.dumps({'phases': [{'tokens': [[9]]}]} if k == 'np2-row' else good))
         assert check(d) == [], check(d)
         (d / 'np2-off.json').write_text(json.dumps({'phases': [{'tokens': [[1, 3]]}]}))
-        (d / 'np2-plain.log').write_text(line.format('tok_rows', 0, 0))
+        (d / 'np2-plain.log').write_text(line.format('model.input_embed', 0, 0))
         assert len(check(d)) == 2, check(d)
 
 
