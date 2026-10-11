@@ -1,0 +1,66 @@
+id = "bw-hostless-spike"
+title = "hostless spike (LLAMA_HOSTLESS 1-3 on chain-m2-s10 eedee42c5): x86 np2 hostless identity cells, CUDA 13.2 120a CCCL343 NCCL OFF build (frozen/chain-m2-s10 recipe), CPU test-llama-archs qwen35, freeze frozen/hostless-spike, render/check hostless-np2-real-iq4 + hostless-trace-iq4; no GPU execution"
+kind = "filler"
+priority = 40
+host_sensitive = false
+preemptible = false
+# G: chain-m2-s10 window shape; CUDA objects keep their ccache entries (no ggml header change; 51-56 s builds M on recent windows) +
+# x86 cells 12 x ~60 s (G; Mac M4 26-45 s/cell M) behind cpugate (waits while a measure item runs).
+est_s = 1500
+budget_s = 5400
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-hostless-spike: FAIL" }]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/hostless/bw-hostless-spike.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/hostless/window/a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_HOME = "/usr/local/cuda-13.2", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", GPUQ_BUILD_WINDOW = "1", TMPDIR = "/mnt/scratch/tmp-build" }
+ports = []
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/hostless/bw-hostless-spike.sh", "--preflight"]
+timeout_s = 60
+
+[selftest]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/hostless/bw-hostless-spike.sh", "--selftest"]
+timeout_s = 60
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/hostless/window/a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/hostless/window/a{attempt}/stages.tsv"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "source", "recipe"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/hostless/bw-hostless-spike.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/hostless/bw-hostless-spike.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/hostless/render_hostless.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/hostless/postrun_proofs.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/hostless/trace_hostless.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/hostless/cells.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/hostless/judge.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/stack7-test/CMakeLists.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/codex/bw-np2-driver.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/CMakeLists.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/ggml/src/ggml-cuda/CMakeLists.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/tests/CMakeLists.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/common/speculative.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/src/llama-context.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/src/llama-context.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/src/models/qwen35.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/src/llama-model.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/src/llama-graph.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/tools/server/server-context.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/hostless-spike/ggml/src/ggml-backend.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-index.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/chain-m2-s10/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/chain-m2-s10/SOURCE",
+]
