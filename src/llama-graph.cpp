@@ -5,6 +5,9 @@
 #include "llama-batch.h"
 #include "llama-cparams.h"
 #include "llama-sampler.h"
+#include "llama-ext.h"
+
+#include <cinttypes>
 
 #include "llama-kv-cache.h"
 #include "llama-kv-cache-iswa.h"
@@ -99,6 +102,23 @@ void llm_graph_input_embd::set_input(const llama_ubatch * ubatch) {
         const int64_t n_tokens = ubatch->n_tokens;
 
         ggml_backend_tensor_set(tokens, ubatch->token, 0, n_tokens*ggml_element_size(tokens));
+
+        if (sel) {
+            std::vector<int32_t> rows(n_tokens);
+            int64_t n_slot = 0;
+            for (int64_t i = 0; i < n_tokens; ++i) {
+                const llama_token id = ubatch->token[i];
+                const bool slot = llama_hostless_is_slot(id);
+                n_slot += slot;
+                rows[i] = slot ? (int32_t) (n_tokens + (-2 - id)) : (int32_t) i;
+            }
+            ggml_backend_tensor_set(sel, rows.data(), 0, n_tokens*ggml_element_size(sel));
+            static bool announced = false;
+            if (n_slot > 0 && !announced) {
+                announced = true;
+                LLAMA_LOG_WARN("hostless: target batch reads device draft ids rows=%" PRId64 " slot_rows=%" PRId64 "\n", n_tokens, n_slot);
+            }
+        }
     }
 
     if (ubatch->embd) {
@@ -115,6 +135,7 @@ bool llm_graph_input_embd::can_reuse(const llm_graph_params & params) {
 
     res &= (!params.ubatch.token) || (tokens && tokens->ne[0] == params.ubatch.n_tokens);
     res &= (!params.ubatch.embd)  || (embd   &&   embd->ne[1] == params.ubatch.n_tokens);
+    res &= (!sel) || sel->ne[0] == params.ubatch.n_tokens;
 
     return res;
 }
@@ -2462,7 +2483,7 @@ ggml_tensor * llm_graph_context::build_moe_ffn(
 }
 
 // input embeddings with optional lora
-ggml_tensor * llm_graph_context::build_inp_embd(ggml_tensor * tok_embd) const {
+ggml_tensor * llm_graph_context::build_inp_embd(ggml_tensor * tok_embd, ggml_tensor * dev_ids) const {
     const int64_t n_embd_inp = hparams.n_embd_inp();
     const int64_t n_embd     = hparams.n_embd;
 
@@ -2474,6 +2495,20 @@ ggml_tensor * llm_graph_context::build_inp_embd(ggml_tensor * tok_embd) const {
     cb(inp->tokens, "inp_tokens", -1);
     ggml_set_input(inp->tokens);
     res->t_inp_tokens = inp->tokens;
+
+    // hostless spike: a slot token (llama_hostless_is_slot) takes its id from dev_ids on the device
+    ggml_tensor * tokens = inp->tokens;
+    if (dev_ids && ubatch.token) {
+        inp->sel = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, ubatch.n_tokens);
+        ggml_set_input(inp->sel);
+        ggml_set_name(inp->sel, "inp_hostless_sel");
+        ggml_tensor * all = ggml_concat(ctx0,
+                ggml_reshape_2d(ctx0, inp->tokens, 1, ubatch.n_tokens),
+                ggml_reshape_2d(ctx0, dev_ids, 1, dev_ids->ne[0]), 1);
+        tokens = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, all, inp->sel), ubatch.n_tokens);
+        ggml_set_name(tokens, "inp_tokens_hostless");
+        res->t_inp_tokens = tokens;
+    }
 
     inp->embd = ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, n_embd_inp, ubatch.n_tokens);
     cb(inp->embd, "inp_embd", -1);
@@ -2487,7 +2522,7 @@ ggml_tensor * llm_graph_context::build_inp_embd(ggml_tensor * tok_embd) const {
     {
         auto & cur = inps[0];
 
-        cur = ggml_get_rows(ctx0, tok_embd, inp->tokens);
+        cur = ggml_get_rows(ctx0, tok_embd, tokens);
 
         // apply lora for embedding tokens if needed
         for (const auto & lora : *loras) {

@@ -92,6 +92,10 @@ bool common_speculative_process(common_speculative * spec, const common_batch & 
 // generate drafts for the sequences specified with `common_speculative_get_draft_params`
 void common_speculative_draft(common_speculative * spec);
 
+// hostless spike (LLAMA_HOSTLESS >= 2): a draft may leave LLAMA_HOSTLESS_SLOT placeholders in its result whose ids stay on
+// the device; this reads them (and their candidates) into the same result vectors. Returns false if nothing was pending.
+bool common_speculative_draft_finish(common_speculative * spec);
+
 // informs the speculative context that n_accepted tokens were accepted by the target model
 void common_speculative_accept(common_speculative * spec, llama_seq_id, uint16_t n_accepted);
 

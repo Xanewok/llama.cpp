@@ -3,9 +3,11 @@
 #include "llama-kv-cache.h"
 #include "llama-memory-recurrent.h"
 #include "llama-sampler.h"
+#include "llama-ext.h"
 
 #include <cinttypes>
 #include <cstdlib>
+#include <cstring>
 
 void llama_model_qwen35::load_arch_hparams(llama_model_loader & ml) {
     ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS,       hparams.f_norm_rms_eps);
@@ -152,7 +154,7 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
     ggml_tensor * cur;
     ggml_tensor * inpL;
 
-    inpL = build_inp_embd(model.tok_embd);
+    inpL = build_inp_embd(model.tok_embd, model.hostless_ids);
 
     cb(inpL, "model.input_embed", -1);
 
@@ -960,6 +962,27 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
             for (int32_t j = 0; j < n_seq; ++j) {
                 build_sampling_row(cl.seqs[j], cl.smpls[j], logits, cand, j, (int32_t) cl.row(j, s), logits);
                 GGML_ASSERT(res->t_sampled[cl.row(j, s)] && "MTP chain: the sampler chain does not pick a token");
+            }
+        }
+
+        // hostless spike: seq s0's step-s id goes to slot s0*LLAMA_MTP_CHAIN_MAX + s for the next target batch
+        if (model.hostless_ids) {
+            const size_t esz_id = ggml_element_size(model.hostless_ids);
+            // negative control: the target batch reads each draft id one step off
+            static const bool slotshift = [] {
+                const char * m = std::getenv("LLAMA_HOSTLESS_MUTANT");
+                return m != nullptr && std::strcmp(m, "slotshift") == 0;
+            }();
+            for (int32_t j = 0; j < n_seq; ++j) {
+                if ((cl.seqs[j] + 1)*LLAMA_MTP_CHAIN_MAX > LLAMA_HOSTLESS_N_IDS) {
+                    continue;
+                }
+                for (int32_t s = 0; s < n_chain; ++s) {
+                    ggml_tensor * id = res->t_sampled[cl.row(j, s)];
+                    GGML_ASSERT(id->type == GGML_TYPE_I32 && ggml_nelements(id) == 1);
+                    ggml_tensor * dst = ggml_view_1d(ctx0, model.hostless_ids, 1, (cl.seqs[j]*LLAMA_MTP_CHAIN_MAX + (slotshift ? (s + 1) % n_chain : s))*esz_id);
+                    ggml_build_forward_expand(gf, ggml_cpy(ctx0, id, dst));
+                }
             }
         }
 

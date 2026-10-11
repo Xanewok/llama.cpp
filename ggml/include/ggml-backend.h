@@ -428,6 +428,11 @@ extern "C" {
     // not supported; read a consumer. -0.0f comes out as +0.0f.
     GGML_API struct ggml_tensor * ggml_backend_meta_gather(struct ggml_context * ctx, struct ggml_tensor * a);
 
+    // local (hostless spike): work queued on dst after this call starts after the work queued on src so far. Device-side
+    // (an event per device pair) when src and dst are backends of the same event-capable device, or meta backends over such
+    // devices in the same order; otherwise src is synchronized.
+    GGML_API void ggml_backend_order_after(ggml_backend_t dst, ggml_backend_t src);
+
     //
     // Utils
     //

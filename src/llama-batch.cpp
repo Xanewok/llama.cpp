@@ -6,6 +6,7 @@
 #include "llama-hparams.h"
 #include "llama-model.h"
 #include "llama-context.h"
+#include "llama-ext.h"
 
 #include <cassert>
 #include <cstring>
@@ -76,7 +77,7 @@ bool llama_batch_allocr::init(
         token_vec.resize(n_tok);
         for (int32_t i = 0; i < n_tok; ++i) {
             const llama_token id = batch_inp.tokens[i].id;
-            if (id < 0 || id >= batch_inp.n_vocab) {
+            if ((id < 0 && !llama_hostless_is_slot(id)) || id >= batch_inp.n_vocab) {
                 LLAMA_LOG_ERROR("%s: invalid token[%d] = %d\n", __func__, i, id);
                 return false;
             }
@@ -1123,7 +1124,7 @@ bool llama_batch_ext::set_token_id(int32_t idx, llama_token id) {
     if (idx < 0 || idx >= (int32_t) tokens.size()) {
         return false;
     }
-    if (id < 0 || id >= n_vocab) {
+    if ((id < 0 && !llama_hostless_is_slot(id)) || id >= n_vocab) {
         return false;
     }
     tokens[idx].id = id;

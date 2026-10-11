@@ -1,6 +1,6 @@
-purpose: chain M2 on stack10 (STEP fix 1)
-base: a588f2a44382a361df3e2a456be0c80ca10dd1d6
+purpose: host-less round spike: resident embd table (L1), device-fed V tokens (L2), one-round-lag server (L3), env-gated arms on chain-m2-s10
+base: eedee42c50f928e48a28a030a73238e4e25efa64
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/chain-m2-s10
-created: 2026-10-11T11:32:59+02:00
+branch: topic/hostless-spike
+created: 2026-10-11T22:26:45+02:00
 creator: xanewok

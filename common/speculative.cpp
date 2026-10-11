@@ -211,6 +211,9 @@ struct common_speculative_impl {
 
     virtual void draft(common_speculative_draft_params_vec & dparams) = 0;
 
+    // hostless spike: reads the results of a draft() that left placeholders, see common_speculative_draft_finish
+    virtual bool draft_finish(common_speculative_draft_params_vec & /*dparams*/) { return false; }
+
     virtual void accept(llama_seq_id seq_id, uint16_t n_accepted, bool is_other) = 0;
 
     // (optional) serialize/restore per-seq internal state (e.g. eagle3's deferred boundary).
@@ -1887,6 +1890,51 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         }
     }
 
+    // the chain decode's per-row results, in the order the step loop would consume them; replace: the result holds the
+    // slot placeholders of a deferred decode
+    void read_chain(common_speculative_draft_params_vec & dparams, int32_t k, const std::vector<llama_seq_id> & seqs, bool replace) {
+        auto * ctx_dft = params.ctx_dft;
+        const int32_t n_d = (int32_t) seqs.size();
+        for (int32_t s = 0; s < k; ++s) {
+            for (int32_t j = 0; j < n_d; ++j) {
+                const llama_seq_id seq_id = seqs[j];
+                const int32_t idx = s*n_d + j;
+                auto & dp   = dparams[seq_id];
+                auto * smpl = smpls[seq_id].get();
+
+                const llama_token id = common_sampler_sample(smpl, ctx_dft, idx, true);
+                GGML_ASSERT(id != LLAMA_TOKEN_NULL && llama_get_sampled_token_ith(ctx_dft, idx) == id);
+
+                const auto * cur_p = common_sampler_get_candidates(smpl, true);
+
+                mtp_chain_dump_step(s, id, cur_p);
+                common_sampler_accept(smpl, id, true);
+                // commits the uniform behind this token, or the next round draws it again
+                llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
+
+                if (replace) {
+                    GGML_ASSERT((int32_t) dp.result->size() == k && (*dp.result)[s] == LLAMA_HOSTLESS_SLOT(seq_id*LLAMA_MTP_CHAIN_MAX + s));
+                    (*dp.result)[s] = id;
+                } else {
+                    dp.result->push_back(id);
+                }
+                dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
+            }
+        }
+    }
+
+    int32_t                   hostless_k = 0; // > 0: a chain decode whose results draft_finish has not read yet
+    std::vector<llama_seq_id> hostless_seqs;
+
+    bool draft_finish(common_speculative_draft_params_vec & dparams) override {
+        if (hostless_k == 0) {
+            return false;
+        }
+        read_chain(dparams, hostless_k, hostless_seqs, true);
+        hostless_k = 0;
+        return true;
+    }
+
     // Drafts the n_max tokens of every drafting sequence in a single decode, see llama_set_mtp_chain. p_min = 0
     // stops no step early, so it samples the tokens and candidates the step loop would. Returns false to leave the
     // drafting to the loop.
@@ -1949,27 +1997,25 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             llama_set_mtp_chain(ctx_dft, 0);
 
             if (ret == 0) {
-                for (int32_t s = 0; s < k; ++s) {
-                    for (int32_t j = 0; j < n_d; ++j) {
-                        const llama_seq_id seq_id = seqs[j];
-                        const int32_t idx = s*n_d + j;
-                        auto & dp   = dparams[seq_id];
-                        auto * smpl = smpls[seq_id].get();
-
-                        const llama_token id = common_sampler_sample(smpl, ctx_dft, idx, true);
-                        GGML_ASSERT(id != LLAMA_TOKEN_NULL && llama_get_sampled_token_ith(ctx_dft, idx) == id);
-
-                        const auto * cur_p = common_sampler_get_candidates(smpl, true);
-
-                        mtp_chain_dump_step(s, id, cur_p);
-                        common_sampler_accept(smpl, id, true);
-                        // commits the uniform behind this token, or the next round draws it again
-                        llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
-
-                        dp.result->push_back(id);
-                        dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
-                    }
+                // hostless spike: the target batch reads the ids from device slots; draft_finish reads them on the host
+                bool defer = llama_hostless_level() >= 2;
+                for (llama_seq_id seq_id : seqs) {
+                    defer = defer && (seq_id + 1)*LLAMA_MTP_CHAIN_MAX <= LLAMA_HOSTLESS_N_IDS;
                 }
+                if (defer) {
+                    for (int32_t s = 0; s < k; ++s) {
+                        for (llama_seq_id seq_id : seqs) {
+                            dparams[seq_id].result->push_back(LLAMA_HOSTLESS_SLOT(seq_id*LLAMA_MTP_CHAIN_MAX + s));
+                        }
+                    }
+                    hostless_k    = k;
+                    hostless_seqs = seqs;
+                    llama_hostless_mark_source(ctx_dft);
+                    static const bool announced = [k, n_d] { SPC_WRN("hostless: chain drafts deferred k=%d seqs=%d\n", k, n_d); return true; }();
+                    (void) announced;
+                    return true;
+                }
+                read_chain(dparams, k, seqs, false);
                 return true;
             }
 
@@ -3322,6 +3368,17 @@ void common_speculative_draft(common_speculative * spec) {
             dp.drafting = false;
         }
     }
+}
+
+bool common_speculative_draft_finish(common_speculative * spec) {
+    if (spec == nullptr) {
+        return false;
+    }
+    bool any = false;
+    for (auto & impl : spec->impls) {
+        any |= impl->draft_finish(spec->dparams);
+    }
+    return any;
 }
 
 void common_speculative_accept(common_speculative * spec, llama_seq_id seq_id, uint16_t n_accepted) {

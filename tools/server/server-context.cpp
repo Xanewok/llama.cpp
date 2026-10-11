@@ -16,6 +16,7 @@
 #include "log.h"
 #include "sampling.h"
 #include "speculative.h"
+#include "../../src/llama-ext.h" // hostless spike: llama_hostless_level
 #include "mtmd.h"
 #include "mtmd-helper.h"
 
@@ -247,6 +248,8 @@ struct server_slot {
     common_speculative * spec;
 
     llama_tokens spec_draft;
+    llama_tokens hostless_lag; // hostless spike (L3): accepted ids of the last round, emitted after the next round is queued
+    bool hostless_stopped = false; // hostless spike (L3): a lagged id stopped the slot; released once the queued round is read
 
     // draft candidates per token in spec_draft; only draft-simple and draft-mtp fill it
     std::vector<std::vector<llama_token_data>> spec_draft_q;
@@ -3120,6 +3123,12 @@ private:
             llama_set_embeddings(ctx_tgt, slot_batched->need_embd());
         }
 
+        // hostless spike (L3): output lagged behind a round that is not coming
+        if (batch.size() == 0) {
+            hostless_flush_lagged();
+            hostless_release_stopped();
+        }
+
         int32_t off_next = 0;
         int32_t n_batch = llama_n_batch(ctx_tgt);
         for (int32_t off = 0; off < batch.size(); off = off_next) {
@@ -3958,6 +3967,82 @@ private:
         }
     }
 
+    // hostless spike (L2): the drafts were placeholders while the batch was queued; put the ids read back in their place
+    void hostless_patch_drafts(int32_t off) {
+        for (auto & slot : slots) {
+            const size_t n_draft = slot.spec_draft.size();
+            if (slot.spec_i_batch.size() != n_draft + 1 || n_draft == 0) {
+                continue;
+            }
+            for (size_t i = 0; i < n_draft; ++i) {
+                const llama_token tok = slot.spec_draft[i];
+                GGML_ASSERT(tok >= 0);
+                const int32_t bi = slot.spec_i_batch[i + 1];
+                batch.tokens[bi].token = tok;
+                if (bi >= off && bi - off < batch.view.size()) {
+                    batch.view.tokens[bi - off].id = tok;
+                }
+            }
+            slot.prompt.tokens.keep_first(slot.prompt.n_tokens() - n_draft);
+            slot.prompt.tokens.insert(slot.spec_draft);
+        }
+    }
+
+    // hostless spike (L3): emits the ids post_decode accepted one round earlier; a stop discards the round now in flight
+    void hostless_flush_lagged() {
+        for (auto & slot : slots) {
+            if (slot.hostless_lag.empty()) {
+                continue;
+            }
+            const llama_tokens ids = std::move(slot.hostless_lag);
+            slot.hostless_lag.clear();
+            if (slot.state != SLOT_STATE_GENERATING) {
+                continue;
+            }
+            static const bool announced = [] { SRV_WRN("%s", "hostless: output lag engaged\n"); return true; }();
+            (void) announced;
+            const uint64_t n_gen_end = slot.stats.n_gen;
+            const uint64_t n_gen_beg = n_gen_end - ids.size();
+            const llama_token sampled = slot.sampled;
+            bool stopped = false;
+            for (size_t i = 0; i < ids.size(); ++i) {
+                completion_token_output result;
+                result.tok          = ids[i];
+                result.text_to_send = common_token_to_piece(slot.ctx_tgt, result.tok, params_base.special ||
+                        slot.task->params.sampling.preserved_tokens.find(result.tok) != slot.task->params.sampling.preserved_tokens.end());
+                result.prob         = 1.0f;
+                // the budget check in process_token sees the count it would see unlagged
+                slot.stats.n_gen = n_gen_beg + i + 1;
+                if (!process_token(result, slot)) {
+                    stopped = true;
+                    break;
+                }
+            }
+            if (stopped) {
+                slot.hostless_stopped = true;
+                continue;
+            }
+            slot.stats.n_gen = n_gen_end;
+            slot.sampled     = sampled;
+            slot.print_timings_tg();
+        }
+    }
+
+    // hostless spike (L3): after the queued round was read (its draft results land in spec_draft, which release() clears)
+    void hostless_release_stopped() {
+        for (auto & slot : slots) {
+            if (!slot.hostless_stopped) {
+                continue;
+            }
+            slot.hostless_stopped = false;
+            // the queued round of this slot never verifies: its drafts do not count
+            slot.stats.n_draft_tokens -= slot.spec_draft.size();
+            slot.print_timings();
+            send_final_response(slot);
+            slot.release();
+        }
+    }
+
     // returns true = success ; false = retry with smaller batch size
     // throw std::runtime_error on fatal error
     bool decode(int32_t & n_batch, int32_t off) {
@@ -3994,14 +4079,33 @@ private:
         // yield to the queue, so we can still handle metrics tasks while decoding
         // note: the sync is done here too, so that the wait is also covered by the yield
         int ret = 0;
-        queue_tasks.yield_to_queue([&]() {
-            ggml_round_trace_begin("V", batch.view.size());
-            ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
-            ggml_round_trace_end(ret);
-            if (ret == 0 && has_output) {
-                llama_synchronize(ctx_tgt);
-            }
-        });
+        if (llama_hostless_level() >= 3) {
+            // the previous round's output is consumed while this one runs
+            queue_tasks.yield_to_queue([&]() {
+                ggml_round_trace_begin("V", batch.view.size());
+                ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
+                ggml_round_trace_end(ret);
+            });
+            hostless_flush_lagged();
+            queue_tasks.yield_to_queue([&]() {
+                if (ret == 0 && has_output) {
+                    llama_synchronize(ctx_tgt);
+                }
+            });
+        } else {
+            queue_tasks.yield_to_queue([&]() {
+                ggml_round_trace_begin("V", batch.view.size());
+                ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
+                ggml_round_trace_end(ret);
+                if (ret == 0 && has_output) {
+                    llama_synchronize(ctx_tgt);
+                }
+            });
+        }
+        if (ret == 0 && spec && common_speculative_draft_finish(spec.get())) {
+            hostless_patch_drafts(off);
+        }
+        hostless_release_stopped();
 
         if (ret != 0) {
             {
@@ -4336,6 +4440,13 @@ private:
             SLT_DBG(slot, "add accepted tokens: sampled=%d, ids.size=%zu, n_draft=%zu\n", slot.sampled, ids.size(), n_draft);
 
             slot.mem.seq_rm(slot.id, slot.prompt.tokens.pos_next(), -1);
+
+            if (llama_hostless_level() >= 3) {
+                // emitted by hostless_flush_lagged once the next round is queued; n_gen counts them now for the draft budget
+                slot.stats.n_gen += ids.size();
+                slot.hostless_lag = ids;
+                return;
+            }
 
             for (size_t i = 0; i < ids.size(); ++i) {
                 completion_token_output result;

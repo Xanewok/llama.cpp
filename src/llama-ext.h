@@ -111,6 +111,19 @@ LLAMA_API void llama_set_nextn_layer_offset(struct llama_context * ctx, int32_t 
 #define LLAMA_MTP_CHAIN_MAX 16
 LLAMA_API bool llama_set_mtp_chain(struct llama_context * ctx, int32_t n_chain);
 
+// local (hostless spike). LLAMA_HOSTLESS (read once): 1 = token-embedding table on the devices (tensor split, mirrored);
+// 2 = 1 + an MTP chain decode leaves its sampled ids in LLAMA_HOSTLESS_N_IDS device slots (row i -> slot i) and a token
+// batch entry LLAMA_HOSTLESS_SLOT(i) reads slot i on the device; 3 = 2 + the server consumes a round's output one round late.
+// Slot tokens are -2 - i: -1 is LLAMA_TOKEN_NULL.
+#define LLAMA_HOSTLESS_N_IDS 64
+#define LLAMA_HOSTLESS_SLOT(i) ((llama_token) (-2 - (i)))
+LLAMA_API int32_t llama_hostless_level(void);
+static inline bool llama_hostless_is_slot(llama_token id) {
+    return id <= -2 && id >= LLAMA_HOSTLESS_SLOT(LLAMA_HOSTLESS_N_IDS - 1) && llama_hostless_level() >= 2;
+}
+// the next decode of another context orders its device work after the work queued on ctx so far, without a host wait
+LLAMA_API void    llama_hostless_mark_source(struct llama_context * ctx);
+
 // top-k whose backend candidates come out in descending logit order, as the host top-k leaves them, so that a dist
 // sampler after it picks the token the host chain would for the same uniform. Host behaviour is the same as llama_sampler_init_top_k.
 LLAMA_API struct llama_sampler * llama_sampler_init_top_k_sorted(int32_t k);

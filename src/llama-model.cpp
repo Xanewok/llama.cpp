@@ -1639,6 +1639,10 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
     // assign the input layer
     // there is very little benefit to offloading the input layer, so always keep it on the CPU
     pimpl->dev_input = { cpu_dev, &pimpl->cpu_buft_list };
+    // hostless spike: the table where the output layer is (a meta device mirrors it), so no lookup needs the host
+    if (llama_hostless_level() >= 1 && params.split_mode == LLAMA_SPLIT_MODE_TENSOR) {
+        pimpl->dev_input = get_layer_buft_list(n_layer_all);
+    }
 
     // assign the repeating layers to the devices according to the splits
     pimpl->dev_layer.resize(n_layer_all);
@@ -2066,6 +2070,38 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
             LLAMA_LOG_INFO("%s: draft token embeddings: %zu tokens, %zu + %zu bytes per device (%s)\n", __func__,
                     draft_vocab_ids.size(), ggml_nbytes(draft_token_embd), ggml_nbytes(draft_vocab_map), ggml_type_name(draft_token_embd->type));
         }
+    }
+
+    if (llama_hostless_level() >= 1 && tok_embd) {
+        LLAMA_LOG_WARN("hostless: tok_embd buffer=%s type=%s bytes=%zu\n", tok_embd->buffer ? ggml_backend_buffer_name(tok_embd->buffer) : "none",
+                ggml_type_name(tok_embd->type), ggml_nbytes(tok_embd));
+    }
+    // hostless spike: the MTP chain's sampled ids, read by the next target batch on the device
+    if (llama_hostless_level() >= 2 && draft_token_embd) {
+        ggml_context_ptr ctx { ggml_init({ggml_tensor_overhead(), nullptr, true}) };
+        if (!ctx) {
+            throw std::runtime_error("failed to allocate hostless id context");
+        }
+        hostless_ids = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I32, LLAMA_HOSTLESS_N_IDS);
+        ggml_set_name(hostless_ids, "hostless_ids");
+        if (params.split_mode == LLAMA_SPLIT_MODE_TENSOR) {
+            GGML_ASSERT(llama_meta_device_get_split_state(hostless_ids, &get_split_state_ud).axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED);
+        }
+        auto * buft = ggml_backend_dev_buffer_type(dev_output());
+        ggml_backend_buffer_ptr buf { ml.no_alloc ? ggml_backend_buft_alloc_buffer(buft, 0) :
+                ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), buft) };
+        if (!buf) {
+            throw std::runtime_error("failed to allocate hostless ids");
+        }
+        if (ml.no_alloc) {
+            hostless_ids->buffer = buf.get();
+        } else {
+            ggml_backend_buffer_clear(buf.get(), 0);
+        }
+        std::vector<ggml_backend_buffer_ptr> bufs;
+        bufs.push_back(std::move(buf));
+        pimpl->ctxs_bufs.emplace_back(std::move(ctx), std::move(bufs));
+        LLAMA_LOG_WARN("hostless: draft id slots=%d buffer=%s\n", LLAMA_HOSTLESS_N_IDS, ggml_backend_buft_name(buft));
     }
 
     // print memory requirements per buffer type

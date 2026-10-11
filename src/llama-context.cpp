@@ -16,6 +16,7 @@
 #include "llama.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cinttypes>
 #include <cmath>
 #include <cstdlib>
@@ -3077,6 +3078,8 @@ ggml_status llama_context::graph_compute(
         set_n_threads_fn.second(set_n_threads_fn.first, n_threads);
     }
 
+    hostless_order_after_source();
+
     if (sync_elide_env().mutant != 1) { backend_pending = true; }
     auto status = ggml_backend_sched_graph_compute_async(get_sched_graph(), gf);
     if (sync_elide_env().mutant >= 3) { backend_pending = false; }
@@ -4485,6 +4488,59 @@ void llama_set_embeddings_nextn(llama_context * ctx, bool value, bool masked) {
 
 void llama_set_embeddings_layer_inp(llama_context * ctx, uint32_t lid, bool value) {
     ctx->set_embeddings_layer_inp(lid, value);
+}
+
+int32_t llama_hostless_level(void) {
+    static const int32_t level = [] {
+        const char * env = std::getenv("LLAMA_HOSTLESS");
+        const int32_t v = env ? std::max(0, std::min(3, std::atoi(env))) : 0;
+        if (v > 0) {
+            const char * mutant = std::getenv("LLAMA_HOSTLESS_MUTANT");
+            LLAMA_LOG_WARN("hostless: level=%d mutant=%s\n", v, mutant ? mutant : "none");
+        }
+        return v;
+    }();
+    return level;
+}
+
+static std::atomic<llama_context *> g_hostless_source{nullptr};
+
+void llama_hostless_mark_source(llama_context * ctx) {
+    g_hostless_source = ctx;
+}
+
+void llama_context::hostless_order_after_source() {
+    llama_context * src = g_hostless_source.load();
+    if (src == nullptr) {
+        return;
+    }
+    g_hostless_source = nullptr;
+    if (src == this) {
+        return;
+    }
+    // negative control: the target batch may read the draft ids before the chain wrote them
+    static const bool noorder = [] {
+        const char * m = std::getenv("LLAMA_HOSTLESS_MUTANT");
+        return m != nullptr && std::strcmp(m, "noorder") == 0;
+    }();
+    if (noorder) {
+        return;
+    }
+    size_t n = 0;
+    for (auto & dst : backends) {
+        for (auto & b : src->backends) {
+            if (ggml_backend_get_device(b.get()) == ggml_backend_get_device(dst.get())) {
+                ggml_backend_order_after(dst.get(), b.get());
+                ++n;
+                break;
+            }
+        }
+    }
+    static bool announced = false;
+    if (!announced) {
+        announced = true;
+        LLAMA_LOG_WARN("hostless: device order engaged backends=%zu\n", n);
+    }
 }
 
 bool llama_set_mtp_chain(llama_context * ctx, int32_t n_chain) {

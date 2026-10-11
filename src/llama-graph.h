@@ -136,6 +136,7 @@ public:
 
     ggml_tensor * tokens = nullptr; // I32 [n_batch]
     ggml_tensor * embd   = nullptr; // F32 [n_embd, n_batch]
+    ggml_tensor * sel    = nullptr; // I32 [n_batch], hostless spike: row i of concat(tokens, dev_ids) per batch entry
 
     const int64_t n_embd = 0;
 };
@@ -1210,7 +1211,7 @@ struct llm_graph_context {
     // inputs
     //
 
-    ggml_tensor * build_inp_embd(ggml_tensor * tok_embd) const;
+    ggml_tensor * build_inp_embd(ggml_tensor * tok_embd, ggml_tensor * dev_ids = nullptr) const;
     ggml_tensor * build_inp_pos() const;
     ggml_tensor * build_inp_attn_scale() const;
     ggml_tensor * build_inp_out_ids() const;

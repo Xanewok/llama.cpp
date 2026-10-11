@@ -23,6 +23,7 @@
 #include <unordered_map>
 #include <vector>
 #include <mutex>
+#include <map>
 
 #ifdef __APPLE__
 #include <sys/types.h>
@@ -749,6 +750,38 @@ void ggml_backend_event_wait(ggml_backend_t backend, ggml_backend_event_t event)
     GGML_ASSERT(backend->iface.event_wait != NULL);
 
     backend->iface.event_wait(backend, event);
+}
+
+void ggml_backend_order_after(ggml_backend_t dst, ggml_backend_t src) {
+    if (ggml_backend_is_meta(dst) && ggml_backend_is_meta(src) &&
+            ggml_backend_meta_n_backends(dst) == ggml_backend_meta_n_backends(src)) {
+        for (size_t i = 0; i < ggml_backend_meta_n_backends(dst); ++i) {
+            ggml_backend_order_after(ggml_backend_meta_simple_backend(dst, i), ggml_backend_meta_simple_backend(src, i));
+        }
+        return;
+    }
+    ggml_backend_dev_t dev = ggml_backend_get_device(src);
+    if (dev != nullptr && dev == ggml_backend_get_device(dst) && dev->iface.event_new != nullptr &&
+            src->iface.event_record != nullptr && dst->iface.event_wait != nullptr) {
+        // one event per (dst, src): a re-record only moves the point the next wait captures
+        static std::mutex mutex;
+        static std::map<std::pair<ggml_backend_t, ggml_backend_t>, ggml_backend_event_t> events;
+        ggml_backend_event_t event;
+        {
+            std::lock_guard<std::mutex> lock(mutex);
+            auto & e = events[{dst, src}];
+            if (e == nullptr) {
+                e = ggml_backend_event_new(dev);
+            }
+            event = e;
+        }
+        if (event != nullptr) {
+            ggml_backend_event_record(event, src);
+            ggml_backend_event_wait(dst, event);
+            return;
+        }
+    }
+    ggml_backend_synchronize(src);
 }
 
 static void ggml_backend_graph_optimize(ggml_backend_t backend, struct ggml_cgraph * cgraph, struct ggml_backend_graph_optimize_params * params) {

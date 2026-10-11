@@ -669,6 +669,7 @@ struct llama_model {
     std::vector<llama_token> draft_vocab_ids;
     struct ggml_tensor * draft_token_embd = nullptr; // [n_embd, n_draft]: token embedding rows of draft_vocab_ids
     struct ggml_tensor * draft_vocab_map  = nullptr; // [n_vocab] I32: token id -> row of draft_token_embd, or -1
+    struct ggml_tensor * hostless_ids     = nullptr; // [LLAMA_HOSTLESS_N_IDS] I32, hostless spike: see llama_hostless_level
     struct ggml_tensor * output_b        = nullptr;
     struct ggml_tensor * output_norm_enc = nullptr;
 
