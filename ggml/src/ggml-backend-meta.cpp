@@ -6,6 +6,7 @@
 #include "ggml-cpp.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -425,6 +426,8 @@ struct ggml_backend_meta_buffer_context {
     ggml_backend_meta_simple_tensor_container stc_compute[2];
     int stc_compute_index      = 0;
     int stc_compute_index_next = 0;
+    // a new value, greater than that of any earlier allocation in any buffer, whenever stc_compute_index switches
+    uint64_t alloc_epoch;
     std::vector<ggml_backend_buffer_ptr> bufs;
 
     // FIXME
@@ -440,13 +443,19 @@ struct ggml_backend_meta_buffer_context {
             ggml_backend_meta_simple_tensor_container & stc_compute_0,
             ggml_backend_meta_simple_tensor_container & stc_compute_1,
             const std::vector<ggml_backend_buffer_t> & bufs)
-            : stc_static(std::move(stc_static)), stc_compute{std::move(stc_compute_0), std::move(stc_compute_1)} {
+            : stc_static(std::move(stc_static)), stc_compute{std::move(stc_compute_0), std::move(stc_compute_1)},
+              alloc_epoch(next_alloc_epoch()) {
         this->bufs.reserve(bufs.size());
         for (ggml_backend_buffer_t buf : bufs) {
             this->bufs.emplace_back(buf);
         }
         const char * GGML_META_DEBUG = getenv("GGML_META_DEBUG");
         debug = GGML_META_DEBUG ? atoi(GGML_META_DEBUG) : 0;
+    }
+
+    static uint64_t next_alloc_epoch() {
+        static std::atomic<uint64_t> counter{1};
+        return counter++;
     }
 
     ggml_backend_meta_simple_tensor_container & get_simple_tensor_container(const ggml_tensor * tensor) {
@@ -1337,7 +1346,10 @@ static enum ggml_status ggml_backend_meta_buffer_init_tensor_impl(ggml_backend_m
 static enum ggml_status ggml_backend_meta_buffer_init_tensor(ggml_backend_buffer_t buffer, ggml_tensor * tensor) {
     GGML_ASSERT(ggml_backend_buffer_is_meta(buffer));
     ggml_backend_meta_buffer_context * buf_ctx = (ggml_backend_meta_buffer_context *) buffer->context;
-    buf_ctx->stc_compute_index = buf_ctx->stc_compute_index_next;
+    if (buf_ctx->stc_compute_index != buf_ctx->stc_compute_index_next) {
+        buf_ctx->stc_compute_index = buf_ctx->stc_compute_index_next;
+        buf_ctx->alloc_epoch       = ggml_backend_meta_buffer_context::next_alloc_epoch();
+    }
     return ggml_backend_meta_buffer_init_tensor_impl(buf_ctx->get_simple_tensor_container(tensor), tensor);
 }
 
@@ -1825,21 +1837,24 @@ struct ggml_backend_meta_context {
     // a graph with several splits on this backend rebuilds them on every compute, under new uids for the simple backends.
     struct subgraph_plan {
         uint64_t                   uid         = 0;
-        uint64_t                   last_use    = 0;
+        const ggml_tensor *        node0       = nullptr; // compared, never dereferenced: may be freed
         size_t                     n_subgraphs = 0;
         ggml_context_ptr           ctx;     // owns cgraphs
         std::vector<ggml_cgraph *> cgraphs; // [j*n_subgraphs + i]: subgraph i of simple backend j
     };
-    // Plans of earlier graph allocations are never hit again (uids are not reused); this bound only ages them out.
-    static constexpr size_t max_plans = 8;
 
     std::string                 name;
     std::vector<backend_config> backend_configs;
     ggml_context_ptr            ctx; // aux graphs and nodes of the AllReduce fallback
     std::vector<ggml_cgraph *>  cgraphs_aux;
     std::vector<ggml_tensor *>  nodes_aux;
+    // The plans of the splits of the current allocation. Plans of earlier allocations are never hit again (uids are not
+    // reused) and may point to reset simple tensors. They are dropped when a rebuild sees a newer alloc_epoch in its meta
+    // buffers (new tensors), or when it starts at the same node (the same graph allocated again, no tensor initialized).
+    // The count is thus bounded by the splits of one allocation, not by a constant.
     std::vector<subgraph_plan>  plans;
-    uint64_t                    n_computes    = 0;
+    uint64_t                    plans_alloc_epoch = 0;
+    subgraph_plan               plan_uncached; // uid 0, or no meta buffer in the graph
     size_t                      n_reduce_steps;
     int                         max_nnodes    = 0;
     size_t                      max_tmp_size  = 0;
@@ -2046,8 +2061,10 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
                 used_buffers.emplace(cgraph->nodes[i]->buffer);
             }
         }
+        uint64_t alloc_epoch = 0;
         for (ggml_backend_buffer_t buf : used_buffers) {
             ggml_backend_meta_buffer_context * buf_ctx = (ggml_backend_meta_buffer_context *) buf->context;
+            alloc_epoch = std::max(alloc_epoch, buf_ctx->alloc_epoch);
             buf_ctx->stc_compute_index_next = buf_ctx->stc_compute_index ^ 1;
             ggml_backend_meta_simple_tensor_container & stc = buf_ctx->stc_compute[buf_ctx->stc_compute_index_next];
             for (ggml_context_ptr & ctx : stc.ctxs) {
@@ -2310,17 +2327,24 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
             }
         }
 
-        auto & plans = backend_ctx->plans;
-        if (plans.size() < ggml_backend_meta_context::max_plans) {
+        const ggml_tensor * node0 = cgraph->n_nodes > 0 ? cgraph->nodes[0] : nullptr;
+        if (cgraph->uid == 0 || alloc_epoch == 0) {
+            plan = &backend_ctx->plan_uncached;
+        } else {
+            auto & plans = backend_ctx->plans;
+            if (alloc_epoch > backend_ctx->plans_alloc_epoch) {
+                plans.clear();
+                backend_ctx->plans_alloc_epoch = alloc_epoch;
+            } else {
+                plans.erase(std::remove_if(plans.begin(), plans.end(),
+                    [node0](const ggml_backend_meta_context::subgraph_plan & p) { return node0 != nullptr && p.node0 == node0; }),
+                    plans.end());
+            }
             plans.emplace_back();
             plan = &plans.back();
-        } else {
-            plan = &*std::min_element(plans.begin(), plans.end(),
-                [](const ggml_backend_meta_context::subgraph_plan & a, const ggml_backend_meta_context::subgraph_plan & b) {
-                    return a.last_use < b.last_use;
-                });
         }
         plan->uid         = cgraph->uid;
+        plan->node0       = node0;
         plan->n_subgraphs = n_subgraphs;
 
         auto n_nodes_subgraph = [&](const size_t i_graph) -> size_t {
@@ -2359,9 +2383,6 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
             }
         }
     }
-
-    // a plan without uid cannot be hit, so it is replaced first
-    plan->last_use = cgraph->uid == 0 ? 0 : ++backend_ctx->n_computes;
 
     backend_ctx->n_subgraphs = plan->n_subgraphs;
     for (size_t j = 0; j < n_backends; j++) {

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <set>
 #include <vector>
 
 //
@@ -1100,8 +1101,8 @@ static void test_buft_get_alloc_size_n_does_not_allocate() {
 }
 
 //
-// Meta backend: with a split of another backend between them, one graph runs two Meta splits under different uids.
-// Recomputing the graph must reuse the per-device subgraphs of both, so the simple backends see the same uids again.
+// Meta backend: with splits of another backend between them, one graph runs several Meta splits under different uids.
+// Recomputing the graph must reuse the per-device subgraphs of all of them, so the simple backends see the same uids again.
 
 static std::vector<uint64_t> test_meta_seen_uids;
 static ggml_status (*test_meta_simple_compute)(ggml_backend_t, ggml_cgraph *) = nullptr;
@@ -1115,8 +1116,11 @@ static ggml_backend_meta_split_state test_meta_split_state_mirrored(const ggml_t
     return {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
 }
 
-static void test_meta_subgraph_reuse_two_splits() {
+// same_graph: every allocation allocates the same graph again, so no tensor is initialized (only valid for one split:
+// with a CPU split, its inputs to the next Meta split are new tensors)
+static void test_meta_subgraph_reuse(const int n_meta_splits, const bool same_graph) {
     constexpr int n = 16;
+    GGML_ASSERT(n_meta_splits >= 1 && (!same_graph || n_meta_splits == 1));
 
     ggml_backend_load_all();
     ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
@@ -1163,8 +1167,9 @@ static void test_meta_subgraph_reuse_two_splits() {
     ggml_backend_tensor_set(c, cv.data(), 0, ggml_nbytes(c));
     ggml_backend_tensor_set(y, yv.data(), 0, ggml_nbytes(y));
 
-    // d = (m + c*y) + w*x, in the node order w*x, c*y, m + ., . + .: w*x and m + . follow their weights to Meta, c*y runs
-    // on the CPU in between. The CPU split reads no Meta output (a Meta buffer over CPU buffers passes as host memory).
+    // d_0 = w*x, d_k = (m + c*y) + d_{k-1}, in the node order w*x, then c*y, m + ., . + . per k: w*x and m + . follow
+    // their weights to Meta, each c*y runs on the CPU in between. The CPU splits read no Meta output (a Meta buffer over CPU
+    // buffers passes as host memory).
     std::vector<float> ref(n*2);
     for (int j = 0; j < 2; j++) {
         for (int r = 0; r < n; r++) {
@@ -1174,43 +1179,52 @@ static void test_meta_subgraph_reuse_two_splits() {
                 a += wv[r*n + k]*xv[j*n + k];
                 b += cv[r*n + k]*yv[j*n + k];
             }
-            ref[j*n + r] = (mv[j*n + r] + b) + a;
+            ref[j*n + r] = a + float(n_meta_splits - 1)*(mv[j*n + r] + b);
         }
     }
 
     ggml_backend_t backends[2] = {backend_meta.get(), backend_cpu.get()};
     ggml_backend_sched_t sched = ggml_backend_sched_new(backends, nullptr, 2, GGML_DEFAULT_GRAPH_SIZE, false, false);
 
-    // a new graph per allocation, as llama.cpp builds them: every allocation gives the splits new uids while plans of
-    // earlier allocations are still cached, up to their bound
-    for (int alloc = 0; alloc < 10; alloc++) {
-        ggml_init_params params = {64*ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true};
-        ggml_context_ptr ctx(ggml_init(params));
-        ggml_cgraph * gf = ggml_new_graph(ctx.get());
-        ggml_tensor * a = ggml_mul_mat(ctx.get(), w, x);
-        ggml_build_forward_expand(gf, a);
-        ggml_tensor * b = ggml_mul_mat(ctx.get(), c, y);
-        ggml_build_forward_expand(gf, b);
-        ggml_tensor * d = ggml_add(ctx.get(), ggml_add(ctx.get(), m, b), a);
+    ggml_init_params params = {(4*n_meta_splits + 4)*ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true};
+    ggml_context_ptr ctx;
+    ggml_cgraph * gf = nullptr;
+    ggml_tensor * d  = nullptr;
+    auto build = [&]() {
+        ctx.reset(ggml_init(params));
+        gf = ggml_new_graph(ctx.get());
+        d = ggml_mul_mat(ctx.get(), w, x);
+        ggml_build_forward_expand(gf, d);
+        for (int k = 1; k < n_meta_splits; k++) {
+            ggml_tensor * b = ggml_mul_mat(ctx.get(), c, y);
+            ggml_build_forward_expand(gf, b);
+            d = ggml_add(ctx.get(), ggml_add(ctx.get(), m, b), d);
+            ggml_build_forward_expand(gf, d);
+        }
         ggml_set_output(d);
         ggml_build_forward_expand(gf, d);
+    };
+    auto compute = [&]() -> std::vector<uint64_t> {
+        test_meta_seen_uids.clear();
+        GGML_ASSERT(ggml_backend_sched_graph_compute(sched, gf) == GGML_STATUS_SUCCESS);
+        std::vector<float> out(n*2);
+        ggml_backend_tensor_get(d, out.data(), 0, ggml_nbytes(d));
+        GGML_ASSERT(out == ref);
+        return test_meta_seen_uids;
+    };
 
-        auto compute = [&]() -> std::vector<uint64_t> {
-            test_meta_seen_uids.clear();
-            GGML_ASSERT(ggml_backend_sched_graph_compute(sched, gf) == GGML_STATUS_SUCCESS);
-            std::vector<float> out(n*2);
-            ggml_backend_tensor_get(d, out.data(), 0, ggml_nbytes(d));
-            GGML_ASSERT(out == ref);
-            return test_meta_seen_uids;
-        };
-
+    // a new graph per allocation, as llama.cpp builds them: every allocation gives the splits new uids
+    for (int alloc = 0; alloc < 10; alloc++) {
+        if (!same_graph || alloc == 0) {
+            build();
+        }
         ggml_backend_sched_reset(sched);
         GGML_ASSERT(ggml_backend_sched_alloc_graph(sched, gf));
-        GGML_ASSERT(ggml_backend_sched_get_n_splits(sched) == 3);
+        GGML_ASSERT(ggml_backend_sched_get_n_splits(sched) == 2*n_meta_splits - 1);
 
         const std::vector<uint64_t> uids = compute();
-        GGML_ASSERT(uids.size() == 2);
-        GGML_ASSERT(uids[0] != uids[1]);
+        GGML_ASSERT(uids.size() == size_t(n_meta_splits));
+        GGML_ASSERT(std::set<uint64_t>(uids.begin(), uids.end()).size() == uids.size());
         for (int eval = 0; eval < 3; eval++) {
             GGML_ASSERT(compute() == uids);
         }
@@ -1218,6 +1232,19 @@ static void test_meta_subgraph_reuse_two_splits() {
 
     ggml_backend_sched_free(sched);
     simple->iface.graph_compute = test_meta_simple_compute;
+}
+
+static void test_meta_subgraph_reuse_two_splits() {
+    test_meta_subgraph_reuse(2, false);
+}
+
+// more Meta splits than a fixed-size plan cache of 8 would hold
+static void test_meta_subgraph_reuse_ten_splits() {
+    test_meta_subgraph_reuse(10, false);
+}
+
+static void test_meta_subgraph_reuse_same_graph() {
+    test_meta_subgraph_reuse(1, true);
 }
 
 static void run(const char * name, void (*f)()) {
@@ -1261,5 +1288,7 @@ int main() {
     run("test_buft_get_alloc_size_n_custom_override_ctx_size", test_buft_get_alloc_size_n_custom_override_ctx_size);
     run("test_buft_get_alloc_size_n_does_not_allocate", test_buft_get_alloc_size_n_does_not_allocate);
     run("test_meta_subgraph_reuse_two_splits", test_meta_subgraph_reuse_two_splits);
+    run("test_meta_subgraph_reuse_ten_splits", test_meta_subgraph_reuse_ten_splits);
+    run("test_meta_subgraph_reuse_same_graph", test_meta_subgraph_reuse_same_graph);
     return 0;
 }
