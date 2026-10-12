@@ -144,16 +144,16 @@ struct rows_graph {
 
 static rows_graph make_graph(ggml_tensor * tab, int rows, int k, ggml_backend_buffer_type_t buft) {
     rows_graph rg;
-    ggml_init_params ip = { ggml_tensor_overhead() * (4 + 3 * (size_t) k) + 2 * ggml_graph_overhead_custom(k + 8, false), nullptr, true };
+    ggml_init_params ip = { ggml_tensor_overhead() * (4 + 3 * (size_t) k) + 2 * ggml_graph_overhead_custom(2 * k + 8, false), nullptr, true };
     rg.ctx = ggml_init(ip);
     rg.ids = ggml_new_tensor_1d(rg.ctx, GGML_TYPE_I32, (int64_t) rows * k);
     for (int i = 0; i < k; i++) {
         ggml_tensor * v = ggml_view_1d(rg.ctx, rg.ids, rows, (size_t) i * rows * sizeof(int32_t));
         rg.outs.push_back(ggml_get_rows(rg.ctx, tab, v));
     }
-    rg.g1 = ggml_new_graph_custom(rg.ctx, k + 8, false);
+    rg.g1 = ggml_new_graph_custom(rg.ctx, 2 * k + 8, false);
     ggml_build_forward_expand(rg.g1, rg.outs[0]);
-    rg.gk = ggml_new_graph_custom(rg.ctx, k + 8, false);
+    rg.gk = ggml_new_graph_custom(rg.ctx, 2 * k + 8, false);
     for (auto * o : rg.outs) {
         ggml_build_forward_expand(rg.gk, o);
     }
