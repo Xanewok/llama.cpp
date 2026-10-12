@@ -626,7 +626,7 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
     // (a graph reserve, the catch-up decode) take the plain path.
     const int32_t n_chain = cparams.mtp_chain;
     const bool    chain   = n_chain > 0 && (int64_t) n_tokens == n_chain && (int64_t) n_outputs == n_chain &&
-                            ubatch.token && ubatch.embd && samplers.size() == 1;
+                            ubatch.token && ubatch.embd_state && samplers.size() == 1;
 
     // TODO: make static using `ggml_build_forward_select()`
     //       see llm_graph_context::build_inp_embd() for reference
