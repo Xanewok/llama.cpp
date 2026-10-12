@@ -251,20 +251,26 @@ meta_rows() {  # LOG -> the Meta rows of the result table, colour codes stripped
 tp_identity() {
     [[ $VISIBLE == GPU-*,GPU-* ]] || return 6
     local arch tag lib rc stray
-    # the base run must resolve every ggml/llama library from the master build
+    # the base runs must resolve every ggml/llama library from the master build
     stray=$(env LD_LIBRARY_PATH="$BASELIB" ldd "$NEWLIB/test-llama-archs" | awk '/libggml|libllama/ {print $3}' | grep -v "^$BASELIB/" || true)
     [[ -z $stray ]] || { echo "base libraries resolve outside $BASELIB: $stray"; return 6; }
     for arch in qwen35 llama; do
-        for tag in rf base; do
-            lib=$NEWLIB; [[ $tag == base ]] && lib=$BASELIB
+        # base twice: if master does not repeat its own Meta rows, the rf comparison is void (recorded), not a failure
+        for tag in rf base base2; do
+            lib=$NEWLIB; [[ $tag == base* ]] && lib=$BASELIB
             rc=0
+            # stdout apart from stderr: ggml_cuda_init prints mid-line on stderr and would split the table rows
             env CUDA_VISIBLE_DEVICES="$VISIBLE" CUDA_DEVICE_ORDER=PCI_BUS_ID LD_LIBRARY_PATH="$lib" timeout 900 nice -n 19 \
-                "$NEWLIB/test-llama-archs" -a "^$arch\$" -s 42 > "$OUT/tp-$arch-$tag.log" 2>&1 || rc=$?
+                "$NEWLIB/test-llama-archs" -a "^$arch\$" -s 42 > "$OUT/tp-$arch-$tag.log" 2> "$OUT/tp-$arch-$tag.err" || rc=$?
             echo "test-llama-archs $arch $tag rc=$rc"
             [[ $rc == 0 ]] || { echo "FAIL test-llama-archs $arch $tag rc=$rc"; return 8; }
             meta_rows "$OUT/tp-$arch-$tag.log" > "$OUT/tp-$arch-$tag.meta"
             [[ $(grep -c 'OK' "$OUT/tp-$arch-$tag.meta") -ge 1 ]] || { echo "FAIL no passing Meta row ($arch $tag)"; return 6; }
         done
+        if ! cmp -s "$OUT/tp-$arch-base.meta" "$OUT/tp-$arch-base2.meta"; then
+            echo "NOTE $arch: master Meta rows differ between two runs; rf vs master comparison void (both passed NMSE vs CPU)"
+            continue
+        fi
         cmp "$OUT/tp-$arch-base.meta" "$OUT/tp-$arch-rf.meta" || { echo "FAIL Meta rows differ from master ($arch)"; return 8; }
         cat "$OUT/tp-$arch-rf.meta"
     done
