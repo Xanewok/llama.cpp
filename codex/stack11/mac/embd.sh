@@ -39,7 +39,7 @@ chain_identity() {
     done
 }
 backend_sampler() {
-    "$MGATE" build-cpu/bin/test-backend-sampler -m "$MODEL" > "$D/backend-sampler.out" 2>&1
+    "$MGATE" build-cpu/bin/test-backend-sampler --model "$MODEL" > "$D/backend-sampler.out" 2>&1
 }
 embd_cheap() {
     stage 160 kv-mask-units "$BW_GATE" build-cpu/bin/test-kv-mask
