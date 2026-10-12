@@ -109,28 +109,32 @@ static_assert(GGML_CUDA_AR_ARRIVAL_BYTES_PER_BLOCK % 64 == 0, "arrival words of 
 // The data is processed in rounds of one T_wire vector per thread (vectors are
 // single-instruction wide).  Per round r, in this order:
 //
+//   load:    (r > 0) wait for the peer's flag for round r-1 and issue the loads
+//            of the peer's round r-1 vectors from host_other into registers.
 //   store:   cast sendbuf (T_dst) -> T_wire and store round r as vectors into
 //            host_mine.
-//   load:    (r > 0) wait for the peer's flag for round r-1, read the peer's
-//            round r-1 vectors from host_other, cast each element to T_dst, and
-//            sum with the local sendbuf value (also rounded through T_wire so
-//            that both GPUs truncate identically -- this guarantees
-//            bit-equivalent results across the two devices).
-//   publish: after a block barrier that follows every thread's stores of round
-//            r, thread 0 issues __threadfence_system() and writes the token to
-//            the round's flag.
+//   publish: block barrier, then thread 0 issues __threadfence_system() and
+//            writes the token to the round's flag.
+//   sum:     (r > 0) cast the peer's round r-1 elements to T_dst and sum with the
+//            local sendbuf value (also rounded through T_wire so that both GPUs
+//            truncate identically -- this guarantees bit-equivalent results
+//            across the two devices).
 //
-// The stores of round r are posted and still draining when the loads of round
-// r-1 are issued, so the two PCIe directions carry data at the same time; the
-// flag of round r is published after the loads, which keeps the pipeline free of
-// a cross-thread hand-off.  A pass after the last round waits for the peer's last
-// flag and reads the last round.  With a single round this is the original
-// store, signal, wait, load sequence.
+// The loads go out before the stores on purpose.  A GPU's reads of host memory
+// are non-posted requests that PCIe orders behind the posted writes issued before
+// them, so loads issued after round r's stores (or a flag poll behind them) wait
+// until those stores have crossed the link, and the two directions take turns.
+// Issued first, the round r-1 read completions arrive on the downstream direction
+// while the round r stores leave on the upstream one.  The flag of round r-1 is
+// published before the round r stores exist, so the poll is not queued behind
+// them either.  A pass after the last round reads the last round.  With a single
+// round this is the original store, signal, wait, load sequence.
 //
 // Every element goes through exactly the arithmetic of the unpipelined kernel:
 // only when it is stored and when it is loaded changes.  A thread loads and
-// writes back exactly the vectors it stored (same gtid stripe on both GPUs), so
-// the in-place update never overwrites a sendbuf element before it was sent.
+// writes back exactly the vectors it stored (same gtid stripe on both GPUs), and
+// round r-1 is written back after round r was read from sendbuf, so the in-place
+// update never overwrites a sendbuf element before it was sent.
 //
 // Multi-block: blocks stripe vectors across (gridDim.x * blockDim.x) global
 // threads to keep multiple SMs issuing PCIe stores in parallel.  Each block has
@@ -164,6 +168,7 @@ static __global__ void ggml_cuda_ar_kernel(
     const int gnt       = gridDim.x * nt;
     const int count_vec = count / ELEMS_PER_VEC;
     const int tail      = count_vec * ELEMS_PER_VEC;
+    const bool has_tail = bid == 0 && tid < count - tail;
 
     // Same on both GPUs (depends on count only); at least one round so that the
     // tail-only case still signals.
@@ -173,30 +178,15 @@ static __global__ void ggml_cuda_ar_kernel(
     const uint64_t * other_flags = arrival_other + bid * FLAG_WORDS;
 
     for (int r = 0; r <= n_rounds; ++r) {
-        // Store: cast sendbuf (T_dst) -> host_mine (T_wire) as vectors.
-        if (r < n_rounds) {
-            const int i = r * gnt + gtid;
-            if (i < count_vec) {
-                const int off = i * ELEMS_PER_VEC;
-                T_wire wire[ELEMS_PER_VEC];
-                #pragma unroll
-                for (int k = 0; k < ELEMS_PER_VEC; ++k) {
-                    wire[k] = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
-                }
-                ggml_cuda_memcpy_1<sizeof(wire)>(&host_mine[off], wire);
-            }
-            if (r == n_rounds - 1 && bid == 0 && tid < count - tail) {
-                host_mine[tail + tid] = ggml_cuda_cast<T_wire>(sendbuf[tail + tid]);
-            }
-        }
-
-        // Load: the peer's round r-1.  Thread 0 of each block spins on that
-        // block's flag for the round; the barrier releases the other threads.
-        // No __threadfence_system() here: it would wait for the stores of round r
-        // (posted above) to drain before the loads start, which is the
-        // serialization this loop removes.  Every line is loaded once per launch,
-        // the acquire invalidates L1, and the tail line is only loaded in the last
-        // pass.
+        // Load: the peer's round r-1 into registers.  Thread 0 of each block
+        // spins on that block's flag for the round; the barrier releases the
+        // other threads.  Every line is loaded once per launch, the acquire
+        // invalidates L1, and the tail line is only loaded in the last pass.
+        const int  il      = (r - 1) * gnt + gtid;
+        const bool ld_vec  = r > 0 && il < count_vec;
+        const bool ld_tail = r == n_rounds && has_tail;
+        T_wire peer[ELEMS_PER_VEC];
+        T_wire peer_tail{};
         if (r > 0) {
             if (tid == 0) {
                 const uint64_t * other_slot = other_flags + (r - 1);
@@ -214,37 +204,37 @@ static __global__ void ggml_cuda_ar_kernel(
 
             __syncthreads();
 
-            // Read peer's T_wire vector, cast both sides through T_wire for
-            // bit-equivalence, sum in T_dst precision, and write back to recvbuf.
-            const int i = (r - 1) * gnt + gtid;
-            if (i < count_vec) {
-                const int off = i * ELEMS_PER_VEC;
-                T_wire wire[ELEMS_PER_VEC];
-                ggml_cuda_memcpy_1<sizeof(wire)>(wire, &host_other[off]);
-                #pragma unroll
-                for (int k = 0; k < ELEMS_PER_VEC; ++k) {
-                    const T_wire d_low = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
-                    recvbuf[off + k] = ggml_cuda_cast<T_dst>(
-                        ggml_cuda_cast<float>(d_low) + ggml_cuda_cast<float>(wire[k]));
-                }
+            if (ld_vec) {
+                ggml_cuda_memcpy_1<sizeof(peer)>(peer, &host_other[il * ELEMS_PER_VEC]);
             }
-            if (r == n_rounds && bid == 0 && tid < count - tail) {
-                const T_wire d_low = ggml_cuda_cast<T_wire>(sendbuf[tail + tid]);
-                recvbuf[tail + tid] = ggml_cuda_cast<T_dst>(
-                    ggml_cuda_cast<float>(d_low) +
-                    ggml_cuda_cast<float>(host_other[tail + tid]));
+            if (ld_tail) {
+                peer_tail = host_other[tail + tid];
             }
         }
 
-        // Publish round r.  Every thread's stores of round r precede a block barrier
-        // before thread 0 fences: the load phase's barrier for r > 0, an explicit one
-        // for r == 0.  Thread 0's release fence is cumulative over the stores that
-        // barrier made visible to it, so the other threads need no fence, and none
-        // sits between round r+1's stores and round r's loads.
+        // Keeps the compiler from sinking the loads above below the stores.
+        asm volatile("" ::: "memory");
+
+        // Store round r, then publish it.  Thread 0's release fence is cumulative
+        // over the stores the barrier made visible to it, so the other threads
+        // need no fence of their own.
         if (r < n_rounds) {
-            if (r == 0) {
-                __syncthreads();
+            const int is = r * gnt + gtid;
+            if (is < count_vec) {
+                const int off = is * ELEMS_PER_VEC;
+                T_wire wire[ELEMS_PER_VEC];
+                #pragma unroll
+                for (int k = 0; k < ELEMS_PER_VEC; ++k) {
+                    wire[k] = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
+                }
+                ggml_cuda_memcpy_1<sizeof(wire)>(&host_mine[off], wire);
             }
+            if (r == n_rounds - 1 && has_tail) {
+                host_mine[tail + tid] = ggml_cuda_cast<T_wire>(sendbuf[tail + tid]);
+            }
+
+            __syncthreads();
+
             if (tid == 0) {
                 __threadfence_system();
                 ggml_cuda_ar_signal_set(my_flags + r, token);
@@ -252,6 +242,22 @@ static __global__ void ggml_cuda_ar_kernel(
                     __threadfence_system(); // make our last signal visible system-wide
                 }
             }
+        }
+
+        // Sum round r-1 and write it back.
+        if (ld_vec) {
+            const int off = il * ELEMS_PER_VEC;
+            #pragma unroll
+            for (int k = 0; k < ELEMS_PER_VEC; ++k) {
+                const T_wire d_low = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
+                recvbuf[off + k] = ggml_cuda_cast<T_dst>(
+                    ggml_cuda_cast<float>(d_low) + ggml_cuda_cast<float>(peer[k]));
+            }
+        }
+        if (ld_tail) {
+            const T_wire d_low = ggml_cuda_cast<T_wire>(sendbuf[tail + tid]);
+            recvbuf[tail + tid] = ggml_cuda_cast<T_dst>(
+                ggml_cuda_cast<float>(d_low) + ggml_cuda_cast<float>(peer_tail));
         }
     }
 }
