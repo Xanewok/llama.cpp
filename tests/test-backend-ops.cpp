@@ -12069,6 +12069,22 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {16, 1},  1025,  64, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}));
     test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {16, 1}, 16384,   1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
 
+    for (int hs : {64, 96, 128, 256}) {
+        for (int gqa : {2, 4, 6, 8}) {
+            test_cases.emplace_back(new test_flash_attn_ext(hs, hs, 2, {gqa, 1}, 2048, 1, true, gqa == 2 || gqa == 6, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}));
+        }
+    }
+    for (bool stream_view : { false, true }) {
+        test_cases.emplace_back(new test_flash_attn_ext(256, 256, 2, {6, 2}, 2048, 1, true, false, 0, 0, GGML_PREC_F32,
+            GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 2, 1, 3}, true, false, 0, stream_view));
+    }
+    for (const auto & shape : {std::array<int, 3>{192, 128, 8}, {192, 128, 16}, {320, 256, 32}, {512, 512, 2}, {512, 512, 6}}) {
+        test_cases.emplace_back(new test_flash_attn_ext(shape[0], shape[1], 2, {shape[2], 1}, 2048, 1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0));
+    }
+    for (int gqa : {16, 20}) {
+        test_cases.emplace_back(new test_flash_attn_ext(576, 512, 1, {gqa, 1}, 2048, 1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 1, 2, 3}, true, true));
+    }
+
     // MLA shape: the V cache is a sub-view of the K cache, with quantized KV
     test_cases.emplace_back(new test_flash_attn_ext(576, 512, 1, {8, 1},  113,   1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 1, 2, 3}, true, true));
     test_cases.emplace_back(new test_flash_attn_ext(576, 512, 1, {8, 1}, 1024,   1, true, false, 0, 0, GGML_PREC_F32, GGML_TYPE_Q8_0, GGML_TYPE_Q8_0, {0, 1, 2, 3}, true, true));
