@@ -191,6 +191,7 @@ struct sched_result {
     ggml_backend_t       mm_backend   = nullptr;
     int                  n_splits     = 0;
     bool                 weight_copied = false;
+    bool                 fallback     = false; // the weight's allocation is not of the requested buffer type
     std::vector<uint8_t> rows;
 };
 
@@ -205,6 +206,7 @@ static sched_result run_sched(ggml_backend_t dev_backend, ggml_backend_t cpu_bac
     ggml_set_name(w, "weight");
     ggml_backend_buffer_t buf_w = ggml_backend_alloc_ctx_tensors_from_buft(ctx_w, buft);
     GGML_ASSERT(buf_w);
+    res.fallback = ggml_backend_buffer_get_type(buf_w) != buft;
     ggml_backend_buffer_set_usage(buf_w, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
     std::mt19937 saved = rng;
     rng.seed(7);
@@ -274,28 +276,19 @@ static bool test_sched(ggml_backend_dev_t dev, ggml_backend_t dev_backend, ggml_
     const sched_result gr    = run_sched(dev_backend, cpu_backend, mapped,   false, false);
     const sched_result mm    = run_sched(dev_backend, cpu_backend, mapped,   false, true);
 
-    ggml_context * ctx = new_ctx(1);
-    ggml_new_tensor_1d(ctx, GGML_TYPE_F16, 16);
-    ggml_backend_buffer_t probe = ggml_backend_alloc_ctx_tensors_from_buft(ctx, mapped);
-    const bool fallback = ggml_backend_buffer_get_type(probe) != mapped;
-    ggml_backend_buffer_free(probe);
-    ggml_free(ctx);
-
     printf("host_mapped: dev=%s control cpu-buffer get_rows=%s; forced to device: copied=%d\n",
         dname, name_of(ref.rows_backend), moved.weight_copied);
     printf("host_mapped: dev=%s fallback=%d get_rows=%s splits=%d weight_copied=%d equal=%d\n",
-        dname, fallback, name_of(gr.rows_backend), gr.n_splits, gr.weight_copied, gr.rows == ref.rows);
-    printf("host_mapped: dev=%s same weight: get_rows=%s mul_mat=%s weight_copied=%d\n",
-        dname, name_of(mm.rows_backend), name_of(mm.mm_backend), mm.weight_copied);
+        dname, gr.fallback, name_of(gr.rows_backend), gr.n_splits, gr.weight_copied, gr.rows == ref.rows);
+    printf("host_mapped: dev=%s same weight: fallback=%d get_rows=%s mul_mat=%s weight_copied=%d\n",
+        dname, mm.fallback, name_of(mm.rows_backend), name_of(mm.mm_backend), mm.weight_copied);
 
     bool ok = ref.rows_backend == cpu_backend && moved.rows_backend == dev_backend && moved.weight_copied;
     ok = ok && moved.rows == ref.rows && gr.rows == ref.rows && mm.rows == ref.rows;
     ok = ok && !gr.weight_copied && !mm.weight_copied && mm.mm_backend == cpu_backend;
-    if (fallback) {
-        ok = ok && gr.rows_backend == cpu_backend && mm.rows_backend == cpu_backend;
-    } else {
-        ok = ok && gr.rows_backend == dev_backend && gr.n_splits == 1 && mm.rows_backend == dev_backend;
-    }
+    // the device reads the weight in place only where its allocation is of the mapped type
+    ok = ok && (gr.fallback ? gr.rows_backend == cpu_backend : gr.rows_backend == dev_backend && gr.n_splits == 1);
+    ok = ok && (mm.fallback ? mm.rows_backend == cpu_backend : mm.rows_backend == dev_backend);
     return ok;
 }
 
