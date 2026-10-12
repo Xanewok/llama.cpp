@@ -85,17 +85,14 @@ git apply -R codex/p1/pkg86-fix.patch
 git apply codex/p1/fix-meta.patch
 [[ -z $(git status --porcelain --untracked-files=no) ]] || { echo 'FAIL tree not restored'; exit 9; }
 
-# tokens of the greedy decode must agree everywhere; the raw-embedding batch must repeat within a tree (informational across trees)
+# tokens of the greedy decode must agree everywhere
 t0=$SECONDS
 ok=1
 for f in fixed-meta-r2 fixed-cpu unfixed-meta unfixed-meta-r2 m86-meta; do
     cmp <(grep -a '^seq' "$OUT/model-fixed-meta.txt") <(grep -a '^seq' "$OUT/model-$f.txt") || ok=0
 done
 stage model-token-identity "$ok" - - "$t0"
-ok=1
-cmp <(grep -a '^embd' "$OUT/model-fixed-meta.txt") <(grep -a '^embd' "$OUT/model-fixed-meta-r2.txt") || ok=0
-cmp <(grep -a '^embd' "$OUT/model-unfixed-meta.txt") <(grep -a '^embd' "$OUT/model-unfixed-meta-r2.txt") || ok=0
-stage model-embd-repeat "$ok" - - "$t0"
+# the raw-embedding batch is not repeatable even on plain CPU master (a1/a2: 77 vs 2627), so it is recorded only
 for f in fixed-meta fixed-meta-r2 fixed-cpu unfixed-meta unfixed-meta-r2 m86-meta; do
     printf '%s\t%s\n' "$f" "$(grep -a '^embd' "$OUT/model-$f.txt")"
 done | tee "$OUT/model-embd.tsv"
