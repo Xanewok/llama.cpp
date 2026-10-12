@@ -1,0 +1,13 @@
+diff --git a/src/llama-graph.cpp b/src/llama-graph.cpp
+index 58fed511d..aa2b4ff28 100644
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -3979,7 +3979,7 @@ void llm_graph_context::build_sampling() const {
+         return;
+     }
+     // no output rows: the meta backend has no split state for empty logits, so nothing can consume them
+-    if (sampling_n_shards > 0 && ggml_nelements(res->t_logits) == 0) {
++    if (false && sampling_n_shards > 0 && ggml_nelements(res->t_logits) == 0) {
+         return;
+     }
+ 

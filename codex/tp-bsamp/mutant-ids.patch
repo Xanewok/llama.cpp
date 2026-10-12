@@ -1,0 +1,13 @@
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 558a1b9d9..915bf419d 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -1396,7 +1396,7 @@ bool llama_context::sampling_init_vocab_ids() {
+ 
+     std::vector<float> ids(n_vocab);
+     for (int64_t i = 0; i < n_vocab; ++i) {
+-        ids[i] = (float) i;
++        ids[i] = (float) (i ^ 1);
+     }
+     ggml_backend_tensor_set(t, ids.data(), 0, ggml_nbytes(t));
+ 
