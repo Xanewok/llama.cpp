@@ -14,10 +14,27 @@ enum mmvq_parameter_table_id {
     MMVQ_PARAMETERS_RDNA2,
     MMVQ_PARAMETERS_RDNA3_0,
     MMVQ_PARAMETERS_RDNA4,
-    MMVQ_PARAMETERS_GB10
+    MMVQ_PARAMETERS_GB10,
+    MMVQ_PARAMETERS_BLACKWELL
 };
 
 static constexpr int calc_nwarps(ggml_type type, int ncols_dst, mmvq_parameter_table_id table_id, bool small_k = false, bool halve_iters = false) {
+    if (table_id == MMVQ_PARAMETERS_BLACKWELL) {
+        if (ncols_dst >= 5 && ncols_dst <= MMVQ_MAX_BATCH_SIZE) {
+            switch (type) {
+                case GGML_TYPE_Q4_K:
+                case GGML_TYPE_IQ4_XS:
+                    return 1;
+                case GGML_TYPE_Q5_K:
+                    return ncols_dst == 5 ? 2 : 1;
+                case GGML_TYPE_Q6_K:
+                    return ncols_dst == 7 ? 1 : 2;
+                default:
+                    break;
+            }
+        }
+        return calc_nwarps(type, ncols_dst, MMVQ_PARAMETERS_GENERIC, small_k, halve_iters);
+    }
     if (table_id == MMVQ_PARAMETERS_GENERIC) {
         switch (ncols_dst) {
             case 1:
@@ -145,8 +162,10 @@ static constexpr int calc_nwarps(ggml_type type, int ncols_dst, mmvq_parameter_t
 }
 
 static constexpr int calc_rows_per_block(int ncols_dst, int table_id, bool small_k = false, int nwarps = 1, ggml_type type = GGML_TYPE_COUNT) {
-    GGML_UNUSED(type);
-    if (table_id == MMVQ_PARAMETERS_GENERIC || table_id == MMVQ_PARAMETERS_GCN || table_id == MMVQ_PARAMETERS_TURING || table_id == MMVQ_PARAMETERS_GB10) {
+    if (table_id == MMVQ_PARAMETERS_BLACKWELL && ncols_dst >= 5 && ncols_dst <= MMVQ_MAX_BATCH_SIZE) {
+        return type == GGML_TYPE_Q6_K && ncols_dst == 8 ? 6 : 4;
+    }
+    if (table_id == MMVQ_PARAMETERS_GENERIC || table_id == MMVQ_PARAMETERS_GCN || table_id == MMVQ_PARAMETERS_TURING || table_id == MMVQ_PARAMETERS_GB10 || table_id == MMVQ_PARAMETERS_BLACKWELL) {
         switch (ncols_dst) {
             case 1:
                 return small_k ? nwarps : 1;
@@ -193,6 +212,7 @@ static void mmvq_select_config(mmvq_parameter_table_id table, F launch) {
         case MMVQ_PARAMETERS_RDNA4: select(std::integral_constant<mmvq_parameter_table_id, MMVQ_PARAMETERS_RDNA4>{}); return;
 #endif
         case MMVQ_PARAMETERS_GB10: select(std::integral_constant<mmvq_parameter_table_id, MMVQ_PARAMETERS_GB10>{}); return;
+        case MMVQ_PARAMETERS_BLACKWELL: select(std::integral_constant<mmvq_parameter_table_id, MMVQ_PARAMETERS_BLACKWELL>{}); return;
         default: GGML_ABORT("invalid MMVQ parameter table");
     }
 }

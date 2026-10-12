@@ -17,10 +17,24 @@ static void require(bool ok) {
 
 template <ggml_type type, int ncols, bool small_k, bool halve_iters>
 static void check_config(std::set<std::pair<int, int>> & unique, std::set<std::pair<int, int>> & cuda_unique) {
-    for (int table = MMVQ_PARAMETERS_GENERIC; table <= MMVQ_PARAMETERS_GB10; ++table) {
+    for (int table = MMVQ_PARAMETERS_GENERIC; table <= MMVQ_PARAMETERS_BLACKWELL; ++table) {
         const auto table_id = static_cast<mmvq_parameter_table_id>(table);
         const int nw = calc_nwarps(type, ncols, table_id, small_k, halve_iters);
         const int nr = calc_rows_per_block(ncols, table_id, small_k, nw, type);
+        if (table_id == MMVQ_PARAMETERS_BLACKWELL) {
+            int expected_nw = ncols <= 4 ? 4 : 2;
+            int expected_nr = ncols == 1 ? (small_k ? expected_nw : 1) : ncols <= 4 ? 2 : 4;
+            if (ncols >= 5) {
+                if (type == GGML_TYPE_Q4_K || type == GGML_TYPE_IQ4_XS ||
+                    (type == GGML_TYPE_Q5_K && ncols >= 6) || (type == GGML_TYPE_Q6_K && ncols == 7)) {
+                    expected_nw = 1;
+                }
+                if (type == GGML_TYPE_Q6_K && ncols == 8) {
+                    expected_nr = 6;
+                }
+            }
+            require(nw == expected_nw && nr == expected_nr);
+        }
         mmvq_select_config<type, ncols, small_k, halve_iters>(table_id, [&](auto config) {
             using config_t = decltype(config);
             require(config_t::nwarps == nw && config_t::rows_per_block == nr);
@@ -32,7 +46,7 @@ static void check_config(std::set<std::pair<int, int>> & unique, std::set<std::p
             }
             unique.emplace(nw, nr);
             if (table_id == MMVQ_PARAMETERS_GENERIC || table_id == MMVQ_PARAMETERS_TURING ||
-                table_id == MMVQ_PARAMETERS_GB10) {
+                table_id == MMVQ_PARAMETERS_GB10 || table_id == MMVQ_PARAMETERS_BLACKWELL) {
                 cuda_unique.emplace(nw, nr);
             }
             ++checks;
