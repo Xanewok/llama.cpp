@@ -313,6 +313,9 @@ static ggml_cuda_device_info ggml_cuda_init() {
         int supports_coop_launch = 0;
         CUDA_CHECK(cudaDeviceGetAttribute(&supports_coop_launch, cudaDevAttrCooperativeLaunch, physical_id));
         info.devices[id].supports_cooperative_launch = !!supports_coop_launch;
+#if !defined(GGML_USE_MUSA)
+        info.devices[id].host_mapped = prop.canMapHostMemory && prop.unifiedAddressing;
+#endif // !defined(GGML_USE_MUSA)
 
 #if defined(GGML_USE_HIP)
         info.devices[id].smpbo = prop.sharedMemPerBlock;
@@ -1327,7 +1330,7 @@ ggml_backend_buffer_type_t ggml_backend_cuda_host_buffer_type() {
 //    return buffer->buft->iface.get_name == ggml_backend_cuda_host_buffer_type_name;
 //}
 
-// host-mapped buffer type: pinned host memory that the kernels of every device read in place (zero-copy)
+// host-mapped buffer type: pinned host memory that the kernels of every host_mapped device read in place (zero-copy)
 // supports_op accepts it only as src0 of GET_ROWS, so it only holds weights that are gathered a few rows at a time
 
 static const char * ggml_backend_cuda_host_mapped_buffer_type_name(ggml_backend_buffer_type_t buft) {
@@ -1346,14 +1349,23 @@ static ggml_backend_buffer_t ggml_backend_cuda_host_mapped_buffer_type_alloc_buf
     if (getenv("GGML_CUDA_NO_PINNED") == nullptr) {
         cudaError_t err = cudaHostAlloc(&ptr, size, cudaHostAllocPortable | cudaHostAllocMapped);
         if (err == cudaSuccess) {
-            // the kernels receive tensor->data as is: valid only where the device address equals the host address (UVA)
-            void * dev_ptr = nullptr;
-            err = cudaHostGetDevicePointer(&dev_ptr, ptr, 0);
-            if (err != cudaSuccess || dev_ptr != ptr) {
-                (void)cudaGetLastError();
-                CUDA_CHECK(cudaFreeHost(ptr));
-                ptr = nullptr;
+            // the kernels receive tensor->data as is: every device that supports_buft accepts must map it at the host address
+            int saved_device;
+            CUDA_CHECK(cudaGetDevice(&saved_device));
+            for (int id = 0; id < ggml_cuda_info().device_count && ptr != nullptr; ++id) {
+                if (!ggml_cuda_info().devices[id].host_mapped) {
+                    continue;
+                }
+                void * dev_ptr = nullptr;
+                ggml_cuda_set_device(id);
+                err = cudaHostGetDevicePointer(&dev_ptr, ptr, 0);
+                if (err != cudaSuccess || dev_ptr != ptr) {
+                    (void)cudaGetLastError();
+                    CUDA_CHECK(cudaFreeHost(ptr));
+                    ptr = nullptr;
+                }
             }
+            CUDA_CHECK(cudaSetDevice(saved_device));
         } else {
             (void)cudaGetLastError();
             ptr = nullptr;
@@ -5915,8 +5927,9 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
 static bool ggml_backend_cuda_device_supports_buft(ggml_backend_dev_t dev, ggml_backend_buffer_type_t buft) {
     ggml_backend_cuda_device_context * dev_ctx = (ggml_backend_cuda_device_context *) dev->context;
     const bool integrated = ggml_cuda_info().devices[dev_ctx->device].integrated;
+    const bool host_mapped = ggml_cuda_info().devices[dev_ctx->device].host_mapped;
     return (ggml_backend_buft_is_cuda(buft) && buft->device == dev) || (integrated && ggml_backend_buft_is_cuda_host(buft)) ||
-        ggml_backend_buft_is_cuda_host_mapped(buft);
+        (host_mapped && ggml_backend_buft_is_cuda_host_mapped(buft));
 }
 
 static int64_t get_op_batch_size(const ggml_tensor * op) {
@@ -6069,14 +6082,16 @@ static ggml_backend_feature * ggml_backend_cuda_get_features(ggml_backend_reg_t 
 }
 
 static ggml_backend_buffer_type_t * ggml_backend_cuda_device_get_extra_bufts(ggml_backend_dev_t device) {
-    GGML_UNUSED(device);
+    static ggml_backend_buffer_type_t none[] = { nullptr };
 #if defined(GGML_USE_MUSA)
+    GGML_UNUSED(device);
     GGML_UNUSED(ggml_backend_cuda_host_mapped_buffer_type);
-    static ggml_backend_buffer_type_t bufts[] = { nullptr };
+    return none;
 #else
     static ggml_backend_buffer_type_t bufts[] = { ggml_backend_cuda_host_mapped_buffer_type(), nullptr };
+    ggml_backend_cuda_device_context * dev_ctx = (ggml_backend_cuda_device_context *) device->context;
+    return ggml_cuda_info().devices[dev_ctx->device].host_mapped ? bufts : none;
 #endif // defined(GGML_USE_MUSA)
-    return bufts;
 }
 
 static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, const char * name) {
