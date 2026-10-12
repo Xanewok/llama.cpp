@@ -147,7 +147,8 @@ def template(path):
 
 def pins(shape_key):
     fixtures = tomllib.loads(FIXTURE_PINS.read_text())['extra_pins']
-    own = [HERE / n for n in ('render_arp.py', 'postrun_proofs.sh', 'bw-ar-readfirst.sh', 'ar_summary.py')]
+    own = [HERE / n for n in ('render_arp.py', 'postrun_proofs.sh', 'bw-ar-readfirst.sh', 'ar_summary.py', 'ar-cpumodel.sh',
+                              'ar-cpumodel.cpp', 'ar-duplex-driver.cpp', 'mac-gate.sh')]
     p = [*fixtures, str(CCX), *map(str, own), str(TEMPLATES[shape_key]), str(TRACED[shape_key]), str(TRACED_VERBOSE)]
     return list(dict.fromkeys(str(q) for q in p if Path(q).exists()))
 

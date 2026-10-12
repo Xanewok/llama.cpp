@@ -43,6 +43,7 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/ar_summary.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/render_arp.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/postrun_proofs.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/mac-gate.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/ggml/src/ggml-cuda/allreduce.cu",
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/pkg89-base/SOURCE",
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/pkg89-base/STAMPS.txt",
