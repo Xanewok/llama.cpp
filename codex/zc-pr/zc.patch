@@ -59,15 +59,37 @@ index 86748b689..5ab4d61f6 100644
      }
  
      ggml_backend_meta_buffer_context * buf_ctx = (ggml_backend_meta_buffer_context *) tensor->buffer->context;
+diff --git a/ggml/src/ggml-cuda/common.cuh b/ggml/src/ggml-cuda/common.cuh
+index 928607c41..37685c043 100644
+--- a/ggml/src/ggml-cuda/common.cuh
++++ b/ggml/src/ggml-cuda/common.cuh
+@@ -1180,6 +1180,7 @@ struct ggml_cuda_device_info {
+         size_t  total_vram;
+         int     warp_size;                      // Number of threads in a dispatch
+         bool    supports_cooperative_launch;    // whether cooperative launch is supported
++        bool    host_mapped;                    // reads portable mapped host memory at its host address (UVA)
+         int     physical_device;                // backing physical CUDA device for this (virtual) device
+         int     physical_share_count;           // number of (virtual) devices sharing this device's physical GPU
+         int     virtual_index;                  // index of this (virtual) device among those sharing its physical GPU
 diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
-index 957908f65..6be0b1b42 100644
+index 957908f65..f003c25ae 100644
 --- a/ggml/src/ggml-cuda/ggml-cuda.cu
 +++ b/ggml/src/ggml-cuda/ggml-cuda.cu
-@@ -1327,6 +1327,73 @@ ggml_backend_buffer_type_t ggml_backend_cuda_host_buffer_type() {
+@@ -313,6 +313,9 @@ static ggml_cuda_device_info ggml_cuda_init() {
+         int supports_coop_launch = 0;
+         CUDA_CHECK(cudaDeviceGetAttribute(&supports_coop_launch, cudaDevAttrCooperativeLaunch, physical_id));
+         info.devices[id].supports_cooperative_launch = !!supports_coop_launch;
++#if !defined(GGML_USE_MUSA)
++        info.devices[id].host_mapped = prop.canMapHostMemory && prop.unifiedAddressing;
++#endif // !defined(GGML_USE_MUSA)
+ 
+ #if defined(GGML_USE_HIP)
+         info.devices[id].smpbo = prop.sharedMemPerBlock;
+@@ -1327,6 +1330,82 @@ ggml_backend_buffer_type_t ggml_backend_cuda_host_buffer_type() {
  //    return buffer->buft->iface.get_name == ggml_backend_cuda_host_buffer_type_name;
  //}
  
-+// host-mapped buffer type: pinned host memory that the kernels of every device read in place (zero-copy)
++// host-mapped buffer type: pinned host memory that the kernels of every host_mapped device read in place (zero-copy)
 +// supports_op accepts it only as src0 of GET_ROWS, so it only holds weights that are gathered a few rows at a time
 +
 +static const char * ggml_backend_cuda_host_mapped_buffer_type_name(ggml_backend_buffer_type_t buft) {
@@ -86,14 +108,23 @@ index 957908f65..6be0b1b42 100644
 +    if (getenv("GGML_CUDA_NO_PINNED") == nullptr) {
 +        cudaError_t err = cudaHostAlloc(&ptr, size, cudaHostAllocPortable | cudaHostAllocMapped);
 +        if (err == cudaSuccess) {
-+            // the kernels receive tensor->data as is: valid only where the device address equals the host address (UVA)
-+            void * dev_ptr = nullptr;
-+            err = cudaHostGetDevicePointer(&dev_ptr, ptr, 0);
-+            if (err != cudaSuccess || dev_ptr != ptr) {
-+                (void)cudaGetLastError();
-+                CUDA_CHECK(cudaFreeHost(ptr));
-+                ptr = nullptr;
++            // the kernels receive tensor->data as is: every device that supports_buft accepts must map it at the host address
++            int saved_device;
++            CUDA_CHECK(cudaGetDevice(&saved_device));
++            for (int id = 0; id < ggml_cuda_info().device_count && ptr != nullptr; ++id) {
++                if (!ggml_cuda_info().devices[id].host_mapped) {
++                    continue;
++                }
++                void * dev_ptr = nullptr;
++                ggml_cuda_set_device(id);
++                err = cudaHostGetDevicePointer(&dev_ptr, ptr, 0);
++                if (err != cudaSuccess || dev_ptr != ptr) {
++                    (void)cudaGetLastError();
++                    CUDA_CHECK(cudaFreeHost(ptr));
++                    ptr = nullptr;
++                }
 +            }
++            CUDA_CHECK(cudaSetDevice(saved_device));
 +        } else {
 +            (void)cudaGetLastError();
 +            ptr = nullptr;
@@ -137,7 +168,7 @@ index 957908f65..6be0b1b42 100644
  /// kernels
  
  typedef void (*ggml_cuda_op_mul_mat_t)(
-@@ -4558,7 +4625,8 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
+@@ -4558,7 +4637,8 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                      if (node->src[j] != nullptr) {
                          assert(node->src[j]->buffer);
                          assert(node->src[j]->buffer->buft == ggml_backend_cuda_buffer_type(cuda_ctx->device) ||
@@ -147,7 +178,7 @@ index 957908f65..6be0b1b42 100644
                      }
                  }
  #else
-@@ -5374,6 +5442,11 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
+@@ -5374,6 +5454,11 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                  return false;
              }
          }
@@ -159,35 +190,38 @@ index 957908f65..6be0b1b42 100644
      }
  
      switch (op->op) {
-@@ -5842,7 +5915,8 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
+@@ -5842,7 +5927,9 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
  static bool ggml_backend_cuda_device_supports_buft(ggml_backend_dev_t dev, ggml_backend_buffer_type_t buft) {
      ggml_backend_cuda_device_context * dev_ctx = (ggml_backend_cuda_device_context *) dev->context;
      const bool integrated = ggml_cuda_info().devices[dev_ctx->device].integrated;
 -    return (ggml_backend_buft_is_cuda(buft) && buft->device == dev) || (integrated && ggml_backend_buft_is_cuda_host(buft));
++    const bool host_mapped = ggml_cuda_info().devices[dev_ctx->device].host_mapped;
 +    return (ggml_backend_buft_is_cuda(buft) && buft->device == dev) || (integrated && ggml_backend_buft_is_cuda_host(buft)) ||
-+        ggml_backend_buft_is_cuda_host_mapped(buft);
++        (host_mapped && ggml_backend_buft_is_cuda_host_mapped(buft));
  }
  
  static int64_t get_op_batch_size(const ggml_tensor * op) {
-@@ -5994,6 +6068,17 @@ static ggml_backend_feature * ggml_backend_cuda_get_features(ggml_backend_reg_t
+@@ -5994,6 +6081,19 @@ static ggml_backend_feature * ggml_backend_cuda_get_features(ggml_backend_reg_t
      GGML_UNUSED(reg);
  }
  
 +static ggml_backend_buffer_type_t * ggml_backend_cuda_device_get_extra_bufts(ggml_backend_dev_t device) {
-+    GGML_UNUSED(device);
++    static ggml_backend_buffer_type_t none[] = { nullptr };
 +#if defined(GGML_USE_MUSA)
++    GGML_UNUSED(device);
 +    GGML_UNUSED(ggml_backend_cuda_host_mapped_buffer_type);
-+    static ggml_backend_buffer_type_t bufts[] = { nullptr };
++    return none;
 +#else
 +    static ggml_backend_buffer_type_t bufts[] = { ggml_backend_cuda_host_mapped_buffer_type(), nullptr };
++    ggml_backend_cuda_device_context * dev_ctx = (ggml_backend_cuda_device_context *) device->context;
++    return ggml_cuda_info().devices[dev_ctx->device].host_mapped ? bufts : none;
 +#endif // defined(GGML_USE_MUSA)
-+    return bufts;
 +}
 +
  static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, const char * name) {
      GGML_UNUSED(reg);
      if (strcmp(name, "ggml_backend_comm_init") == 0) {
-@@ -6014,6 +6099,9 @@ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, con
+@@ -6014,6 +6114,9 @@ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, con
      if (strcmp(name, "ggml_backend_get_features") == 0) {
          return (void *)ggml_backend_cuda_get_features;
      }
@@ -198,14 +232,13 @@ index 957908f65..6be0b1b42 100644
  }
  
 diff --git a/src/llama-model.cpp b/src/llama-model.cpp
-index b3a0cf5d5..f68553885 100644
+index b3a0cf5d5..68646d072 100644
 --- a/src/llama-model.cpp
 +++ b/src/llama-model.cpp
-@@ -1096,7 +1096,28 @@ llm_ffn_op_type llm_ffn_op_type_from_string(const std::string & name, llm_ffn_op
+@@ -1096,6 +1096,27 @@ llm_ffn_op_type llm_ffn_op_type_from_string(const std::string & name, llm_ffn_op
      return fallback;
  }
  
--// CPU: ACCEL -> GPU host -> CPU extra -> CPU
 +// a host buffer type offered as an extra buffer type of a GPU device that dev reads in place
 +static ggml_backend_buffer_type_t find_device_mapped_host_buft(ggml_backend_dev_t dev) {
 +    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
@@ -227,28 +260,48 @@ index b3a0cf5d5..f68553885 100644
 +    return nullptr;
 +}
 +
-+// CPU: ACCEL -> GPU mapped host -> GPU host -> CPU extra -> CPU
+ // CPU: ACCEL -> GPU host -> CPU extra -> CPU
  static buft_list_t make_cpu_buft_list(const std::vector<llama_device> & devices, bool use_extra_bufts, bool no_host) {
      buft_list_t buft_list;
+@@ -1230,6 +1251,7 @@ struct llama_model::impl {
+     std::vector<std::pair<ggml_context_ptr, std::vector<ggml_backend_buffer_ptr>>> ctxs_bufs;
  
-@@ -1112,6 +1133,20 @@ static buft_list_t make_cpu_buft_list(const std::vector<llama_device> & devices,
-         }
-     }
+     buft_list_t cpu_buft_list;
++    buft_list_t tok_embd_buft_list; // empty: the token embeddings use dev_input
+     std::map<ggml_backend_dev_t, buft_list_t> gpu_buft_list;
  
-+    // add a host buffer type that a GPU reads in place
-+    // the device's supports_op decides which weights may use it: e.g. the token embeddings, of which GET_ROWS reads only
-+    // a few rows per batch, so the GPU gathers them without a copy of the table or a CPU split in front of the graph
-+    // under mmap the weights are copied into it, since the device cannot read the mapped file
-+    if (!no_host) {
-+        for (const auto & dev : devices) {
-+            ggml_backend_buffer_type_t buft = find_device_mapped_host_buft(dev.dev);
-+            if (buft) {
-+                buft_list.emplace_back(dev.dev, buft);
-+                break;
-+            }
+     struct layer_dev {
+@@ -1641,6 +1663,19 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
+     // assign the output layer
+     pimpl->dev_output = get_layer_buft_list(n_layer_all);
+ 
++    // the token embeddings, whose GET_ROWS reads a few rows per batch: the GPU that runs the first layer gathers them in
++    // place from host memory that it maps, without a copy of the table or a CPU split in front of the graph; under mmap
++    // they are copied into it. Automatic placement only: an override to CPU keeps them on the CPU (buft_list_cpu).
++    // bitnet also uses tok_embd as its output matrix, a MUL_MAT that the GPU does not run from such memory.
++    if (!params.no_host && n_layer_all > 0 && pimpl->dev_layer[0].dev != cpu_dev && arch != LLM_ARCH_BITNET) {
++        ggml_backend_dev_t dev = pimpl->dev_layer[0].dev;
++        ggml_backend_buffer_type_t buft = find_device_mapped_host_buft(dev);
++        if (buft) {
++            pimpl->tok_embd_buft_list.emplace_back(dev, buft);
++            pimpl->tok_embd_buft_list.insert(pimpl->tok_embd_buft_list.end(), pimpl->cpu_buft_list.begin(), pimpl->cpu_buft_list.end());
 +        }
 +    }
 +
-     // add a host buffer type
-     // storing the tensors in a host buffer is useful when the processing of large batches
-     // is offloaded to a GPU device, since it reduces the time spent on data transfers
+     const auto TENSOR_NOT_REQUIRED = llama_model_loader::TENSOR_NOT_REQUIRED;
+ 
+     // create tensors for the weights
+@@ -1994,8 +2029,12 @@ ggml_tensor * llama_model_base::create_tensor(llama_model_loader & ml, const LLM
+         // blocks that are not model layers (e.g. the blocks of a head) go with the output
+         buft_list_layer = (size_t) tn.bid < pimpl->dev_layer.size() ? pimpl->dev_layer.at(tn.bid).buft_list : pimpl->dev_output.buft_list;
+     }
++    const buft_list_t * buft_list_input = pimpl->dev_input.buft_list;
++    if (tn.tensor == LLM_TENSOR_TOKEN_EMBD && !(flags & llama_model_loader::TENSOR_DUPLICATED) && !pimpl->tok_embd_buft_list.empty()) {
++        buft_list_input = &pimpl->tok_embd_buft_list;
++    }
+     return ml.create_tensor(
+-        hparams, &pimpl->cpu_buft_list, pimpl->dev_input.buft_list, pimpl->dev_output.buft_list, buft_list_layer,
++        hparams, &pimpl->cpu_buft_list, buft_list_input, pimpl->dev_output.buft_list, buft_list_layer,
+         tn, ne, flags);
+ }
+ 
