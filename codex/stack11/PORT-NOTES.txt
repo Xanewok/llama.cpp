@@ -1,0 +1,32 @@
+4234745d2 | ggml-backend.cpp: master #29943 moved per-input copy into ggml_backend_sched_copy_input(); the host-INPUT skip moved there (early return), batched upload loop kept before the two master loops
+f1c04c71f | llama-graph.cpp build_sampling: master #30223 renamed rows[i] -> row; vocab-ids cast re-applied on row
+c7d253b35 | test-alloc.cpp: rebuild test placed after the pkg-86 realloc tests (text conflict only)
+a78159b91 | meta get_split_state: #30217 host-view early return kept first, then the meta_tensor_mutex lock
+e07f827ce | graph_compute: master #29943 copy_experts.reset() kept before compute on get_sched_graph()
+811fdfd71 (new) | port fix: ggml_backend_sched_new_shared copies callback_copy (master #29943) so shared output/catch-up scheds keep MoE expert copies
+fc1bbaf12 | SKIPPED (empty): pkg-86 master port 1cdaba045 already allocates every cgraph_main at max_nnodes for i < max_subgraphs (ggml-backend-meta.cpp), which contains this commit's size change
+6d86af379 | ggml-backend.cpp: host_transfer lambda became static ggml_backend_sched_is_host_transfer(sched, input), used by the batch loop and by master's ggml_backend_sched_copy_input (early return)
+d40158761 | ggml-backend.cpp: GGML_SCHED_INPUT_STAGING gate placed in the static helper (text conflict from the 6d86af379 adaptation)
+590912a1d | server-context.cpp: master #29876 slot.generated is common_chat_input; kept generated.append/substr content form, applied the stream token-id/probs fix on top
+562f6bd36+8b758c95e | REPLACED by pkg 59 upstream form patch (0001, = e6485a1fc): same two-stream path as knob=2 default; knob GGML_CUDA_AR_COPY_STREAMS and the 'copy-engine H2D streams per GPU: %d' INFO text dropped
+7130bcdc9 | test-recurrent-state-rollback.cpp: test_state_movers placed after master's test_shared_seq_reserve (text conflict)
+8c013b9bb | test-recurrent-state-rollback.cpp: results table merged to 4 columns (master's shared seq + our getter gate)
+8646cbd0a | SKIPPED superseded: master fa3c2fab3 #29923 fixed the same test (rollback tail + anchor in one ubatch) in its anchored form; Mac gate must show test_multi_seq_split_replay PASS with our getter
+447a47613 | picked (pkg 70 production code identical to patches/.../70/0001; test stays in test-kv-mask.cpp)
+89637899d+f61bee3fa+d7bc08c2c+89cff0ccf+f27ce2576+a7f31a570 | REPLACED by pkg 71 upstream-form patch (117cfd7f9 form): bulk verify read after the catch-up decode = stack10 default path (LLAMA_HOST_TRIMS_BULKH=1); host-trims env switches/proof/verify/mutants dropped
+151ab739b | llama-graph.cpp build_sampling: helpers kept; build_sampling() follows master #30223 static form (n_outputs_max_per_seq chains per sampler, inactive chain = col 0, row -1); logits_seq name uses the column (master used chain index i)
+d298d3dfd | qwen35.cpp graph_mtp: master #29622 ASSERT_EMBD_OR_TOKEN kept ahead of the chain branch
+21ba77aa8 | speculative.cpp: kept master's moe_cache_size = 0 next to the chain n_outputs_max_per_seq; NOTE with #30223 every draft ubatch now builds n_max (5) sampler chains (inactive ones not computed) - host graph-build cost, D/G
+5aee04704 | SKIPPED superseded: fixes the remap lambda of stack10's pkg-08 form a48fd4290; the pkg 08 master port (a0c6f75e0 + feb6e815d) has no remap lambda (grep remap tools/server/server-context.cpp: none)
+cfce3d732 | gated_delta_net.cu = stack9+gdn4 port 17ccc7e4f (pkg 85/0001) minus the 519069f3e mutant; checked: diff(stack10 cfce3d732 file -> result) == diff(stack9 03c8469f1 -> 17ccc7e4f) line for line. #30087's grid/reduction now ride on the NS kernel (pkg 85 NOTES: only grid y differs from upstream)
+c19629b30 | speculative.cpp: pending_h flat layout + master set_embd_state for the h row; llama-context.cpp: master fold trace count kept + our mtp_fold_decode debug line; qwen35.cpp fold: theirs (h_idxs get_rows form)
+758c93a1c: build_input_{k,v}_rot take master #28498 form (n_rot_k/n_rot_v members) + attn_rot_tensors lookup; precompute guard HEAD
+4bf1c2ea3 K10: batched early return placed before master #28713 selection (bitonic/radix/CUB); master thresholds kept; K10 vs #28713 is needs-measure (K10 now overrides #28713 for nrows>1)
+1376b053b K6b: deferred after 30afc9758 (test-backend-ops context depends on K6a)
+50af425d0 K11a: backend_pending=true after master copy_experts.reset(); audited master enqueue sites: moe-cache copy/get/set_async run only inside the sched copy callback during graph compute (src/llama-context.cpp:3004,3058; llama-moe-cache.cpp:507,549,568,580); static sampling copies go through copy_tensor_async_rows(backend_pending) :2289-2292
+d5b2af7c9 K11b: tests/CMakeLists drops the test-fattn-kv-max-cache lines (K2 dead, not carried)
+a59f806e4: dropped the gdn_state_indexed context from uncarried 6727f3cb1; kept only the gdn_cache_fusion counters/log
+519069f3e: dropped draft-dump context from uncarried 4be92a4fa/e99e52ef3; gated_delta_net.cu after it == 17ccc7e4f (git diff empty)
+f8a54c243: codex/ files (deleted in stack11) dropped
+30afc9758 K6a: mmq.cu uses master #29953 src1_q8_1_padding (J_best/nthreads) for the request; the q8-cache plan (ggml-cuda.cu) reserves the bound GGML_PAD(128*sizeof(block_q8_1_mmq), 512*sizeof(int)) since master removed ggml_cuda_mmq_get_J_max; request <= reservation so cache hits are kept; gdn_cache_fusion context (local a59f806e4) dropped from the upstream commit
+c7d253b35 (fix after Mac a1): master a46709b68 #26610 OP_NONE view_src transparency called get_split_state(stc, view_src) inside calculate_split_state; the iterative form has no stc there -> uses the 2-arg overload (nested, view_src is a root so depth 1); rewritten into the c7d253b35 port and every later commit
