@@ -1,0 +1,254 @@
+diff --git a/ggml/src/ggml-backend-meta.cpp b/ggml/src/ggml-backend-meta.cpp
+index 86748b689..5ab4d61f6 100644
+--- a/ggml/src/ggml-backend-meta.cpp
++++ b/ggml/src/ggml-backend-meta.cpp
+@@ -158,11 +158,27 @@ static bool ggml_backend_meta_device_supports_op(ggml_backend_dev_t dev, const g
+         [op](ggml_backend_dev_t simple_dev) { return ggml_backend_dev_supports_op(simple_dev, op); });
+ }
+ 
++// [TAG_META_HOST_MAPPED]
++// a host buffer type that every simple device reads in place (e.g. CUDA_Host_Mapped) holds one copy of a tensor for all
++// of them, which makes the tensor MIRRORED. CPU and host staging buffer types are excluded: a CPU simple device accepts
++// any host buffer, including the compute buffers of CPU splits, whose nodes must not move into the meta graph.
++static bool ggml_backend_meta_device_supports_host_buft(ggml_backend_dev_t dev, ggml_backend_buffer_type_t buft) {
++    ggml_backend_dev_t dev_buft = ggml_backend_buft_get_device(buft);
++    if (dev_buft == nullptr || ggml_backend_dev_type(dev_buft) == GGML_BACKEND_DEVICE_TYPE_CPU || !ggml_backend_buft_is_host(buft)) {
++        return false;
++    }
++    const ggml_backend_meta_device_context * meta_dev_ctx = (const ggml_backend_meta_device_context *) dev->context;
++    return std::all_of(meta_dev_ctx->simple_devs.begin(), meta_dev_ctx->simple_devs.end(),
++        [buft](ggml_backend_dev_t simple_dev) {
++            return buft != ggml_backend_dev_host_buffer_type(simple_dev) && ggml_backend_dev_supports_buft(simple_dev, buft);
++        });
++}
++
+ static bool ggml_backend_meta_device_supports_buft(ggml_backend_dev_t dev, ggml_backend_buffer_type_t buft) {
+     GGML_ASSERT(ggml_backend_dev_is_meta(dev));
+     ggml_backend_dev_t dev_buft = ggml_backend_buft_get_device(buft);
+     if (!ggml_backend_dev_is_meta(dev_buft)) {
+-        return false;
++        return ggml_backend_meta_device_supports_host_buft(dev, buft);
+     }
+     const ggml_backend_meta_device_context * meta_dev_ctx      = (const ggml_backend_meta_device_context *) dev->context;
+     const ggml_backend_meta_device_context * meta_buft_dev_ctx = (const ggml_backend_meta_device_context *) dev_buft->context;
+@@ -496,6 +512,9 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_get_split_state(
+     // FIXME Currently this function preserves/erases the information in n_segments and nr in an inconsistent way.
+     // Since the operations in question are developed specifically for llama.cpp this currently does not manifest as a bug there.
+     // However, in a broader ggml context with arbitrary ggml graphs this can lead to unexpected results.
++    if (!ggml_backend_buffer_is_meta(tensor->buffer)) {
++        return ggml_backend_meta_get_split_state(tensor, assume_sync);
++    }
+     const size_t n_bufs = ggml_backend_meta_buffer_n_bufs(tensor->buffer);
+     ggml_backend_meta_buffer_context * buf_ctx = (ggml_backend_meta_buffer_context *) tensor->buffer->context;
+ 
+@@ -1186,10 +1205,14 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_get_split_state(co
+     //       such host-buffer views to the meta backend. figure out how to update the scheduler logic to achieve that
+     //       ref: https://github.com/ggml-org/llama.cpp/pull/30217
+     if (!ggml_backend_buffer_is_meta(tensor->buffer)) {
+-        GGML_ASSERT(ggml_backend_meta_is_host_view(tensor));
++        if (ggml_backend_meta_is_host_view(tensor)) {
++            // the view is not allocated in the meta buffer, it is not split across the sub-devices
++            return { GGML_BACKEND_SPLIT_AXIS_NONE, {0}, {1}, 1 };
++        }
+ 
+-        // the view is not allocated in the meta buffer, it is not split across the sub-devices
+-        return { GGML_BACKEND_SPLIT_AXIS_NONE, {0}, {1}, 1 };
++        // [TAG_META_HOST_MAPPED]
++        GGML_ASSERT(tensor->buffer != nullptr && ggml_backend_buffer_is_host(tensor->buffer));
++        return { GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1 };
+     }
+ 
+     ggml_backend_meta_buffer_context * buf_ctx = (ggml_backend_meta_buffer_context *) tensor->buffer->context;
+diff --git a/ggml/src/ggml-cuda/ggml-cuda.cu b/ggml/src/ggml-cuda/ggml-cuda.cu
+index 957908f65..6be0b1b42 100644
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -1327,6 +1327,73 @@ ggml_backend_buffer_type_t ggml_backend_cuda_host_buffer_type() {
+ //    return buffer->buft->iface.get_name == ggml_backend_cuda_host_buffer_type_name;
+ //}
+ 
++// host-mapped buffer type: pinned host memory that the kernels of every device read in place (zero-copy)
++// supports_op accepts it only as src0 of GET_ROWS, so it only holds weights that are gathered a few rows at a time
++
++static const char * ggml_backend_cuda_host_mapped_buffer_type_name(ggml_backend_buffer_type_t buft) {
++    return GGML_CUDA_NAME "_Host_Mapped";
++
++    GGML_UNUSED(buft);
++}
++
++static bool ggml_backend_buft_is_cuda_host_mapped(ggml_backend_buffer_type_t buft) {
++    return buft->iface.get_name == ggml_backend_cuda_host_mapped_buffer_type_name;
++}
++
++static ggml_backend_buffer_t ggml_backend_cuda_host_mapped_buffer_type_alloc_buffer(ggml_backend_buffer_type_t buft, size_t size) {
++    void * ptr = nullptr;
++#if !defined(GGML_USE_MUSA)
++    if (getenv("GGML_CUDA_NO_PINNED") == nullptr) {
++        cudaError_t err = cudaHostAlloc(&ptr, size, cudaHostAllocPortable | cudaHostAllocMapped);
++        if (err == cudaSuccess) {
++            // the kernels receive tensor->data as is: valid only where the device address equals the host address (UVA)
++            void * dev_ptr = nullptr;
++            err = cudaHostGetDevicePointer(&dev_ptr, ptr, 0);
++            if (err != cudaSuccess || dev_ptr != ptr) {
++                (void)cudaGetLastError();
++                CUDA_CHECK(cudaFreeHost(ptr));
++                ptr = nullptr;
++            }
++        } else {
++            (void)cudaGetLastError();
++            ptr = nullptr;
++            GGML_LOG_DEBUG("%s: failed to allocate %.2f MiB of mapped pinned memory: %s\n", __func__,
++                               size / 1024.0 / 1024.0, cudaGetErrorString(err));
++        }
++    }
++#endif // !defined(GGML_USE_MUSA)
++
++    if (ptr == nullptr) {
++        // a CPU buffer: the scheduler then runs its ops on the CPU, as without this buffer type
++        return ggml_backend_buft_alloc_buffer(ggml_backend_cpu_buffer_type(), size);
++    }
++
++    ggml_backend_buffer_t buffer = ggml_backend_cpu_buffer_from_ptr(ptr, size);
++    buffer->buft = buft;
++    buffer->iface.free_buffer = ggml_backend_cuda_host_buffer_free_buffer;
++
++    return buffer;
++}
++
++static ggml_backend_buffer_type_t ggml_backend_cuda_host_mapped_buffer_type() {
++    static struct ggml_backend_buffer_type ggml_backend_cuda_buffer_type_host_mapped = {
++        /* .iface    = */ {
++            /* .get_name            = */ ggml_backend_cuda_host_mapped_buffer_type_name,
++            /* .alloc_buffer        = */ ggml_backend_cuda_host_mapped_buffer_type_alloc_buffer,
++            /* .alloc_buffer_n      = */ NULL,
++            /* .get_alignment       = */ ggml_backend_cpu_buffer_type()->iface.get_alignment,
++            /* .get_max_size        = */ NULL, // defaults to SIZE_MAX
++            /* .get_alloc_size      = */ ggml_backend_cpu_buffer_type()->iface.get_alloc_size,
++            /* .get_alloc_size_n    = */ NULL,
++            /* .is_host             = */ ggml_backend_cpu_buffer_type()->iface.is_host,
++        },
++        /* .device   = */ ggml_backend_reg_dev_get(ggml_backend_cuda_reg(), 0),
++        /* .context  = */ nullptr,
++    };
++
++    return &ggml_backend_cuda_buffer_type_host_mapped;
++}
++
+ /// kernels
+ 
+ typedef void (*ggml_cuda_op_mul_mat_t)(
+@@ -4558,7 +4625,8 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
+                     if (node->src[j] != nullptr) {
+                         assert(node->src[j]->buffer);
+                         assert(node->src[j]->buffer->buft == ggml_backend_cuda_buffer_type(cuda_ctx->device) ||
+-                               (integrated && ggml_backend_buft_is_cuda_host(node->src[j]->buffer->buft)));
++                               (integrated && ggml_backend_buft_is_cuda_host(node->src[j]->buffer->buft)) ||
++                               ggml_backend_buft_is_cuda_host_mapped(node->src[j]->buffer->buft));
+                     }
+                 }
+ #else
+@@ -5374,6 +5442,11 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
+                 return false;
+             }
+         }
++        // GET_ROWS reads a few rows of src0; any other op would stream the whole buffer over the bus on every use
++        if (op->src[i] && op->src[i]->buffer && ggml_backend_buft_is_cuda_host_mapped(op->src[i]->buffer->buft) &&
++                (op->op != GGML_OP_GET_ROWS || i != 0)) {
++            return false;
++        }
+     }
+ 
+     switch (op->op) {
+@@ -5842,7 +5915,8 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
+ static bool ggml_backend_cuda_device_supports_buft(ggml_backend_dev_t dev, ggml_backend_buffer_type_t buft) {
+     ggml_backend_cuda_device_context * dev_ctx = (ggml_backend_cuda_device_context *) dev->context;
+     const bool integrated = ggml_cuda_info().devices[dev_ctx->device].integrated;
+-    return (ggml_backend_buft_is_cuda(buft) && buft->device == dev) || (integrated && ggml_backend_buft_is_cuda_host(buft));
++    return (ggml_backend_buft_is_cuda(buft) && buft->device == dev) || (integrated && ggml_backend_buft_is_cuda_host(buft)) ||
++        ggml_backend_buft_is_cuda_host_mapped(buft);
+ }
+ 
+ static int64_t get_op_batch_size(const ggml_tensor * op) {
+@@ -5994,6 +6068,17 @@ static ggml_backend_feature * ggml_backend_cuda_get_features(ggml_backend_reg_t
+     GGML_UNUSED(reg);
+ }
+ 
++static ggml_backend_buffer_type_t * ggml_backend_cuda_device_get_extra_bufts(ggml_backend_dev_t device) {
++    GGML_UNUSED(device);
++#if defined(GGML_USE_MUSA)
++    GGML_UNUSED(ggml_backend_cuda_host_mapped_buffer_type);
++    static ggml_backend_buffer_type_t bufts[] = { nullptr };
++#else
++    static ggml_backend_buffer_type_t bufts[] = { ggml_backend_cuda_host_mapped_buffer_type(), nullptr };
++#endif // defined(GGML_USE_MUSA)
++    return bufts;
++}
++
+ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, const char * name) {
+     GGML_UNUSED(reg);
+     if (strcmp(name, "ggml_backend_comm_init") == 0) {
+@@ -6014,6 +6099,9 @@ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, con
+     if (strcmp(name, "ggml_backend_get_features") == 0) {
+         return (void *)ggml_backend_cuda_get_features;
+     }
++    if (strcmp(name, "ggml_backend_dev_get_extra_bufts") == 0) {
++        return (void *)ggml_backend_cuda_device_get_extra_bufts;
++    }
+     return nullptr;
+ }
+ 
+diff --git a/src/llama-model.cpp b/src/llama-model.cpp
+index b3a0cf5d5..f68553885 100644
+--- a/src/llama-model.cpp
++++ b/src/llama-model.cpp
+@@ -1096,7 +1096,28 @@ llm_ffn_op_type llm_ffn_op_type_from_string(const std::string & name, llm_ffn_op
+     return fallback;
+ }
+ 
+-// CPU: ACCEL -> GPU host -> CPU extra -> CPU
++// a host buffer type offered as an extra buffer type of a GPU device that dev reads in place
++static ggml_backend_buffer_type_t find_device_mapped_host_buft(ggml_backend_dev_t dev) {
++    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
++        ggml_backend_dev_t gpu = ggml_backend_dev_get(i);
++        if (ggml_backend_dev_type(gpu) != GGML_BACKEND_DEVICE_TYPE_GPU && ggml_backend_dev_type(gpu) != GGML_BACKEND_DEVICE_TYPE_IGPU) {
++            continue;
++        }
++        auto ggml_backend_dev_get_extra_bufts_fn = (ggml_backend_dev_get_extra_bufts_t)
++            ggml_backend_reg_get_proc_address(ggml_backend_dev_backend_reg(gpu), "ggml_backend_dev_get_extra_bufts");
++        if (!ggml_backend_dev_get_extra_bufts_fn) {
++            continue;
++        }
++        for (ggml_backend_buffer_type_t * buft = ggml_backend_dev_get_extra_bufts_fn(gpu); buft && *buft; ++buft) {
++            if (ggml_backend_buft_is_host(*buft) && ggml_backend_dev_supports_buft(dev, *buft)) {
++                return *buft;
++            }
++        }
++    }
++    return nullptr;
++}
++
++// CPU: ACCEL -> GPU mapped host -> GPU host -> CPU extra -> CPU
+ static buft_list_t make_cpu_buft_list(const std::vector<llama_device> & devices, bool use_extra_bufts, bool no_host) {
+     buft_list_t buft_list;
+ 
+@@ -1112,6 +1133,20 @@ static buft_list_t make_cpu_buft_list(const std::vector<llama_device> & devices,
+         }
+     }
+ 
++    // add a host buffer type that a GPU reads in place
++    // the device's supports_op decides which weights may use it: e.g. the token embeddings, of which GET_ROWS reads only
++    // a few rows per batch, so the GPU gathers them without a copy of the table or a CPU split in front of the graph
++    // under mmap the weights are copied into it, since the device cannot read the mapped file
++    if (!no_host) {
++        for (const auto & dev : devices) {
++            ggml_backend_buffer_type_t buft = find_device_mapped_host_buft(dev.dev);
++            if (buft) {
++                buft_list.emplace_back(dev.dev, buft);
++                break;
++            }
++        }
++    }
++
+     // add a host buffer type
+     // storing the tensors in a host buffer is useful when the processing of large batches
+     // is offloaded to a GPU device, since it reduces the time spent on data transfers
