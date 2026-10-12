@@ -144,7 +144,8 @@ static constexpr int calc_nwarps(ggml_type type, int ncols_dst, mmvq_parameter_t
     return 1;
 }
 
-static constexpr int calc_rows_per_block(int ncols_dst, int table_id, bool small_k = false, int nwarps = 1) {
+static constexpr int calc_rows_per_block(int ncols_dst, int table_id, bool small_k = false, int nwarps = 1, ggml_type type = GGML_TYPE_COUNT) {
+    GGML_UNUSED(type);
     if (table_id == MMVQ_PARAMETERS_GENERIC || table_id == MMVQ_PARAMETERS_GCN || table_id == MMVQ_PARAMETERS_TURING || table_id == MMVQ_PARAMETERS_GB10) {
         switch (ncols_dst) {
             case 1:
@@ -179,7 +180,7 @@ static void mmvq_select_config(mmvq_parameter_table_id table, F launch) {
     const auto select = [&](auto table_tag) {
         constexpr auto table_id = decltype(table_tag)::value;
         constexpr int nw = calc_nwarps(type, ncols, table_id, small_k, halve_iters);
-        constexpr int nr = calc_rows_per_block(ncols, table_id, small_k, nw);
+        constexpr int nr = calc_rows_per_block(ncols, table_id, small_k, nw, type);
         launch(mmvq_launch_config<nw, nr>{});
     };
     switch (table) {
