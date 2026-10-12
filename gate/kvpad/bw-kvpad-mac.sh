@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Mac CPU gate for pkg 61 (n_kv padding as a context parameter) on master. Run through bin/bw-mac.
 #  build, plumbing (flag/env/default, n_ctx padded, non-multiple rounded up), model identity across pads on Qwen3.5-4B (hybrid GDN):
-#  plain CPU: logits bitwise identical for pad 0/256/4096; Meta(CPU,CPU): tokens identical (CPU FA split-KV depends on n_kv).
+#  plain CPU, 1 thread: logits bitwise identical for pad 0 vs 4096; Meta(CPU,CPU), 4 threads: tokens identical (CPU FA split-KV depends on n_kv).
 #  Negative controls: a perturbed prompt must change the logits hash; a non-engaged pad must show the same n_ctx as default.
 set -euo pipefail
 export CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1
@@ -58,39 +58,36 @@ plumbing() {
     LLAMA_ARG_KV_PAD=1024 completion env1024 1024 2048 0
     completion flag300 512 1536 1 --kv-pad 300
 }
-run() {  # NAME META PAD VARIANT
+run() {  # NAME META PAD VARIANT THREADS
     local rc=0
-    "$BW_GATE" build-cpu/bin/kvpad-driver "$MODEL" "$2" "$3" 1500 64 4 "$4" > "$OUT/run-$1.out" 2> "$OUT/run-$1.err" || rc=$?
+    "$BW_GATE" build-cpu/bin/kvpad-driver "$MODEL" "$2" "$3" 1500 80 "$5" "$4" > "$OUT/run-$1.out" 2> "$OUT/run-$1.err" || rc=$?
     [[ $rc == 0 ]] || { echo "run $1 rc=$rc"; return 1; }
     echo "run $1: $(grep -a '^n_ctx' "$OUT/run-$1.out") $(grep -a '^logits_fnv' "$OUT/run-$1.out")"
 }
 field() { grep -a "^$2" "$OUT/run-$1.out"; }
 identity() {
-    local m p
-    for m in 0 1; do
-        for p in 0 256 4096; do run "m$m-pad$p" "$m" "$p" 0; done
-    done
-    run m0-pad0-variant 0 0 1
+    local p np
+    # plain CPU at one thread: CPU FA splits the KV range across threads at small q, so only 1 thread is n_kv independent
+    for p in 0 4096; do run "m0-pad$p" 0 "$p" 0 1; done
+    run m0-pad0-variant 0 0 1 1
+    for p in 0 256 4096; do run "m1-pad$p" 1 "$p" 0 4; done
     # the decode must cross an n_kv step (multiple of 256) after the prefill
-    local np ng
     np=$(field m0-pad0 n_prompt | awk '{print $2}')
-    [[ $np -lt 768 && $((np + 64)) -gt 768 ]] || { echo "decode does not cross 768: n_prompt=$np"; return 1; }
+    [[ $np -lt 768 && $((np + 80)) -gt 768 ]] || { echo "decode does not cross 768: n_prompt=$np"; return 1; }
     [[ $np -gt 256 ]] || return 1
     # engagement: n_ctx as created differs between pads
-    [[ $(field m0-pad0 n_ctx) == 'n_ctx 1536' && $(field m0-pad256 n_ctx) == 'n_ctx 1536' ]] || { echo 'default/256 n_ctx'; return 1; }
+    [[ $(field m0-pad0 n_ctx) == 'n_ctx 1536' && $(field m1-pad256 n_ctx) == 'n_ctx 1536' ]] || { echo 'default/256 n_ctx'; return 1; }
     [[ $(field m0-pad4096 n_ctx) == 'n_ctx 4096' ]] || { echo 'pad 4096 not engaged'; return 1; }
     # plain CPU: bitwise logits and tokens
-    for p in 256 4096; do
-        [[ $(field m0-pad0 logits_fnv) == $(field "m0-pad$p" logits_fnv) ]] || { echo "plain logits differ at pad $p"; return 1; }
-        [[ $(field m0-pad0 gen:) == $(field "m0-pad$p" gen:) ]] || { echo "plain tokens differ at pad $p"; return 1; }
-    done
+    [[ $(field m0-pad0 logits_fnv) == $(field m0-pad4096 logits_fnv) ]] || { echo 'plain logits differ at pad 4096'; return 1; }
+    [[ $(field m0-pad0 gen:) == $(field m0-pad4096 gen:) ]] || { echo 'plain tokens differ at pad 4096'; return 1; }
     # Meta: tokens only
     for p in 256 4096; do
         [[ $(field m1-pad0 gen:) == $(field "m1-pad$p" gen:) ]] || { echo "Meta tokens differ at pad $p"; return 1; }
     done
     # negative control: the same comparison on a perturbed prompt must fail
     if [[ $(field m0-pad0 logits_fnv) == $(field m0-pad0-variant logits_fnv) ]]; then echo 'negative control: perturbed prompt kept the hash'; return 1; fi
-    echo "identity PASS: plain logits_fnv equal for pad 0/256/4096, Meta tokens equal, negative control differs"
+    echo "identity PASS: plain 1-thread logits_fnv equal for pad 0/4096, Meta tokens equal, negative control differs"
     echo "info: Meta logits_fnv pad0/256/4096: $(field m1-pad0 logits_fnv | awk '{print $2}') $(field m1-pad256 logits_fnv | awk '{print $2}') $(field m1-pad4096 logits_fnv | awk '{print $2}')"
 }
 stage 10 build build
