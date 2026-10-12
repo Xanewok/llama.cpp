@@ -1,0 +1,6 @@
+purpose: AllReduce chunked kernel, read-first pipeline: poll+load round r-1 before posting round r stores (ar-duplex follow-up; brief orchestration/briefs/2026-10-12-ar-pipeline.md)
+base: abee0c8476b585b0d081d580b5ce21d0addc22c4
+repo: /home/xanewok/repos/llama.cpp
+branch: topic/ar-readfirst
+created: 2026-10-12T22:46:23+02:00
+creator: xanewok
