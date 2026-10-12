@@ -1,11 +1,11 @@
-# K4 np2 fix: Meta recreates every main subgraph after an arena reallocation (ggml-backend-meta.cpp). Codes 54-57.
+# K4 np2 fix (stack11: pkg 86 master form, tests test_meta_subgraph_realloc_{count,size}): Meta recreates every main subgraph after an arena reallocation (ggml-backend-meta.cpp). Codes 54-57.
 # Pre-fix control: GGML_META_SUBGRAPH_MUTANT=1 (local switch) restores the old loop bound in the same binary.
 export ASAN_OPTIONS=detect_leaks=0:abort_on_error=0
 unset GGML_META_SUBGRAPH_MUTANT
 unit() {
     "$BW_GATE" build-cpu/bin/test-alloc > "$D/test-alloc.txt" 2>&1
-    grep -aq 'test_meta_subgraph_capacity(compute) PASSED' "$D/test-alloc.txt"
-    grep -aq 'test_meta_subgraph_capacity(plan) PASSED' "$D/test-alloc.txt"
+    grep -aq 'test_meta_subgraph_realloc_count PASSED' "$D/test-alloc.txt"
+    grep -aq 'test_meta_subgraph_realloc_size PASSED' "$D/test-alloc.txt"
 }
 asan_build() {
     local asan='-fsanitize=address -fno-omit-frame-pointer'
@@ -18,13 +18,14 @@ asan_build() {
 # memset in ggml_hash_set_reset as in the server, or an earlier read of the stale subgraph)
 asan_unit() {
     "$BW_GATE" build-asan/bin/test-alloc > "$D/asan-fixed.txt" 2>&1
-    grep -aq 'test_meta_subgraph_capacity(plan) PASSED' "$D/asan-fixed.txt"
+    grep -aq 'test_meta_subgraph_realloc_count PASSED' "$D/asan-fixed.txt"
+    grep -aq 'test_meta_subgraph_realloc_size PASSED' "$D/asan-fixed.txt"
     if "$BW_GATE" env GGML_META_SUBGRAPH_MUTANT=1 build-asan/bin/test-alloc > "$D/asan-mutant.txt" 2>&1; then
         echo "FAIL pre-fix mutant escaped test-alloc"; return 1
     fi
-    grep -aq 'test_meta_subgraph_capacity(compute) ' "$D/asan-mutant.txt"
+    grep -aq 'test_meta_subgraph_realloc_count' "$D/asan-mutant.txt"
     grep -aq 'ERROR: AddressSanitizer' "$D/asan-mutant.txt"
-    grep -aq 'in ggml_backend_meta_graph_compute_impl' "$D/asan-mutant.txt"
+    grep -aq 'in ggml_backend_meta_graph_compute' "$D/asan-mutant.txt"
     echo "pre-fix mutant killed: $(grep -a -m1 'ERROR: AddressSanitizer' "$D/asan-mutant.txt")"
 }
 # np2 driver under Meta(CPU,CPU): fixed with K4 on must pass clean. The mutant arms (K4 on / K4 off) are recorded, not gated:
