@@ -439,6 +439,30 @@ void get_rows_cuda(
     }
 }
 
+// copies the src0 rows selected by src1 into a dense buffer, row k = i10 + ne10*(i11 + ne11*i12), and writes ids[k] = k
+template <typename T>
+static __global__ void k_gather_rows(
+        const char * __restrict__ src0, const int32_t * __restrict__ src1, char * __restrict__ rows, int32_t * __restrict__ ids,
+        const size_t row_size, const int64_t ne10, const int64_t ne11, const int64_t ne12,
+        const size_t nb01, const size_t nb02, const size_t nb03, const size_t s10, const size_t s11, const size_t s12) {
+    const int64_t i10 = blockIdx.x;
+    for (int64_t z = blockIdx.y; z < ne11*ne12; z += gridDim.y) {
+        const int64_t i11 = z % ne11;
+        const int64_t i12 = z / ne11;
+        const int64_t k   = i10 + ne10*z;
+
+        const int32_t i01 = src1[i10*s10 + i11*s11 + i12*s12];
+        const T * src_row = (const T *) (src0 + i01*nb01 + i11*nb02 + i12*nb03);
+        T       * dst_row = (T       *) (rows + k*row_size);
+        for (size_t i = threadIdx.x; i < row_size/sizeof(T); i += blockDim.x) {
+            dst_row[i] = src_row[i];
+        }
+        if (threadIdx.x == 0) {
+            ids[k] = (int32_t) k;
+        }
+    }
+}
+
 void ggml_cuda_op_get_rows(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const ggml_tensor * src0 = dst->src[0];
     const ggml_tensor * src1 = dst->src[1];
@@ -453,6 +477,32 @@ void ggml_cuda_op_get_rows(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     GGML_ASSERT(src0->nb[0] == ggml_type_size(src0->type));
     GGML_ASSERT(src1->nb[0] == ggml_type_size(src1->type));
     GGML_ASSERT(dst->nb[0]  == ggml_type_size(dst->type));
+
+    if (src0->buffer && ggml_backend_buffer_is_host(src0->buffer)) {
+        // src0 is host memory read in place over the bus (e.g. CUDA_Host_Mapped): the dequantization kernels would issue
+        // many small dependent reads per row, so copy the selected rows with wide loads first, all of them in flight at once
+        const int64_t n        = ne10*ne11*ne12;
+        const size_t  row_size = ggml_row_size(src0->type, ne00);
+        ggml_cuda_pool_alloc<char>    rows(ctx.pool(), n*row_size);
+        ggml_cuda_pool_alloc<int32_t> ids (ctx.pool(), n);
+
+        const bool wide = (uintptr_t) src0->data % sizeof(int4) == 0 && row_size % sizeof(int4) == 0 &&
+            nb01 % sizeof(int4) == 0 && nb02 % sizeof(int4) == 0 && nb03 % sizeof(int4) == 0;
+        const dim3 block_nums(ne10, MIN(ne11*ne12, UINT16_MAX), 1);
+        const dim3 block_dims(128, 1, 1);
+        if (wide) {
+            k_gather_rows<int4><<<block_nums, block_dims, 0, stream>>>((const char *) src0->data, (const int32_t *) src1->data,
+                rows.get(), ids.get(), row_size, ne10, ne11, ne12, nb01, nb02, nb03, nb10/sizeof(int32_t), nb11/sizeof(int32_t), nb12/sizeof(int32_t));
+        } else {
+            k_gather_rows<char><<<block_nums, block_dims, 0, stream>>>((const char *) src0->data, (const int32_t *) src1->data,
+                rows.get(), ids.get(), row_size, ne10, ne11, ne12, nb01, nb02, nb03, nb10/sizeof(int32_t), nb11/sizeof(int32_t), nb12/sizeof(int32_t));
+        }
+        CUDA_CHECK(cudaGetLastError());
+
+        get_rows_cuda(rows.get(), src0->type, ids.get(), dst->data, dst->type,
+            ne00, row_size, 0, 0, ne10, ne11, ne12, sizeof(int32_t), ne10*sizeof(int32_t), ne10*ne11*sizeof(int32_t), nb1, nb2, nb3, stream);
+        return;
+    }
 
     get_rows_cuda(src0->data, src0->type, (const int32_t *) src1->data, dst->data, dst->type,
         ne00, nb01, nb02, nb03, ne10, ne11, ne12, nb10, nb11, nb12, nb1, nb2, nb3, stream);
