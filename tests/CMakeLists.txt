@@ -289,6 +289,14 @@ endif()
 # TODO: make this test (and others) not link `libllama` as it is not needed [TAG_TESTS_LLAMA_LINK]
 llama_build(test-backend-ops.cpp)
 
+# probe, not a ctest: zero-copy GET_ROWS from host memory (topic/zc-getrows)
+llama_build(test-zc-getrows.cpp)
+if (GGML_CUDA)
+    find_package(CUDAToolkit REQUIRED)
+    target_include_directories(test-zc-getrows PRIVATE ${CUDAToolkit_INCLUDE_DIRS})
+    target_compile_definitions(test-zc-getrows PRIVATE ZC_NVTX)
+endif()
+
 llama_build_and_test(test-tiled-mulmat.cpp)
 llama_build_and_test(test-model-load-cancel.cpp LABEL "model")
 llama_build_and_test(test-autorelease.cpp       LABEL "model")
