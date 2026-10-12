@@ -43,13 +43,14 @@ run_case() {
     stage "$name" "$ok" "$rc" "$want" "$t0"
 }
 
-# NAME META(0|1): Meta(CPU,CPU) (1) or plain CPU (0) greedy tokens
+# NAME META(0|1) N_GEN [ENV=VAL...]: Meta(CPU,CPU) (1) or plain CPU (0) greedy tokens; the build is the current tree
 run_model() {
-    local name=$1 meta=$2 rc=0 t0=$SECONDS ok=1
+    local name=$1 meta=$2 ngen=$3 rc=0 t0=$SECONDS ok=1
+    shift 3
     "$BW_BUILDGATE" cmake --build build-plain --target llama -j"${BW_JOBS:-4}" > "$OUT/model-$name.build.log" 2>&1 || ok=0
     "$BW_GATE" clang++ -std=c++17 -O1 -Iinclude -Iggml/include codex/p1/driver.cpp -o build-plain/bin/p1-driver \
         -Lbuild-plain/bin -lllama -lggml -lggml-base -Wl,-rpath,"$PWD/build-plain/bin" >> "$OUT/model-$name.build.log" 2>&1 || ok=0
-    "$BW_GATE" build-plain/bin/p1-driver "$BW_MODEL" "$meta" 24 > "$OUT/model-$name.txt" 2> "$OUT/model-$name.log" || rc=$?
+    env "$@" "$BW_GATE" build-plain/bin/p1-driver "$BW_MODEL" "$meta" "$ngen" > "$OUT/model-$name.txt" 2> "$OUT/model-$name.log" || rc=$?
     [[ $rc == 0 ]] && grep -aq '^seq1:' "$OUT/model-$name.txt" && grep -aq '^embd:' "$OUT/model-$name.txt" || ok=0
     stage "model-$name" "$ok" "$rc" 0 "$t0"
 }
@@ -60,8 +61,12 @@ configure build-asan asan
 R=test_meta_subgraph_reuse_two_splits
 run_case fixed-plain 0 build-plain "$R PASSED"
 run_case fixed-asan  0 build-asan  "$R PASSED"
-run_model fixed-meta 1
-run_model fixed-cpu  0
+run_model fixed-meta    1 24
+run_model fixed-meta-r2 1 24
+run_model fixed-cpu     0 24
+# split census of the model graphs under Meta(CPU,CPU) (informational)
+run_model fixed-meta-sched 1 2 GGML_SCHED_DEBUG=1
+grep -a 'SPLIT #' "$OUT/model-fixed-meta-sched.log" | sed 's/:.*//; s/ *#[0-9]*//' | sort | uniq -c > "$OUT/model-split-census.txt" || true
 
 # pkg 86's arena cases, without pkg 86's fix: the plans own their subgraphs, so the stale-arena bug cannot occur
 git apply codex/p1/pkg86-tests.patch
@@ -71,15 +76,29 @@ git apply -R codex/p1/pkg86-tests.patch
 # fix reverted: the second compute of the meta, CPU, meta graph rebuilds both splits under new uids
 git apply -R codex/p1/fix-meta.patch
 run_case unfixed-plain nz build-plain 'test_buft_get_alloc_size_n_does_not_allocate PASSED' "$R" 'compute() == uids'
-run_model unfixed-meta 1
+run_model unfixed-meta    1 24
+run_model unfixed-meta-r2 1 24
+# master + pkg 86's arena fix: tells whether a P1-vs-master difference is pkg 86's stale-arena bug
+git apply codex/p1/pkg86-fix.patch
+run_model m86-meta 1 24
+git apply -R codex/p1/pkg86-fix.patch
 git apply codex/p1/fix-meta.patch
 [[ -z $(git status --porcelain --untracked-files=no) ]] || { echo 'FAIL tree not restored'; exit 9; }
 
+# tokens of the greedy decode must agree everywhere; the raw-embedding batch must repeat within a tree (informational across trees)
 t0=$SECONDS
 ok=1
-cmp "$OUT/model-fixed-meta.txt" "$OUT/model-fixed-cpu.txt" || ok=0
-cmp "$OUT/model-fixed-meta.txt" "$OUT/model-unfixed-meta.txt" || ok=0
-stage model-identity "$ok" - - "$t0"
+for f in fixed-meta-r2 fixed-cpu unfixed-meta unfixed-meta-r2 m86-meta; do
+    cmp <(grep -a '^seq' "$OUT/model-fixed-meta.txt") <(grep -a '^seq' "$OUT/model-$f.txt") || ok=0
+done
+stage model-token-identity "$ok" - - "$t0"
+ok=1
+cmp <(grep -a '^embd' "$OUT/model-fixed-meta.txt") <(grep -a '^embd' "$OUT/model-fixed-meta-r2.txt") || ok=0
+cmp <(grep -a '^embd' "$OUT/model-unfixed-meta.txt") <(grep -a '^embd' "$OUT/model-unfixed-meta-r2.txt") || ok=0
+stage model-embd-repeat "$ok" - - "$t0"
+for f in fixed-meta fixed-meta-r2 fixed-cpu unfixed-meta unfixed-meta-r2 m86-meta; do
+    printf '%s\t%s\n' "$f" "$(grep -a '^embd' "$OUT/model-$f.txt")"
+done | tee "$OUT/model-embd.tsv"
 
 echo "p1: fails=$fails"
 [[ $fails == 0 ]]
