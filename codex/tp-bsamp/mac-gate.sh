@@ -3,7 +3,8 @@
 # Gated: build; test-backend-sampler (CPU, all tests incl. test_top_p_on_top_p); test-sampling; test-llama-archs --tp-sampling
 # on Meta(CPU,CPU) seeds 42/1/2/3; mutant ids (vocab id i^1) must fail; fail-before: 0002's src reverted must fail
 # test_top_p_on_top_p; real-model Meta(CPU,CPU) driver: backend top-k(20)+greedy tokens and candidate sets equal the host's
-# (plain CPU and Meta) unless the model is refused (tied/replicated head: recorded, not a failure).
+# on Meta (same numerics, candidate sets included) unless the model is refused (tied/replicated head: recorded, not a failure);
+# plain CPU vs Meta host tokens equal (control).
 # Informational: mutant-no-empty-guard (0006 disabled) tells whether 0006 is still needed after #30223.
 set -euo pipefail
 export CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4
@@ -73,8 +74,9 @@ for m in cpu meta meta-bs; do
     fi
 done
 t0=$SECONDS
-cmp <(grep -a '^step' "$OUT/model-cpu.txt") <(grep -a '^step' "$OUT/model-meta.txt") > /dev/null && v=PASS || v=FAIL
-stage model-identity-cpu-meta "$v" - "$t0"
+# tokens only: the split matmul reorders sums, so near-equal logits at rank 20 may swap between plain CPU and Meta
+cmp <(grep -a '^step' "$OUT/model-cpu.txt" | cut -d' ' -f1-4) <(grep -a '^step' "$OUT/model-meta.txt" | cut -d' ' -f1-4) > /dev/null && v=PASS || v=FAIL
+stage model-token-identity-cpu-meta "$v" - "$t0"
 if grep -aq '^backend sampler accepted' "$OUT/model-meta-bs.txt"; then
     t0=$SECONDS
     cmp <(grep -a '^step' "$OUT/model-meta.txt") <(grep -a '^step' "$OUT/model-meta-bs.txt") > /dev/null && v=PASS || v=FAIL
