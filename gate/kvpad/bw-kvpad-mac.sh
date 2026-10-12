@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Mac CPU gate for pkg 61 (n_kv padding as a context parameter) on master. Run through bin/bw-mac.
 #  build, plumbing (flag/env/default, n_ctx padded, non-multiple rounded up), model identity across pads on Qwen3.5-4B (hybrid GDN):
-#  plain CPU, 1 thread: logits bitwise identical for pad 0 vs 4096; Meta(CPU,CPU), 4 threads: tokens identical (CPU FA split-KV depends on n_kv).
+#  plain CPU, 1 thread: logits bitwise identical for pad 0 vs 4096; Meta(CPU,CPU), 4 threads: prompt rows bitwise, decode rows reported only (CPU FA split-KV depends on n_kv).
 #  Negative controls: a perturbed prompt must change the logits hash; a non-engaged pad must show the same n_ctx as default.
 set -euo pipefail
 export CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1
@@ -81,13 +81,30 @@ identity() {
     # plain CPU: bitwise logits and tokens
     [[ $(field m0-pad0 logits_fnv) == $(field m0-pad4096 logits_fnv) ]] || { echo 'plain logits differ at pad 4096'; return 1; }
     [[ $(field m0-pad0 gen:) == $(field m0-pad4096 gen:) ]] || { echo 'plain tokens differ at pad 4096'; return 1; }
-    # Meta: tokens only
+    # Meta(CPU,CPU): prompt rows bitwise (mask and padded cells exact); decode rows are reported, not gated: CPU FA split-KV depends on n_kv
     for p in 256 4096; do
-        [[ $(field m1-pad0 gen:) == $(field "m1-pad$p" gen:) ]] || { echo "Meta tokens differ at pad $p"; return 1; }
+        [[ $(field m1-pad0 prefill_fnv) == $(field "m1-pad$p" prefill_fnv) ]] || { echo "Meta prompt-row logits differ at pad $p"; return 1; }
     done
+    [[ $(field m1-pad0 logits_fnv) == $(field m1-pad256 logits_fnv) ]] || { echo 'Meta default vs explicit 256 differ'; return 1; }
+    python3 - "$OUT/run-m1-pad0.out" "$OUT/run-m1-pad4096.out" <<'PY'
+import sys
+def load(p):
+    d = {}
+    for line in open(p):
+        k, _, v = line.partition(':')
+        d[k] = v.split()
+    return d
+a, b = load(sys.argv[1]), load(sys.argv[2])
+x, y = [float(v) for v in a['top1']][0::2], [float(v) for v in b['top1']][0::2]
+flip = next((i for i, (p, q) in enumerate(zip(a['gen'], b['gen'])) if p != q), None)
+last = 44 + (flip if flip is not None else len(a['gen']) - 1)
+d = [abs(p - q) for p, q in zip(x, y)]
+print(f"info Meta pad0 vs pad4096: prompt rows max|d top1 logit| {max(d[:44]):.3g}; decode rows before the first token flip "
+      f"(flip at gen index {flip}) mean {sum(d[44:last]) / max(1, last - 44):.3g} max {max(d[44:last], default=0):.3g}")
+PY
     # negative control: the same comparison on a perturbed prompt must fail
     if [[ $(field m0-pad0 logits_fnv) == $(field m0-pad0-variant logits_fnv) ]]; then echo 'negative control: perturbed prompt kept the hash'; return 1; fi
-    echo "identity PASS: plain 1-thread logits_fnv equal for pad 0/4096, Meta tokens equal, negative control differs"
+    echo "identity PASS: plain 1-thread logits_fnv equal for pad 0/4096, Meta prompt rows bitwise, negative control differs"
     echo "info: Meta logits_fnv pad0/256/4096: $(field m1-pad0 logits_fnv | awk '{print $2}') $(field m1-pad256 logits_fnv | awk '{print $2}') $(field m1-pad4096 logits_fnv | awk '{print $2}')"
 }
 stage 10 build build

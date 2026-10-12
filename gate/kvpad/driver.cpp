@@ -1,6 +1,6 @@
 // CPU pad-invariance driver. argv: model meta(0|1) pad n_ctx n_gen n_threads [variant]
 // Prints n_ctx as created, the prompt/generated token ids and an FNV-1a hash over the bytes of every captured logit row
-// (every 16th prompt row, then every decode step). Greedy; variant != 0 perturbs the prompt (negative control).
+// (every 16th prompt row, then every decode step; prefill_fnv covers the prompt rows only). Greedy; variant != 0 perturbs the prompt (negative control).
 #include "llama.h"
 #include "ggml-backend.h"
 
@@ -67,22 +67,46 @@ int main(int argc, char ** argv) {
     }
     b.n_tokens = n;
     if (llama_decode(ctx, b) != 0) { fprintf(stderr, "prefill failed\n"); return 6; }
-    for (int i : rows) { h = fnv(h, llama_get_logits_ith(ctx, i), sizeof(float) * n_vocab); }
+    std::vector<float> top1;  // top-1 logit and margin of every hashed row, in capture order
+    auto note_row = [&](const float * l) {
+        float a = -1e30f, b2 = -1e30f;
+        for (int i = 0; i < n_vocab; ++i) {
+            if (l[i] > a) { b2 = a; a = l[i]; } else if (l[i] > b2) { b2 = l[i]; }
+        }
+        top1.push_back(a); top1.push_back(a - b2);
+    };
+    for (int i : rows) { h = fnv(h, llama_get_logits_ith(ctx, i), sizeof(float) * n_vocab); note_row(llama_get_logits_ith(ctx, i)); }
+    const uint64_t h_prefill = h;
     const float * lg = llama_get_logits_ith(ctx, n - 1);
     llama_token next = (llama_token) (std::max_element(lg, lg + n_vocab) - lg);
     std::vector<llama_token> gen = { next };
+    std::vector<float> margin;  // top-1 minus top-2 logit of each greedy pick: a flip is only legitimate at a near tie
+    auto push_margin = [&](const float * l) {
+        float a = -1e30f, b2 = -1e30f;
+        for (int i = 0; i < n_vocab; ++i) {
+            if (l[i] > a) { b2 = a; a = l[i]; } else if (l[i] > b2) { b2 = l[i]; }
+        }
+        margin.push_back(a - b2);
+    };
+    push_margin(lg);
     llama_batch d = llama_batch_init(1, 0, 1);
     for (int step = 0; step < n_gen; ++step) {
         d.n_tokens = 1; d.token[0] = next; d.pos[0] = n + step; d.n_seq_id[0] = 1; d.seq_id[0][0] = 0; d.logits[0] = true;
         if (llama_decode(ctx, d) != 0) { fprintf(stderr, "decode failed\n"); return 7; }
         lg = llama_get_logits_ith(ctx, 0);
         h = fnv(h, lg, sizeof(float) * n_vocab);
+        note_row(lg);
         next = (llama_token) (std::max_element(lg, lg + n_vocab) - lg);
         gen.push_back(next);
+        push_margin(lg);
     }
     printf("gen:");
     for (auto t : gen) { printf(" %d", t); }
-    printf("\nlogits_fnv %016llx rows %zu steps %d\n", (unsigned long long) h, rows.size(), n_gen);
+    printf("\nmargin:");
+    for (auto m : margin) { printf(" %.4f", m); }
+    printf("\ntop1:");
+    for (auto v : top1) { printf(" %.5f", v); }
+    printf("\nprefill_fnv %016llx\nlogits_fnv %016llx rows %zu steps %d\n", (unsigned long long) h_prefill, (unsigned long long) h, rows.size(), n_gen);
     llama_batch_free(b); llama_batch_free(d);
     llama_free(ctx);
     llama_model_free(model);
