@@ -1,0 +1,84 @@
+{
+  "root": "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/kld",
+  "scratch": "/mnt/scratch/work/kld-s11/out-iq4",
+  "model": "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf",
+  "model_sha": "e3b59faa312a6202d7ac0a2400123956104bc720e77f6ff21c754aec5c3740df",
+  "tokens": "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/data/tokens.bin",
+  "canary": "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/data/canary.bin",
+  "canary_source": 3,
+  "builds": {
+    "base": {
+      "root": "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10",
+      "bin": "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin",
+      "commit": "a588f2a44382a361df3e2a456be0c80ca10dd1d6",
+      "binary": "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/bin/kld_dump",
+      "binary_sha256": "21fb5b6b472b00f07fb80d151bcd21a1ae31a68377cbb730cc96f3a2b1cceb9b"
+    },
+    "cand": {
+      "root": "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10",
+      "bin": "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin",
+      "commit": "a588f2a44382a361df3e2a456be0c80ca10dd1d6",
+      "binary": "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/bin/kld_dump",
+      "binary_sha256": "21fb5b6b472b00f07fb80d151bcd21a1ae31a68377cbb730cc96f3a2b1cceb9b"
+    }
+  },
+  "labels": {
+    "base": "frozen/stack10",
+    "cand": "frozen/stack11-base"
+  },
+  "verdict": {
+    "assistant_tail": {
+      "expected": 0.0006,
+      "falsifier": 0.0012,
+      "ratio": 10.0
+    },
+    "all_tail": {
+      "expected": 0.06,
+      "falsifier": 0.12,
+      "ratio": 10.0
+    }
+  },
+  "depths": [
+    {
+      "name": "d32k",
+      "tokens": "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/data/d32k.bin",
+      "selection": [
+        0,
+        1,
+        3
+      ],
+      "prefix": 33152,
+      "tail": 384,
+      "arms": [
+        "base",
+        "cand",
+        "cand_repeat",
+        "repeat"
+      ]
+    },
+    {
+      "name": "d64k",
+      "tokens": "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/data/d64k.bin",
+      "selection": [
+        0,
+        1,
+        3
+      ],
+      "prefix": null,
+      "tail": 384,
+      "arms": [
+        "base",
+        "cand",
+        "cand_repeat",
+        "repeat",
+        "f16"
+      ]
+    }
+  ],
+  "sha256": {
+    "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/data/tokens.bin": "753920ad0a0dbfc135aece41284c74e96d70d856df0351100a5305511aabf412",
+    "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/data/d32k.bin": "d63f88e7df12d0f70c22a19d224b2b8023d365710a39bc5cb23f21e86fe009e4",
+    "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/data/d64k.bin": "8d4eb0367ec34eaf59ac1bb73e8759f3cf5034b0490364f24afd87c93b15f6e9",
+    "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/data/canary.bin": "2edb3b81c0fcc4f28e622187261fac0488bc5bfe58f65e0606ef129c19cf611c"
+  }
+}

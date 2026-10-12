@@ -1,0 +1,87 @@
+# DRY RENDER, NOT AN ITEM TO SUBMIT: frozen/stack11-base does not exist yet; its stand-in is /home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10 (commit a588f2a44), Mac evidence stand-in /home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/mac-evidence/summary.json, KLD stand-in configs /home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/rendered-dry/kld-gen.
+# Rendered by codex/stack11/window/render_items.py; config and kld_dump binaries from bw-stack11-base stage 71 (kld/build_dump.sh).
+# Dumps take ~10.3 GB of /mnt/scratch per item plus a 5 GiB margin (preflight checks): remove one item's .klf dumps before the other runs
+# if /mnt/scratch is short.
+id = "kld-s11-j5q"
+title = "Paired J5Q KLD at six-column verify width: frozen/stack10 vs frozen/stack11-base, tails at ~32k and ~64k depth"
+priority = 28
+host_sensitive = false
+kind = "measure"
+ab = true
+retry = "fresh"
+# canary 300 + run --budget-s 4400 + analysis headroom; est_s: G (d32k 4 arms x ~215 s, d64k 5 arms x ~430 s, kld-s9-gdn4 measured)
+budget_s = 5200
+est_s = 3300
+note = "why: paired full-vocab KLD of frozen/stack11-base vs frozen/stack10, width-6 verify, tails at ~32k and ~64k | expect: assistant-tail mean KL <= 6e-4, all-tail <= 0.06 (D: gdn4 alone 3.5e-4/5.6e-4 and 0.044/0.058 vs stack9) | falsifier: twice that, or > 10x the repeat spread | answers: does the master rebase add numerics beyond gdn4's; token identity is not expected"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/kld/run.sh", "run", "--config", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/rendered-dry/kld-gen/config-j5q.json", "--out", "/mnt/scratch/work/kld-s11/out-j5q/{id}/a{attempt}/run", "--budget-s", "4400", "--arm-timeout-s", "800"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/kld"
+ports = []
+
+[run.env]
+CUDA_HOME = "/usr/local/cuda-13.2"
+CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/kld/preflight.sh", "--config", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/rendered-dry/kld-gen/config-j5q.json", "--out", "/mnt/scratch/work/kld-s11/out-j5q/kld-s11-j5q/preflight"]
+timeout_s = 900
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/kld/run.sh", "canary", "--config", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/rendered-dry/kld-gen/config-j5q.json", "--out", "/mnt/scratch/work/kld-s11/out-j5q/{id}/a{attempt}/canary", "--budget-s", "300"]
+timeout_s = 300
+
+[analysis]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/kld/run.sh", "analysis", "--config", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/rendered-dry/kld-gen/config-j5q.json", "--out", "/mnt/scratch/work/kld-s11/out-j5q/{id}/a{attempt}/run"]
+timeout_s = 1800
+
+[outputs]
+paths = ["/mnt/scratch/work/kld-s11/out-j5q/{id}/a{attempt}/run", "/mnt/scratch/work/kld-s11/out-j5q/{id}/a{attempt}/canary"]
+
+[fix]
+editable = []
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/kld/analysis.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/kld/build_dump.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/kld/mkconfig.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/kld/preflight.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/kld/run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/kld/runner.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/kld/src/kld_dump.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/kld/src/batch_compat.h",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/rendered-dry/kld-gen/config-j5q.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/bin/kld_dump",
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/data/tokens.bin",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/data/d32k.bin",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/data/d64k.bin",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/kld-s9-gdn4/data/canary.bin",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libmtmd.so.0.5.0",
+]

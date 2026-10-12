@@ -1,0 +1,194 @@
+# DRY RENDER, NOT AN ITEM TO SUBMIT: frozen/stack11-base does not exist yet; its stand-in is /home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10 (commit a588f2a44), Mac evidence stand-in /home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/mac-evidence/summary.json, KLD stand-in configs /home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/rendered-dry/kld-gen.
+# experiment = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/rendered-dry/s11-duo-soak-iq4.toml"
+id = "s11-duo-soak-iq4"
+priority = 28
+title = "stack11-base duo serving soak, IQ4_XS: frozen/stack10 vs frozen/stack11-base with swift15-iq4-duo flags (-ub 512), chain + fold C, two Codex agents, ABBA"
+note = "expect: 8..8 tasks solved (D) | falsifier: Fewer than 8/8 solved in any campaign, a server error or retried call, a runaway, or IQ4 duo min free VRAM on either GPU below the s10 arm minus 100 MiB. | answers: Whether swift15-iq4-duo can serve from frozen/stack11-base with unchanged solves and VRAM headroom vs stack10 (soak A/B)."
+# s10s11s11s10: 4 x 2400 s x 1.5 + 150 = run 14550; + canary 600 + cleanup 150 = 15300.
+# cpu_evidence: bw-stack11 Mac (codex/stack11/bw-stack11-mac.sh, p55 k7 k4 k6a k6b k10 k8 k11a k11b + mfix embd): component CPU gates; the CUDA gates are the bw-stack11-base window (codex/stack11/window/bw-stack11-base.sh)
+host_sensitive = false
+kind = "measure"
+ab = true
+retry = "fresh"
+budget_s = 15300
+est_s = 6000
+startup_grace_s = 900
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [
+  { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
+  { class = "integrity", regex = "frozen bytes changed|inputs changed|model SHA changed|effective params mismatch|frozen file set changed|cross-arm identity failed|path-engaged proof failed|staging-engaged proof failed|canary prompt differs" },
+  { class = "insufficient_data", regex = "too few verify steps|proof inconclusive|missing final token identity|canary prompt has \\d+ tokens|reached only \\d+ cached|R2 reused only" },
+]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/run.sh", "campaign", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/experiment.toml", "--execute", "--out", "/home/xanewok/repos/qwen38-eval/results/2026-10-13-s11-duo-soak-iq4/full-a{attempt}", "--port", "8081", "--budget-s", "14550"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness"
+env = { GPUQ_ACTIVE = "1" }
+ports = [8081]
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/run.sh", "campaign", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/experiment.toml", "--preflight", "--out", "/home/xanewok/repos/qwen38-eval/results/2026-10-13-s11-duo-soak-iq4/preflight-plan"]
+timeout_s = 900
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/run.sh", "campaign", "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/experiment.toml", "--canary", "--out", "/home/xanewok/repos/qwen38-eval/results/2026-10-13-s11-duo-soak-iq4/canary-a{attempt}", "--port", "8081"]
+env = { GPUQ_ACTIVE = "1" }
+timeout_s = 600
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval/results/2026-10-13-s11-duo-soak-iq4/full-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["REFUSE", "frozen", "budget", "agents", "agent_ctx"]
+
+[pins]
+files = [
+  "/home/xanewok/models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf",
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/s11items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/render_items.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/engagement.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/items/s11-duo-soak-iq4.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack10b/codex/stack10/mac-evidence/summary.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-base.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-base.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-base.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cpu.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cpu.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cpu.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cuda.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml-cuda.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libggml.so.0.25.3",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama-common.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama-common.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama-common.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama-server-impl.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libllama.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libmtmd.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libmtmd.so.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/libmtmd.so.0.5.0",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/llama-server",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/round-trace",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/build/bin/test-backend-ops",
+  "/home/xanewok/repos/qwen38-eval/scripts/__init__.py",
+  "/home/xanewok/repos/qwen38-eval/scripts/corpora/__init__.py",
+  "/home/xanewok/repos/qwen38-eval/scripts/corpora/selftest_polyglot.py",
+  "/home/xanewok/repos/qwen38-eval/scripts/instruments/__init__.py",
+  "/home/xanewok/repos/qwen38-eval/scripts/instruments/agentic_probe.py",
+  "/home/xanewok/repos/qwen38-eval/scripts/instruments/bench_concurrency.py",
+  "/home/xanewok/repos/qwen38-eval/scripts/instruments/bench_endpoint.py",
+  "/home/xanewok/repos/qwen38-eval/scripts/instruments/bench_mtp.py",
+  "/home/xanewok/repos/qwen38-eval/scripts/instruments/emit.py",
+  "/home/xanewok/repos/qwen38-eval/scripts/instruments/hillclimb_probe.py",
+  "/home/xanewok/repos/qwen38-eval/scripts/instruments/isolated_exec.py",
+  "/home/xanewok/repos/qwen38-eval/scripts/instruments/longctx.py",
+  "/home/xanewok/repos/qwen38-eval/scripts/instruments/run_polyglot.py",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/tasks.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/tools.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/selftest.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/selftest-initial-skips.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/rust-deps.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/doubly-linked-list/.docs/hints.md",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/doubly-linked-list/.docs/instructions.md",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/doubly-linked-list/.meta/config.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/doubly-linked-list/.meta/example.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/doubly-linked-list/Cargo.toml",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/doubly-linked-list/src/lib.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/doubly-linked-list/src/pre_implemented.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/doubly-linked-list/tests/doubly-linked-list.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/doubly-linked-list/tests/step_4_leak_test_1.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/doubly-linked-list/tests/step_4_leak_test_2.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/book-store/.docs/instructions.md",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/book-store/.meta/Cargo-example.toml",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/book-store/.meta/config.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/book-store/.meta/example.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/book-store/.meta/test_template.tera",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/book-store/.meta/tests.toml",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/book-store/Cargo.toml",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/book-store/src/lib.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/book-store/tests/book-store.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/react/.docs/instructions.md",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/react/.meta/config.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/react/.meta/example.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/react/.meta/tests.toml",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/react/Cargo.toml",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/react/src/lib.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/react/tests/react.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/alphametics/.docs/instructions.md",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/alphametics/.meta/Cargo-example.toml",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/alphametics/.meta/config.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/alphametics/.meta/example.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/alphametics/.meta/test_template.tera",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/alphametics/.meta/tests.toml",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/alphametics/Cargo.toml",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/alphametics/src/lib.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/alphametics/tests/alphametics.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/forth/.docs/instructions.append.md",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/forth/.docs/instructions.md",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/forth/.meta/config.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/forth/.meta/example.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/forth/.meta/test_template.tera",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/forth/.meta/tests.toml",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/forth/Cargo.toml",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/forth/src/lib.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/forth/tests/alloc-attack.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/forth/tests/forth.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/xorcism/.docs/instructions.append.md",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/xorcism/.docs/instructions.md",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/xorcism/.meta/additional-tests.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/xorcism/.meta/config.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/xorcism/.meta/example.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/xorcism/.meta/test_template.tera",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/xorcism/Cargo.toml",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/xorcism/src/lib.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/xorcism/tests/xorcism.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/nucleotide-codons/.docs/instructions.md",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/nucleotide-codons/.meta/config.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/nucleotide-codons/.meta/example.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/nucleotide-codons/Cargo.toml",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/nucleotide-codons/src/lib.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/rust/nucleotide-codons/tests/nucleotide-codons.rs",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/javascript/complex-numbers/.docs/instructions.md",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/javascript/complex-numbers/.eslintrc",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/javascript/complex-numbers/.meta/config.json",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/javascript/complex-numbers/.meta/proof.ci.js",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/javascript/complex-numbers/.meta/tests.toml",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/javascript/complex-numbers/.npmrc",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/javascript/complex-numbers/LICENSE",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/javascript/complex-numbers/babel.config.js",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/javascript/complex-numbers/complex-numbers.js",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/javascript/complex-numbers/complex-numbers.spec.js",
+  "/home/xanewok/repos/qwen38-eval/results/2026-09-12-mixed-pair/campaign-confirmed-fullsuite-20260914-r8/snapshot/agentic-assets/sources/javascript/complex-numbers/package.json",
+  "/home/xanewok/.local/share/mise/installs/node/22.23.1/bin/node",
+  "/home/xanewok/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/rustc",
+  "/home/xanewok/.codex/packages/standalone/releases/0.154.0-x86_64-unknown-linux-musl/bin/codex",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/experiment.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/__init__.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/__main__.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/agents.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/bw-run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/bw_item.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/calibration.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/campaign.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/depth.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/hostload.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/lib.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/mkitem.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/notes.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/probe.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/report.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/run.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/snapshot.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/stub_server.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/source-root.txt",
+]

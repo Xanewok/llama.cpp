@@ -1,0 +1,4 @@
+$ gpuq submit --check /home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/rendered-dry/s11-duo-soak-iq4.gpuq.toml
+rc=0
+/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/rendered-dry/s11-duo-soak-iq4.gpuq.toml: s11-duo-soak-iq4: valid
+/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/rendered-dry/s11-duo-soak-iq4.gpuq.toml: warning: /home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/snapshots/harness-b7dd962e72e1c6ebc8df17657c81a84dbb98cbc38fa15e8873373c890405b92c/harness/lib.py:72: SIGALRM handler _budget_prev.pop() not found in the scanned files; check by hand that it raises no ValueError subclass
