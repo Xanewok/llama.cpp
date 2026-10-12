@@ -1096,7 +1096,28 @@ llm_ffn_op_type llm_ffn_op_type_from_string(const std::string & name, llm_ffn_op
     return fallback;
 }
 
-// CPU: ACCEL -> GPU host -> CPU extra -> CPU
+// a host buffer type offered as an extra buffer type of a GPU device that dev reads in place
+static ggml_backend_buffer_type_t find_device_mapped_host_buft(ggml_backend_dev_t dev) {
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        ggml_backend_dev_t gpu = ggml_backend_dev_get(i);
+        if (ggml_backend_dev_type(gpu) != GGML_BACKEND_DEVICE_TYPE_GPU && ggml_backend_dev_type(gpu) != GGML_BACKEND_DEVICE_TYPE_IGPU) {
+            continue;
+        }
+        auto ggml_backend_dev_get_extra_bufts_fn = (ggml_backend_dev_get_extra_bufts_t)
+            ggml_backend_reg_get_proc_address(ggml_backend_dev_backend_reg(gpu), "ggml_backend_dev_get_extra_bufts");
+        if (!ggml_backend_dev_get_extra_bufts_fn) {
+            continue;
+        }
+        for (ggml_backend_buffer_type_t * buft = ggml_backend_dev_get_extra_bufts_fn(gpu); buft && *buft; ++buft) {
+            if (ggml_backend_buft_is_host(*buft) && ggml_backend_dev_supports_buft(dev, *buft)) {
+                return *buft;
+            }
+        }
+    }
+    return nullptr;
+}
+
+// CPU: ACCEL -> GPU mapped host -> GPU host -> CPU extra -> CPU
 static buft_list_t make_cpu_buft_list(const std::vector<llama_device> & devices, bool use_extra_bufts, bool no_host) {
     buft_list_t buft_list;
 
@@ -1108,6 +1129,20 @@ static buft_list_t make_cpu_buft_list(const std::vector<llama_device> & devices,
             // skip
             if (buft != ggml_backend_cpu_buffer_type()) {
                 buft_list.emplace_back(dev, buft);
+            }
+        }
+    }
+
+    // add a host buffer type that a GPU reads in place
+    // the device's supports_op decides which weights may use it: e.g. the token embeddings, of which GET_ROWS reads only
+    // a few rows per batch, so the GPU gathers them without a copy of the table or a CPU split in front of the graph
+    // under mmap the weights are copied into it, since the device cannot read the mapped file
+    if (!no_host) {
+        for (const auto & dev : devices) {
+            ggml_backend_buffer_type_t buft = find_device_mapped_host_buft(dev.dev);
+            if (buft) {
+                buft_list.emplace_back(dev.dev, buft);
+                break;
             }
         }
     }
