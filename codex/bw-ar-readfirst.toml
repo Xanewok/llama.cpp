@@ -1,0 +1,65 @@
+id = "bw-ar-readfirst"
+title = "AllReduce chunked kernel read-first pipeline (loads of round r-1 before stores of round r) on master abee0c847: CPU protocol model, CUDA 13.2 120a NCCL OFF build (vanilla recipe), byte identity vs master libs (frozen/pkg89-base) on both GPUs + no-wait mutants, compute-sanitizer, test-llama-archs Meta rows vs master, per-call perf ABBA (base rf sf one rv2), GATE rf >= 10 % at 6/12 rows and no decode regression; on PASS only: freeze frozen/ar-readfirst, render + check arp-np1-identity-j5q and arp-np2-real-j5q; never submits"
+kind = "filler"
+priority = 15
+host_sensitive = false
+preemptible = false
+# G: one CUDA build (shared ccache; allreduce.cu + test-llama-archs, cold ggml-cuda ~720 s), CPU model ~5 min, identity + mutants ~3 min, sanitizers <= 4 x 900 s cap (void if serialized), test-llama-archs 4 runs, perf 16 runs ~2 min. bw-ar-duplex a3 took 674 s with two builds.
+est_s = 2400
+budget_s = 7200
+ab = false
+retry = "never"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "deterministic", regex = "bw-ar-readfirst: FAIL" }]
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh", "bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/bw-ar-readfirst.sh", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/window/a{attempt}"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst"
+env = { PATH = "/home/xanewok/.local/bin:/usr/local/bin:/usr/bin:/bin", CUDA_HOME = "/usr/local/cuda-13.2", CUDA_VISIBLE_DEVICES = "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f", GIT_NO_LAZY_FETCH = "1", GPUQ_BUILD_WINDOW = "1", TMPDIR = "/mnt/scratch/tmp-build", OK_RCS = "0" }
+ports = []
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/bw-ar-readfirst.sh", "--preflight"]
+timeout_s = 60
+
+[selftest]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/bw-ar-readfirst.sh", "--selftest"]
+timeout_s = 120
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/window/a{attempt}/summary.json", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/window/a{attempt}/payload.log", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/window/a{attempt}/stages.tsv", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/window/a{attempt}/perf.tsv"]
+
+[fix]
+editable = []
+protected = ["frozen", "budget", "source", "recipe", "controls", "gate"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/bw-ar-readfirst.toml",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/bw-ar-readfirst.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/ar-duplex-driver.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/ar-cpumodel.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/ar-cpumodel.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/ar_summary.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/render_arp.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/codex/postrun_proofs.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-readfirst/ggml/src/ggml-cuda/allreduce.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/pkg89-base/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/pkg89-base/STAMPS.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/pkg89-base/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/pkg89-base/build/bin/SHA256SUMS",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/vanilla-08246a28f/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-index.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/ar-readfirst-mac-a2/mac-run.txt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/build-window-1007/ar-readfirst-mac-a2/payload.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/items/vanilla-np2-real-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/items/vanilla-depth-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/results/vanilla-np2-real-j5q/canary-a5/0-vanilla/server.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/vanilla-master/codex/results/vanilla-depth-j5q/canary-a1/0-vanilla/server.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/work/pkg89-window/window/a1/placement/base/server.log",
+  "/home/xanewok/repos/qwen38-eval/harness/experiments/duo-bub-np2-real-iq4.toml",
+]

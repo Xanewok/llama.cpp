@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Mac CPU gate (bin/bw-mac wt/ar-readfirst codex/mac-gate.sh): CPU protocol model of HEAD's chunked kernel (the local commit's
-# kernel text) in read-first and store-first order, quick + wait-removed mutant; syntax of the window files.
+# kernel text) in read-first and store-first order, quick + wait-removed mutant; syntax of the window files; perf-gate and
+# postrun-proof selftests.
 # No CUDA on the Mac: allreduce.cu, the driver and the window are not compiled or run here.
 # rc: 0 pass | 1 a model case failed | 5 negative control void | 7 a step hit its time cap
 set -euo pipefail
@@ -25,6 +26,8 @@ for order in rf sf; do
     [[ $rc == 0 ]] && grep -aq '^cpumodel-mutated: PASS' "$OUT/model-mutated-$order.out" || { echo "mac-gate: negative control void ($order, rc=$rc)"; exit 5; }
 done
 for s in codex/*.sh; do bash -n "$s"; done
+step summary-selftest 60 python3 codex/ar_summary.py --selftest || { echo 'mac-gate: FAIL ar_summary selftest'; exit 1; }
+step postrun-selftest 60 bash codex/postrun_proofs.sh --selftest || { echo 'mac-gate: FAIL postrun_proofs selftest'; exit 1; }
 python3 - <<'PY'
 from pathlib import Path
 for p in Path('codex').glob('*.py'):
