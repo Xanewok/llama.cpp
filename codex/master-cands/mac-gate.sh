@@ -20,8 +20,8 @@ flags=(-DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_CCACHE="${BW_CCACHE:-ON
     -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_EXAMPLES=OFF -DGGML_ACCELERATE=OFF)
 read -r -a extra <<< "${BW_CPU_EXTRA:?}"
 TARGETS=(llama-server test-alloc test-backend-sampler test-sampling test-llama-archs test-speculative test-host-mapped)
-# RAM gate: <= 4 GiB for this payload; refuse to start below 5 GiB free
-free_gib() { vm_stat | awk '/page size of/ {ps=$8} /Pages free/ {f=$3} /Pages inactive/ {i=$3} END {printf "%d\n", (f+i)*ps/1073741824}'; }
+# RAM gate: <= 4 GiB for this payload; refuse to start below 4 GiB available
+free_gib() { vm_stat | awk -v ps="$(pagesize)" '/Pages (free|inactive|speculative)/ { gsub("\\.", "", $NF); n += $NF } END { printf "%d", n*ps/1073741824 }'; }
 stage() { # NAME VERDICT RC T0
     printf '%s\trc=%s\tgate=%s\twall_s=%s\n' "$1" "$3" "$2" "$((SECONDS-$4))" | tee -a "$OUT/stages.tsv"
     [[ $2 != FAIL ]] || fails=$((fails+1))
@@ -35,7 +35,7 @@ run_gate() {
     stage "$name" "$v" "$rc" "$t0"
 }
 g=$(free_gib); echo "free_gib=$g" > "$OUT/ram-gate.txt"
-[[ $g -ge 5 ]] || { stage ram-gate FAIL "$g" "$SECONDS"; exit 8; }
+[[ $g -ge 4 ]] || { stage ram-gate FAIL "$g" "$SECONDS"; exit 8; }
 t0=$SECONDS rc=0
 { "$BW_BUILDGATE" cmake -S . -B build-cpu "${flags[@]}" "${extra[@]}" &&
   "$BW_BUILDGATE" cmake --build build-cpu --target "${TARGETS[@]}" -j"${BW_JOBS:-4}"; } > "$OUT/build.log" 2>&1 || rc=$?
