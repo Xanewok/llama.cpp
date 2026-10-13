@@ -109,7 +109,7 @@ static bool test_bitwise(ggml_backend_dev_t dev, ggml_backend_t backend, ggml_ba
                 ggml_backend_buffer_free(buf_b);
                 ggml_free(ctx_b);
                 printf("host_mapped: dev=%s fallback=1, bitwise test skipped\n", ggml_backend_dev_name(dev));
-                return true;
+                return ok;
             }
 
             ggml_context * ctx = new_ctx(8);
