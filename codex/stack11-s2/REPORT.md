@@ -10,6 +10,7 @@ Branch `topic/stack11-s2` (base `7e7b03962` = `frozen/stack11-base`, master `abe
 | `a2f920c53` | WIP s2 90 | `CUDA_Host_Mapped` buffer type, Meta host-source branch, `tests/test-host-mapped.cpp` |
 | `edeb96dfd` | WIP s2 drop K7 | rows 154 + 168 of stack11 DROPMAP (RMS norm scale pair) |
 | `a1b490c78` | WIP s2 drop K10 | rows 160 + 173 (batched top-k) |
+| `50f175738` (nok), `b89cff8e9` (k) | WIP s2 87 np2 test | `check_mtp_draft_np2` in `tests/test-llama-archs.cpp` (owner-approved after Sol's coverage note; hashes as of this report) |
 
 then codex commits (Mac gate, window). `wt/stack11-s2-k` (`topic/stack11-s2-k`) = the 90 commit plus a copy of the Mac payload: it is the
 with-K7/K10 variant (frozen/stack11-s2); the main tree is the dropped variant (frozen/stack11-s2-nok). The drop is not decided here.
@@ -26,6 +27,9 @@ does not know the fold. The change is therefore the abee0c8 logic re-expressed o
   run's last row for the first token of a sequence; a fresh sequence must not see it, and returning nullptr sends that batch to the catch-up path
   above, which zeroes it. Without this the fold (default in all served profiles: `LLAMA_MTP_FOLD_C`) bypasses the reset. Contract in `src/llama-ext.h`.
 - Both hunks are needed: `p87-nofold` (fold refusal reverted) and `p87-nospec` (speculative.cpp reset reverted) both fail the test (MAC.md).
+- np2: `check_mtp_draft_np2` (batch of an established and a fresh sequence, then a fully established batch) fails with the reset hunks reverted and with a
+  zero-all-carries mutant, passes on the tree; it also fails when the fold never resumes (MAC.md). Sol's review (`review-sol.md`) found the fold refusal batch-wide:
+  a mixed fresh + established batch costs one extra catch-up decode C, as designed.
 - `tests/test-llama-archs.cpp` (`check_mtp_draft_reset`, from 77c4540ce) plus a `common_log_flush(common_log_main())` before the return:
   the async logger lost the last lines in about half the runs under load (MAC.md).
 
@@ -68,8 +72,7 @@ keeping `alpha_ok`/`conv_ok` in the final `return n_ok == tests_run && slice_ok 
 
 ## Mac gates
 
-See `MAC.md` (commands, rc, fail-before/pass-after table). nok tree: 69 stages, 0 FAIL. K tree: 68 stages, one inherited-test timeout
-(`k10-topk-unit-run`, 600 s alarm at Mac load 150-240; rerun passes in 178 s; stack11-base measured 106 s).
+See `MAC.md` (commands, rc, fail-before/pass-after table). nok tree: 82 stages, 0 FAIL. K tree: 79 stages, 0 FAIL (`k10-topk-unit-run` 133 s).
 
 ## CUDA window and A/B drafts (not submitted)
 
@@ -78,7 +81,7 @@ See `MAC.md` (commands, rc, fail-before/pass-after table). nok tree: 69 stages, 
   NO_PINNED fallback) on both GPUs for both builds, touched ops (GET_ROWS, TOP_K, RMS_NORM*, SCALE...) on both GPUs vs `frozen/stack11-base`'s
   binary, served-flag health boots (4 profiles on K, 1 on nok; engagement line `load_tensors: CUDA_Host_Mapped model buffer size` gates), freeze both,
   render + `gpuq submit --check` the items. The stack11-base kernel gates and full `test-backend-ops` are not repeated (87/88/91 touch no kernel,
-  90 touches GET_ROWS dispatch and buffer types). est_s 8220 (G), budget 24000. Preflight needs the two Mac evidence sets (present).
+  90 touches GET_ROWS dispatch and buffer types). est_s 10620 (G), budget 28000. Also stage 54 `meta-rows` (`window/meta_rows.cpp`: the token-table GET_ROWS through a public-API Meta(CUDA0,CUDA1) buffer, bitwise vs the device-resident path per type, each GPU covered by swapping the device order, `--nopin` negative control) and, after the freeze, stage 73 `placement-proof` (`window/placement.py`: GGML_SCHED_DEBUG placement of the model-level token GET_ROWS at np1/np2 for J5q and IQ4_XS on `frozen/stack11-s2` and `frozen/stack11-s2-nok`: buffer `CUDA_Host_Mapped`, GET_ROWS on Meta, no CPU split before Meta, token ids equal `frozen/stack11-base`, whose `CPU_Mapped` + CPU GET_ROWS is the negative control and returns rc 5 if it does not reproduce). Preflight needs the two Mac evidence sets (present).
 - Items (all vs `frozen/stack11-base`, CCX0+1 via `work/aa-load/ccx01.sh`): `s2-np2-real-{j5q,iq4}`, `s2-depth-{j5q,iq4}` (np1, cross-arm token
   identity at 8k/32k, base canary shows `CPU_Mapped` and no `CUDA_Host_Mapped` as the negative control), `s2-duo-soak-iq4`, plus
   `s2-drop-np2-real-j5q` (frozen/stack11-s2-nok vs frozen/stack11-s2; prices the drop, does not decide it). Drafts in
@@ -88,11 +91,9 @@ See `MAC.md` (commands, rc, fail-before/pass-after table). nok tree: 69 stages, 
 
 ## Open questions for the owner
 
-1. 91 ships as tests only on stack11 (its production hunk is redundant with retained Meta plans). Keep the tests in the stack, or drop the commit?
+1. (decided: 91 stays, tests only.)
 2. Drop decision for K7/K10: `s2-drop-np2-real-j5q` is drafted; the earlier switch-off A/B (s11-drop) had s2 minus nok = +0.43/+0.06/+0.16 ms/round
    with SE 0.58/0.14/0.22, i.e. not resolved.
-3. Run the GGML_SCHED_DEBUG placement proof (`work/zc-pr-window/zc_proof.py`) on `frozen/stack11-s2`? It would turn the "90 serves the token GET_ROWS on
-   the device inside stack11's iterative Meta driver" claim from D into M; the canary line proves only the buffer type, np1 cross-arm identity proves
-   exactness.
-4. No KLD item drafted for s2 (90 is bitwise-equal by test, 87/88/91 do not change the target numerics). Add one anyway?
+3. (decided: done) The placement proof is in the window as stages 54 and 73. Residual: `meta_rows.cpp` and `placement.py` first run on GPUs in the window (Mac: compile + SKIP only; `placement.py` selftest on master log fixtures).
+4. (decided: no KLD item; add one only if an `s2-depth-*` np1 cross-arm identity fails.)
 5. 90 costs +644 MiB pinned resident host RAM per server process (J5q; memory available stays >= 8 GiB by the AGENTS.md rule).
