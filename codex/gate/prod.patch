@@ -1,0 +1,31 @@
+commit 7c86887a5b903d34cd30f908fc5dab91c5084030
+Author: Igor Matuszewski <xanewok@gmail.com>
+Date:   Fri Oct 9 05:21:34 2026 +0200
+
+    tests : count out-of-range TOP_K output indices as failures instead of reading src through them
+    
+    A backend that returns garbage indices crashed test_top_k::err() on the host (src[r * cols + ia[c]]),
+    which killed the whole run before later cases could report.
+
+diff --git a/tests/test-backend-ops.cpp b/tests/test-backend-ops.cpp
+index 0080c7e16..ccc9fc3f4 100644
+--- a/tests/test-backend-ops.cpp
++++ b/tests/test-backend-ops.cpp
+@@ -7105,10 +7105,14 @@ struct test_top_k : public test_case {
+             std::vector<float> asrc(k);
+             std::vector<float> bsrc(k);
+             for (int64_t r = 0; r < ggml_nrows(input); r++) {
+-                // Convert indices for the row back to integer
++                // Convert indices for the row back to integer. A column outside the row is a failure, never a read:
++                // a broken backend may return garbage, and indexing src with it would crash the whole run.
+                 for (int64_t c = 0; c < k; c++) {
+-                    ia[c] = (int32_t)a[r * k + c];
+-                    ib[c] = (int32_t)b[r * k + c];
++                    const bool a_ok = a[r * k + c] >= 0 && a[r * k + c] < (float) cols;
++                    const bool b_ok = b[r * k + c] >= 0 && b[r * k + c] < (float) cols;
++                    ia[c] = a_ok ? (int32_t)a[r * k + c] : 0;
++                    ib[c] = b_ok ? (int32_t)b[r * k + c] : 0;
++                    diff += (a_ok ? 0 : 1) + (b_ok ? 0 : 1);
+                 }
+                 // The src values for each row should match.
+                 for (int64_t c = 0; c < k; c++) {
