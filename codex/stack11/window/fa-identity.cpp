@@ -3,10 +3,13 @@
 //   fa-identity DEVICE GROUP     e.g. fa-identity CUDA0 verify
 // GROUP: decode (one query row, grouped one-row kernels), verify (3-8 queries, head size 256), other (f16 K/V, q8_0 with 2 or
 // 9+ queries: paths this fix must not touch). Prints "GROUP CASE FNV64 OUT_BYTES"; the digest covers the raw f32 output bytes.
+// GROUP perf times instead (served verify and decode shapes): "perf CASE US_PER_OP", the mean over TIMED_ITERS graph computes of
+// TIMED_COPIES independent FA nodes, after TIMED_WARMUP computes; the copies amortize the per-graph launch and sync cost.
 #include "ggml.h"
 #include "ggml-backend.h"
 
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -77,10 +80,14 @@ static uint64_t fnv64(const uint8_t * p, size_t n) {
     return h;
 }
 
+enum { TIMED_COPIES = 16, TIMED_WARMUP = 3, TIMED_ITERS = 20 };
+
 // Shapes follow test_flash_attn_ext in tests/test-backend-ops.cpp: K/V are views of a cache twice as long (or twice as many
 // streams), laid out like the KV cache through the permute.
 static int run(ggml_backend_t backend, const fa_case & c, uint64_t seed, bool & ok) {
-    ggml_init_params ip = { ggml_tensor_overhead()*64 + ggml_graph_overhead(), nullptr, true };
+    const bool timed = strcmp(c.group, "perf") == 0;
+    const int  copies = timed ? TIMED_COPIES : 1;
+    ggml_init_params ip = { ggml_tensor_overhead()*(64 + copies) + ggml_graph_overhead(), nullptr, true };
     ggml_context * ctx = ggml_init(ip);
     rng r(seed);
 
@@ -117,10 +124,15 @@ static int run(ggml_backend_t backend, const fa_case & c, uint64_t seed, bool & 
     ggml_tensor * m = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, c.kv, c.nb, 1, c.nr23[1]);
     ggml_tensor * s = c.sinks ? ggml_new_tensor_1d(ctx, GGML_TYPE_F32, q->ne[2]) : nullptr;
 
-    ggml_tensor * out = ggml_flash_attn_ext(ctx, q, k.view, v.view, m, 1.0f/sqrtf((float) c.hsk), 0.0f, 0.0f);
-    ggml_flash_attn_ext_add_sinks(out, s);
-    ggml_flash_attn_ext_set_n_kv_max(out, 0);
-    ggml_prec_set_acc(out, GGML_PREC_F32);
+    std::vector<ggml_tensor *> outs;
+    for (int i = 0; i < copies; ++i) {
+        ggml_tensor * o = ggml_flash_attn_ext(ctx, q, k.view, v.view, m, 1.0f/sqrtf((float) c.hsk), 0.0f, 0.0f);
+        ggml_flash_attn_ext_add_sinks(o, s);
+        ggml_flash_attn_ext_set_n_kv_max(o, 0);
+        ggml_prec_set_acc(o, GGML_PREC_F32);
+        outs.push_back(o);
+    }
+    ggml_tensor * out = outs[0];
 
     if (!ggml_backend_supports_op(backend, out)) {
         printf("%s %s UNSUPPORTED\n", c.group, name_of(c).c_str());
@@ -128,7 +140,9 @@ static int run(ggml_backend_t backend, const fa_case & c, uint64_t seed, bool & 
         return 0;
     }
     ggml_cgraph * gf = ggml_new_graph(ctx);
-    ggml_build_forward_expand(gf, out);
+    for (ggml_tensor * o : outs) {
+        ggml_build_forward_expand(gf, o);
+    }
     ggml_backend_buffer_t buf = ggml_backend_alloc_ctx_tensors(ctx, backend);
     if (!buf) {
         fprintf(stderr, "alloc failed: %s\n", name_of(c).c_str());
@@ -157,6 +171,29 @@ static int run(ggml_backend_t backend, const fa_case & c, uint64_t seed, bool & 
             }
         }
         ggml_backend_tensor_set(m, mask.data(), 0, mask.size()*sizeof(ggml_fp16_t));
+    }
+    if (timed) {
+        using steady = std::chrono::steady_clock;
+        bool done = true;
+        for (int i = 0; i < TIMED_WARMUP && done; ++i) {
+            done = ggml_backend_graph_compute(backend, gf) == GGML_STATUS_SUCCESS;
+        }
+        ggml_backend_synchronize(backend);
+        const steady::time_point t0 = steady::now();
+        for (int i = 0; i < TIMED_ITERS && done; ++i) {
+            done = ggml_backend_graph_compute(backend, gf) == GGML_STATUS_SUCCESS;
+        }
+        ggml_backend_synchronize(backend);
+        const double us = std::chrono::duration<double, std::micro>(steady::now() - t0).count()/(TIMED_ITERS*copies);
+        if (done) {
+            printf("perf %s %.3f\n", name_of(c).c_str(), us);
+        } else {
+            fprintf(stderr, "compute failed: %s\n", name_of(c).c_str());
+            ok = false;
+        }
+        ggml_backend_buffer_free(buf);
+        ggml_free(ctx);
+        return 0;
     }
     if (ggml_backend_graph_compute(backend, gf) != GGML_STATUS_SUCCESS) {
         fprintf(stderr, "compute failed: %s\n", name_of(c).c_str());
@@ -213,6 +250,16 @@ static std::vector<fa_case> cases(const std::string & group) {
             list.push_back({"verify", 256, 256, 2, {8, 1}, 2048, nb, false, q8, kvc, false, false});
             list.push_back({"verify", 256, 256, 2, {16, 1}, 2048, nb, true, q8, kvc, false, false});
         }
+    } else if (group == "perf") {
+        // served shapes: q8_0 KV, head size 256, 6 query heads per KV head; nb=1 is the decode control, 5-8 the verify rows (np1
+        // k=7 -> 8); seqs=2 is np2's two streams
+        for (int64_t seqs : {1, 2}) {
+            for (int64_t kv : {8192, 32768}) {
+                for (int64_t nb : {1, 5, 6, 7, 8}) {
+                    list.push_back({"perf", 256, 256, 4, {6, seqs}, kv, nb, false, q8, kvc, false, seqs == 2});
+                }
+            }
+        }
     } else if (group == "other") {
         for (int64_t nb : {2, 9, 16, 64}) { // nb=1 is the grouped decode path: group decode
             list.push_back({"other", 256, 256, 4, {6, 1}, 2048, nb, false, q8, kvc, false, false});
@@ -230,7 +277,7 @@ static std::vector<fa_case> cases(const std::string & group) {
 
 int main(int argc, char ** argv) {
     if (argc != 3) {
-        fprintf(stderr, "usage: %s DEVICE decode|verify|other\n", argv[0]);
+        fprintf(stderr, "usage: %s DEVICE decode|verify|other|perf\n", argv[0]);
         return 2;
     }
     ggml_backend_dev_t dev = ggml_backend_dev_by_name(argv[1]);

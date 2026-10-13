@@ -4,7 +4,7 @@
 # a gate runs in a subshell under set -e with OUT=$OUT/<dir>, pinned to $CPUS. Every kept negative control must fail on purpose:
 # a control that passes fails its gate (rc 8), a control that cannot be shown to bite is rc 5.
 # Needs from the caller: ROOT W EVAL OUT SHA SHORT VISIBLE STARTED COMPONENTS CPUS CCCL BUILDGATE flags S10 S10_LIB S10_SHA S10_REPO
-# CAND_LIB WIN.
+# CAND_LIB MASTER_LIB WIN.
 
 has() { [[ " $COMPONENTS " == *" $1 "* ]]; }
 
@@ -533,10 +533,12 @@ g_k11a() {
     [[ -s $OUT/k11a/sync/sync-count.json ]]
 }
 
-# --- fafix: SASS of the multi-query q8_0 verify FA kernels vs frozen/stack10; the regressed stack10-cand library must fail -----------
+# --- fafix: SASS of the multi-query q8_0 verify FA kernels vs frozen/stack10, spill relative to the master-anchored f16 sibling;
+# the regressed stack10-cand library and the spill mutants must fail ------------------------------------------------------------------
 g_sass() {
     mkdir -p "$OUT/sass"
-    python3 "$WIN/sass_gate.py" "$OUT/sass" "$S10_LIB/libggml-cuda.so" build-cuda/bin/libggml-cuda.so --control "$CAND_LIB/libggml-cuda.so"
+    python3 "$WIN/sass_gate.py" "$OUT/sass" "$S10_LIB/libggml-cuda.so" build-cuda/bin/libggml-cuda.so --master "$MASTER_LIB/libggml-cuda.so" \
+        --control "$CAND_LIB/libggml-cuda.so"
 }
 
 # --- fafix: FA output digests of this build vs frozen/stack10, each driver built against the headers of the libraries it loads --------
@@ -551,11 +553,14 @@ s10_headers() { # DEST: frozen/stack10's public headers from its commit (wt/stac
     mkdir -p "$1"
     git -C "$S10_REPO" archive --format=tar "$S10_SHA" ggml/include include common | tar -x -C "$1"
 }
-fafix_identity() {
-    [[ $VISIBLE == GPU-* ]] || return 1
+fa_drivers() {
     g++ -std=c++17 -O1 -Wall -Wextra -Werror -Iggml/include "$WIN/fa-identity.cpp" -L build-cuda/bin -lggml -lggml-base -o "$OUT/fa-identity"
     s10_headers "$OUT/s10-src"
     g++ -std=c++17 -O1 -Wall -Wextra -Werror -I"$OUT/s10-src/ggml/include" "$WIN/fa-identity.cpp" -L "$S10_LIB" -lggml -lggml-base -o "$OUT/fa-identity-s10"
+}
+fafix_identity() {
+    [[ $VISIBLE == GPU-* ]] || return 1
+    fa_drivers
     local dev group f
     for dev in CUDA0 CUDA1; do
         for group in decode verify other; do
@@ -583,6 +588,23 @@ fafix_identity() {
     fi
 }
 g_fafix() { in_dir fafix fafix_identity; }
+
+# --- FA q8_0 timing vs frozen/stack10 at the served verify shapes (the SASS gate's spill bound is master-relative, so the cost of
+# the higher absolute spill is measured): one GPU, arms alternated ABAB, FAPERF_REPS runs each; fa_q8_perf.py judges the medians
+# per shape (stack11 <= stack10 x 1.03) and writes OUT/fa-q8-perf.tsv.
+FAPERF_DEV=CUDA0
+FAPERF_REPS=5
+faperf_ab() {
+    [[ $VISIBLE == GPU-* ]] || return 1
+    fa_drivers
+    local rep
+    for rep in $(seq 1 "$FAPERF_REPS"); do
+        fa_runid "$FAPERF_DEV" perf "new-r$rep" "$OUT/fa-identity" "$ROOT/build-cuda/bin"
+        fa_runid "$FAPERF_DEV" perf "s10-r$rep" "$OUT/fa-identity-s10" "$S10_LIB"
+    done
+    python3 "$WIN/fa_q8_perf.py" judge "${OUT%/faperf}/fa-q8-perf.tsv" "$OUT"/id-"$FAPERF_DEV"-perf-*.txt
+}
+g_faperf() { in_dir faperf faperf_ab; }
 
 # test-backend-ops under the window's CPU pin. Contract: rc 0 or 1 only (1 = a case failed, full_checks.py judges which);
 # a crash or timeout is rc >= 2.
@@ -637,7 +659,9 @@ touched_ops() {
     local dev
     for dev in CUDA0 CUDA1; do
         tbo_sql build-cuda/bin/test-backend-ops 5400s "$OUT/touched-$dev.sql" "$OUT/touched-$dev.err" -b "$dev" -o "$TOUCHED"
-        python3 "$WIN/full_checks.py" ops-check "$OUT/touched-$dev.sql" "$dev" "$SHA" out "$TOUCHED"
+        # the K7 self-test is skipped after any failing case: its marker also comes from a run that selects no case (as in g_full)
+        tbo_sql build-cuda/bin/test-backend-ops 1800s "$OUT/touched-$dev.self.sql" "$OUT/touched-$dev.self.err" -b "$dev" -o RMS_NORM_SCALE_PAIR -p no-such-case
+        python3 "$WIN/full_checks.py" ops-check "$OUT/touched-$dev.sql" "$dev" "$SHA" out "$TOUCHED" "$OUT/touched-$dev.self.sql"
         excuse_retry "$OUT/touched-$dev.sql" "$dev"
     done
 }

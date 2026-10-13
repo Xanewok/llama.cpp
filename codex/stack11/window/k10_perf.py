@@ -39,7 +39,11 @@ def failures(log, arm):
     assert any(re.search(r'\d+/\d+ tests passed', l) for l in lines(log)), f'control {arm}: run did not complete'
     rows = results(log)
     failed = [r for r in rows if r[1] == 'FAIL']
-    assert any('canonical=1' in r[0] for r in failed), f'control {arm}: no canonical case failed'
+    if arm == 'm5':
+        # `key >= prefix` makes the tie order racy: its canonical failures are luck (0-3 per run), its 53 ties=1 set failures are not
+        assert failed, f'control {arm}: no case failed'
+    else:
+        assert any('canonical=1' in r[0] for r in failed), f'control {arm}: no canonical case failed'
     if arm == 'off':
         # per-row CUB path: the set/value cases stay exact, only the order promise breaks
         other = [r for r in failed if 'canonical=1' not in r[0]]
@@ -65,9 +69,41 @@ def perf(outdir, dev):
     print(json.dumps(out, indent=1))
 
 
+def selftest():
+    import tempfile
+    ok = '  TOP_K(type=f32,ne=[{0},1,1,1],k=1,{1}): \x1b[1;32mOK\x1b[0m'
+    bad = '[TOP_K] ERR = 2.5 > 0.0000001   TOP_K(type=f32,ne=[{0},1,1,1],k=1,{1}): \x1b[1;31mFAIL\x1b[0m'
+    done = '  3/4 tests passed'
+    cases = {
+        # (arm, lines, must pass)
+        'm5 ties only': ('m5', [ok.format(1, 'canonical=1'), bad.format(2, 'ties=1'), done], True),
+        'm5 nothing failed': ('m5', [ok.format(1, 'canonical=1'), ok.format(2, 'ties=1'), done], False),
+        'm5 crashed': ('m5', [bad.format(2, 'ties=1')], False),
+        'm1 canonical': ('m1', [bad.format(1, 'canonical=1'), done], True),
+        'm1 ties only': ('m1', [ok.format(1, 'canonical=1'), bad.format(2, 'ties=1'), done], False),
+        'off non-canonical': ('off', [bad.format(1, 'canonical=1'), bad.format(2, 'ties=1'), done], False),
+    }
+    with tempfile.TemporaryDirectory() as d:
+        for name, (arm, text, want) in cases.items():
+            p = Path(d)/'log'
+            p.write_text('\n'.join(text) + '\n')
+            try:
+                failures(p, arm)
+                got = True
+            except AssertionError:
+                got = False
+            assert got == want, name
+
+
 if __name__ == '__main__':
     cmd = sys.argv[1]
-    if cmd == 'engaged':
+    if cmd == 'selftest':
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()):
+            selftest()
+        print('k10 control judge selftest PASS')
+    elif cmd == 'engaged':
         engaged(sys.argv[2])
     elif cmd == 'failures':
         failures(sys.argv[2], sys.argv[3])

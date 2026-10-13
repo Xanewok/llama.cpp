@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# stack11-base CUDA window (parent queue only, no A/B timing): CUDA build, the np2 joint-replay smoke, every component's CUDA gates,
-# the meta subgraph unit test, the fafix SASS and identity gates against frozen/stack10, the touched ops and the whole
+# stack11-base CUDA window (parent queue only, no serving A/B): CUDA build, the np2 joint-replay smoke, every component's CUDA gates,
+# the meta subgraph unit test, the fafix SASS and identity gates and the FA q8_0 op timing against frozen/stack10, the touched ops and the whole
 # test-backend-ops on both GPUs, K11a sync count, served-flag health boots of the four swift15 profiles, freeze as frozen/stack11-base,
 # the kld_dump pair, render and `gpuq submit --check` the A/B and KLD items (never submitted).
 #   env COMPONENTS (default: p55 k7 k4 k6a k6b k10 k8 k11a k11b) selects the component gates and the canaries of the rendered items;
@@ -34,6 +34,8 @@ S10_LIB=$S10/build/bin
 S10_SHA=a588f2a44382a361df3e2a456be0c80ca10dd1d6
 S10_REPO=$W/wt/stack10b
 CAND_LIB=$W/frozen/stack10-cand/build/bin
+MASTER=$W/frozen/pkg89-base
+MASTER_LIB=$MASTER/build/bin
 SERVE=$HOME/.claude/skills/local-qwen-server/bin/serve.sh
 EVIDENCE=codex/stack11/mac-evidence/summary.json
 ALL_COMPONENTS='p55 k7 k4 k6a k6b k10 k8 k11a k11b'
@@ -68,6 +70,7 @@ STAGES=(
     'gate 62 k11b-input-stage g_k11b k11b'
     'gate 64 fafix-sass g_sass'
     'gate 65 fafix-identity g_fafix'
+    'gate 73 fa-q8-perf g_faperf'
     'gate 67 mmvq g_mmvq p55'
     'gate 68 touched-ops g_touched'
 )
@@ -145,10 +148,12 @@ preflight() {
     git merge-base --is-ancestor "$BASE" HEAD || { echo "master $BASE is not an ancestor"; return 1; }
     for p in "$CCCL" "$BUILDGATE" "$W/bin/cpugate" "$W/bin/wt" "$W/work/aa-load/ccx01.sh" /usr/local/cuda-13.2/bin/nvcc \
              /usr/local/cuda-13.2/bin/compute-sanitizer "$EVAL/harness/mkitem.py" "$S10/SOURCE" "$S10_LIB/libggml-cuda.so" \
-             "$S10_LIB/test-backend-ops" "$S10_LIB/round-trace" "$S10_LIB/SHA256SUMS" "$CAND_LIB/libggml-cuda.so" "$SERVE" "$K4_MODEL" /mnt/scratch; do
+             "$S10_LIB/test-backend-ops" "$S10_LIB/round-trace" "$S10_LIB/SHA256SUMS" "$CAND_LIB/libggml-cuda.so" "$MASTER_LIB/libggml-cuda.so" \
+             "$SERVE" "$K4_MODEL" /mnt/scratch; do
         [[ -e $p ]] || { echo "missing $p"; return 1; }
     done
     [[ $(head -n 1 "$S10/SOURCE") == "$S10_SHA" ]] || { echo "frozen/stack10 is not $S10_SHA"; return 1; }
+    [[ $(head -n 1 "$MASTER/SOURCE") == "$BASE" ]] || { echo "frozen/pkg89-base is not master $BASE"; return 1; }
     git -C "$S10_REPO" cat-file -e "$S10_SHA^{commit}" || { echo "wt/stack10b lacks $S10_SHA (headers of frozen/stack10)"; return 1; }
     [[ -w $W/work ]] || { echo 'work dir not writable'; return 1; }
     source_checks || { echo 'source checks'; return 1; }
@@ -159,6 +164,9 @@ preflight() {
         "$WIN"/kld/tests/*.py || { echo 'python syntax'; return 1; }
     bash "$WIN/np2_smoke.sh" --preflight || { echo 'np2 smoke preflight'; return 1; }
     python3 "$WIN/full_checks.py" --fixtures > /dev/null || { echo 'full_checks fixtures'; return 1; }
+    python3 "$WIN/sass_gate.py" --selftest > /dev/null || { echo 'sass_gate selftest'; return 1; }
+    python3 "$WIN/fa_q8_perf.py" selftest > /dev/null || { echo 'fa_q8_perf selftest'; return 1; }
+    python3 "$WIN/k10_perf.py" selftest > /dev/null || { echo 'k10_perf selftest'; return 1; }
     python3 "$WIN/engagement.py" selftest > /dev/null || { echo 'engagement selftest'; return 1; }
     python3 "$WIN/s11items.py" selftest > /dev/null || { echo 's11items selftest'; return 1; }
     python3 "$WIN/health.py" --selftest > /dev/null || { echo 'health selftest'; return 1; }
@@ -229,7 +237,8 @@ if [[ ${1:-} == --list-stages ]]; then list_stages; exit 0; fi
 # gpuq [selftest]: the gate judges on recorded good inputs (must pass) and their broken copies (must fail), CPU only.
 if [[ ${1:-} == --selftest ]]; then
     python3 "$WIN/full_checks.py" --fixtures && python3 "$WIN/engagement.py" selftest && python3 "$WIN/s11items.py" selftest \
-        && python3 "$WIN/health.py" --selftest && { echo 'bw-stack11: PASS selftest'; exit 0; }
+        && python3 "$WIN/health.py" --selftest && python3 "$WIN/sass_gate.py" --selftest && python3 "$WIN/fa_q8_perf.py" selftest \
+        && python3 "$WIN/k10_perf.py" selftest && { echo 'bw-stack11: PASS selftest'; exit 0; }
     echo 'bw-stack11: FAIL selftest'; exit 8
 fi
 if [[ ${1:-} == --preflight ]]; then

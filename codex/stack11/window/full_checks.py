@@ -13,8 +13,9 @@ usage: full_checks.py --fixtures
        full_checks.py check SQL BACKEND COMMIT COMPONENTS   (writes SQL.retry; prints counts)
        full_checks.py --regex PARAMS
        full_checks.py --rerun SQL OP BACKEND COMMIT PARAMS  (rc 0: rows exist, all passed; rc 2: rows exist, some failed; rc 1: none)
-       full_checks.py ops-check SQL BACKEND COMMIT SCOPE OP,OP...   one op-filtered run: every OP has a passing row, failing rows go
-                                                                    to SQL.retry with SCOPE (in: only a frozen/stack10 3/3 failure excuses)
+       full_checks.py ops-check SQL BACKEND COMMIT SCOPE OP,OP... [SELFTEST_SQL...]
+                            one op-filtered run: every OP has a passing row (a MARKER_ONLY op: its PASS marker in SQL or a
+                            SELFTEST_SQL), failing rows go to SQL.retry with SCOPE (in: only a frozen/stack10 3/3 failure excuses)
 """
 from pathlib import Path
 import re
@@ -32,6 +33,8 @@ MARKERS = {
     'k6a': 'MUL_MAT_SHARED: same-backend byte identity and changing-input replay PASS',
     'k6b': 'ADD_RMS_NORM: same-backend byte identity and changing-input replay PASS',
 }
+# Ops that are only a backend self-test, no test case: their PASS marker (cases >= 1) stands for a passing row.
+MARKER_ONLY = {'RMS_NORM_SCALE_PAIR': MARKERS['k7']}
 # Ops each selected component adds or changes cases for: at least one supported passing row must exist.
 OPS = {'base': ('FLASH_ATTN_EXT', 'GATED_DELTA_NET', 'CONCAT'), 'p55': ('MUL_MAT', 'MUL_MAT_ID'), 'k4': ('SSM_CONV_RS',),
        'k10': ('TOP_K',), 'k8': ('MUL_MAT', 'MUL_MAT_ID')}
@@ -103,8 +106,9 @@ def check(raw, backend, commit, comps):
     return len(rows), retry
 
 
-def ops_check(raw, backend, commit, scope, ops):
-    """An op-filtered run: rows of other ops are an error (the filter is exact), every op of OPS passes somewhere."""
+def ops_check(raw, backend, commit, scope, ops, selftests=''):
+    """An op-filtered run: rows of other ops are an error (the filter is exact), every op of OPS passes somewhere. SELFTESTS: the
+    output of runs that select no case, for the markers a failing case would skip."""
     rows, retry = [], []
     for row in parse_rows(raw):
         if row[2] != backend or row[5] != 'test' or not int(row[6]):
@@ -116,11 +120,15 @@ def ops_check(raw, backend, commit, scope, ops):
         rows.append(row)
         if not (int(row[7]) and not row[8]):
             retry.append((scope, row[3], row[4]))
-    fails = [l.strip() for l in raw.splitlines() if re.match(r'\s*FAIL ', l)]
+    text = raw + '\n' + selftests
+    fails = [l.strip() for l in text.splitlines() if re.match(r'\s*FAIL ', l)]
     if fails:
         raise ValueError(f'{len(fails)} FAIL lines, first: {fails[0]}')
     for op in ops:
-        if not any(r[3] == op and int(r[7]) and not r[8] for r in rows):
+        if op in MARKER_ONLY:
+            if not re.search(re.escape(MARKER_ONLY[op]) + r' cases=[1-9]', text):
+                raise ValueError(f'{op}: PASS marker missing: {MARKER_ONLY[op]}')
+        elif not any(r[3] == op and int(r[7]) and not r[8] for r in rows):
             raise ValueError(f'no passing {op} row')
     if len(retry) > MAX_EXCUSED:
         raise ValueError(f'{len(retry)} failing rows (limit {MAX_EXCUSED})')
@@ -210,6 +218,20 @@ def fixture_checks():
         except ValueError:
             continue
         raise AssertionError(f'ops-check negative control escaped: {name}')
+    # a marker-only op passes on its marker, from the run itself or from a no-case self-test run, and fails without it
+    k7 = '  ' + MARKERS['k7'] + ' cases=360\n'
+    ops = ['FLASH_ATTN_EXT', 'TOP_K', 'RMS_NORM_SCALE_PAIR']
+    assert ops_check('\n'.join(fa) + '\n' + k7, b, c, 'out', ops) == (3, [])
+    assert ops_check('\n'.join(fa), b, c, 'out', ops, k7) == (3, [])
+    for name, text, selftests in (('marker missing', '\n'.join(fa), ''),
+                                  ('zero cases', '\n'.join(fa), k7.replace('cases=360', 'cases=0')),
+                                  ('FAIL marker', '\n'.join(fa), k7 + '  FAIL RMS_NORM_SCALE_PAIR matcher: layout=1 expected pair\n'),
+                                  ('FAIL marker in the run', '\n'.join(fa) + '\n  FAIL RMS_NORM_SCALE_PAIR negative control\n', k7)):
+        try:
+            ops_check(text, b, c, 'out', ops, selftests)
+        except ValueError:
+            continue
+        raise AssertionError(f'ops-check marker control escaped: {name}')
     print('full-suite checks and negative controls PASS')
 
 
@@ -228,10 +250,11 @@ if __name__ == '__main__':
         Path(sql + '.retry').write_text(''.join(f'{s}\t{o}\t{p}\n' for s, o, p in retry))
         print(f'full_rows_M={n}')
         print(f'failing_rows_to_rerun_M={len(retry)}')
-    elif sys.argv[1:2] == ['ops-check'] and len(sys.argv) == 7:
-        sql, backend, commit, scope, ops = sys.argv[2:]
+    elif sys.argv[1:2] == ['ops-check'] and len(sys.argv) >= 7:
+        sql, backend, commit, scope, ops = sys.argv[2:7]
         assert scope in ('in', 'out')
-        n, retry = ops_check(Path(sql).read_text(), backend, commit, scope, ops.split(','))
+        selftests = ''.join(Path(f).read_text() for f in sys.argv[7:])
+        n, retry = ops_check(Path(sql).read_text(), backend, commit, scope, ops.split(','), selftests)
         Path(sql + '.retry').write_text(''.join(f'{s}\t{o}\t{p}\n' for s, o, p in retry))
         print(f'op_rows_M={n}')
         print(f'failing_rows_to_rerun_M={len(retry)}')

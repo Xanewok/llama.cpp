@@ -1,11 +1,11 @@
 id = "bw-stack11-base"
-title = "stack11-base CUDA window: build, np2 joint-replay smoke, every component's CUDA gates (FA T1-T7, MMVQ, MMQ tiles, GDN joint, K4 K6 K7 K10 K11b, meta subgraph), fafix SASS and identity vs frozen/stack10, touched ops and the full test-backend-ops on both GPUs, K11a sync count, served-flag health boots of the four swift15 profiles, freeze as stack11-base, build kld_dump pair, render/check the A/B and KLD items (NOT submitted); Mac CPU gates required"
+title = "stack11-base CUDA window: build, np2 joint-replay smoke, every component's CUDA gates (FA T1-T7, MMVQ, MMQ tiles, GDN joint, K4 K6 K7 K10 K11b, meta subgraph), fafix SASS, identity and FA q8_0 timing vs frozen/stack10, touched ops and the full test-backend-ops on both GPUs, K11a sync count, served-flag health boots of the four swift15 profiles, freeze as stack11-base, build kld_dump pair, render/check the A/B and KLD items (NOT submitted); Mac CPU gates required"
 kind = "filler"
 priority = 19
 host_sensitive = false
 preemptible = false
-# G: stack10b window 7200 + FA/touched ops 1500 + GDN/MMVQ 600 + health boots 1200 + KLD build 120 = 10620 s; D: budget as stack10b's.
-est_s = 10620
+# G: stack10b window 7200 + FA/touched ops 1500 + GDN/MMVQ 600 + health boots 1200 + KLD build 120 + FA timing 300 = 10920 s; D: budget as stack10b's.
+est_s = 10920
 budget_s = 60000
 ab = false
 retry = "never"
@@ -50,6 +50,8 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate",
   "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
   "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-index.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/pkg89-base/SOURCE",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/pkg89-base/build/bin/libggml-cuda.so",
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10-cand/SOURCE",
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10-cand/build/bin/libggml-cuda.so",
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack10/SOURCE",
@@ -71,6 +73,7 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/check_pins.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/engagement.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/fa-identity.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/fa_q8_perf.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/full_checks.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/gates.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-base/codex/stack11/window/health.py",

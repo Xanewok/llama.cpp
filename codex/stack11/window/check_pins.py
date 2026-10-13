@@ -29,6 +29,7 @@ WT_FILES = ['bin/buildgate', 'bin/cpugate', 'bin/wt', 'bin/wt-index.py', 'work/a
             'frozen/stack10/build/bin/libggml-cuda.so', 'frozen/stack10/build/bin/libggml-base.so', 'frozen/stack10/build/bin/libggml.so',
             'frozen/stack10/build/bin/libllama.so', 'frozen/stack10/build/bin/libllama-common.so',
             'frozen/stack10-cand/SOURCE', 'frozen/stack10-cand/build/bin/libggml-cuda.so',
+            'frozen/pkg89-base/SOURCE', 'frozen/pkg89-base/build/bin/libggml-cuda.so',
             'work/kld-s9-gdn4/data/tokens.bin', 'work/kld-s9-gdn4/data/d32k.bin', 'work/kld-s9-gdn4/data/d64k.bin',
             'work/kld-s9-gdn4/data/canary.bin']
 # Inputs of the gates that are not in the tree: K4 model logits, np2 smoke, K11a capture, health boots, KLD configs.
