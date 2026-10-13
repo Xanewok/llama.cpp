@@ -76,7 +76,10 @@ HAVE_K=0
 [[ -f tests/test-topk-batched.cpp ]] && HAVE_K=1
 
 if want p87; then
+    # LLAMA_MTP_FOLD_C=0 selects the catch-up decode path of common/speculative.cpp, the default takes the folded path of llama-context.cpp:
+    # each hunk of 87 is reached by one of the two
     for sd in 1 2 3 4 5; do run "p87-fixed-s$sd" 0 'MTP draft state reset: .*OK' -- "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
+    for sd in 1 2 3; do run "p87-fixed-nofoldc-s$sd" 0 'MTP draft state reset: .*OK' -- env LLAMA_MTP_FOLD_C=0 "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
     # fail-before: all production hunks of 87 reverted, test kept
     revert 87-prod.patch
     do_build p87-reverted-build test-llama-archs
@@ -84,11 +87,19 @@ if want p87; then
         run "p87-reverted-s$sd" nz 'MTP draft state reset: .*FAIL' -- "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"
         absent "p87-reverted-s$sd-no-ok" "p87-reverted-s$sd" 'MTP draft state reset: .*OK'
     done
+    for sd in 1 2 3; do run "p87-reverted-nofoldc-s$sd" nz 'MTP draft state reset: .*FAIL' -- env LLAMA_MTP_FOLD_C=0 "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
     restore
-    # the fold refusal alone reverted (the speculative.cpp reset kept): INFO, shows whether the test reaches the folding decode
+    # the fold refusal alone reverted: the folded path fails, the catch-up path (fold off) still passes
     revert 87-fold.patch
     do_build p87-nofold-build test-llama-archs
-    for sd in 1 2 3; do run "p87-nofold-s$sd" any -- "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
+    for sd in 1 2 3; do run "p87-nofold-s$sd" nz 'MTP draft state reset: .*FAIL' -- "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
+    for sd in 1 2 3; do run "p87-nofold-nofoldc-s$sd" 0 'MTP draft state reset: .*OK' -- env LLAMA_MTP_FOLD_C=0 "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
+    restore
+    # the speculative.cpp reset alone reverted: the catch-up path fails, the folded path still passes
+    revert 87-spec.patch
+    do_build p87-nospec-build test-llama-archs
+    for sd in 1 2 3; do run "p87-nospec-nofoldc-s$sd" nz 'MTP draft state reset: .*FAIL' -- env LLAMA_MTP_FOLD_C=0 "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
+    for sd in 1 2 3; do run "p87-nospec-s$sd" 0 'MTP draft state reset: .*OK' -- "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
     restore
     # overreset: the carry is zeroed at every batch start, not only on an empty draft memory
     python3 - common/speculative.cpp <<'PY'
@@ -101,7 +112,7 @@ open(p, 'w').write(s.replace(old, ') {\n                    std::fill_n'))
 PY
     git diff --stat > "$OUT/p87-overreset.diffstat"
     do_build p87-overreset-build test-llama-archs
-    for sd in 1 2 3 4 5; do run "p87-overreset-s$sd" nz 'MTP draft state reset: .*FAIL' -- "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
+    for sd in 1 2 3; do run "p87-overreset-nofoldc-s$sd" nz 'MTP draft state reset: .*FAIL' -- env LLAMA_MTP_FOLD_C=0 "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
     restore
     do_build p87-rebuild test-llama-archs
 fi
