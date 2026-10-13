@@ -1,0 +1,47 @@
+commit fba35dbc966ad4c61cc65d8cbefda1ba4f7530ad
+Author: Igor Matuszewski <xanewok@gmail.com>
+Date:   Sat Oct 10 21:34:13 2026 +0200
+
+    sampling : leave backend top-p and min-p with min_keep > 1 to the CPU
+    
+    The backend ignores min_keep, so top_p = 0.01 with min_keep = 5 kept 1
+    token on the backend and 5 on the CPU. Forcing the first min_keep entries
+    into the mask repairs the count but, among tied logits, keeps other token
+    ids than the CPU sampler. Decline min_keep > 1 in backend_init, like
+    penalties does for multiple outputs, so the CPU sampler runs and honours
+    min_keep itself.
+    
+    Add a test-backend-sampler case: min_keep <= 1 stays on the backend and
+    keeps the CPU ids (tied maxima, -inf logits, few candidates after top-k);
+    min_keep > 1, including SIZE_MAX, runs on the CPU sampler.
+
+diff --git a/src/llama-sampler.cpp b/src/llama-sampler.cpp
+index 5a141eaa3..59fafd938 100644
+--- a/src/llama-sampler.cpp
++++ b/src/llama-sampler.cpp
+@@ -1623,6 +1623,13 @@ static bool llama_sampler_top_p_backend_init(
+     auto * sctx = (llama_sampler_top_p *) smpl->ctx;
+     GGML_UNUSED(n_outputs_max_per_seq);
+ 
++    // the backend ignores min_keep, and forcing the first min_keep sorted entries would pick other
++    // ids than the CPU sampler among tied logits: leave min_keep > 1 to the CPU sampler
++    if (sctx->min_keep > 1) {
++        sctx->init(false);
++        return false;
++    }
++
+     const bool res = llama_sampler_backend_support(smpl, buft);
+ 
+     sctx->init(res);
+@@ -1823,8 +1830,9 @@ static bool llama_sampler_min_p_backend_init(
+     GGML_UNUSED(n_outputs_max_per_seq);
+ 
+     // p > 1 can leave no logit at the threshold, and the CPU sampler then keeps one of the tied
+-    // maxima that its sort puts first, which the backend cannot reproduce: leave it to the CPU
+-    if (sctx->p > 1.0f) {
++    // maxima that its sort puts first, which the backend cannot reproduce: leave it to the CPU.
++    // The same goes for min_keep > 1, which the backend ignores and which picks among tied logits.
++    if (sctx->p > 1.0f || sctx->min_keep > 1) {
+         sctx->init(false);
+         return false;
+     }
