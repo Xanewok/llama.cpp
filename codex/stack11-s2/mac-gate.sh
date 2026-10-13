@@ -71,10 +71,118 @@ restore() { git checkout -q -- . ; [[ -z $(git status --porcelain --untracked-fi
 
 configure
 do_build build test-llama-archs test-alloc test-speculative test-backend-ops test-host-mapped
+T="$B/bin/test-backend-ops"
+HAVE_K=0
+[[ -f tests/test-topk-batched.cpp ]] && HAVE_K=1
+
+if want p87; then
+    for sd in 1 2 3 4 5; do run "p87-fixed-s$sd" 0 'MTP draft state reset: .*OK' -- "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
+    # fail-before: all production hunks of 87 reverted, test kept
+    revert 87-prod.patch
+    do_build p87-reverted-build test-llama-archs
+    for sd in 1 2 3 4 5; do
+        run "p87-reverted-s$sd" nz 'MTP draft state reset: .*FAIL' -- "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"
+        absent "p87-reverted-s$sd-no-ok" "p87-reverted-s$sd" 'MTP draft state reset: .*OK'
+    done
+    restore
+    # the fold refusal alone reverted (the speculative.cpp reset kept): INFO, shows whether the test reaches the folding decode
+    revert 87-fold.patch
+    do_build p87-nofold-build test-llama-archs
+    for sd in 1 2 3; do run "p87-nofold-s$sd" any -- "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
+    restore
+    # overreset: the carry is zeroed at every batch start, not only on an empty draft memory
+    python3 - common/speculative.cpp <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = ' && llama_memory_seq_pos_max(llama_get_memory(ctx_dft), seq_id) < 0) {\n                    std::fill_n'
+assert s.count(old) == 1
+open(p, 'w').write(s.replace(old, ') {\n                    std::fill_n'))
+PY
+    git diff --stat > "$OUT/p87-overreset.diffstat"
+    do_build p87-overreset-build test-llama-archs
+    for sd in 1 2 3 4 5; do run "p87-overreset-s$sd" nz 'MTP draft state reset: .*FAIL' -- "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
+    restore
+    do_build p87-rebuild test-llama-archs
+fi
+
+if want p88; then
+    run p88-fixed 0 'uses_prompt' -- "$B/bin/test-speculative"
+    # mutant: the ngram-simple drafter stops declaring that it reads the prompt
+    python3 - common/speculative.cpp <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+i = s.index('struct common_speculative_impl_ngram_simple')
+old = 'bool uses_prompt() const override { return true; }'
+j = s.index(old, i)
+open(p, 'w').write(s[:j] + 'bool uses_prompt() const override { return false; }' + s[j + len(old):])
+PY
+    git diff --stat > "$OUT/p88-mutant.diffstat"
+    do_build p88-mutant-build test-speculative
+    run p88-mutant nz 'CHECK failed: common_speculative_uses_prompt' -- "$B/bin/test-speculative"
+    restore
+    do_build p88-rebuild test-speculative
+fi
 
 if want p91; then
-    # 91 is not in the tree: its tests must pass on the plan-retaining Meta backend without the package's production change
-    run p91-test-alloc 0 'test_meta_subgraph_reuse_two_splits' 'test_meta_subgraph_reuse_ten_splits' 'test_meta_subgraph_reuse_same_graph' -- "$B/bin/test-alloc"
+    # 91 has no production commit here: its tests must pass on the plan-retaining Meta backend of stack11-base
+    run p91-test-alloc 0 'test_meta_subgraph_reuse_two_splits PASSED' 'test_meta_subgraph_reuse_ten_splits PASSED' 'test_meta_subgraph_reuse_same_graph PASSED' -- "$B/bin/test-alloc"
+    # control: a plan that forgets its cached uid is rebuilt on every compute, so the simple backend sees new subgraph uids each time
+    python3 - ggml/src/ggml-backend-meta.cpp <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = '        backend_ctx->uid         = cgraph->uid;\n'
+assert s.count(old) == 1
+open(p, 'w').write(s.replace(old, '        backend_ctx->uid         = 0;\n'))
+PY
+    git diff --stat > "$OUT/p91-uidchurn.diffstat"
+    do_build p91-uidchurn-build test-alloc
+    run p91-uidchurn nz 'GGML_ASSERT' -- "$B/bin/test-alloc"
+    restore
+    do_build p91-rebuild test-alloc
+fi
+
+if want p90; then
+    run p90-test-alloc 0 'test_meta_host_mapped_weight PASSED' -- "$B/bin/test-alloc"
+    run p90-host-mapped-cpu 0 'SKIP' -- "$B/bin/test-host-mapped"
+    run p90-get-rows-cpu 0 -- "$T" test -b CPU -o GET_ROWS -j 1
+    absent p90-get-rows-no-fail p90-get-rows-cpu 'FAIL'
+    # fail-before: the iterative split-state driver without the host-source branch reads the foreign buffer context as a Meta one
+    revert 90-meta-driver.patch
+    do_build p90-nodriver-build test-alloc
+    run p90-nodriver nz -- "$B/bin/test-alloc"
+    absent p90-nodriver-no-pass p90-nodriver 'test_meta_host_mapped_weight PASSED'
+    restore
+    # fail-before: the Meta device no longer accepts the foreign host buffer type
+    revert 90-meta-all.patch
+    do_build p90-nometa-build test-alloc
+    run p90-nometa nz -- "$B/bin/test-alloc"
+    absent p90-nometa-no-pass p90-nometa 'test_meta_host_mapped_weight PASSED'
+    restore
+    do_build p90-rebuild test-alloc
+fi
+
+if want whole; then
+    run whole-llama-archs 0 -- "$B/bin/test-llama-archs"
+    run whole-test-alloc 0 -- "$B/bin/test-alloc"
+    run whole-speculative 0 -- "$B/bin/test-speculative"
+    run whole-get-rows 0 -- "$T" test -b CPU -o GET_ROWS -j 1
+fi
+
+if want drops; then
+    if [[ $HAVE_K == 1 ]]; then
+        run k7-pair-identity 0 'RMS_NORM_SCALE_PAIR: same-backend byte identity' -- "$T" test -b CPU -o RMS_NORM_SCALE_PAIR -j 1
+        do_build k10-topk-unit test-topk-batched
+        run k10-topk-unit-run 0 -- "$B/bin/test-topk-batched"
+    else
+        [[ ! -e ggml/src/ggml-rms-norm-scale-pair.h && ! -e ggml/src/ggml-cuda/top-k-batched.cuh ]] || { echo 'FAIL K7/K10 files still present'; exit 8; }
+        run drop-top-k 0 -- "$T" test -b CPU -o TOP_K -j 1
+        run drop-rms-norm 0 -- "$T" test -b CPU -o RMS_NORM -j 1
+        run drop-scale 0 -- "$T" test -b CPU -o SCALE -j 1
+        stage drop-files-absent PASS - "$SECONDS"
+    fi
 fi
 
 echo "stack11-s2 mac: fails=$fails"
