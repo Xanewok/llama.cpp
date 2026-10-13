@@ -1,5 +1,6 @@
 #include "common.h"
 #include "log.h"
+#include "speculative.h"
 #include "ggml-backend.h"
 #include "ggml.h"
 #include "gguf.h"
@@ -651,6 +652,80 @@ static bool check_causal_attn_toggle(
     return ok;
 }
 
+// the MTP draft of a request must not depend on what its sequence served before, nor on how its prompt is batched
+static bool check_mtp_draft_reset(const llm_arch arch, const size_t seed, const float stdev) {
+    gguf_context_ptr gguf_ctx = get_gguf_ctx(arch, false);
+    const std::string arch_name = llm_arch_name(arch);
+    const std::string key_layers = arch_name + ".block_count";
+    gguf_set_val_u32(gguf_ctx.get(), key_layers.c_str(), gguf_get_val_u32(gguf_ctx.get(), gguf_find_key(gguf_ctx.get(), key_layers.c_str())) + 1);
+    gguf_set_val_u32(gguf_ctx.get(), (arch_name + ".nextn_predict_layers").c_str(), 1);
+
+    llama_model_params mparams = llama_model_default_params();
+    mparams.progress_callback = silent_model_load_progress;
+    mparams.load_mtp = true;
+    ggml_backend_dev_t devs[] = { ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU), nullptr };
+    mparams.devices = devs;
+    tensor_data_params tensor_params = { seed, stdev };
+    llama_model_ptr model(llama_model_init_from_user(gguf_ctx.get(), set_tensor_data, &tensor_params, mparams));
+
+    llama_context_params cparams = llama_context_default_params();
+    cparams.n_seq_max = 2;
+    llama_context_ptr ctx_tgt(llama_init_from_model(model.get(), cparams));
+    cparams.ctx_type  = LLAMA_CONTEXT_TYPE_MTP;
+    cparams.ctx_other = ctx_tgt.get();
+    llama_context_ptr ctx_dft(llama_init_from_model(model.get(), cparams));
+    GGML_ASSERT(model && ctx_tgt && ctx_dft);
+
+    common_params_speculative params;
+    params.types = { COMMON_SPECULATIVE_TYPE_DRAFT_MTP };
+    params.draft.ctx_tgt = ctx_tgt.get();
+    params.draft.ctx_dft = ctx_dft.get();
+    params.draft.n_max   = 1;
+    params.draft.backend_sampling = false;
+    common_speculative * spec = common_speculative_init(params, cparams.n_seq_max);
+
+    const llama_seq_id seq_id = 1; // not 0, to catch a wrong per-sequence index
+    const uint32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model.get()));
+    // draft logits of a new request, as after a server clears a slot
+    auto draft_logits = [&](const std::vector<llama_token> & prompt, const uint32_t n_batch) {
+        llama_memory_seq_rm(llama_get_memory(ctx_tgt.get()), seq_id, -1, -1);
+        llama_memory_seq_rm(llama_get_memory(ctx_dft.get()), seq_id, -1, -1);
+
+        common_batch batch(ctx_tgt.get());
+        for (uint32_t i = 0; i < prompt.size(); i++) {
+            batch.add(prompt[i], i, seq_id, false);
+            if (batch.size() == n_batch || i + 1 == prompt.size()) {
+                GGML_ASSERT(llama_process(ctx_tgt.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0 && common_speculative_process(spec, batch));
+                batch.clear();
+            }
+        }
+
+        llama_tokens draft;
+        auto & dp = common_speculative_get_draft_params(spec, seq_id);
+        dp.drafting = true;
+        dp.pos0     = prompt.size();
+        dp.id_last  = prompt[0];
+        dp.prompt   = &prompt;
+        dp.result   = &draft;
+        common_speculative_draft(spec);
+
+        const float * logits = llama_get_logits_ith(ctx_dft.get(), 0);
+        GGML_ASSERT(logits != nullptr);
+        return std::vector<float>(logits, logits + n_vocab);
+    };
+
+    const std::vector<llama_token> prompt = get_tokens(8, n_vocab, seed + 1);
+    const std::vector<float> logits_fresh = draft_logits(prompt, prompt.size());
+    draft_logits(get_tokens(48, n_vocab, seed + 2), 48);
+    const std::vector<float> logits_after = draft_logits(prompt, prompt.size());
+    const std::vector<float> logits_split = draft_logits(prompt, prompt.size()/2);
+    common_speculative_free(spec);
+
+    const bool ok = logits_fresh == logits_after && nmse(logits_fresh, logits_split) < 1e-9;
+    LOG("%s: MTP draft state reset: %s\n", arch_name.c_str(), ok ? "\033[1;32mOK\033[0m" : "\033[1;31mFAIL\033[0m");
+    return ok;
+}
+
 static bool moe_mandatory(const llm_arch arch) {
     switch (arch) {
         case LLM_ARCH_LLAMA4:
@@ -1101,6 +1176,13 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
                 LOG(template_row_res.c_str(), status_nmse.c_str(), nmse_str, status_roundtrip.c_str(), status_mixed.c_str(), mixed_str);
             }
         }
+    }
+
+    if (arch_matches(arch_filter, LLM_ARCH_QWEN35) && (target_backend == nullptr || strcmp(target_backend, "CPU") == 0)) {
+        n_tests++;
+        const bool ok = check_mtp_draft_reset(LLM_ARCH_QWEN35, seed, stdev);
+        n_failed += !ok;
+        all_ok   &= ok;
     }
 
     if (n_tests == 0) {
