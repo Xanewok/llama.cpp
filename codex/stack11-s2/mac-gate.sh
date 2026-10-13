@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Mac CPU gate of stack11-s2 (run through bin/bw-mac; argument = OUT dir). Stage filter: words in the bw-mac OUT_NAME after the first
 # "__" (stack11-s2-mac__p87__p90 runs p87 and p90). Fail-before = the production hunk reverted from codex/stack11-s2/revert/*.patch
-# (test kept) or a one-line mutant; pass-after = the tree as committed. Every job <= 600 s (alarm) and waits for >= 4 GiB available.
+# (test kept) or a one-line mutant; pass-after = the tree as committed. Every job <= 600 s (alarm) and waits for >= 3 GiB available.
 set -euo pipefail
 export CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 ASAN_OPTIONS=detect_leaks=0
 cd "$(dirname "$0")/../.."
@@ -34,8 +34,13 @@ stage() { # NAME VERDICT(PASS|FAIL|INFO) RC T0
     [[ $2 != FAIL ]] || fails=$((fails+1))
 }
 free_gib() { vm_stat | awk -v ps="$(pagesize)" '/Pages (free|inactive|speculative)/ { gsub("\\.", "", $NF); n += $NF } END { printf "%d", n*ps/1073741824 }'; }
-g=$(free_gib); echo "free_gib=$g" > "$OUT/ram-gate.txt"
-[[ $g -ge 4 ]] || { stage ram-gate FAIL "$g" "$SECONDS"; exit 8; }
+# model-free jobs use < 2 GiB; wait up to 10 min for 3 GiB of available memory (the owner's Halmos runs share this host), then fail
+t0=$SECONDS
+while g=$(free_gib); [[ $g -lt 3 ]]; do
+    (( SECONDS - t0 < 600 )) || { echo "free_gib=$g" > "$OUT/ram-gate.txt"; stage ram-gate FAIL "$g" "$t0"; exit 8; }
+    sleep 10
+done
+echo "free_gib=$g waited_s=$((SECONDS-t0))" > "$OUT/ram-gate.txt"
 
 configure() { "$BW_BUILDGATE" cmake -S . -B "$B" "${flags[@]}" "${extra[@]}" "$@"; }
 do_build() { # NAME TARGETS...
