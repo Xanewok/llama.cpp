@@ -1,0 +1,4 @@
+build	rc=0	gate=PASS	wall_s=77
+k7-pair-identity	rc=0	gate=PASS	wall_s=13
+k10-topk-unit	rc=0	gate=PASS	wall_s=2
+k10-topk-unit-run	rc=0	gate=PASS	wall_s=178
