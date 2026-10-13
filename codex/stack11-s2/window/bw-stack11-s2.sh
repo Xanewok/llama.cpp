@@ -104,9 +104,12 @@ preflight() {
         [[ -e $p ]] || { echo "missing $p"; return 1; }
     done
     [[ $(head -n 1 "$BASE_FROZEN/SOURCE") == "$BASE_SHA" ]] || { echo "frozen/stack11-base is not $BASE_SHA"; return 1; }
-    # the K tree is the 90 commit of this branch (before the two drop commits) plus codex files
-    p=$(git log --format=%H --grep='^WIP s2 90$' -1)
-    [[ -n $p ]] && git -C "$KROOT" diff --quiet "$p" HEAD -- . ':!codex' || { echo 'wt/stack11-s2-k differs from the WIP s2 90 commit outside codex/'; return 1; }
+    # the K tree is this branch without the two drop commits: its source differs from HEAD by exactly their diff (blob ids ignored)
+    p=$(git log --format=%H --grep='^WIP s2 drop K7$' -1)
+    q=$(git log --format=%H --grep='^WIP s2 drop K10$' -1)
+    [[ -n $p && -n $q ]] && cmp -s <(git diff "$p~1" "$q" -- . ':!codex' | grep -v '^index ') \
+        <(git diff "$(git -C "$KROOT" rev-parse HEAD)" HEAD -- . ':!codex' | grep -v '^index ') \
+        || { echo 'wt/stack11-s2-k source differs from HEAD by more than the K7/K10 drop commits'; return 1; }
     [[ -w $W/work ]] || { echo 'work dir not writable'; return 1; }
     source_checks || { echo 'source checks'; return 1; }
     for script in "$WIN"/*.sh; do bash -n "$script" || { echo "bash -n $script"; return 1; }; done
