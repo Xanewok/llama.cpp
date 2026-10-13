@@ -27,7 +27,7 @@ WRITES = [str(ROOT / 'codex/window'), str(HERE / 'rendered'), str(HERE / 'snapsh
 NOT_INPUTS = ('rendered-dry', 'rendered', 'snapshots', '__pycache__')
 WT_FILES = ['bin/buildgate', 'bin/wt', 'bin/wt-index.py', 'work/aa-load/ccx01.sh',
             'frozen/stack11-base/SOURCE', 'frozen/stack11-base/build/bin/SHA256SUMS', 'frozen/stack11-base/build/bin/test-backend-ops',
-            'frozen/stack11-base/build/bin/round-trace', 'frozen/stack11-base/build/bin/libggml-cuda.so']
+            'frozen/stack11-base/build/bin/round-trace', 'frozen/stack11-base/build/bin/llama-server', 'frozen/stack11-base/build/bin/libggml-cuda.so']
 # Inputs of the gates that are not in the tree: np2 smoke and health boots.
 EXTERNAL = [str(HOME / 'models/Swift-1.5-Qwen3.8-27B-IQ4_XS.gguf'), str(HOME / 'models/Swift-1.5-Qwen3.8-27B-J5q-bf16.gguf'),
             str(HOME / 'models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json'),

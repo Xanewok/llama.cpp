@@ -197,5 +197,16 @@ if want drops; then
     fi
 fi
 
+if want window; then
+    # window-owned driver of the CUDA placement stage (main tree only): compiles against this tree's headers and libs, SKIPs without 2 GPUs
+    t0=$SECONDS
+    rc=0
+    "$BW_BUILDGATE" c++ -std=c++17 -O1 -Wall -Wextra -Werror -Iggml/include codex/stack11-s2/window/meta_rows.cpp \
+        -L "$B/bin" -lggml -lggml-base -Wl,-rpath,"$B/bin" -o "$OUT/meta_rows" > "$OUT/meta-rows-build.log" 2>&1 || rc=$?
+    stage meta-rows-build "$([[ $rc == 0 ]] && echo PASS || echo FAIL)" "$rc" "$t0"
+    [[ $rc == 0 ]] || exit 8
+    run meta-rows-skip 0 'meta_rows: SKIP' -- "$OUT/meta_rows"
+fi
+
 echo "stack11-s2 mac: fails=$fails"
 [[ $fails == 0 ]]

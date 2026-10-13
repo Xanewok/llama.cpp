@@ -3,7 +3,8 @@
 # with K7 and K10, built in wt/stack11-s2-k; frozen/stack11-s2-nok = the same without K7 and K10, built in wt/stack11-s2), the np2
 # joint-replay smoke, CPU-device unit tests, test-host-mapped (bitwise per type, scheduler placement, NO_PINNED fallback) and the touched
 # ops on both GPUs against frozen/stack11-base's binary, served-flag health boots, freeze, then render and `gpuq submit --check` the
-# A/B items (never submitted). Not repeated from the stack11-base window: its kernel gates and full test-backend-ops (87/88/91 touch no
+# A/B items (never submitted), then the pkg 90 placement proof on the frozen builds (stage 73, vs frozen/stack11-base as the negative
+# control; meta_rows.cpp, stage 54, compares the mapped-weight gather through Meta(CUDA0,CUDA1) bitwise with the device-resident one). Not repeated from the stack11-base window: its kernel gates and full test-backend-ops (87/88/91 touch no
 # kernel; 90 touches GET_ROWS dispatch and buffer types only, covered here).
 #   --preflight, --selftest (gpuq stages, CPU only), --list-stages.
 #   DRY_RUN=1 (CPU only, no gpuq): preflight (Mac evidence reported), stage list, selftests, dry renders against labelled stand-ins into
@@ -54,9 +55,10 @@ STAGES=(
     'gate 51 host-mapped g_mapped'
     'gate 52 ops-k g_ops_k'
     'gate 53 ops-nok g_ops_nok'
+    'gate 54 meta-rows g_meta_rows'
 )
-# After the table, on a clean sheet only: 60 health-boots-k, 61 health-boots-nok; then fatal 70 freeze-k, 71 freeze-nok, 72 render.
-TAIL_STAGES=('60 health-boots-k' '61 health-boots-nok' '70 freeze-stack11-s2' '71 freeze-stack11-s2-nok' '72 render-and-check-items')
+# After the table, on a clean sheet only: 60 health-boots-k, 61 health-boots-nok; then fatal 70 freeze-k, 71 freeze-nok, 72 render, and gate 73 placement-proof on the frozen builds.
+TAIL_STAGES=('60 health-boots-k' '61 health-boots-nok' '70 freeze-stack11-s2' '71 freeze-stack11-s2-nok' '72 render-and-check-items' '73 placement-proof')
 
 # Source anchors the gates rely on (a renamed one fails here, not on the GPU).
 source_checks() {
@@ -113,6 +115,8 @@ preflight() {
     python3 "$WIN/engagement.py" selftest > /dev/null || { echo 'engagement selftest'; return 1; }
     python3 "$WIN/s2items.py" selftest > /dev/null || { echo 's2items selftest'; return 1; }
     python3 "$WIN/health.py" --selftest > /dev/null || { echo 'health selftest'; return 1; }
+    python3 "$WIN/placement.py" selftest > /dev/null || { echo 'placement selftest'; return 1; }
+    g++ -std=c++17 -Wall -Wextra -Werror -I"$KROOT/ggml/include" -fsyntax-only "$WIN/meta_rows.cpp" || { echo 'meta_rows.cpp does not compile'; return 1; }
     python3 "$WIN/health.py" --parse 18099 > /dev/null || { echo 'serve.sh launch lines'; return 1; }
     python3 "$WIN/check_pins.py" > /dev/null || { echo 'pins'; return 1; }
     for p in "$ROOT nok" "$KROOT k"; do
@@ -158,6 +162,7 @@ dry_run() {
 if [[ ${1:-} == --list-stages ]]; then list_stages; exit 0; fi
 if [[ ${1:-} == --selftest ]]; then
     python3 "$WIN/engagement.py" selftest && python3 "$WIN/s2items.py" selftest && python3 "$WIN/health.py" --selftest \
+        && python3 "$WIN/placement.py" selftest \
         && { echo 'bw-s2: PASS selftest'; exit 0; }
     echo 'bw-s2: FAIL selftest'; exit 8
 fi
@@ -199,6 +204,9 @@ if [[ ${#FAILS[@]} != 0 ]]; then finish_fail; fi
 fatal 70 freeze-stack11-s2 freeze_k
 fatal 71 freeze-stack11-s2-nok freeze_nok
 fatal 72 render-and-check-items items
+# after the freeze and the render: a failure here leaves both frozen builds and the checked items in place and fails the window
+gate 73 placement-proof g_placement
+if [[ ${#FAILS[@]} != 0 ]]; then finish_fail; fi
 python3 - "$OUT" "$SHA" "$KSHA" <<'PY_RESULT'
 import json, sys
 from pathlib import Path
@@ -208,4 +216,4 @@ stages = [dict(code=int(c), name=n, rc=int(rc), wall_s_M=int(t)) for c, n, rc, t
                                               frozen=['frozen/stack11-s2', 'frozen/stack11-s2-nok'],
                                               items='codex/stack11-s2/window/rendered; checked, NOT submitted'), indent=2)+'\n')
 PY_RESULT
-echo 'bw-s2: PASS; frozen as stack11-s2 and stack11-s2-nok, items checked, NOT submitted'
+echo 'bw-s2: PASS; frozen as stack11-s2 and stack11-s2-nok, items checked, NOT submitted, placement proof passed'
