@@ -46,7 +46,8 @@ def written(path):
 
 
 def own_files():
-    files = {str(p) for p in HERE.rglob('*') if p.is_file() and not set(p.relative_to(HERE).parts) & set(NOT_INPUTS) and p.suffix != '.pyc'}
+    files = {str(p) for p in HERE.rglob('*') if p.is_file() and not set(p.relative_to(HERE).parts) & set(NOT_INPUTS) and p.suffix != '.pyc'
+             and not p.name.startswith('.gpuq-')}  # gpuq writes its run wrapper beside the script
     return sorted(files | {str(HERE / 'bw-stack11-base.toml')})
 
 
