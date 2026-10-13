@@ -1,0 +1,6 @@
+purpose: wave 3 step 2 with K7+K10: stack11-s2 packages 87/88/91/90 on stack11-base (variant tree: stack11-s2 minus the two drop commits; Mac payload only)
+base: 857321bd3d7b74bbe20cb8c3eb8aeb82c92767c4
+repo: /home/xanewok/repos/llama.cpp
+branch: topic/stack11-s2-k
+created: 2026-10-13T20:52:39+02:00
+creator: xanewok

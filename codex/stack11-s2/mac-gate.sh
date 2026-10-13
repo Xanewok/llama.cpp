@@ -95,11 +95,12 @@ if want p87; then
     for sd in 1 2 3; do run "p87-nofold-s$sd" nz 'MTP draft state reset: .*FAIL' -- "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
     for sd in 1 2 3; do run "p87-nofold-nofoldc-s$sd" 0 'MTP draft state reset: .*OK' -- env LLAMA_MTP_FOLD_C=0 "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
     restore
-    # the speculative.cpp reset alone reverted: the catch-up path fails, the folded path still passes
+    # the speculative.cpp reset alone reverted: fails with fold off, and with the default too (batches whose size is not the folded
+    # decode's size take the catch-up path)
     revert 87-spec.patch
     do_build p87-nospec-build test-llama-archs
     for sd in 1 2 3; do run "p87-nospec-nofoldc-s$sd" nz 'MTP draft state reset: .*FAIL' -- env LLAMA_MTP_FOLD_C=0 "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
-    for sd in 1 2 3; do run "p87-nospec-s$sd" 0 'MTP draft state reset: .*OK' -- "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
+    for sd in 1 2 3; do run "p87-nospec-s$sd" nz 'MTP draft state reset: .*FAIL' -- "$B/bin/test-llama-archs" -a qwen35 -b CPU -s "$sd"; done
     restore
     # overreset: the carry is zeroed at every batch start, not only on an empty draft memory
     python3 - common/speculative.cpp <<'PY'
