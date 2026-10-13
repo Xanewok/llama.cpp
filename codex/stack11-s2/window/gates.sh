@@ -313,3 +313,46 @@ items() {
     nice -n 19 python3 "$WIN/render_items.py" --out "$WIN/rendered" --components "$COMPONENTS" \
         --evidence "$ROOT/codex/stack11-s2/mac-evidence/with-k.tsv"
 }
+
+# GET_ROWS through Meta(CUDA0,CUDA1) on the real devices, the mapped weight against the device-resident one (meta_rows.cpp: bitwise, one
+# gather split on Meta, no weight copy; each GPU first once; --nopin control falls back to the CPU path). Built against each tree.
+meta_rows_tree() {
+    local t=$1 d bin lib rc=0 n
+    d=$(tree_of "$t")
+    lib=$d/build-cuda/bin
+    bin=$OUT/meta_rows-$t
+    g++ -std=c++17 -O1 -Wall -Wextra -Werror -I"$d/ggml/include" "$WIN/meta_rows.cpp" -L "$lib" -lggml -lggml-base -o "$bin"
+    env CUDA_VISIBLE_DEVICES="$VISIBLE" LD_LIBRARY_PATH="$lib" timeout 900 nice -n 19 "$bin" > "$OUT/meta-rows-$t.txt" 2> "$OUT/meta-rows-$t.err" || rc=$?
+    gate_log "$OUT/meta-rows-$t.txt" "$rc" '^meta_rows: PASS \(2 orders\)$' \
+        '^meta_rows: order=CUDA0,CUDA1 types=[0-9]+ checks=[0-9]+ bitwise OK, placement OK$' \
+        '^meta_rows: order=CUDA1,CUDA0 types=[0-9]+ checks=[0-9]+ bitwise OK, placement OK$' || return 8
+    if grep -aq 'FAIL' "$OUT/meta-rows-$t.txt"; then return 8; fi
+    n=$(grep -ac 'b_on_meta=1 splits=1 weight_copied=0 differing=0/' "$OUT/meta-rows-$t.txt" || true)
+    [[ $n -ge 200 ]] || { echo "only $n mapped-weight gathers on Meta"; return 8; }
+    rc=0
+    env CUDA_VISIBLE_DEVICES="$VISIBLE" LD_LIBRARY_PATH="$lib" GGML_CUDA_NO_PINNED=1 timeout 900 nice -n 19 "$bin" --nopin > "$OUT/meta-rows-$t-nopin.txt" 2> "$OUT/meta-rows-$t-nopin.err" || rc=$?
+    gate_log "$OUT/meta-rows-$t-nopin.txt" "$rc" '^meta_rows: PASS nopin \(2 orders\)$' || return 8
+    n=$(grep -ac 'b_on_meta=0 .*differing=0/' "$OUT/meta-rows-$t-nopin.txt" || true)
+    [[ $n -ge 200 ]] || { echo "nopin control: only $n CPU-path gathers"; return 8; }
+}
+meta_rows_k() { meta_rows_tree k; }
+meta_rows_nok() { meta_rows_tree nok; }
+g_meta_rows() { in_dir meta-rows meta_rows_k meta_rows_nok; }
+
+# Placement proof on the frozen builds (placement.py): the four served shapes, base = frozen/stack11-base as the negative control.
+g_placement() {
+    local p b root
+    mkdir -p "$OUT/placement"
+    [[ -n ${PORT:-} ]]
+    for p in swift15-j5q swift15-j5q-duo swift15-iq4 swift15-iq4-duo; do
+        for b in base s2 nok; do
+            case $b in
+                base) root=$W/frozen/stack11-base ;;
+                s2) root=$W/frozen/stack11-s2 ;;
+                nok) root=$W/frozen/stack11-s2-nok ;;
+            esac
+            env CUDA_VISIBLE_DEVICES="$VISIBLE" PORT="$PORT" XID_SINCE="$STARTED" python3 "$WIN/placement.py" run "$p" "$b" "$root" "$OUT/placement"
+        done
+    done
+    python3 "$WIN/placement.py" judge "$OUT/placement"
+}

@@ -1,12 +1,12 @@
 id = "bw-stack11-s2"
-title = "stack11-s2 CUDA window: build stack11-base + 87/88/91/90 with and without K7/K10 (frozen/stack11-s2 from wt/stack11-s2-k, frozen/stack11-s2-nok from wt/stack11-s2), np2 joint-replay smoke, CPU-device unit tests, test-host-mapped and touched ops on both GPUs vs frozen/stack11-base, served-flag health boots, freeze both, render/check the A/B items (NOT submitted); Mac CPU gates required"
+title = "stack11-s2 CUDA window: build stack11-base + 87/88/91/90 with and without K7/K10 (frozen/stack11-s2 from wt/stack11-s2-k, frozen/stack11-s2-nok from wt/stack11-s2), np2 joint-replay smoke, CPU-device unit tests, test-host-mapped and touched ops on both GPUs vs frozen/stack11-base, served-flag health boots, freeze both, render/check the A/B items (NOT submitted), pkg 90 placement proof on the frozen builds vs frozen/stack11-base; Mac CPU gates required"
 kind = "filler"
 priority = 19
 host_sensitive = false
 preemptible = false
-# G: builds 3600 + np2 smoke 600 + unit/host-mapped 300 + ops 1500 + health boots 1500 + freeze 120 + render 600 = 8220 s; D: budget cap.
-est_s = 8220
-budget_s = 24000
+# G: builds 3600 + np2 smoke 600 + unit/host-mapped 300 + ops 1500 + health boots 1500 + freeze 120 + render 600 + meta rows 600 + placement 1800 = 10620 s; D: budget cap.
+est_s = 10620
+budget_s = 28000
 ab = false
 retry = "never"
 exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
@@ -45,6 +45,7 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack11-base/SOURCE",
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack11-base/build/bin/SHA256SUMS",
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack11-base/build/bin/libggml-cuda.so",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack11-base/build/bin/llama-server",
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack11-base/build/bin/round-trace",
   "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack11-base/build/bin/test-backend-ops",
   "/home/xanewok/repos/qwen38-eval-worktrees/work/aa-load/ccx01.sh",
@@ -184,6 +185,8 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/bw-stack11-s2.toml",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/check_pins.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/engagement.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/fixtures/placement-base.log",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/fixtures/placement-zc.log",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/gates.sh",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/health.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/items/s2-depth-iq4.toml.in",
@@ -192,9 +195,11 @@ files = [
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/items/s2-duo-soak-iq4.toml.in",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/items/s2-np2-real-iq4.toml.in",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/items/s2-np2-real-j5q.toml.in",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/meta_rows.cpp",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/mk_window_toml.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/np2_smoke.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/np2_smoke.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/placement.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/render_items.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/stack11-s2/window/s2items.py",
   "/home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/common/arg.cpp",
