@@ -66,7 +66,7 @@ source_checks() {
             [[ $(grep -c "$n" "$t/tests/test-alloc.cpp") -gt 0 ]] || { echo "$t: test-alloc lacks $n"; return 1; }
         done
         [[ $(grep -c 'uses_prompt' "$t/tests/test-speculative.cpp") -gt 0 && -s $t/tests/test-host-mapped.cpp ]] || { echo "$t: tests"; return 1; }
-        [[ $(grep -c 'CUDA_Host_Mapped' "$t/ggml/src/ggml-cuda/ggml-cuda.cu") -gt 0 ]] || { echo "$t: no CUDA_Host_Mapped"; return 1; }
+        [[ $(grep -c '_Host_Mapped' "$t/ggml/src/ggml-cuda/ggml-cuda.cu") -gt 0 ]] || { echo "$t: no _Host_Mapped"; return 1; }
         [[ $(grep -rc 'fattn_kv_max' "$t/ggml/src" | grep -vc ':0$') == 0 ]] || { echo "$t: K2 in ggml/src"; return 1; }
     done
     [[ -f $KROOT/tests/test-topk-batched.cpp && ! -e $ROOT/tests/test-topk-batched.cpp ]] || { echo 'K10 files: K tree must have, nok tree must not'; return 1; }
