@@ -1,0 +1,16 @@
+diff --git a/common/speculative.cpp b/common/speculative.cpp
+index c5043a4a8..f4ed9df3b 100644
+--- a/common/speculative.cpp
++++ b/common/speculative.cpp
+@@ -1589,6 +1589,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+                     ? batch.add(t.id, t.pos[0], seq_id, false)
+                     : batch.add_embd(t.embd, t.pos.data(), seq_id, false);
+ 
++                if (k == i_batch_beg[seq_id] && llama_memory_seq_pos_max(llama_get_memory(ctx_dft), seq_id) < 0) {
++                    // an empty draft memory means a new request: do not carry the previous request's last row
++                    std::fill(pending_h[seq_id].begin(), pending_h[seq_id].end(), 0.0f);
++                }
++
+                 const float * h_row = k == i_batch_beg[seq_id]
+                     ? pending_h[seq_id].data()
+                     : h_tgt + (size_t) (k - 1) * n_embd;
