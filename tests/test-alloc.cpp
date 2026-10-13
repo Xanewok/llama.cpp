@@ -1466,6 +1466,93 @@ static void test_meta_subgraph_reuse_same_graph() {
     test_meta_subgraph_reuse(1, true);
 }
 
+//
+// Meta backend: a weight in a host buffer type of another device (CUDA_Host_Mapped) is read in place by the simple devices
+// and counts as mirrored. The fake device exists only so that the Meta device accepts the buffer type.
+
+static const char * test_mapped_buft_name(ggml_backend_buffer_type_t /*buft*/) {
+    return "TestHostMapped";
+}
+
+static ggml_backend_buffer_t test_mapped_buft_alloc(ggml_backend_buffer_type_t buft, size_t size) {
+    ggml_backend_buffer_t buf = ggml_backend_buft_alloc_buffer(ggml_backend_cpu_buffer_type(), size);
+    GGML_ASSERT(buf);
+    buf->buft = buft;
+    return buf;
+}
+
+static ggml_backend_dev_type test_mapped_dev_type(ggml_backend_dev_t /*dev*/) {
+    return GGML_BACKEND_DEVICE_TYPE_GPU;
+}
+
+static bool test_mapped_dev_supports_buft(ggml_backend_dev_t /*dev*/, ggml_backend_buffer_type_t buft) {
+    return buft->iface.get_name == test_mapped_buft_name;
+}
+
+static void test_meta_host_mapped_weight() {
+    constexpr int64_t n_embd = 8;
+    constexpr int64_t n_vocab = 16;
+
+    static ggml_backend_device dev = {};
+    dev.iface.get_type      = test_mapped_dev_type;
+    dev.iface.supports_buft = test_mapped_dev_supports_buft;
+    static ggml_backend_buffer_type buft = {};
+    buft.iface.get_name       = test_mapped_buft_name;
+    buft.iface.alloc_buffer   = test_mapped_buft_alloc;
+    buft.iface.get_alignment  = ggml_backend_cpu_buffer_type()->iface.get_alignment;
+    buft.iface.is_host        = ggml_backend_cpu_buffer_type()->iface.is_host;
+    buft.device               = &dev;
+
+    ggml_backend_load_all();
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+    ggml_backend_dev_t devs[2] = {cpu, cpu};
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, test_meta_split_state_mirrored, nullptr);
+    GGML_ASSERT(ggml_backend_dev_supports_buft(meta, &buft));
+    ggml_backend_ptr backend_meta(ggml_backend_dev_init(meta, nullptr));
+    ggml_backend_ptr backend_cpu(ggml_backend_dev_init(cpu, nullptr));
+    GGML_ASSERT(backend_meta && backend_cpu);
+
+    ggml_init_params params_w = {ggml_tensor_overhead(), nullptr, true};
+    ggml_context_ptr ctx_w(ggml_init(params_w));
+    ggml_tensor * table = ggml_new_tensor_2d(ctx_w.get(), GGML_TYPE_F32, n_embd, n_vocab);
+    ggml_backend_buffer_ptr buf_w(ggml_backend_alloc_ctx_tensors_from_buft(ctx_w.get(), &buft));
+    GGML_ASSERT(buf_w && table->buffer->buft == &buft);
+    ggml_backend_buffer_set_usage(buf_w.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+    std::vector<float> table_data(n_embd*n_vocab);
+    for (size_t i = 0; i < table_data.size(); i++) {
+        table_data[i] = float(i);
+    }
+    ggml_backend_tensor_set(table, table_data.data(), 0, ggml_nbytes(table));
+
+    ggml_init_params params = {8*ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true};
+    ggml_context_ptr ctx(ggml_init(params));
+    ggml_tensor * ids = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I32, 3);
+    ggml_set_input(ids);
+    ggml_tensor * rows = ggml_get_rows(ctx.get(), table, ids);
+    ggml_set_output(rows);
+    ggml_cgraph * gf = ggml_new_graph(ctx.get());
+    ggml_build_forward_expand(gf, rows);
+
+    ggml_backend_t backends[2] = {backend_meta.get(), backend_cpu.get()};
+    ggml_backend_sched_ptr sched(ggml_backend_sched_new(backends, nullptr, 2, GGML_DEFAULT_GRAPH_SIZE, false, false));
+    GGML_ASSERT(ggml_backend_sched_alloc_graph(sched.get(), gf));
+    // the gather runs on the Meta backend, next to the weight, with no CPU split in front of it
+    GGML_ASSERT(ggml_backend_sched_get_tensor_backend(sched.get(), rows) == backend_meta.get());
+    GGML_ASSERT(ggml_backend_sched_get_n_splits(sched.get()) == 1);
+
+    const int32_t id_data[3] = {5, 0, 15};
+    ggml_backend_tensor_set(ids, id_data, 0, sizeof(id_data));
+    GGML_ASSERT(ggml_backend_sched_graph_compute(sched.get(), gf) == GGML_STATUS_SUCCESS);
+    std::vector<float> out(n_embd*3);
+    ggml_backend_tensor_get(rows, out.data(), 0, ggml_nbytes(rows));
+    for (int r = 0; r < 3; r++) {
+        for (int64_t k = 0; k < n_embd; k++) {
+            GGML_ASSERT(out[r*n_embd + k] == table_data[id_data[r]*n_embd + k]);
+        }
+    }
+}
+
 static void run(const char * name, void (*f)()) {
     printf("%s ", name);
     fflush(stdout);
@@ -1519,5 +1606,6 @@ int main() {
     run("test_meta_subgraph_reuse_two_splits", test_meta_subgraph_reuse_two_splits);
     run("test_meta_subgraph_reuse_ten_splits", test_meta_subgraph_reuse_ten_splits);
     run("test_meta_subgraph_reuse_same_graph", test_meta_subgraph_reuse_same_graph);
+    run("test_meta_host_mapped_weight", test_meta_host_mapped_weight);
     return 0;
 }
