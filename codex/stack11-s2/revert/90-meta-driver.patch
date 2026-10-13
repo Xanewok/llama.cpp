@@ -1,0 +1,16 @@
+diff --git a/ggml/src/ggml-backend-meta.cpp b/ggml/src/ggml-backend-meta.cpp
+index 98e75bcff..e2a94e499 100644
+--- a/ggml/src/ggml-backend-meta.cpp
++++ b/ggml/src/ggml-backend-meta.cpp
+@@ -1279,6 +1295,11 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_get_split_state(
+                 if (src == nullptr || src == tensor) {
+                     continue;
+                 }
++                if (!ggml_backend_buffer_is_meta(src->buffer)) {
++                    // [TAG_META_HOST_MAPPED] a host weight read in place has no cache of its own
++                    cur.src_ss[cur.i_src] = ggml_backend_meta_get_split_state(src, /*assume_sync =*/ true);
++                    continue;
++                }
+                 const ggml_backend_meta_split_state * cached = ggml_backend_meta_find_split_state(src, /*assume_sync =*/ true);
+                 if (cached == nullptr) {
+                     src_uncached = src;

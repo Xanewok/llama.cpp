@@ -1,0 +1,48 @@
+diff --git a/common/speculative.cpp b/common/speculative.cpp
+index b25416792..96bb63180 100644
+--- a/common/speculative.cpp
++++ b/common/speculative.cpp
+@@ -1611,6 +1611,14 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
+ 
+         // if kv is shared with target (e.g Gemma4), then we can skip this catch-up decode
+         if (!is_mem_shared && !folded) {
++            // an empty draft memory means the sequence starts anew (e.g. a new request on a reused slot):
++            // nothing precedes its first token, so the last row of the previous run must not be carried
++            for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) n_seq; ++seq_id) {
++                if (i_batch_beg[seq_id] >= 0 && llama_memory_seq_pos_max(llama_get_memory(ctx_dft), seq_id) < 0) {
++                    std::fill_n(pending_h.data() + (size_t) seq_id * n_embd, n_embd, 0.0f);
++                }
++            }
++
+             batch.clear();
+ 
+             // pair each token with the tgt embedding shifted right by one position, and
+diff --git a/src/llama-context.cpp b/src/llama-context.cpp
+index 93b8335a9..53a7e191f 100644
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -2500,6 +2500,10 @@ llama_memory_context_ptr llama_context::mtp_fold_prepare(const llama_ubatch & ub
+         }
+         seen[seq] = true;
+         const llama_pos p0 = kv->seq_pos_max(seq) + 1;
++        // a fresh sequence must not see the armed row of the previous run: the caller's catch-up zeroes it
++        if (p0 == 0) {
++            return nullptr;
++        }
+         uint32_t end = begin;
+         while (end < ubatch.n_tokens && ubatch.n_seq_id[end] == 1 && ubatch.seq_id[end][0] == seq) {
+             if (ubatch.pos[end] != p0 + (llama_pos) (end - begin)) {
+diff --git a/src/llama-ext.h b/src/llama-ext.h
+index e728d1104..df2634b24 100644
+--- a/src/llama-ext.h
++++ b/src/llama-ext.h
+@@ -118,7 +118,8 @@ LLAMA_API struct llama_sampler * llama_sampler_init_top_k_sorted(int32_t k);
+ // catch-up decode for that batch is still needed.
+ // init: false if the pair is unsupported (nothing is ever folded); ctx_dft == nullptr unlinks.
+ LLAMA_API bool    llama_mtp_fold_init  (struct llama_context * ctx_tgt, struct llama_context * ctx_dft);
+-// arms the next decode only; h_prev is [n_seq][n_embd], indexed by seq_id and read during that decode
++// arms the next decode only; h_prev is [n_seq][n_embd], indexed by seq_id and read during that decode;
++// a sequence whose draft memory is empty is not folded
+ LLAMA_API void    llama_mtp_fold_arm   (struct llama_context * ctx_tgt, const float * h_prev, int32_t n_seq);
+ // tokens folded by the last decode, 0 if it did not fold
+ LLAMA_API int32_t llama_mtp_fold_n_last(const struct llama_context * ctx_tgt);
