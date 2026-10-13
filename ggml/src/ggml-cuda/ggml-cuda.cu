@@ -2,7 +2,6 @@
 #include "ggml-cuda.h"
 #include "ggml-impl.h"
 #include "ggml-ssm-conv.h"
-#include "ggml-rms-norm-scale-pair.h"
 #include "ggml-backend-impl.h"
 
 #include "ggml-cuda/allreduce.cuh"
@@ -5082,17 +5081,6 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
     if (ggml_cuda_can_fuse(cgraph, i, { GGML_OP_RMS_NORM, GGML_OP_MUL }, {})) {
         ggml_cuda_op_rms_norm_fused(*cuda_ctx, node, cgraph->nodes[i + 1]);
         return 1;
-    }
-
-    int i_pair = 0;
-    static const bool pair_enabled = !getenv("GGML_CUDA_RMS_NORM_SCALE_PAIR") || atoi(getenv("GGML_CUDA_RMS_NORM_SCALE_PAIR")) != 0;
-    // paired launch grid: y = ne[2], z = 2*ne[3]
-    if (pair_enabled && node->op == GGML_OP_RMS_NORM && cuda_ctx->stream_context().concurrent_events.empty() &&
-            node->ne[2] <= 65535 && node->ne[3] <= 32767 && ggml_match_rms_norm_scale_pair(cgraph, i, i_pair)) {
-        GGML_LOG_DEBUG("rms_norm_scale_pair_fusion: device=%d ncols=%lld rows=%lld\n", cuda_ctx->device,
-            (long long) node->ne[0], (long long) ggml_nrows(node));
-        ggml_cuda_op_rms_norm_scale_pair_fused(*cuda_ctx, node, cgraph->nodes[i + 1], cgraph->nodes[i_pair], cgraph->nodes[i_pair + 1]);
-        return i_pair + 1 - i;
     }
 
     if (ggml_cuda_can_fuse(cgraph, i, { GGML_OP_RMS_NORM, GGML_OP_SCALE }, {})) {
