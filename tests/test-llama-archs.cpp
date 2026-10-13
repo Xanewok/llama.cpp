@@ -11,6 +11,7 @@
 
 // TODO: replace with #include "llama-ext.h" in the future
 #include "../src/llama-arch.h"
+#include "../src/llama-ext.h"
 #include "../src/llama-model-saver.h"
 #include "../src/llama-sampler.h"
 #include "../ggml/src/ggml-backend-impl.h"
@@ -664,40 +665,59 @@ static bool check_causal_attn_toggle(
     return ok;
 }
 
+// target and MTP draft contexts of two sequence slots, driven through the speculative interface
+struct mtp_pair {
+    llama_model_ptr   model;
+    llama_context_ptr ctx_tgt;
+    llama_context_ptr ctx_dft;
+    common_speculative * spec = nullptr;
+    uint32_t n_vocab = 0;
+
+    mtp_pair(const llm_arch arch, const size_t seed, const float stdev) {
+        gguf_context_ptr gguf_ctx = get_gguf_ctx(arch, false);
+        const std::string arch_name = llm_arch_name(arch);
+        const std::string key_layers = arch_name + ".block_count";
+        gguf_set_val_u32(gguf_ctx.get(), key_layers.c_str(), gguf_get_val_u32(gguf_ctx.get(), gguf_find_key(gguf_ctx.get(), key_layers.c_str())) + 1);
+        gguf_set_val_u32(gguf_ctx.get(), (arch_name + ".nextn_predict_layers").c_str(), 1);
+
+        llama_model_params mparams = llama_model_default_params();
+        mparams.progress_callback = silent_model_load_progress;
+        mparams.load_mtp = true;
+        ggml_backend_dev_t devs[] = { ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU), nullptr };
+        mparams.devices = devs;
+        tensor_data_params tensor_params = { seed, stdev };
+        model.reset(llama_model_init_from_user(gguf_ctx.get(), set_tensor_data, &tensor_params, mparams));
+
+        llama_context_params cparams = llama_context_default_params();
+        cparams.n_seq_max = 2;
+        ctx_tgt.reset(llama_init_from_model(model.get(), cparams));
+        cparams.ctx_type  = LLAMA_CONTEXT_TYPE_MTP;
+        cparams.ctx_other = ctx_tgt.get();
+        ctx_dft.reset(llama_init_from_model(model.get(), cparams));
+        GGML_ASSERT(model && ctx_tgt && ctx_dft);
+
+        common_params_speculative params;
+        params.types = { COMMON_SPECULATIVE_TYPE_DRAFT_MTP };
+        params.draft.ctx_tgt = ctx_tgt.get();
+        params.draft.ctx_dft = ctx_dft.get();
+        params.draft.n_max   = 1;
+        params.draft.backend_sampling = false;
+        spec = common_speculative_init(params, cparams.n_seq_max);
+        n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model.get()));
+    }
+
+    ~mtp_pair() { common_speculative_free(spec); }
+};
+
 // the MTP draft of a request must not depend on what its sequence served before, nor on how its prompt is batched
 static bool check_mtp_draft_reset(const llm_arch arch, const size_t seed, const float stdev) {
-    gguf_context_ptr gguf_ctx = get_gguf_ctx(arch, false);
     const std::string arch_name = llm_arch_name(arch);
-    const std::string key_layers = arch_name + ".block_count";
-    gguf_set_val_u32(gguf_ctx.get(), key_layers.c_str(), gguf_get_val_u32(gguf_ctx.get(), gguf_find_key(gguf_ctx.get(), key_layers.c_str())) + 1);
-    gguf_set_val_u32(gguf_ctx.get(), (arch_name + ".nextn_predict_layers").c_str(), 1);
-
-    llama_model_params mparams = llama_model_default_params();
-    mparams.progress_callback = silent_model_load_progress;
-    mparams.load_mtp = true;
-    ggml_backend_dev_t devs[] = { ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU), nullptr };
-    mparams.devices = devs;
-    tensor_data_params tensor_params = { seed, stdev };
-    llama_model_ptr model(llama_model_init_from_user(gguf_ctx.get(), set_tensor_data, &tensor_params, mparams));
-
-    llama_context_params cparams = llama_context_default_params();
-    cparams.n_seq_max = 2;
-    llama_context_ptr ctx_tgt(llama_init_from_model(model.get(), cparams));
-    cparams.ctx_type  = LLAMA_CONTEXT_TYPE_MTP;
-    cparams.ctx_other = ctx_tgt.get();
-    llama_context_ptr ctx_dft(llama_init_from_model(model.get(), cparams));
-    GGML_ASSERT(model && ctx_tgt && ctx_dft);
-
-    common_params_speculative params;
-    params.types = { COMMON_SPECULATIVE_TYPE_DRAFT_MTP };
-    params.draft.ctx_tgt = ctx_tgt.get();
-    params.draft.ctx_dft = ctx_dft.get();
-    params.draft.n_max   = 1;
-    params.draft.backend_sampling = false;
-    common_speculative * spec = common_speculative_init(params, cparams.n_seq_max);
-
+    mtp_pair mp(arch, seed, stdev);
+    llama_context_ptr & ctx_tgt = mp.ctx_tgt;
+    llama_context_ptr & ctx_dft = mp.ctx_dft;
+    common_speculative * spec = mp.spec;
+    const uint32_t n_vocab = mp.n_vocab;
     const llama_seq_id seq_id = 1; // not 0, to catch a wrong per-sequence index
-    const uint32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model.get()));
     // draft logits of a new request, as after a server clears a slot
     auto draft_logits = [&](const std::vector<llama_token> & prompt, const uint32_t n_batch) {
         llama_memory_seq_rm(llama_get_memory(ctx_tgt.get()), seq_id, -1, -1);
@@ -731,10 +751,97 @@ static bool check_mtp_draft_reset(const llm_arch arch, const size_t seed, const 
     draft_logits(get_tokens(48, n_vocab, seed + 2), 48);
     const std::vector<float> logits_after = draft_logits(prompt, prompt.size());
     const std::vector<float> logits_split = draft_logits(prompt, prompt.size()/2);
-    common_speculative_free(spec);
 
     const bool ok = logits_fresh == logits_after && nmse(logits_fresh, logits_split) < 1e-9;
     LOG("%s: MTP draft state reset: %s\n", arch_name.c_str(), ok ? "\033[1;32mOK\033[0m" : "\033[1;31mFAIL\033[0m");
+    return ok;
+}
+
+// Two live sequences: a batch with an established sequence and a fresh one (empty draft memory) must keep the established
+// sequence's carry and reset only the fresh one's; the folded decode resumes once both are established.
+static bool check_mtp_draft_np2(const llm_arch arch, const size_t seed, const float stdev) {
+    const std::string arch_name = llm_arch_name(arch);
+    const char * fold_env = getenv("LLAMA_MTP_FOLD_C");
+    const bool fold_on = !fold_env || atoi(fold_env) != 0;
+
+    mtp_pair ref(arch, seed, stdev);
+    mtp_pair mix(arch, seed, stdev);
+    const uint32_t n_vocab = mix.n_vocab;
+    const std::vector<llama_token> t0 = get_tokens(10, n_vocab, seed + 3);
+    const std::vector<llama_token> t1 = get_tokens(4, n_vocab, seed + 4);
+
+    struct span { llama_seq_id seq; const std::vector<llama_token> * toks; uint32_t beg, end; };
+
+    // the target decode, and how many of its tokens that decode folded
+    auto step = [](mtp_pair & mp, const std::vector<span> & spans) {
+        common_batch batch(mp.ctx_tgt.get());
+        for (const auto & sp : spans) {
+            for (uint32_t i = sp.beg; i < sp.end; i++) {
+                batch.add((*sp.toks)[i], i, sp.seq, false);
+            }
+        }
+        GGML_ASSERT(llama_process(mp.ctx_tgt.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0);
+        const int32_t n_folded = llama_mtp_fold_n_last(mp.ctx_tgt.get());
+        GGML_ASSERT(common_speculative_process(mp.spec, batch));
+        return std::make_pair(n_folded, (int32_t) batch.size());
+    };
+    // draft logits per span, in sequence order; the drafted position is dropped as a verify batch would
+    auto draft = [&](mtp_pair & mp, const std::vector<span> & spans) {
+        std::vector<llama_tokens> results(spans.size());
+        std::vector<llama_tokens> prompts(spans.size());
+        for (size_t k = 0; k < spans.size(); k++) {
+            prompts[k].assign(spans[k].toks->begin(), spans[k].toks->begin() + spans[k].end);
+            auto & dp = common_speculative_get_draft_params(mp.spec, spans[k].seq);
+            dp.drafting = true;
+            dp.pos0     = spans[k].end;
+            dp.id_last  = prompts[k][0];
+            dp.prompt   = &prompts[k];
+            dp.result   = &results[k];
+        }
+        common_speculative_draft(mp.spec);
+        std::vector<std::vector<float>> out;
+        for (size_t k = 0; k < spans.size(); k++) {
+            const float * logits = llama_get_logits_ith(mp.ctx_dft.get(), (int32_t) k);
+            GGML_ASSERT(logits != nullptr);
+            out.emplace_back(logits, logits + mp.n_vocab);
+            common_speculative_get_draft_params(mp.spec, spans[k].seq).drafting = false;
+        }
+        for (const auto & sp : spans) {
+            llama_memory_seq_rm(llama_get_memory(mp.ctx_dft.get()), sp.seq, sp.end, -1);
+        }
+        return out;
+    };
+
+    // each sequence alone
+    step(ref, { { 0, &t0, 0, 6 } });
+    step(ref, { { 0, &t0, 6, 8 } });
+    const auto r_b  = draft(ref, { { 0, &t0, 0, 8 } });
+    step(ref, { { 0, &t0, 8, 10 } });
+    const auto r_c0 = draft(ref, { { 0, &t0, 0, 10 } });
+    step(ref, { { 1, &t1, 0, 2 } });
+    step(ref, { { 1, &t1, 2, 4 } });
+    const auto r_c1 = draft(ref, { { 1, &t1, 0, 4 } });
+
+    // sequence 1 has served a request before: its carry is stale, its memory is empty
+    const std::vector<llama_token> old = get_tokens(12, n_vocab, seed + 5);
+    step(mix, { { 1, &old, 0, 12 } });
+    llama_memory_seq_rm(llama_get_memory(mix.ctx_tgt.get()), 1, -1, -1);
+    llama_memory_seq_rm(llama_get_memory(mix.ctx_dft.get()), 1, -1, -1);
+
+    step(mix, { { 0, &t0, 0, 6 } });
+    const auto f_b = step(mix, { { 0, &t0, 6, 8 }, { 1, &t1, 0, 2 } });
+    const auto m_b = draft(mix, { { 0, &t0, 0, 8 } });
+    const auto f_c = step(mix, { { 0, &t0, 8, 10 }, { 1, &t1, 2, 4 } });
+    const auto m_c = draft(mix, { { 0, &t0, 0, 10 }, { 1, &t1, 0, 4 } });
+
+    const double e_b = nmse(m_b[0], r_b[0]);
+    const double e_c0 = nmse(m_c[0], r_c0[0]);
+    const double e_c1 = nmse(m_c[1], r_c1[0]);
+    // equal token counts per sequence: only the fresh sequence makes the fold refuse the mixed batch (it needs the catch-up decode)
+    const bool ok_fold = f_b.first == 0 && (!fold_on || f_c.first == f_c.second);
+    const bool ok = e_b < 1e-9 && e_c0 < 1e-9 && e_c1 < 1e-9 && ok_fold;
+    LOG("%s: MTP draft np2 carry: %s (nmse established %.2e, then %.2e/%.2e; folded %d/%d, %d/%d)\n", arch_name.c_str(),
+            ok ? "\033[1;32mOK\033[0m" : "\033[1;31mFAIL\033[0m", e_b, e_c0, e_c1, f_b.first, f_b.second, f_c.first, f_c.second);
     return ok;
 }
 
@@ -1195,6 +1302,10 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
         const bool ok = check_mtp_draft_reset(LLM_ARCH_QWEN35, seed, stdev);
         n_failed += !ok;
         all_ok   &= ok;
+        n_tests++;
+        const bool ok_np2 = check_mtp_draft_np2(LLM_ARCH_QWEN35, seed, stdev);
+        n_failed += !ok_np2;
+        all_ok   &= ok_np2;
     }
 
     if (n_tests == 0) {
