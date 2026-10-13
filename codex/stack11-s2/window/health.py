@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Served-flag health boot of one serve.sh profile on this tree's fresh build (bw-stack11-base stage 69).
+"""Served-flag health boot of one serve.sh profile on this tree's fresh build (bw-stack11-s2 window, health boots).
 
 Contract: argv and env are serve.sh's own (`PROFILE=P PORT=N serve.sh command`, read at run time and recorded with its sha256; not
 pinned, the owner edits serve.sh), with the executable replaced by build-cuda/bin/round-trace, LD_LIBRARY_PATH on build-cuda/bin and
@@ -221,7 +221,7 @@ def run(profile, out):
 
 def selftest():
     e = engagement.ENGAGEMENT
-    common = [s for c in ('base', 'k7', 'k4', 'k6a', 'k10', 'k11a', 'k11b') for s in e[c]['samples']]
+    common = [s for c in ('base', 'k7', 'k4', 'k6a', 'k10', 'p90', 'k11a', 'k11b') for s in e[c]['samples']]
     np1 = '\n'.join(common + ['MTP chain: k=5', 'mtp_fold_decode: engaged n_seq=1', 'llama_context: n_kv_pad              = 4096'])
     duo = '\n'.join(common + ['MTP chain disabled: needs one sequence (n_seq=2)', 'mtp_fold_decode: engaged n_seq=2',
                               'llama_context: n_kv_pad              = 4096'])

@@ -13,6 +13,7 @@ usage: engagement.py selftest     every anchor exists in the tree, every regex c
        engagement.py health PROFILE   JSON {env, patterns, recorded} of a served-flag health boot (health.sh)
 """
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -110,9 +111,10 @@ HEALTH_FATAL = r'CUDA error|GGML_ASSERT|out of memory|Segmentation fault|termina
 
 def health(profile):
     duo = profile.endswith('-duo')
+    absent = os.environ.get('ENGAGEMENT_DROP', '').split()  # components compiled out of the tree under test (the nok build)
     shapes = ('np2', 'duo') if duo else ('np1',)
-    gating = [c for c in ENGAGEMENT if all(s in ENGAGEMENT[c]['shapes'] for s in shapes)]
-    recorded = [c for c in ENGAGEMENT if c not in gating]
+    gating = [c for c in ENGAGEMENT if c not in absent and all(s in ENGAGEMENT[c]['shapes'] for s in shapes)]
+    recorded = [c for c in ENGAGEMENT if c not in gating and c not in absent]
     patterns = [p for c in gating for p in ENGAGEMENT[c]['patterns']] + HEALTH_EXTRA['duo' if duo else 'np1']
     return dict(env=HEALTH_ENV, patterns=patterns, gating=gating,
                 recorded={c: ENGAGEMENT[c]['patterns'] for c in recorded}, fatal=HEALTH_FATAL)
@@ -151,6 +153,9 @@ def selftest():
     assert re.search(h2['patterns'][-1], 'llama_context: n_kv_pad              = 4096')
     assert not re.search(h2['patterns'][-1], 'llama_context: n_kv_pad              = 256')
     assert re.search(HEALTH_FATAL, 'x\nsynchronize: sync_elide: missed: backend busy at a skipped sync\n')
+    os.environ['ENGAGEMENT_DROP'] = 'k7 k10'
+    assert not {'k7', 'k10'} & set(health('swift15-j5q')['gating']) and 'k4' in health('swift15-j5q')['gating']
+    del os.environ['ENGAGEMENT_DROP']
     print(f'engagement: {len(ENGAGEMENT)} components, anchors in source, regexes match samples and reject mutants PASS')
 
 

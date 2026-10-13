@@ -3,7 +3,7 @@
 priority = 28
 id = "s2-duo-soak-iq4"
 kind = "campaign"
-title = "stack11-base duo serving soak, IQ4_XS: frozen/stack10 vs frozen/stack11-base with swift15-iq4-duo flags (-ub 512), chain + fold C, two Codex agents, ABBA"
+title = "stack11-s2 duo serving soak, IQ4_XS: frozen/stack11-base vs frozen/stack11-s2 with swift15-iq4-duo flags (-ub 512), chain + fold C, two Codex agents, ABBA"
 plan = ["s11", "s2", "s2", "s11"]
 devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
 out = "/home/xanewok/repos/qwen38-eval/results/2026-10-13-s2-duo-soak-iq4"

@@ -3,7 +3,7 @@
 priority = 26
 id = "s2-np2-real-j5q"
 kind = "depth"
-title = "stack11-base np2 J5q real prompts: frozen/stack10 vs frozen/stack11-base (served swift15-j5q-duo flags, chain + fold C), joint start, cram 0, round trace on, 3+3 boots, CCX0+1"
+title = "stack11-s2 np2 J5q real prompts: frozen/stack11-base vs frozen/stack11-s2 (served swift15-j5q-duo flags, chain + fold C), joint start, cram 0, round trace on, 3+3 boots, CCX0+1"
 plan = ["s11", "s2", "s2", "s11", "s11", "s2"]
 devices = ["GPU-ee9a3956-297c-604b-b4c1-f07930d27e46", "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"]
 out = "/home/xanewok/repos/qwen38-eval/results/2026-10-13-s2-np2-real-j5q"
@@ -90,7 +90,7 @@ min_p = 0.05
 ignore_eos = true
 
 [question]
-expected = "-0.5..-0.1 ms/round (D), larger at depth"
+expected = "-0.7..-0.1 ms/round (D)"
 falsifier = "Delta above 0 ms/round at 8k or 32k, or above +0.1 at 90k (the packages must not cost np2), or J5q duo min free VRAM on either GPU below the stack11-base arm minus 100 MiB at any depth (90 holds the token table in pinned host memory: +644 MiB resident host RAM, ~0 VRAM; M on master). A gain beyond -0.8 needs a cause in the round trace before it is believed."
 answers = "Whether stack11-s2 (stack11-base + 87 draft-state reset, 88 spec prompt on demand, 91 Meta per-uid cache, 90 CUDA_Host_Mapped token table) gains at the served J5q np2 profile, and where: round trace is ON in both arms (counters graph_hit graph_miss llama_build compute_submit set_inputs sync sampling per round), absolute ms/round are comparable only within this item. Priced against the single-package A/Bs on master (D/G): 90 -0.30/-0.28/-0.56 ms/round np2 J5q at 8k/32k/90k (M, zc-pr-fix), 88 up to -0.14 ms/round np2 at 90k (D from the Mac scaling and the host profile), 87 and 91 none (91 is redundant on the served path: retained Meta split plans already keep the uids)."
 
