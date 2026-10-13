@@ -1,10 +1,10 @@
-"""Emit codex/stack11/window/bw-stack11-base.toml (run again after any change of the tree's source diff or of the window's files).
+"""Emit codex/stack11-s2/window/bw-stack11-s2.toml (run again after any change of either tree's source diff or of the window's files).
 
-usage: mk_window_toml.py > codex/stack11/window/bw-stack11-base.toml
-Times (G): est_s is stack10b's window (7200 s M-ish: build, component gates, full suite on both GPUs, K11a) plus the stack11 additions
-(FA T1-T7 and touched ops on both GPUs ~1500 s, GDN and MMVQ ~600 s, four health boots ~1200 s, KLD dump build ~120 s, FA q8_0
-timing A/B 5+5 runs on one GPU ~300 s); budget_s as stack10b's (60000 s, D cap).
+usage: mk_window_toml.py > codex/stack11-s2/window/bw-stack11-s2.toml
+Times (G): two CUDA builds ~1800 s each (ccache warm from stack11-base), np2 smoke ~600 s, unit + host-mapped ~300 s, ops on both GPUs
+(4 x 2 runs) ~1500 s, five health boots ~1500 s, two freezes ~120 s, render and check of six items ~600 s; budget_s a D cap.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -15,30 +15,29 @@ import check_pins
 ROOT = check_pins.ROOT
 HERE = check_pins.HERE
 UUIDS = 'GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f'
-SCRIPT = HERE / 'bw-stack11-base.sh'
-EST = 7200 + 1500 + 600 + 1200 + 120 + 300
-BUDGET = 60000
-OUT = ROOT / 'codex/window/stack11-base-a{attempt}'
+SCRIPT = HERE / 'bw-stack11-s2.sh'
+EST = 3600 + 600 + 300 + 1500 + 1500 + 120 + 600
+BUDGET = 24000
+OUT = ROOT / 'codex/window/stack11-s2-a{attempt}'
 
 
 def head():
-    title = ("stack11-base CUDA window: build, np2 joint-replay smoke, every component's CUDA gates (FA T1-T7, MMVQ, MMQ tiles, GDN joint, "
-             "K4 K6 K7 K10 K11b, meta subgraph), fafix SASS, identity and FA q8_0 timing vs frozen/stack10, touched ops and the full test-backend-ops on both "
-             "GPUs, K11a sync count, served-flag health boots of the four swift15 profiles, freeze as stack11-base, build kld_dump pair, "
-             "render/check the A/B and KLD items (NOT submitted); Mac CPU gates required")
-    return f'''id = "bw-stack11-base"
+    title = ("stack11-s2 CUDA window: build stack11-base + 87/88/91/90 with and without K7/K10 (frozen/stack11-s2 from wt/stack11-s2-k, "
+             "frozen/stack11-s2-nok from wt/stack11-s2), np2 joint-replay smoke, CPU-device unit tests, test-host-mapped and touched ops on both "
+             "GPUs vs frozen/stack11-base, served-flag health boots, freeze both, render/check the A/B items (NOT submitted); Mac CPU gates required")
+    return f'''id = "bw-stack11-s2"
 title = "{title}"
 kind = "filler"
 priority = 19
 host_sensitive = false
 preemptible = false
-# G: stack10b window 7200 + FA/touched ops 1500 + GDN/MMVQ 600 + health boots 1200 + KLD build 120 + FA timing 300 = {EST} s; D: budget as stack10b's.
+# G: builds 3600 + np2 smoke 600 + unit/host-mapped 300 + ops 1500 + health boots 1500 + freeze 120 + render 600 = {EST} s; D: budget cap.
 est_s = {EST}
 budget_s = {BUDGET}
 ab = false
 retry = "never"
 exit_codes = {{ "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }}
-signatures = [{{ class = "deterministic", regex = "bw-stack11: FAIL" }}]
+signatures = [{{ class = "deterministic", regex = "bw-s2: FAIL" }}]
 
 [run]
 cmd = ["/usr/bin/bash", "{SCRIPT}", "{OUT}"]

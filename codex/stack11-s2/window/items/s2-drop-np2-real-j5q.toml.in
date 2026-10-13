@@ -90,8 +90,8 @@ min_p = 0.05
 ignore_eos = true
 
 [question]
-expected = "nok minus s2: +0.13..+0.31 ms/round at 8k (D: K7 0.03-0.06 + K10 0.10-0.25 from the stack10 component windows); the switch-off A/B s11-drop-np2-real-j5q measured the opposite sign, drop minus s11 = -0.43/-0.06/-0.16 ms/round at 8k/32k/90k (SE 0.58/0.14/0.22, M)"
-falsifier = "nok not slower than s2 by more than +0.05 ms/round at any depth: K7 and K10 buy nothing at np2 on stack11 and can be dropped. Unlike s11-drop this arm removes the code (no matcher, no dispatch check), so it is the true price of keeping the fork delta."
+expected = "-0.31..-0.13 ms/round (D)"
+falsifier = "Delta (s2 minus nok, second arm minus first) above -0.05 ms/round at every depth: K7 and K10 buy nothing at np2 on stack11 and can be dropped. Expected is the stack10 component windows (K7 0.03-0.06 + K10 0.10-0.25 faster, D). The switch-off A/B s11-drop-np2-real-j5q measured the opposite sign, s2 minus nok = +0.43/+0.06/+0.16 ms/round at 8k/32k/90k (SE 0.58/0.14/0.22, M). Unlike it, this item removes the code (no matcher, no dispatch check), so it is the price of keeping the fork delta."
 answers = "Whether K7 (RMS norm scale pair) and K10 (batched top-k) still pay for themselves at the served J5q np2 profile on stack11-s2. Round trace is ON in both arms; absolute ms/round are comparable only within this item. The owner decides the drop; this item only prices it."
 
 [canary]
