@@ -202,7 +202,7 @@ gate_mapped() {  # LOG RC
             "^host_mapped: dev=$dev types=2[0-9] supports_op mul_mat=0 add=0 \(want 0 0\)$" \
             "^host_mapped: dev=$dev control cpu-buffer get_rows=CPU; forced to device: copied=1$" \
             "^host_mapped: dev=$dev fallback=0 get_rows=$dev splits=1 weight_copied=0 equal=1$" \
-            "^host_mapped: dev=$dev same weight: get_rows=$dev mul_mat=CPU weight_copied=0$" || return 8
+            "^host_mapped: dev=$dev same weight: fallback=0 get_rows=$dev mul_mat=CPU weight_copied=0$" || return 8
         n=$(grep -ac "^host_mapped: dev=$dev type=.* differing=0/" "$1" || true)
         [[ $n -ge 100 ]] || { echo "only $n bitwise cases on $dev"; return 8; }
     done
@@ -214,7 +214,7 @@ gate_nopin() {  # LOG RC
     for dev in CUDA0 CUDA1; do
         gate_log "$1" 0 "^host_mapped: dev=$dev fallback=1, bitwise test skipped$" \
             "^host_mapped: dev=$dev fallback=1 get_rows=CPU splits=[0-9]+ weight_copied=0 equal=1$" \
-            "^host_mapped: dev=$dev same weight: get_rows=CPU mul_mat=CPU weight_copied=0$" || return 8
+            "^host_mapped: dev=$dev same weight: fallback=1 get_rows=CPU mul_mat=CPU weight_copied=0$" || return 8
     done
     if grep -aq 'FAIL' "$1"; then return 8; fi
 }
@@ -314,8 +314,9 @@ items() {
         --evidence "$ROOT/codex/stack11-s2/mac-evidence/with-k.tsv"
 }
 
-# GET_ROWS through Meta(CUDA0,CUDA1) on the real devices, the mapped weight against the device-resident one (meta_rows.cpp: bitwise, one
-# gather split on Meta, no weight copy; each GPU first once; --nopin control falls back to the CPU path). Built against each tree.
+# GET_ROWS through Meta(CUDA0,CUDA1) on the real devices, the mapped weight against the device-resident one (meta_rows.cpp: both against a
+# host reference, a and b bitwise, one gather split on Meta, no weight copy; each GPU first once; --nopin control: the gather of the
+# CPU-buffer weight runs on the CPU, 2 splits, no copy). Built against each tree.
 meta_rows_tree() {
     local t=$1 d bin lib rc=0 n
     d=$(tree_of "$t")
@@ -327,12 +328,12 @@ meta_rows_tree() {
         '^meta_rows: order=CUDA0,CUDA1 types=[0-9]+ checks=[0-9]+ bitwise OK, placement OK$' \
         '^meta_rows: order=CUDA1,CUDA0 types=[0-9]+ checks=[0-9]+ bitwise OK, placement OK$' || return 8
     if grep -aq 'FAIL' "$OUT/meta-rows-$t.txt"; then return 8; fi
-    n=$(grep -ac 'b_on_meta=1 splits=1 weight_copied=0 differing=0/' "$OUT/meta-rows-$t.txt" || true)
+    n=$(grep -acE 'a_on_meta=1 b_on_meta=1 splits=1 weight_copied=0 differing=0/[0-9]+ ref_bad=0 ' "$OUT/meta-rows-$t.txt" || true)
     [[ $n -ge 200 ]] || { echo "only $n mapped-weight gathers on Meta"; return 8; }
     rc=0
     env CUDA_VISIBLE_DEVICES="$VISIBLE" LD_LIBRARY_PATH="$lib" GGML_CUDA_NO_PINNED=1 timeout 900 nice -n 19 "$bin" --nopin > "$OUT/meta-rows-$t-nopin.txt" 2> "$OUT/meta-rows-$t-nopin.err" || rc=$?
     gate_log "$OUT/meta-rows-$t-nopin.txt" "$rc" '^meta_rows: PASS nopin \(2 orders\)$' || return 8
-    n=$(grep -ac 'b_on_meta=0 .*differing=0/' "$OUT/meta-rows-$t-nopin.txt" || true)
+    n=$(grep -acE 'a_on_meta=1 b_on_meta=0 splits=2 weight_copied=0 differing=0/[0-9]+ ref_bad=0 ' "$OUT/meta-rows-$t-nopin.txt" || true)
     [[ $n -ge 200 ]] || { echo "nopin control: only $n CPU-path gathers"; return 8; }
 }
 meta_rows_k() { meta_rows_tree k; }
