@@ -800,9 +800,11 @@ namespace ggml_cuda_mma {
         return offset ^ ((i % 8) << shift);
     }
 
+    // XORs the byte offset, as the pre-#29612 code did: same address, fewer address registers.
     template <int stride, typename T>
     static __device__ __forceinline__ T * swizzle(T * ptr, const uint32_t offset, const uint32_t i) {
-        return ptr + swizzle<stride, T>(offset, i);
+        using byte_t = std::conditional_t<std::is_const_v<T>, const char, char>;
+        return reinterpret_cast<T *>(reinterpret_cast<byte_t *>(ptr) + swizzle<stride*sizeof(T), char>(offset*uint32_t(sizeof(T)), i));
     }
 
     template <typename T>
@@ -953,12 +955,12 @@ namespace ggml_cuda_mma {
         static_assert(J ==  8, "bad tile height");
         const int i = threadIdx.x % t.I;
         const int j = (threadIdx.x / t.I) * (t.J / 2);
-        int offset_ij = offset + i * stride + j;
-        offset_ij = swizzle<stride, T>(offset_ij, i);
+        // Swizzle by the absolute tile row, as the stores do; the row/column split also restores the register allocation of
+        // the pre-#29612 (i0, j0) form. offset >= 0.
         int * xi = (int *) t.x;
         asm volatile("ldmatrix.sync.aligned.m8n8.x4.b16 {%0, %1, %2, %3}, [%4];"
             : "=r"(xi[0]), "=r"(xi[1]), "=r"(xi[2]), "=r"(xi[3])
-            : "l"(xs0 + offset_ij));
+            : "l"(swizzle<stride>(xs0, (offset/stride + i)*stride + offset%stride + j, offset/stride + i)));
 #elif defined(VOLTA_MMA_AVAILABLE)
 #pragma unroll
         for (int o = 0; o < t.ne; o += 4) {
@@ -1015,12 +1017,12 @@ namespace ggml_cuda_mma {
         static_assert(dl == DATA_LAYOUT_I_MAJOR, "bad data layout");
         const int i = threadIdx.x % t.I;
         const int j = (threadIdx.x / t.I) * (t.J / 2);
-        int offset_ij = offset + i * stride + j;
-        offset_ij = swizzle<stride, T>(offset_ij, i);
+        // Swizzle by the absolute tile row, as the stores do; the row/column split also restores the register allocation of
+        // the pre-#29612 (i0, j0) form. offset >= 0.
         int * xi = (int *) t.x;
         asm volatile("ldmatrix.sync.aligned.m8n8.x4.trans.b16 {%0, %1, %2, %3}, [%4];"
             : "=r"(xi[0]), "=r"(xi[2]), "=r"(xi[1]), "=r"(xi[3])
-            : "l"(xs0 + offset_ij));
+            : "l"(swizzle<stride>(xs0, (offset/stride + i)*stride + offset%stride + j, offset/stride + i)));
 #elif defined(AMD_MFMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
         static_assert(dl == DATA_LAYOUT_I_MAJOR || dl == DATA_LAYOUT_I_MAJOR_MIRRORED, "bad data layout");
         if constexpr (I == 32) {
