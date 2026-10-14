@@ -1,0 +1,8 @@
+2f81fcc02f6244203f56597cad9ba365f50ea796b3bee3c9577aa0ab053b4ab6  /home/xanewok/repos/qwen38-eval/results/2026-10-14-stack11-fa-gates/a1/ops-CUDA0.log
+87f663cd8a6227578a5eaf190c0d8a4ca8d27c800e8877d8f6c78c13cade7d34  /home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/window/stack11-s2b-a1/mapped/thm-nok-zc.log
+bbceff56e8504d411d289cc843f11fa7f66eaceccb1d943c1671f4409a094f86  /home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/window/stack11-s2b-a1/mapped/thm-nok-nopin.log
+d82b332440f29306b3917b3d0f46b11a7cb65ad8835f9d148e81bd23cc5d1862  /home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/window/stack11-s2b-a1/ops-nok/ops-nok-CUDA0-new.txt
+40e893b9fca8bfa8057739d4351ef5fc3acbe50bd9b7b6cad2751266aa81ad3e  /home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/window/stack11-s2b-a1/ops-nok/ops-nok-CUDA1-new.txt
+6f4b441c789a630ce4cb9c6f9fed56ca666286154a6a1a5d7271d46e1cd3b1e3  /home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/window/stack11-s2b-a1/unit/test-alloc-nok.txt
+6e7c0384725538ed529b644d8f42d8d11cc03bb576c8a15ccfb4a92d49ffdf4e  /home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/window/stack11-s2b-a1/unit/test-speculative-nok.txt
+213ab3cac41b5ea690d2af76370e34630ddce8c3af64a683f50cd07b3ec80344  /home/xanewok/repos/qwen38-eval-worktrees/wt/stack11-s2/codex/window/stack11-s2b-a1/health-nok/swift15-j5q-duo/server.log

@@ -1,0 +1,5 @@
+ngram-simple: uses_prompt, draft size 6: OK
+ngram-map-k: uses_prompt, draft size 6: OK
+ngram-map-k4v: uses_prompt, draft size 8: OK
+ngram-mod: uses_prompt, draft size 8: OK
+ngram-cache: uses_prompt, draft size 8: OK
