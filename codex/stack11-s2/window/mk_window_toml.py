@@ -18,17 +18,17 @@ UUIDS = 'GPU-ee9a3956-297c-604b-b4c1-f07930d27e46,GPU-3fe72007-d2f3-11c0-4d57-cc
 SCRIPT = HERE / 'bw-stack11-s2.sh'
 EST = 3600 + 600 + 300 + 1500 + 1500 + 120 + 600 + 600 + 1800
 BUDGET = 28000
-OUT = ROOT / 'codex/window/stack11-s2-a{attempt}'
+OUT = ROOT / 'codex/window/stack11-s2b-a{attempt}'
 
 
 def head():
     title = ("stack11-s2 CUDA window: build stack11-base + 87/88/91/90 with and without K7/K10 (frozen/stack11-s2 from wt/stack11-s2-k, "
              "frozen/stack11-s2-nok from wt/stack11-s2), np2 joint-replay smoke, CPU-device unit tests, test-host-mapped and touched ops on both "
              "GPUs vs frozen/stack11-base, served-flag health boots, freeze both, render/check the A/B items (NOT submitted), pkg 90 placement proof on the frozen builds vs frozen/stack11-base; Mac CPU gates required")
-    return f'''id = "bw-stack11-s2"
+    return f'''id = "bw-stack11-s2b"
 title = "{title}"
 kind = "filler"
-priority = 19
+priority = 22
 host_sensitive = false
 preemptible = false
 # G: builds 3600 + np2 smoke 600 + unit/host-mapped 300 + ops 1500 + health boots 1500 + freeze 120 + render 600 + meta rows 600 + placement 1800 = {EST} s; D: budget cap.

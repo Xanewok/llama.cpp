@@ -1,12 +1,16 @@
-// GET_ROWS through a Meta(CUDA, CUDA) backend, the weight in a CUDA_Host_Mapped buffer (a) and in the Meta device-resident buffer (b):
-// the rows must be bitwise equal and the gather must run on the Meta backend with no CPU split in front of it and no copy of the weight.
+// GET_ROWS through a Meta(CUDA, CUDA) backend, the weight in the Meta device-resident buffer (a) and in a CUDA_Host_Mapped buffer (b):
+// both gathers must match the rows dequantized on the host, a and b bitwise, and b must run on the Meta backend with no CPU split and no
+// copy of the weight. Only the weights are pre-allocated: a pre-allocated destination pins its op to that buffer's backend ("1.dst" in
+// ggml_backend_sched_backend_id_from_cur) before the scheduler looks at the weight, which would make the placement checks vacuous.
 // Run once with each GPU first in the Meta device: a mirrored tensor is read back from the first device, so the two orders show each GPU's rows.
-// GGML_CUDA_NO_PINNED=1 (--nopin) is the control: the allocation falls back to a CPU buffer, the rows stay equal, the gather is not on Meta.
+// GGML_CUDA_NO_PINNED=1 (--nopin) is the control: the allocation falls back to a CPU buffer, which Meta does not read, so the scheduler
+// gathers b on the CPU (2 splits) without copying the weight, and the rows stay equal.
 // Public API only, built against the tree under test by the window (bw-stack11-s2.sh); prints "meta_rows: PASS" or "meta_rows: FAIL".
 #include "ggml.h"
 #include "ggml-backend.h"
 
 #include <cinttypes>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <random>
@@ -51,6 +55,63 @@ static std::vector<uint8_t> random_rows(ggml_type type, int64_t ne0, int64_t nro
         }
     }
     return data;
+}
+
+// raw: n_batches x nr rows of type; ids: n_batches x n_ids. Empty when the type has no host conversion.
+static std::vector<uint8_t> host_rows(ggml_type type, ggml_type out_type, int64_t ne0, int64_t nr, const std::vector<uint8_t> & raw,
+                                      const std::vector<int32_t> & ids, int64_t n_ids, int64_t n_batches) {
+    const size_t row_in  = ggml_row_size(type, ne0);
+    const size_t row_out = ggml_row_size(out_type, ne0);
+    const auto to_float  = ggml_get_type_traits(type)->to_float;
+    if (out_type != type && type != GGML_TYPE_F32 && !to_float) {
+        return {};
+    }
+    std::vector<uint8_t> out(n_batches*n_ids*row_out);
+    for (int64_t j = 0; j < n_batches; ++j) {
+        for (int64_t i = 0; i < n_ids; ++i) {
+            const uint8_t * src = raw.data() + (j*nr + ids[j*n_ids + i])*row_in;
+            uint8_t * dst = out.data() + (j*n_ids + i)*row_out;
+            if (out_type == type || type == GGML_TYPE_F32) {
+                memcpy(dst, src, row_out);
+            } else {
+                to_float(src, (float *) dst, ne0);
+            }
+        }
+    }
+    return out;
+}
+
+static size_t n_words_differing(const std::vector<uint8_t> & x, const std::vector<uint8_t> & y) {
+    size_t n = 0;
+    for (size_t i = 0; i + sizeof(float) <= x.size(); i += sizeof(float)) {
+        n += memcmp(x.data() + i, y.data() + i, sizeof(float)) != 0;
+    }
+    return n;
+}
+
+// Elements of out off the host reference. Exact types (no dequantization) must match bitwise; dequantized types within a bound that
+// absorbs FMA contraction and operation order on the device but not a wrong, stale or zero row.
+static size_t n_off_reference(const std::vector<uint8_t> & out, const std::vector<uint8_t> & ref, bool exact, float & max_err) {
+    if (exact) {
+        return n_words_differing(out, ref);
+    }
+    const float * o = (const float *) out.data();
+    const float * r = (const float *) ref.data();
+    const size_t n = out.size()/sizeof(float);
+    float max_ref = 1.0f;
+    for (size_t i = 0; i < n; ++i) {
+        max_ref = std::isfinite(r[i]) ? std::fmax(max_ref, std::fabs(r[i])) : max_ref;
+    }
+    size_t n_off = 0;
+    for (size_t i = 0; i < n; ++i) {
+        if (memcmp(o + i, r + i, sizeof(float)) == 0) {
+            continue;
+        }
+        const float err = std::fabs(o[i] - r[i]);
+        max_err = std::isfinite(err) ? std::fmax(max_err, err) : INFINITY;
+        n_off += !(err <= 1e-3f*max_ref);
+    }
+    return n_off;
 }
 
 static ggml_context * new_ctx(size_t n_tensors) {
@@ -114,20 +175,23 @@ static int run_order(ggml_backend_dev_t first, ggml_backend_dev_t second, ggml_b
             }
             ggml_backend_buffer_set_usage(buf_b, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
+            ggml_context * ctx_a = new_ctx(1);
+            ggml_tensor * src_a = ggml_new_tensor_3d(ctx_a, type, ne0, nr, shape[1]);
+            ggml_backend_buffer_t buf_a = ggml_backend_alloc_ctx_tensors(ctx_a, backend);
+            if (!buf_a) {
+                printf("meta_rows: order=%s type=%s device allocation failed: FAIL\n", order, ggml_type_name(type));
+                return 1;
+            }
+            ggml_backend_buffer_set_usage(buf_a, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+
+            // ids and the gathers: placed and allocated by the scheduler
             ggml_context * ctx = new_ctx(8);
-            ggml_tensor * src_a = ggml_new_tensor_3d(ctx, type, ne0, nr, shape[1]);
             ggml_tensor * ids   = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, shape[0], shape[1]);
             ggml_set_input(ids);
             ggml_tensor * out_a = ggml_get_rows(ctx, src_a, ids);
             ggml_tensor * out_b = ggml_get_rows(ctx, src_b, ids);
             ggml_set_output(out_a);
             ggml_set_output(out_b);
-            ggml_backend_buffer_t buf_a = ggml_backend_alloc_ctx_tensors(ctx, backend);
-            if (!buf_a) {
-                printf("meta_rows: order=%s type=%s device allocation failed: FAIL\n", order, ggml_type_name(type));
-                return 1;
-            }
-            ggml_backend_buffer_set_usage(buf_a, GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
 
             const bool sup_a = ggml_backend_dev_supports_op(meta, out_a);
             const bool sup_b = ggml_backend_dev_supports_op(meta, out_b);
@@ -139,6 +203,7 @@ static int run_order(ggml_backend_dev_t first, ggml_backend_dev_t second, ggml_b
                 for (auto & id : id_data) {
                     id = (int32_t) (rng() % nr);
                 }
+                const std::vector<uint8_t> ref = host_rows(type, out_b->type, ne0, nr, raw, id_data, shape[0], shape[1]);
 
                 ggml_cgraph * gf = ggml_new_graph(ctx);
                 ggml_build_forward_expand(gf, out_a);
@@ -155,22 +220,28 @@ static int run_order(ggml_backend_dev_t first, ggml_backend_dev_t second, ggml_b
                 if (!computed) {
                     printf("meta_rows: order=%s type=%s compute failed: FAIL\n", order, ggml_type_name(type));
                     ok = false;
+                } else if (ref.size() != ggml_nbytes(out_b)) {
+                    printf("meta_rows: order=%s type=%s no host reference: FAIL\n", order, ggml_type_name(type));
+                    ok = false;
                 } else {
                     std::vector<uint8_t> va(ggml_nbytes(out_a)), vb(ggml_nbytes(out_b));
                     ggml_backend_tensor_get(out_a, va.data(), 0, va.size());
                     ggml_backend_tensor_get(out_b, vb.data(), 0, vb.size());
-                    size_t n_diff = 0;
-                    for (size_t i = 0; i + sizeof(float) <= va.size(); i += sizeof(float)) {
-                        n_diff += memcmp(va.data() + i, vb.data() + i, sizeof(float)) != 0;
-                    }
+                    const size_t n_diff = n_words_differing(va, vb);
+                    const bool   exact  = !ggml_is_quantized(type);
+                    float  max_err = 0.0f;
+                    const size_t n_ref_bad = n_off_reference(va, ref, exact, max_err) + n_off_reference(vb, ref, exact, max_err);
+                    const size_t n_ref_diff = n_words_differing(vb, ref);
                     const bool a_on_meta = ggml_backend_sched_get_tensor_backend(sched, out_a) == backend;
                     const bool b_on_meta = ggml_backend_sched_get_tensor_backend(sched, out_b) == backend;
                     const int  n_splits  = ggml_backend_sched_get_n_splits(sched);
-                    printf("meta_rows: order=%s type=%s rows=%" PRId64 "x%" PRId64 " a_on_meta=%d b_on_meta=%d splits=%d weight_copied=%d differing=%zu/%" PRId64 "\n",
-                        order, ggml_type_name(type), shape[0], shape[1], a_on_meta, b_on_meta, n_splits, copies.weight_copied, n_diff, ggml_nelements(out_a));
-                    ok = ok && n_diff == 0 && a_on_meta && !copies.weight_copied;
+                    printf("meta_rows: order=%s type=%s rows=%" PRId64 "x%" PRId64 " a_on_meta=%d b_on_meta=%d splits=%d weight_copied=%d differing=%zu/%" PRId64
+                        " ref_bad=%zu ref_bitwise_differing=%zu ref_max_err=%g\n",
+                        order, ggml_type_name(type), shape[0], shape[1], a_on_meta, b_on_meta, n_splits, copies.weight_copied, n_diff, ggml_nelements(out_a),
+                        n_ref_bad, n_ref_diff, max_err);
+                    ok = ok && n_diff == 0 && n_ref_bad == 0 && a_on_meta && !copies.weight_copied;
                     if (nopin) {
-                        ok = ok && !b_on_meta;
+                        ok = ok && !b_on_meta && n_splits == 2;
                     } else {
                         ok = ok && b_on_meta && n_splits == 1;
                     }
@@ -185,6 +256,7 @@ static int run_order(ggml_backend_dev_t first, ggml_backend_dev_t second, ggml_b
             ggml_backend_buffer_free(buf_a);
             ggml_backend_buffer_free(buf_b);
             ggml_free(ctx);
+            ggml_free(ctx_a);
             ggml_free(ctx_b);
         }
     }
@@ -212,15 +284,18 @@ int main(int argc, char ** argv) {
         printf("meta_rows: SKIP (%zu GPU devices, need 2)\n", gpus.size());
         return 0;
     }
-    int rc = run_order(gpus[0], gpus[1], cpu, nopin);
-    if (rc == 0) {
-        rc = run_order(gpus[1], gpus[0], cpu, nopin);
-    }
+    // both orders always run: a failure in the first must not hide the second GPU's rows
+    const int rc_01 = run_order(gpus[0], gpus[1], cpu, nopin);
+    const int rc_10 = run_order(gpus[1], gpus[0], cpu, nopin);
     ggml_backend_free(cpu);
-    if (rc == 2) {
+    if (rc_01 == 1 || rc_10 == 1) {
+        printf("meta_rows: FAIL%s (2 orders)\n", nopin ? " nopin" : "");
+        return 1;
+    }
+    if (rc_01 == 2 || rc_10 == 2) {
         printf("meta_rows: SKIP\n");
         return 0;
     }
-    printf("meta_rows: %s%s (2 orders)\n", rc == 0 ? "PASS" : "FAIL", nopin ? " nopin" : "");
-    return rc;
+    printf("meta_rows: PASS%s (2 orders)\n", nopin ? " nopin" : "");
+    return 0;
 }

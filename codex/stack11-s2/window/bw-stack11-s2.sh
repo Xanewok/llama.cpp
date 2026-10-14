@@ -34,8 +34,8 @@ SERVE=$HOME/.claude/skills/local-qwen-server/bin/serve.sh
 MACEV=$ROOT/codex/stack11-s2/mac-evidence
 ALL_COMPONENTS='p55 k7 k4 k6a k6b k10 k8 k11a k11b p90'
 COMPONENTS=$(echo "${COMPONENTS:-$ALL_COMPONENTS}" | xargs)
-ITEM=bw-stack11-s2
-OUT_GLOB=$ROOT/codex/window/stack11-s2-a[0-9]*
+ITEM=bw-stack11-s2b
+OUT_GLOB=$ROOT/codex/window/stack11-s2b-a[0-9]*
 # shellcheck source=gates.sh
 source "$WIN/gates.sh"
 
