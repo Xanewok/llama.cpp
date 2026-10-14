@@ -947,6 +947,18 @@ namespace ggml_cuda_mma {
 #endif // TURING_MMA_AVAILABLE
     }
 
+    // Lane address for ldmatrix at tile origin (i0, j0), lane row i, lane column j; 0 <= j0 < stride.
+    // Power-of-two strides: split the flattened offset (shift/mask). Other strides: that split is a division, use i0 and j0 directly.
+    template <int stride, typename T>
+    static __device__ __forceinline__ const T * ldmatrix_lane_ptr(const T * xs0, const int i0, const int j0, const int i, const int j) {
+        if constexpr ((stride & (stride - 1)) == 0) {
+            const int offset = i0*stride + j0;
+            return swizzle<stride>(xs0, (offset/stride + i)*stride + offset%stride + j, offset/stride + i);
+        } else {
+            return swizzle<stride>(xs0, (i0 + i)*stride + j0 + j, i0 + i);
+        }
+    }
+
     template <int stride, int I, int J, typename T, data_layout dl>
     static __device__ __forceinline__ void load_ldmatrix_swizzled(
             tile<I, J, T, dl> & t, const T * __restrict__ xs0, const int i0, const int j0) {
@@ -956,12 +968,12 @@ namespace ggml_cuda_mma {
 #if defined(TURING_MMA_AVAILABLE)
         static_assert(I == 16, "bad tile width");
         static_assert(J ==  8, "bad tile height");
-        const int i = i0 + threadIdx.x % t.I;
-        const int j = j0 + (threadIdx.x / t.I) * (t.J / 2);
+        const int i = threadIdx.x % t.I;
+        const int j = (threadIdx.x / t.I) * (t.J / 2);
         int * xi = (int *) t.x;
         asm volatile("ldmatrix.sync.aligned.m8n8.x4.b16 {%0, %1, %2, %3}, [%4];"
             : "=r"(xi[0]), "=r"(xi[1]), "=r"(xi[2]), "=r"(xi[3])
-            : "l"(swizzle<stride>(xs0, i*stride + j, i)));
+            : "l"(ldmatrix_lane_ptr<stride>(xs0, i0, j0, i, j)));
         GGML_UNUSED(offset);
 #elif defined(VOLTA_MMA_AVAILABLE)
 #pragma unroll
@@ -1019,12 +1031,12 @@ namespace ggml_cuda_mma {
 #if defined(TURING_MMA_AVAILABLE)
         static_assert(I == 16, "bad tile width");
         static_assert(dl == DATA_LAYOUT_I_MAJOR, "bad data layout");
-        const int i = i0 + threadIdx.x % t.I;
-        const int j = j0 + (threadIdx.x / t.I) * (t.J / 2);
+        const int i = threadIdx.x % t.I;
+        const int j = (threadIdx.x / t.I) * (t.J / 2);
         int * xi = (int *) t.x;
         asm volatile("ldmatrix.sync.aligned.m8n8.x4.trans.b16 {%0, %1, %2, %3}, [%4];"
             : "=r"(xi[0]), "=r"(xi[2]), "=r"(xi[1]), "=r"(xi[3])
-            : "l"(swizzle<stride>(xs0, i*stride + j, i)));
+            : "l"(ldmatrix_lane_ptr<stride>(xs0, i0, j0, i, j)));
         GGML_UNUSED(offset);
 #elif defined(AMD_MFMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
         static_assert(dl == DATA_LAYOUT_I_MAJOR || dl == DATA_LAYOUT_I_MAJOR_MIRRORED, "bad data layout");
