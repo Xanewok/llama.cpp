@@ -949,20 +949,17 @@ namespace ggml_cuda_mma {
 
     template <int stride, int I, int J, typename T, data_layout dl>
     static __device__ __forceinline__ void load_ldmatrix_swizzled(
-            tile<I, J, T, dl> & t, const T * __restrict__ xs0, const int i0, const int j0) {
-        // Tile origin as row i0 and column j0: a flattened offset costs registers in the FA kernels.
-        // i0 % 8 == 0: the non-Turing paths swizzle by the row within the tile.
-        const int offset = i0*stride + j0;
+            tile<I, J, T, dl> & t, const T * __restrict__ xs0, const int offset) {
 #if defined(TURING_MMA_AVAILABLE)
         static_assert(I == 16, "bad tile width");
         static_assert(J ==  8, "bad tile height");
-        const int i = i0 + threadIdx.x % t.I;
-        const int j = j0 + (threadIdx.x / t.I) * (t.J / 2);
+        const int i = threadIdx.x % t.I;
+        const int j = (threadIdx.x / t.I) * (t.J / 2);
+        // Swizzle by the absolute row offset/stride + i, as the stores do (same address while offset/stride % 8 == 0).
         int * xi = (int *) t.x;
         asm volatile("ldmatrix.sync.aligned.m8n8.x4.b16 {%0, %1, %2, %3}, [%4];"
             : "=r"(xi[0]), "=r"(xi[1]), "=r"(xi[2]), "=r"(xi[3])
-            : "l"(swizzle<stride>(xs0, i*stride + j, i)));
-        GGML_UNUSED(offset);
+            : "l"(swizzle<stride>(xs0, (offset/stride + i)*stride + offset%stride + j, offset/stride + i)));
 #elif defined(VOLTA_MMA_AVAILABLE)
 #pragma unroll
         for (int o = 0; o < t.ne; o += 4) {
@@ -998,8 +995,7 @@ namespace ggml_cuda_mma {
 
     template <int stride>
     static __device__ __forceinline__ void load_ldmatrix_swizzled(
-            tile<8, 4, half2, DATA_LAYOUT_J_MAJOR_MIRRORED> & t, const half2 * __restrict__ xs0, const int i0, const int j0) {
-        const int offset = i0*stride + j0;
+            tile<8, 4, half2, DATA_LAYOUT_J_MAJOR_MIRRORED> & t, const half2 * __restrict__ xs0, const int offset) {
 #ifdef VOLTA_MMA_AVAILABLE
 #pragma unroll
         for (int l0 = 0; l0 < t.ne; l0 += 2) {
@@ -1014,18 +1010,17 @@ namespace ggml_cuda_mma {
 
     template <int stride, int I, typename T, data_layout dl>
     static __device__ __forceinline__ void load_ldmatrix_trans_swizzled(
-            tile<I, 8, T, dl> & t, const T * __restrict__ xs0, const int i0, const int j0) {
-        const int offset = i0*stride + j0;
+            tile<I, 8, T, dl> & t, const T * __restrict__ xs0, const int offset) {
 #if defined(TURING_MMA_AVAILABLE)
         static_assert(I == 16, "bad tile width");
         static_assert(dl == DATA_LAYOUT_I_MAJOR, "bad data layout");
-        const int i = i0 + threadIdx.x % t.I;
-        const int j = j0 + (threadIdx.x / t.I) * (t.J / 2);
+        const int i = threadIdx.x % t.I;
+        const int j = (threadIdx.x / t.I) * (t.J / 2);
+        // Swizzle by the absolute row offset/stride + i, as the stores do (same address while offset/stride % 8 == 0).
         int * xi = (int *) t.x;
         asm volatile("ldmatrix.sync.aligned.m8n8.x4.trans.b16 {%0, %1, %2, %3}, [%4];"
             : "=r"(xi[0]), "=r"(xi[2]), "=r"(xi[1]), "=r"(xi[3])
-            : "l"(swizzle<stride>(xs0, i*stride + j, i)));
-        GGML_UNUSED(offset);
+            : "l"(swizzle<stride>(xs0, (offset/stride + i)*stride + offset%stride + j, offset/stride + i)));
 #elif defined(AMD_MFMA_AVAILABLE) || defined(AMD_WMMA_AVAILABLE)
         static_assert(dl == DATA_LAYOUT_I_MAJOR || dl == DATA_LAYOUT_I_MAJOR_MIRRORED, "bad data layout");
         if constexpr (I == 32) {
