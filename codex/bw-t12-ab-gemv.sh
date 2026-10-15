@@ -48,3 +48,12 @@ done
 "$W/bin/wt" freeze "$ROOT" "$NAME" --build build-cuda --desc "$DESC" > "$OUT/freeze.log" 2>&1 \
     || { echo "bw-run: FAIL freeze (tail $OUT/freeze.log)"; tail -5 "$OUT/freeze.log"; exit 8; }
 echo "frozen: $W/frozen/$NAME"
+# The night runs unattended: queue the A/B against fs2 only after a passed freeze. Not bit-identical, so no token identity
+# (the KLD gate is queued by hand).
+EVAL=$HOME/repos/qwen38-eval
+cd "$EVAL"
+for exp in $(python3 -m harness.patch_ab "$NAME" --thread T-12 --expect=-0.4..-0.1 --no-identity --priority 16); do
+    python3 -m harness.mkitem "$exp" --submit > "$OUT/submit-$(basename "$exp" .toml).log" 2>&1 \
+        || { echo "bw-run: FAIL submit $exp"; tail -3 "$OUT/submit-$(basename "$exp" .toml).log"; exit 8; }
+    echo "submitted: $(basename "$exp" .toml)"
+done
