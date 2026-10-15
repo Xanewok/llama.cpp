@@ -40,6 +40,7 @@ struct trace_state {
     uint64_t round = 0;
     std::vector<trace_phase> phases;
     std::vector<trace_event> events;
+    std::vector<std::shared_ptr<ggml_round_trace_gpu_source>> gpu;
     bool decoding = false;
 
     ~trace_state();
@@ -60,6 +61,7 @@ struct trace_record {
     int64_t next_begin;
     std::vector<trace_phase> phases;
     std::vector<trace_event> events;
+    std::vector<std::shared_ptr<ggml_round_trace_gpu_source>> gpu;
 };
 
 static FILE * trace_open() {
@@ -108,6 +110,17 @@ static void trace_write(FILE * out, const trace_record & record) {
             i ? "," : "", e.kind, e.phase, e.device, (unsigned long long) e.count, (unsigned long long) e.bytes,
             (long long) e.begin, (long long) e.end);
     }
+    if (!record.gpu.empty()) {
+        std::vector<ggml_round_trace_gpu_interval> gpu;
+        for (const auto & source : record.gpu) { source->read(gpu); }
+        std::fprintf(out, "],\"gpu\":[");
+        for (size_t i = 0; i < gpu.size(); ++i) {
+            const auto & e = gpu[i];
+            std::fprintf(out, "%s{\"kind\":\"%s\",\"phase\":%zu,\"device\":%d,\"stream\":%llu,\"begin_ns\":%lld,\"end_ns\":%lld,\"error_ns\":%lld}",
+                i ? "," : "", e.kind, e.phase, e.device, (unsigned long long) e.stream,
+                (long long) e.begin_ns, (long long) e.end_ns, (long long) e.error_ns);
+        }
+    }
     std::fprintf(out, "]}\n");
     if (std::ferror(out)) { std::perror("LLAMA_ROUND_TRACE"); std::abort(); }
 }
@@ -122,7 +135,8 @@ struct trace_writer {
     bool test_pause = false;
     uint64_t test_full_queue_waits = 0;
 #endif
-    const bool sync = [] { const char * p = std::getenv("GGML_ROUND_TRACE_SYNC"); return p && std::string(p) == "1"; }();
+    // GPU queries must stay on the writer, including when the synchronous writer control is set.
+    const bool sync = [] { const char * p = std::getenv("GGML_ROUND_TRACE_SYNC"); return !ggml_round_trace_gpu_enabled() && p && std::string(p) == "1"; }();
 
     ~trace_writer() { finish(); }
 
@@ -197,9 +211,10 @@ static trace_writer & trace_get_writer() {
 
 static void trace_flush(int64_t next_begin) {
     if (state.phases.empty()) { return; }
-    trace_record record {state.round, long(getpid()), long(syscall(SYS_gettid)), next_begin, {}, {}};
+    trace_record record {state.round, long(getpid()), long(syscall(SYS_gettid)), next_begin, {}, {}, {}};
     record.phases = std::move(state.phases);
     record.events = std::move(state.events);
+    record.gpu = std::move(state.gpu);
     trace_get_writer().submit(std::move(record));
 }
 
@@ -244,4 +259,14 @@ void ggml_round_trace_flush() {
         trace_flush(0);
         trace_get_writer().finish();
     }
+}
+
+uint64_t ggml_round_trace_gpu_round(size_t & phase) {
+    if (state.phases.empty()) { return 0; }
+    phase = state.phases.size() - 1;
+    return state.round;
+}
+
+void ggml_round_trace_gpu_defer(std::shared_ptr<ggml_round_trace_gpu_source> source) {
+    state.gpu.push_back(std::move(source));
 }

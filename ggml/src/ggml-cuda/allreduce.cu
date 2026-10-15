@@ -1,5 +1,6 @@
 #include "ggml-round-trace.h"
 #include "allreduce.cuh"
+#include "round-trace.cuh"
 
 #if !defined(GGML_USE_MUSA)
 
@@ -395,7 +396,7 @@ static void ggml_cuda_ar_wait_for_compute(
         ggml_cuda_ar_pipeline * p, ggml_backend_cuda_context * cuda_ctx, int rank, int slot) {
     ggml_cuda_ar_event_slot & ev = p->ev_pool[rank][slot];
     CUDA_CHECK(cudaEventRecord(ev.app, cuda_ctx->stream()));
-    CUDA_CHECK(cudaStreamWaitEvent(p->streams[rank], ev.app));
+    ggml_cuda_trace_wait(p->devices[rank], p->streams[rank], ev.app);
 }
 
 // ---------------------------------------------------------------------------
@@ -652,9 +653,10 @@ static bool ggml_cuda_ar_allreduce_copy_impl(
         // No-op on the first AR -- no prior record exists.
         if (p->host_large_read_done_valid) {
             const int peer = 1 - i;
-            CUDA_CHECK(cudaStreamWaitEvent(p->streams[i], p->host_large_read_done[peer]));
+            ggml_cuda_trace_wait(p->devices[i], p->streams[i], p->host_large_read_done[peer]);
         }
 
+        ggml_cuda_trace_scope gpu_ar("allreduce", p->devices[i], p->streams[i]);
         if (!compute[i]) {
             CUDA_CHECK(cudaMemsetAsync(src_buf[i], 0, nbytes, p->streams[i]));
         }
@@ -693,7 +695,7 @@ static bool ggml_cuda_ar_allreduce_copy_impl(
         // finish reading dev_tmp before our H2D overwrites it.  No-op on the
         // first copy_impl call.
         if (p->dev_tmp_kernel_done_valid) {
-            CUDA_CHECK(cudaStreamWaitEvent(h2d_stream, p->dev_tmp_kernel_done[i]));
+            ggml_cuda_trace_wait(p->devices[i], h2d_stream, p->dev_tmp_kernel_done[i]);
         }
 
         for (size_t c = 0; c < copy_chunks; ++c) {
@@ -701,7 +703,8 @@ static bool ggml_cuda_ar_allreduce_copy_impl(
             const size_t this_bytes = (nbytes - offset) < chunk_bytes ?
                 (nbytes - offset) : chunk_bytes;
 
-            CUDA_CHECK(cudaStreamWaitEvent(h2d_stream, p->ev_pool[peer][slot].cpy[c]));
+            ggml_cuda_trace_wait(p->devices[i], h2d_stream, p->ev_pool[peer][slot].cpy[c]);
+            ggml_cuda_trace_scope gpu_ar("allreduce", p->devices[i], h2d_stream);
             CUDA_CHECK(cudaMemcpyAsync(
                 p->dev_tmp[i] + offset, p->host_large[peer].host + offset, this_bytes,
                 cudaMemcpyHostToDevice, h2d_stream));
@@ -714,9 +717,10 @@ static bool ggml_cuda_ar_allreduce_copy_impl(
         // Hand off from the copy streams to the compute stream: compute stream
         // waits for all H2Ds (and our own D2H, see above), then runs the add_kernel.
         CUDA_CHECK(cudaEventRecord(p->ev_pool[i][slot].h2d, h2d_stream));
-        CUDA_CHECK(cudaStreamWaitEvent(cuda_ctx[i]->stream(), p->ev_pool[i][slot].h2d));
-        CUDA_CHECK(cudaStreamWaitEvent(cuda_ctx[i]->stream(), p->ev_pool[i][slot].cpy[copy_chunks - 1]));
+        ggml_cuda_trace_wait(p->devices[i], cuda_ctx[i]->stream(), p->ev_pool[i][slot].h2d);
+        ggml_cuda_trace_wait(p->devices[i], cuda_ctx[i]->stream(), p->ev_pool[i][slot].cpy[copy_chunks - 1]);
 
+        ggml_cuda_trace_scope gpu_ar("allreduce", p->devices[i], cuda_ctx[i]->stream());
         const int block_size = 256;
         int n_blocks = (int) ((ne + block_size - 1) / block_size);
         if (n_blocks > 1024) {
@@ -828,6 +832,7 @@ bool ggml_cuda_ar_allreduce(
                 auto * cuda_ctx = static_cast<ggml_backend_cuda_context *>(backends[i]->context);
                 GGML_ASSERT(cuda_ctx->device == p->devices[i]);
                 ggml_cuda_set_device(p->devices[i]);
+                ggml_cuda_trace_scope gpu_ar("allreduce", p->devices[i], cuda_ctx->stream());
                 CUDA_CHECK(cudaMemsetAsync(tensors[i]->data, 0, (size_t) ne * sizeof(float), cuda_ctx->stream()));
             }
         }
@@ -847,6 +852,7 @@ bool ggml_cuda_ar_allreduce(
             bf16_tmp[i].pool = &cuda_ctx->pool();
             bf16_tmp[i].alloc(ne);
             ggml_cuda_set_device(p->devices[i]);
+            ggml_cuda_trace_scope gpu_ar("allreduce", p->devices[i], cuda_ctx->stream());
             if (compute_flag[i]) {
                 to_bf16(tensors[i]->data, bf16_tmp[i].get(), ne, cuda_ctx->stream());
                 CUDA_CHECK(cudaGetLastError());
@@ -942,6 +948,7 @@ bool ggml_cuda_ar_allreduce(
                 GGML_ASSERT(cuda_ctx->device == p->devices[i]);
                 cudaStream_t stream = cuda_ctx->stream();
 
+                ggml_cuda_trace_scope gpu_ar("allreduce", p->devices[i], stream);
                 char * data = static_cast<char *>(tensors[i]->data) + chunk_start * (int64_t) input_type_size;
 
                 // Match NCCL/meta-backend semantics: inactive shards contribute

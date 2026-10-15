@@ -1,4 +1,5 @@
 #include "ggml-round-trace.h"
+#include "round-trace.cuh"
 #include "ggml-cuda.h"
 #include "ggml-impl.h"
 #include "ggml-ssm-conv.h"
@@ -2724,6 +2725,7 @@ static void ggml_backend_cuda_set_tensor_async(ggml_backend_t backend, ggml_tens
     GGML_ASSERT(buf->buft == ggml_backend_cuda_buffer_type(cuda_ctx->device) && "unsupported buffer type");
 
     ggml_round_trace_scope trace_transfer("input", cuda_ctx->device, 1, size);
+    ggml_cuda_trace_scope gpu_transfer("transfer", cuda_ctx->device, cuda_ctx->stream());
     ggml_round_trace_count("input_api", cuda_ctx->device);
     CUDA_CHECK(cudaMemcpyAsync((char *) tensor->data + offset, data, size, cudaMemcpyHostToDevice, cuda_ctx->stream()));
 }
@@ -2816,7 +2818,7 @@ static bool ggml_backend_cuda_set_tensor_batch_owned(ggml_backend_t backend, con
     }
     ggml_cuda_input_stream_ensure(ctx);
     CUDA_CHECK(cudaEventRecord(ctx->input_compute_done, ctx->stream()));
-    CUDA_CHECK(cudaStreamWaitEvent(ctx->input_stream, ctx->input_compute_done, 0));
+    ggml_cuda_trace_wait(ctx->device, ctx->input_stream, ctx->input_compute_done, 0);
     ctx->input_dsts.clear();
     ctx->input_srcs.clear();
     ctx->input_sizes.clear();
@@ -2840,9 +2842,12 @@ static bool ggml_backend_cuda_set_tensor_batch_owned(ggml_backend_t backend, con
         ctx->input_sizes.push_back(t.size);
         offset += t.size;
     }
-    ggml_cuda_input_copies_enqueue(ctx, overlap);
+    {
+        ggml_cuda_trace_scope gpu_transfer("transfer", ctx->device, ctx->input_stream);
+        ggml_cuda_input_copies_enqueue(ctx, overlap);
+    }
     CUDA_CHECK(cudaEventRecord(slot.uploaded, ctx->input_stream));
-    CUDA_CHECK(cudaStreamWaitEvent(ctx->stream(), slot.uploaded, 0));
+    ggml_cuda_trace_wait(ctx->device, ctx->stream(), slot.uploaded, 0);
     slot.pending = true;
     ctx->input_next = (ctx->input_next + 1) % 2;
     return true;
@@ -3074,7 +3079,7 @@ static bool ggml_backend_cuda_input_stage_set_batch(void * stage, ggml_backend_t
         auto * ctx = st->ctxs[st->order[k]];
         ggml_cuda_set_device(ctx->device);
         CUDA_CHECK(cudaEventRecord(ctx->input_compute_done, ctx->stream()));
-        CUDA_CHECK(cudaStreamWaitEvent(ctx->input_stream, ctx->input_compute_done, 0));
+        ggml_cuda_trace_wait(ctx->device, ctx->input_stream, ctx->input_compute_done, 0);
     }
 
     st->offsets.resize(n_transfers);
@@ -3115,9 +3120,12 @@ static bool ggml_backend_cuda_input_stage_set_batch(void * stage, ggml_backend_t
             ctx->input_srcs.push_back((char *) slot.data + st->offsets[i]);
             ctx->input_sizes.push_back(t.size);
         }
-        ggml_cuda_input_copies_enqueue(ctx, overlap);
+        {
+            ggml_cuda_trace_scope gpu_transfer("transfer", ctx->device, ctx->input_stream);
+            ggml_cuda_input_copies_enqueue(ctx, overlap);
+        }
         CUDA_CHECK(cudaEventRecord(slot.uploaded[r], ctx->input_stream));
-        CUDA_CHECK(cudaStreamWaitEvent(ctx->stream(), slot.uploaded[r], 0));
+        ggml_cuda_trace_wait(ctx->device, ctx->stream(), slot.uploaded[r], 0);
     }
     slot.pending = true;
     st->next = (st->next + 1) % 2;
@@ -3132,6 +3140,7 @@ static void ggml_backend_cuda_get_tensor_async(ggml_backend_t backend, const ggm
     GGML_ASSERT(buf->buft == ggml_backend_cuda_buffer_type(cuda_ctx->device) && "unsupported buffer type");
 
     ggml_round_trace_scope trace_transfer("readback", cuda_ctx->device, 1, size);
+    ggml_cuda_trace_scope gpu_transfer("transfer", cuda_ctx->device, cuda_ctx->stream());
     CUDA_CHECK(cudaMemcpyAsync(data, (const char *) tensor->data + offset, size, cudaMemcpyDeviceToHost, cuda_ctx->stream()));
 }
 
@@ -3143,6 +3152,7 @@ static void ggml_backend_cuda_set_tensor_2d_async(ggml_backend_t backend, struct
     GGML_ASSERT(buf->buft == ggml_backend_cuda_buffer_type(cuda_ctx->device) && "unsupported buffer type");
 
     ggml_round_trace_scope trace_transfer("input", cuda_ctx->device, n_copies, size * n_copies);
+    ggml_cuda_trace_scope gpu_transfer("transfer", cuda_ctx->device, cuda_ctx->stream());
     ggml_round_trace_count("input_api", cuda_ctx->device);
     CUDA_CHECK(cudaMemcpy2DAsync(
         (char *) tensor->data + offset, stride_tensor, data, stride_data, size, n_copies, cudaMemcpyHostToDevice, cuda_ctx->stream()));
@@ -3156,6 +3166,7 @@ static void ggml_backend_cuda_get_tensor_2d_async(ggml_backend_t backend, const 
     GGML_ASSERT(buf->buft == ggml_backend_cuda_buffer_type(cuda_ctx->device) && "unsupported buffer type");
 
     ggml_round_trace_scope trace_transfer("readback", cuda_ctx->device, n_copies, size * n_copies);
+    ggml_cuda_trace_scope gpu_transfer("transfer", cuda_ctx->device, cuda_ctx->stream());
     CUDA_CHECK(cudaMemcpy2DAsync(
         data, stride_data, (const char *) tensor->data + offset, stride_tensor, size, n_copies, cudaMemcpyDeviceToHost, cuda_ctx->stream()));
 }
@@ -3193,11 +3204,13 @@ static bool ggml_backend_cuda_cpy_tensor_async(ggml_backend_t backend_src, ggml_
         const int src_physical = ggml_cuda_get_physical_device(cuda_ctx_src->device);
         const int dst_physical = ggml_cuda_get_physical_device(cuda_ctx_dst->device);
         if (src_physical == dst_physical) {
+            ggml_cuda_trace_scope gpu_transfer("transfer", cuda_ctx_src->device, cuda_ctx_src->stream());
             CUDA_CHECK(cudaMemcpyAsync(dst->data, src->data, ggml_nbytes(dst), cudaMemcpyDeviceToDevice, cuda_ctx_src->stream()));
         } else {
 #ifdef GGML_CUDA_NO_PEER_COPY
             return false;
 #else
+            ggml_cuda_trace_scope gpu_transfer("transfer", cuda_ctx_src->device, cuda_ctx_src->stream());
             CUDA_CHECK(cudaMemcpyPeerAsync(dst->data, dst_physical, src->data, src_physical, ggml_nbytes(dst), cuda_ctx_src->stream()));
 #endif // GGML_CUDA_NO_PEER_COPY
         }
@@ -3211,9 +3224,10 @@ static bool ggml_backend_cuda_cpy_tensor_async(ggml_backend_t backend_src, ggml_
         CUDA_CHECK(cudaEventRecord(cuda_ctx_src->copy_event, cuda_ctx_src->stream()));
 
         // wait on dst stream for the copy to complete
-        CUDA_CHECK(cudaStreamWaitEvent(cuda_ctx_dst->stream(), cuda_ctx_src->copy_event, 0));
+        ggml_cuda_trace_wait(cuda_ctx_dst->device, cuda_ctx_dst->stream(), cuda_ctx_src->copy_event, 0);
     } else {
         // src and dst are on the same backend
+        ggml_cuda_trace_scope gpu_transfer("transfer", cuda_ctx_src->device, cuda_ctx_src->stream());
         CUDA_CHECK(cudaMemcpyAsync(dst->data, src->data, ggml_nbytes(dst), cudaMemcpyDeviceToDevice, cuda_ctx_src->stream()));
     }
     return true;
@@ -5208,6 +5222,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
         // With the use of CUDA graphs, the execution will be performed by the graph launch.
         if (!use_cuda_graph || cuda_graph_update_required) {
             ggml_round_trace_scope trace_capture(use_cuda_graph ? "cuda_capture" : "cuda_submit", cuda_ctx->device);
+            ggml_cuda_trace_scope gpu_compute("compute", cuda_ctx->device, cuda_ctx->stream(), !use_cuda_graph);
             [[maybe_unused]] int prev_i = 0;
             const bool debug_ssm_conv = ggml_cuda_debug_ssm_conv();
             const bool debug_gdn_fusion = ggml_cuda_debug_gdn_state();
@@ -5458,6 +5473,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
         }
         // Launch graph
         ggml_round_trace_scope trace_launch("cuda_launch", cuda_ctx->device);
+        ggml_cuda_trace_scope gpu_compute("compute", cuda_ctx->device, cuda_ctx->stream());
         CUDA_CHECK(cudaGraphLaunch(graph->instance, cuda_ctx->stream()));
 #else
         GGML_UNUSED(graph_key);
@@ -5562,7 +5578,7 @@ static void ggml_backend_cuda_event_wait(ggml_backend_t backend, ggml_backend_ev
     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *)backend->context;
 
     if (ggml_backend_is_cuda(backend)) {
-        CUDA_CHECK(cudaStreamWaitEvent(cuda_ctx->stream(), (cudaEvent_t)event->context, 0));
+        ggml_cuda_trace_wait(cuda_ctx->device, cuda_ctx->stream(), (cudaEvent_t)event->context, 0);
     } else {
 #if 0
         // untested

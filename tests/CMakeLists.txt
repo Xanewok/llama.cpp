@@ -375,3 +375,8 @@ if (TARGET gguf-model-data)
     target_link_libraries(test-export-graph-ops PRIVATE gguf-model-data)
     target_compile_definitions(test-export-graph-ops PRIVATE LLAMA_HF_FETCH)
 endif()
+
+# DO NOT MERGE: deferred GPU records and clock mapping, no device required.
+add_executable(test-round-trace test-round-trace.cpp)
+target_link_libraries(test-round-trace PRIVATE ggml-base)
+llama_test(test-round-trace)
