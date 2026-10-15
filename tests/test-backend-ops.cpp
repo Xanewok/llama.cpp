@@ -5607,8 +5607,9 @@ struct test_mul_mat_f32_small : public test_mul_mat {
     test_mul_mat_f32_small(int64_t m, int64_t n, int64_t k)
         : test_mul_mat(GGML_TYPE_F32, GGML_TYPE_F32, m, n, k, {1, 1}, {1, 1}) {}
 
+    // The tight bound holds only on the thin MMVF path (rows < MMF tile); wider shapes take MMF/cuBLAS.
     double max_nmse_err() override {
-        return 1e-7;
+        return m < 32 ? 1e-7 : test_mul_mat::max_nmse_err();
     }
 };
 
