@@ -152,7 +152,7 @@ static void ggml_backend_meta_device_get_props(ggml_backend_dev_t dev, ggml_back
         /* .async                 = */ true,
         /* .host_buffer           = */ false, // Not implemented.
         /* .buffer_from_host_ptr  = */ false, // Not implemented.
-        /* .events                = */ false, // Not implemented.
+        /* .events                = */ true,
         /* .mmap_support          = */ true,
     };
     for (ggml_backend_dev_t simple_dev : meta_dev_ctx->simple_devs) {
@@ -214,6 +214,41 @@ static bool ggml_backend_meta_device_supports_buft(ggml_backend_dev_t dev, ggml_
     return true;
 }
 
+struct ggml_backend_meta_event_context {
+    std::vector<ggml_backend_event_ptr> simple_events;
+};
+
+static ggml_backend_event_t ggml_backend_meta_device_event_new(ggml_backend_dev_t dev) {
+    GGML_ASSERT(ggml_backend_dev_is_meta(dev));
+    const auto * dev_ctx = (const ggml_backend_meta_device_context *) dev->context;
+    auto event_ctx = std::make_unique<ggml_backend_meta_event_context>();
+    event_ctx->simple_events.reserve(dev_ctx->simple_devs.size());
+    for (ggml_backend_dev_t simple_dev : dev_ctx->simple_devs) {
+        event_ctx->simple_events.emplace_back(ggml_backend_event_new(simple_dev));
+        if (!event_ctx->simple_events.back()) {
+            return nullptr;
+        }
+    }
+    return new ggml_backend_event {
+        /* .device  = */ dev,
+        /* .context = */ event_ctx.release(),
+    };
+}
+
+static void ggml_backend_meta_device_event_free(ggml_backend_dev_t dev, ggml_backend_event_t event) {
+    GGML_ASSERT(event->device == dev);
+    delete (ggml_backend_meta_event_context *) event->context;
+    delete event;
+}
+
+static void ggml_backend_meta_device_event_synchronize(ggml_backend_dev_t dev, ggml_backend_event_t event) {
+    GGML_ASSERT(event->device == dev);
+    const auto * event_ctx = (const ggml_backend_meta_event_context *) event->context;
+    for (const auto & simple_event : event_ctx->simple_events) {
+        ggml_backend_event_synchronize(simple_event.get());
+    }
+}
+
 static const ggml_backend_device_i ggml_backend_meta_device_iface = {
     /* .get_name             = */ ggml_backend_meta_device_get_name,
     /* .get_description      = */ ggml_backend_meta_device_get_description,
@@ -227,9 +262,9 @@ static const ggml_backend_device_i ggml_backend_meta_device_iface = {
     /* .supports_op          = */ ggml_backend_meta_device_supports_op,
     /* .supports_buft        = */ ggml_backend_meta_device_supports_buft,
     /* .offload_op           = */ nullptr,
-    /* .event_new            = */ nullptr,
-    /* .event_free           = */ nullptr,
-    /* .event_synchronize    = */ nullptr,
+    /* .event_new            = */ ggml_backend_meta_device_event_new,
+    /* .event_free           = */ ggml_backend_meta_device_event_free,
+    /* .event_synchronize    = */ ggml_backend_meta_device_event_synchronize,
 };
 
 static bool ggml_backend_dev_is_meta(ggml_backend_dev_t dev) {
@@ -2360,6 +2395,52 @@ static void ggml_backend_meta_synchronize(ggml_backend_t backend) {
     }
 }
 
+static bool ggml_backend_meta_event_matches_backend(ggml_backend_t backend, ggml_backend_event_t event) {
+    if (!ggml_backend_dev_is_meta(event->device)) {
+        return false;
+    }
+    const auto * event_ctx = (const ggml_backend_meta_event_context *) event->context;
+    const size_t n_backends = ggml_backend_meta_n_backends(backend);
+    if (event_ctx->simple_events.size() != n_backends) {
+        return false;
+    }
+    for (size_t i = 0; i < n_backends; i++) {
+        if (event_ctx->simple_events[i]->device != ggml_backend_get_device(ggml_backend_meta_simple_backend(backend, i))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void ggml_backend_meta_event_record(ggml_backend_t backend, ggml_backend_event_t event) {
+    GGML_ASSERT(ggml_backend_meta_event_matches_backend(backend, event));
+    const auto * event_ctx = (const ggml_backend_meta_event_context *) event->context;
+    const size_t n_backends = ggml_backend_meta_n_backends(backend);
+    for (size_t i = 0; i < n_backends; i++) {
+        ggml_backend_event_record(event_ctx->simple_events[i].get(), ggml_backend_meta_simple_backend(backend, i));
+    }
+}
+
+static void ggml_backend_meta_event_wait(ggml_backend_t backend, ggml_backend_event_t event) {
+    // Native wait hooks cannot read events from a different backend implementation.
+    if (!ggml_backend_meta_event_matches_backend(backend, event)) {
+        ggml_backend_event_synchronize(event);
+        return;
+    }
+    const auto * event_ctx = (const ggml_backend_meta_event_context *) event->context;
+    const size_t n_backends = ggml_backend_meta_n_backends(backend);
+    // Each rank consumes its own producer's data; collectives order cross-rank work.
+    for (size_t i = 0; i < n_backends; i++) {
+        ggml_backend_t simple_backend = ggml_backend_meta_simple_backend(backend, i);
+        ggml_backend_event_t simple_event = event_ctx->simple_events[i].get();
+        if (simple_backend->iface.event_wait) {
+            ggml_backend_event_wait(simple_backend, simple_event);
+        } else {
+            ggml_backend_event_synchronize(simple_event);
+        }
+    }
+}
+
 // local: a simple backend that cannot tell counts as busy
 static bool ggml_backend_meta_query(ggml_backend_t backend) {
     const size_t n_backends = ggml_backend_meta_n_backends(backend);
@@ -2980,8 +3061,8 @@ static const ggml_backend_i ggml_backend_meta_i = {
     /* .graph_plan_update       = */ nullptr,
     /* .graph_plan_compute      = */ ggml_backend_meta_graph_plan_compute,
     /* .graph_compute           = */ ggml_backend_meta_graph_compute,
-    /* .event_record            = */ nullptr,
-    /* .event_wait              = */ nullptr,
+    /* .event_record            = */ ggml_backend_meta_event_record,
+    /* .event_wait              = */ ggml_backend_meta_event_wait,
     /* .graph_optimize          = */ nullptr,
     /* .set_tensor_batch_owned  = */ ggml_backend_meta_set_tensor_batch_owned,
     /* .query                   = */ ggml_backend_meta_query,

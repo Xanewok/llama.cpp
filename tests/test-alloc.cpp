@@ -5,6 +5,7 @@
 #include "ggml.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <set>
@@ -1553,6 +1554,206 @@ static void test_meta_host_mapped_weight() {
     }
 }
 
+struct test_meta_event_counts {
+    int created = 0;
+    int freed = 0;
+    int recorded = 0;
+    int waited = 0;
+    int synchronized = 0;
+    int backend_synchronized = 0;
+};
+
+static ggml_backend_meta_split_state test_meta_event_split_state(const ggml_tensor * tensor, void *) {
+    return {GGML_BACKEND_SPLIT_AXIS_0, {tensor->ne[0]/2, tensor->ne[0]/2}, {1}, 1};
+}
+
+static void test_meta_event_transfers(ggml_backend_dev_t * devs) {
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, test_meta_event_split_state, nullptr);
+    ggml_backend_ptr producer(ggml_backend_dev_init(meta, nullptr));
+    ggml_backend_ptr consumer(ggml_backend_dev_init(meta, nullptr));
+    GGML_ASSERT(producer && consumer);
+    ggml_backend_event_ptr ready(ggml_backend_event_new(meta));
+    ggml_backend_event_ptr copied(ggml_backend_event_new(meta));
+    GGML_ASSERT(ready && copied);
+    ggml_init_params params = {ggml_tensor_overhead(), nullptr, true};
+    ggml_context_ptr ctx(ggml_init(params));
+    ggml_tensor * tensor = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, 64);
+    ggml_set_name(tensor, "x");
+    ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors(ctx.get(), producer.get()));
+    GGML_ASSERT(buffer);
+    float input[64], output[64];
+    for (int round = 0; round < 3; round++) {
+        for (int i = 0; i < 64; i++) {
+            input[i] = float(round*64 + i);
+            output[i] = -1.0f;
+        }
+        ggml_backend_tensor_set_async(producer.get(), tensor, input, 0, sizeof(input));
+        ggml_backend_event_record(ready.get(), producer.get());
+        ggml_backend_event_wait(consumer.get(), ready.get());
+        ggml_backend_tensor_get_async(consumer.get(), tensor, output, 0, sizeof(output));
+        ggml_backend_event_record(copied.get(), consumer.get());
+        ggml_backend_event_synchronize(copied.get());
+        GGML_ASSERT(memcmp(input, output, sizeof(input)) == 0);
+    }
+}
+
+static ggml_backend_device test_meta_event_devices[2];
+static test_meta_event_counts test_meta_event_calls[2];
+static ggml_backend_dev_t test_meta_event_fail_device;
+
+static test_meta_event_counts & test_meta_event_counts_for(ggml_backend_dev_t dev) {
+    GGML_ASSERT(dev == &test_meta_event_devices[0] || dev == &test_meta_event_devices[1]);
+    return test_meta_event_calls[dev == &test_meta_event_devices[1]];
+}
+
+static ggml_backend_event_t test_meta_event_new(ggml_backend_dev_t dev) {
+    if (dev == test_meta_event_fail_device) {
+        return nullptr;
+    }
+    test_meta_event_counts_for(dev).created++;
+    return new ggml_backend_event {dev, nullptr};
+}
+
+static void test_meta_event_free(ggml_backend_dev_t dev, ggml_backend_event_t event) {
+    GGML_ASSERT(event->device == dev);
+    test_meta_event_counts_for(dev).freed++;
+    delete event;
+}
+
+static void test_meta_event_synchronize(ggml_backend_dev_t dev, ggml_backend_event_t event) {
+    GGML_ASSERT(event->device == dev);
+    test_meta_event_counts_for(dev).synchronized++;
+}
+
+static void test_meta_event_record(ggml_backend_t backend, ggml_backend_event_t event) {
+    GGML_ASSERT(event->device == backend->device);
+    test_meta_event_counts_for(backend->device).recorded++;
+    event->context = backend;
+}
+
+static void test_meta_event_wait(ggml_backend_t backend, ggml_backend_event_t event) {
+    GGML_ASSERT(event->device == backend->device);
+    GGML_ASSERT(event->context != nullptr && event->context != backend);
+    test_meta_event_counts_for(backend->device).waited++;
+}
+
+static void test_meta_event_backend_synchronize(ggml_backend_t backend) {
+    test_meta_event_counts_for(backend->device).backend_synchronized++;
+}
+
+static ggml_backend_t test_meta_event_init_backend(ggml_backend_dev_t dev, const char * params) {
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    ggml_backend_t backend = ggml_backend_dev_init(cpu, params);
+    backend->device = dev;
+    backend->iface.event_record = test_meta_event_record;
+    backend->iface.event_wait = test_meta_event_wait;
+    backend->iface.synchronize = test_meta_event_backend_synchronize;
+    return backend;
+}
+
+static void test_meta_event_get_props(ggml_backend_dev_t dev, ggml_backend_dev_props * props) {
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    ggml_backend_dev_get_props(cpu, props);
+    props->caps.events = dev->iface.event_new != nullptr;
+}
+
+static void test_meta_events() {
+    ggml_backend_load_all();
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu);
+    for (int i = 0; i < 2; i++) {
+        test_meta_event_devices[i] = *cpu;
+        test_meta_event_devices[i].iface.init_backend = test_meta_event_init_backend;
+        test_meta_event_devices[i].iface.get_props = test_meta_event_get_props;
+        test_meta_event_devices[i].iface.event_new = test_meta_event_new;
+        test_meta_event_devices[i].iface.event_free = test_meta_event_free;
+        test_meta_event_devices[i].iface.event_synchronize = test_meta_event_synchronize;
+    }
+    ggml_backend_dev_t devs[2] = {&test_meta_event_devices[0], &test_meta_event_devices[1]};
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, test_meta_event_split_state, nullptr);
+    ggml_backend_dev_props props;
+    ggml_backend_dev_get_props(meta, &props);
+    GGML_ASSERT(props.caps.events);
+    ggml_backend_ptr producer(ggml_backend_dev_init(meta, nullptr));
+    ggml_backend_ptr consumer(ggml_backend_dev_init(meta, nullptr));
+    GGML_ASSERT(producer && consumer);
+    {
+        ggml_backend_event_ptr event(ggml_backend_event_new(meta));
+        GGML_ASSERT(event);
+        ggml_backend_event_synchronize(event.get());
+        for (int round = 0; round < 3; round++) {
+            ggml_backend_event_record(event.get(), producer.get());
+            ggml_backend_event_wait(consumer.get(), event.get());
+            ggml_backend_event_record(event.get(), consumer.get());
+            ggml_backend_event_synchronize(event.get());
+        }
+        for (const auto & calls : test_meta_event_calls) {
+            GGML_ASSERT(calls.created == 1 && calls.recorded == 6 && calls.waited == 3);
+            GGML_ASSERT(calls.synchronized == 4 && calls.backend_synchronized == 0 && calls.freed == 0);
+        }
+
+        ggml_backend_t simple = ggml_backend_meta_simple_backend(consumer.get(), 1);
+        simple->iface.event_wait = nullptr;
+        ggml_backend_event_record(event.get(), producer.get());
+        ggml_backend_event_wait(consumer.get(), event.get());
+        GGML_ASSERT(test_meta_event_calls[0].waited == 4 && test_meta_event_calls[0].synchronized == 4);
+        GGML_ASSERT(test_meta_event_calls[1].waited == 3 && test_meta_event_calls[1].synchronized == 5);
+        simple->iface.event_wait = test_meta_event_wait;
+
+        ggml_backend_dev_t reversed[2] = {devs[1], devs[0]};
+        ggml_backend_dev_t other_meta = ggml_backend_meta_device(reversed, 2, test_meta_event_split_state, nullptr);
+        ggml_backend_ptr other(ggml_backend_dev_init(other_meta, nullptr));
+        ggml_backend_event_wait(other.get(), event.get());
+        GGML_ASSERT(test_meta_event_calls[0].synchronized == 5 && test_meta_event_calls[1].synchronized == 6);
+
+        ggml_backend_event_ptr foreign(ggml_backend_event_new(devs[0]));
+        ggml_backend_event_record(foreign.get(), ggml_backend_meta_simple_backend(producer.get(), 0));
+        ggml_backend_event_wait(consumer.get(), foreign.get());
+        GGML_ASSERT(test_meta_event_calls[0].synchronized == 6);
+        GGML_ASSERT(test_meta_event_calls[0].waited == 4 && test_meta_event_calls[1].waited == 3);
+
+        static int split_state_ud;
+        ggml_backend_dev_t equivalent_meta = ggml_backend_meta_device(devs, 2, test_meta_event_split_state, &split_state_ud);
+        GGML_ASSERT(equivalent_meta != meta);
+        ggml_backend_ptr equivalent(ggml_backend_dev_init(equivalent_meta, nullptr));
+        ggml_backend_event_record(event.get(), equivalent.get());
+        ggml_backend_event_wait(consumer.get(), event.get());
+        GGML_ASSERT(test_meta_event_calls[0].waited == 5 && test_meta_event_calls[1].waited == 4);
+        GGML_ASSERT(test_meta_event_calls[0].synchronized == 6 && test_meta_event_calls[1].synchronized == 6);
+    }
+    for (const auto & calls : test_meta_event_calls) {
+        GGML_ASSERT(calls.created == calls.freed && calls.backend_synchronized == 0);
+    }
+
+    test_meta_event_fail_device = devs[1];
+    GGML_ASSERT(ggml_backend_event_new(meta) == nullptr);
+    test_meta_event_fail_device = nullptr;
+    GGML_ASSERT(test_meta_event_calls[0].created == 3 && test_meta_event_calls[0].freed == 3);
+    GGML_ASSERT(test_meta_event_calls[1].created == 1 && test_meta_event_calls[1].freed == 1);
+
+    devs[1]->iface.event_new = nullptr;
+    ggml_backend_dev_get_props(meta, &props);
+    GGML_ASSERT(!props.caps.events && ggml_backend_event_new(meta) == nullptr);
+    GGML_ASSERT(test_meta_event_calls[0].created == 4 && test_meta_event_calls[0].freed == 4);
+    devs[1]->iface.event_new = test_meta_event_new;
+
+    test_meta_event_transfers(devs);
+    for (const auto & calls : test_meta_event_calls) {
+        GGML_ASSERT(calls.created == calls.freed);
+    }
+
+    ggml_backend_dev_t cpus[2] = {cpu, cpu};
+    ggml_backend_dev_t cpu_meta = ggml_backend_meta_device(cpus, 2, test_meta_event_split_state, nullptr);
+    ggml_backend_dev_get_props(cpu_meta, &props);
+    GGML_ASSERT(!props.caps.events && ggml_backend_event_new(cpu_meta) == nullptr);
+}
+
+static void test_meta_events_cuda() {
+    ggml_backend_dev_t devs[2] = {ggml_backend_dev_by_name("CUDA0"), ggml_backend_dev_by_name("CUDA1")};
+    GGML_ASSERT(devs[0] && devs[1]);
+    test_meta_event_transfers(devs);
+}
+
 static void run(const char * name, void (*f)()) {
     printf("%s ", name);
     fflush(stdout);
@@ -1607,5 +1808,9 @@ int main() {
     run("test_meta_subgraph_reuse_ten_splits", test_meta_subgraph_reuse_ten_splits);
     run("test_meta_subgraph_reuse_same_graph", test_meta_subgraph_reuse_same_graph);
     run("test_meta_host_mapped_weight", test_meta_host_mapped_weight);
+    run("test_meta_events", test_meta_events);
+    if (getenv("GGML_TEST_META_EVENTS_CUDA")) {
+        run("test_meta_events_cuda", test_meta_events_cuda);
+    }
     return 0;
 }
