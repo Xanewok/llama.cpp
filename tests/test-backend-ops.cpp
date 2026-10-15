@@ -7884,20 +7884,22 @@ struct test_mul_mat_vec_fusion : public test_case {
     const bool with_bias;
     const bool with_gate;
     const bool with_lane_scale;
+    const bool broadcast_bias;
+    const bool strided_bias;
     std::array<int64_t, 2> batch_dims;
 
     test_mul_mat_vec_fusion(ggml_type type, ggml_glu_op op, int64_t m, int64_t n, int64_t k,
                         bool use_id = false, int n_mats = 1, int n_used = 1, bool b = false, bool with_bias = false, bool with_gate = true,
-                        bool with_lane_scale = false, std::array<int64_t, 2> batch_dims = {4, 2})
+                        bool with_lane_scale = false, std::array<int64_t, 2> batch_dims = {4, 2}, bool broadcast_bias = true, bool strided_bias = false)
     : type(type), glu_op(op), m(m), n(n), k(k), use_id(use_id), n_mats(n_mats), n_used(n_used), b(b), with_bias(with_bias),
-        with_gate(with_gate), with_lane_scale(with_lane_scale), batch_dims(batch_dims) {
+        with_gate(with_gate), with_lane_scale(with_lane_scale), broadcast_bias(broadcast_bias), strided_bias(strided_bias), batch_dims(batch_dims) {
         if (use_id) {
             GGML_ASSERT(n_used <= n_mats);
         }
     }
 
     std::string vars() override {
-        return VARS_TO_STR13(type, glu_op, m, n, k, use_id, n_mats, n_used, b, with_bias, with_gate, with_lane_scale, batch_dims);
+        return VARS_TO_STR13(type, glu_op, m, n, k, use_id, n_mats, n_used, b, with_bias, with_gate, with_lane_scale, batch_dims) + "," + VAR_TO_STR(broadcast_bias) + "," + VAR_TO_STR(strided_bias);
     }
 
     std::string op_desc(ggml_tensor * t) override {
@@ -7955,15 +7957,25 @@ struct test_mul_mat_vec_fusion : public test_case {
             ggml_tensor * gate = with_gate ? ggml_new_tensor(ctx, type, 4, ne0.data()) : nullptr;
             ggml_tensor * up   = ggml_new_tensor(ctx, type, 4, ne0.data());
 
+            auto build_bias = [&]() {
+                std::array<int64_t, 4> bias_ne = {n, broadcast_bias ? 1 : m, channels, samples};
+                ggml_tensor * bias = ggml_new_tensor(ctx, GGML_TYPE_F32, 4, bias_ne.data());
+                if (strided_bias) {
+                    GGML_ASSERT(!broadcast_bias);
+                    // Keep the bias a leaf to test the fusion layout guard.
+                    bias->nb[0] = m * sizeof(float);
+                    bias->nb[1] = sizeof(float);
+                }
+                return bias;
+            };
+
             auto build_lane_up = [&]() {
                 ggml_tensor * ffn_up = ggml_mul_mat(ctx, up, cur);
                 if (with_lane_scale) {
                     ffn_up = build_lane_scale_dense(ctx, ffn_up);
                 }
                 if (with_bias) {
-                    std::array<int64_t, 4> bias_ne = { ffn_up->ne[0], 1, channels, samples };
-                    ggml_tensor * up_bias = ggml_new_tensor(ctx, GGML_TYPE_F32, 4, bias_ne.data());
-                    ffn_up = ggml_add(ctx, ffn_up, up_bias);
+                    ffn_up = ggml_add(ctx, ffn_up, build_bias());
                 }
                 return ffn_up;
             };
@@ -7974,9 +7986,7 @@ struct test_mul_mat_vec_fusion : public test_case {
                     ffn_gate = build_lane_scale_dense(ctx, ffn_gate);
                 }
                 if (with_bias) {
-                    std::array<int64_t, 4> bias_ne   = { ffn_gate->ne[0], 1, channels, samples };
-                    ggml_tensor * gate_bias = ggml_new_tensor(ctx, GGML_TYPE_F32, 4, bias_ne.data());
-                    ffn_gate = ggml_add(ctx, ffn_gate, gate_bias);
+                    ffn_gate = ggml_add(ctx, ffn_gate, build_bias());
                 }
                 return ffn_gate;
             };
@@ -12242,6 +12252,21 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_opt_step_adamw(GGML_TYPE_F32, {10, 5, 4, 3}));
     test_cases.emplace_back(new test_opt_step_sgd(GGML_TYPE_F32, {10, 5, 4, 3}));
 
+    for (ggml_type type : {GGML_TYPE_IQ4_XS, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0}) {
+        for (int64_t cols = 2; cols <= 8; ++cols) {
+            test_cases.emplace_back(new test_mul_mat_vec_fusion(type, GGML_GLU_OP_SWIGLU, cols, 33, 768,
+                false, 1, 1, false, true, true, false, {2, 2}, false, true));
+            for (int64_t rows : {32, 33}) {
+                for (std::array<int64_t, 2> batch_dims : {std::array<int64_t, 2>{1, 1}, {2, 2}}) {
+                    for (bool with_bias : {false, true}) {
+                        test_cases.emplace_back(new test_mul_mat_vec_fusion(type, GGML_GLU_OP_SWIGLU, cols, rows, 768,
+                            false, 1, 1, false, with_bias, true, false, batch_dims, false));
+                    }
+                }
+            }
+        }
+    }
+
     for (ggml_type type : base_types) {
         for (bool with_gate : {false, true}) {
             for (bool use_id : {false, true}) {
@@ -13405,6 +13430,89 @@ static bool run_shared_activation_identity(ggml_backend_t backend, const char * 
     return true;
 }
 
+static bool run_mul_mat_vec_fusion_identity(ggml_backend_t backend, const char * filter) {
+    if (!op_names_filter_selects(filter, "MUL_MAT_VEC_FUSION")) {
+        return true;
+    }
+    int cases = 0;
+    for (ggml_type type : {GGML_TYPE_IQ4_XS, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0}) {
+        for (int64_t cols = 2; cols <= 8; ++cols) {
+            for (int64_t rows : {32, 33}) {
+                for (bool with_bias : {false, true}) {
+                    ggml_init_params params = {48*ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true};
+                    ggml_context_ptr ctx(ggml_init(params));
+                    ggml_tensor * input = ggml_new_tensor_4d(ctx.get(), GGML_TYPE_F32, 2560, cols, 2, 2);
+                    ggml_tensor * gate = ggml_new_tensor_4d(ctx.get(), type, 2560, rows, 2, 2);
+                    ggml_tensor * up = ggml_dup_tensor(ctx.get(), gate);
+                    ggml_tensor * bias[2] = {};
+                    if (with_bias) {
+                        for (auto & b : bias) {
+                            b = ggml_new_tensor_4d(ctx.get(), GGML_TYPE_F32, rows, cols, 2, 2);
+                        }
+                    }
+                    const auto build = [&](bool reference) {
+                        ggml_tensor * g = ggml_mul_mat(ctx.get(), gate, input);
+                        ggml_tensor * u = ggml_mul_mat(ctx.get(), up, input);
+                        if (reference) {
+                            // Observable intermediates prevent fusion in the reference branch.
+                            ggml_set_output(g);
+                            ggml_set_output(u);
+                        }
+                        if (with_bias) {
+                            g = ggml_add(ctx.get(), g, bias[0]);
+                            u = ggml_add(ctx.get(), u, bias[1]);
+                        }
+                        ggml_tensor * out = ggml_swiglu_split(ctx.get(), g, u);
+                        ggml_set_output(out);
+                        return out;
+                    };
+                    ggml_tensor * fused = build(false);
+                    ggml_tensor * reference = build(true);
+                    ggml_cgraph * graph = ggml_new_graph(ctx.get());
+                    ggml_build_forward_expand(graph, fused);
+                    ggml_build_forward_expand(graph, reference);
+                    bool supported = true;
+                    for (int i = 0; i < ggml_graph_n_nodes(graph); ++i) {
+                        supported = supported && ggml_backend_supports_op(backend, ggml_graph_node(graph, i));
+                    }
+                    if (!supported) {
+                        continue;
+                    }
+                    ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors(ctx.get(), backend));
+                    if (!buffer) {
+                        return false;
+                    }
+                    init_tensor_uniform(gate);
+                    init_tensor_uniform(up);
+                    for (auto * b : bias) {
+                        if (b) {
+                            init_tensor_uniform(b);
+                        }
+                    }
+                    std::vector<float> data(ggml_nelements(input)), a(ggml_nelements(fused)), b(a.size());
+                    for (int replay = 0; replay < 3; ++replay) {
+                        fill_identity_data(data, 17 + replay, 1.0f);
+                        ggml_backend_tensor_set(input, data.data(), 0, ggml_nbytes(input));
+                        if (ggml_backend_graph_compute(backend, graph) != GGML_STATUS_SUCCESS) {
+                            return false;
+                        }
+                        ggml_backend_tensor_get(fused, a.data(), 0, ggml_nbytes(fused));
+                        ggml_backend_tensor_get(reference, b.data(), 0, ggml_nbytes(reference));
+                        if (memcmp(a.data(), b.data(), ggml_nbytes(fused)) != 0) {
+                            printf("  FAIL MUL_MAT_VEC_FUSION byte identity: type=%s cols=%lld rows=%lld bias=%d replay=%d\n",
+                                ggml_type_name(type), (long long) cols, (long long) rows, with_bias, replay);
+                            return false;
+                        }
+                    }
+                    ++cases;
+                }
+            }
+        }
+    }
+    printf("  MUL_MAT_VEC_FUSION: same-backend byte identity and changing-input replay PASS cases=%d\n", cases);
+    return true;
+}
+
 // ADD -> RMS_NORM -> MUL where the residual sum stays observable. The reference marks the normalized
 // intermediate as an output, which keeps it from being fused; both branches must agree to the byte.
 static bool run_add_rms_norm_identity(ggml_backend_t backend, const char * filter) {
@@ -13708,6 +13816,9 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
         output_printer->print_summary(test_summary_info(n_ok, tests_run, false));
         output_printer->print_failed_tests(failed_tests);
 
+        if (!run_mul_mat_vec_fusion_identity(backend, op_names_filter)) {
+            return false;
+        }
         if (!run_shared_activation_identity(backend, op_names_filter)) {
             return false;
         }

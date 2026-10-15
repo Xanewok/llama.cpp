@@ -2025,8 +2025,9 @@ static bool ggml_cuda_should_fuse_mul_mat_vec_q(const ggml_tensor * tensor) {
     if (cc <= GGML_CUDA_CC_PASCAL) {
         return false;
     }
-    //we only support fusion for ncols_dst = 1
-    if (tensor->op == GGML_OP_MUL_MAT && dst->ne[1] != 1) {
+    if (tensor->op == GGML_OP_MUL_MAT && dst->ne[1] != 1 &&
+            (dst->ne[1] > mmvq_fusion_max_batch_size(src0->type) ||
+             !ggml_cuda_should_use_mmvq(src0->type, cc, src1->ne[1]))) {
         return false;
     }
 
@@ -4598,13 +4599,13 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
 
     auto get_bias_tensor = [](const ggml_tensor * bias_node, const ggml_tensor * mul_node, ggml_op op_bias) -> const ggml_tensor * {
         if (op_bias == GGML_OP_ADD) {
-            if (bias_node->src[0] == mul_node) {
-                return bias_node->src[1];
+            const ggml_tensor * bias = bias_node->src[0] == mul_node ? bias_node->src[1] :
+                                      bias_node->src[1] == mul_node ? bias_node->src[0] : nullptr;
+            if (bias && mul_node->ne[1] > 1 &&
+                    (bias->type != GGML_TYPE_F32 || !ggml_are_same_stride(bias, mul_node))) {
+                return nullptr;
             }
-            if (bias_node->src[1] == mul_node) {
-                return bias_node->src[0];
-            }
-            return nullptr;
+            return bias;
         }
         GGML_ASSERT(op_bias == GGML_OP_ADD_ID);
         GGML_ASSERT(bias_node->src[0] == mul_node);
@@ -5031,6 +5032,11 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
         }
 
         if (bias_op == GGML_OP_ADD && !ggml_are_same_shape(bias_node->src[0], bias_node->src[1])) {
+            continue;
+        }
+
+        if (bias_op == GGML_OP_ADD && mm_node->ne[1] > 1 &&
+                (bias_tensor->type != GGML_TYPE_F32 || !ggml_are_same_stride(bias_tensor, mm_node))) {
             continue;
         }
 

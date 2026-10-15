@@ -874,13 +874,13 @@ static void mul_mat_vec_q_switch_fusion(
                 }
             }
         };
-        if constexpr (c_ncols_dst == 1) {
+        if constexpr (c_ncols_dst <= mmvq_fusion_max_batch_size(type)) {
             if (has_fusion) {
                 launch(std::true_type{});
                 return;
             }
         }
-        GGML_ASSERT(!has_fusion && "fusion only supported for ncols_dst=1");
+        GGML_ASSERT(!has_fusion);
         launch(std::false_type{});
     });
 }
@@ -1285,7 +1285,7 @@ void ggml_cuda_mul_mat_vec_q(
     if (fusion) {
         const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
         GGML_ASSERT( !ids || dst->ne[2] <= get_mmvq_mmid_max_batch(src0->type, cc));
-        GGML_ASSERT(  ids || dst->ne[1] == 1);
+        GGML_ASSERT(  ids || dst->ne[1] <= mmvq_fusion_max_batch_size(src0->type));
         // Scale fusion is only allowed for NVFP4 currently as the cost of checking this at run-time in the prologue is
         // non-negligible for some models such as gpt-oss-20b
         GGML_ASSERT((fusion->x_scale == nullptr && fusion->gate_scale == nullptr) || src0->type == GGML_TYPE_NVFP4);

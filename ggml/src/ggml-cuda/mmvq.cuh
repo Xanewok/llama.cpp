@@ -2,6 +2,18 @@
 
 #include "mmvq-params.h"
 
+static constexpr int mmvq_fusion_max_batch_size(ggml_type type) {
+    switch (type) {
+        case GGML_TYPE_IQ4_XS:
+        case GGML_TYPE_Q5_K:
+        case GGML_TYPE_Q6_K:
+        case GGML_TYPE_Q8_0:
+            return MMVQ_MAX_BATCH_SIZE;
+        default:
+            return 1;
+    }
+}
+
 bool ggml_cuda_should_use_mmvq(enum ggml_type type, int cc, int64_t ne11);
 
 // Returns the maximum batch size for which MMVQ should be used for MUL_MAT_ID,
