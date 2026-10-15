@@ -1,6 +1,6 @@
-purpose: stack11-fa + s2-nok (87/88/91/90, K7/K10 dropped)
-base: 8eda87ffb7787c660fd6789e4f89d52483897833
+purpose: GDN alpha/beta F32 projections run as cuBLAS GEMM + splitKreduce at 6/12 columns (22 % BW, T-9); general dispatch fix (Sol, brief orchestration/briefs/2026-10-15-ssm-ab-gemv.md)
+base: 9dd7d8c9bc5cd5e61931ba5c41aa28706bba340b
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack11-fa-s2
-created: 2026-10-15T00:50:21+02:00
+branch: topic/ssm-ab-gemv
+created: 2026-10-15T22:24:09+02:00
 creator: xanewok
