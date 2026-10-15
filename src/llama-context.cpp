@@ -1650,6 +1650,10 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         return nullptr;
     }
 
+    if (llama_syncfree_enabled()) {
+        syncfree_prepare(ubatch);
+    }
+
     if (graph_mtp_reuse && n_outputs > 0 && !sched_output && !cparams.pipeline_parallel && !cparams.cb_eval) {
         sched_output.reset(ggml_backend_sched_new_shared(sched.get()));
     }
@@ -2364,6 +2368,10 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
             copy_tensor_async_rows(res->t_candidates,     sampling.candidates, stride, n_outputs_prev, get_sched_graph(), backend_pending, &sampling.candidates_count);
         }
 
+        if (syncfree.armed && syncfree.mctx) {
+            syncfree_readback();
+        }
+
         n_outputs_prev += n_outputs;
         n_tokens_prev  += ubatch.n_tokens;
     } while (mctx->next());
@@ -3036,6 +3044,7 @@ llm_graph_params llama_context::graph_params(
 
     res_params.mctx_fold   = mctx_fold_cur;
     res_params.fold_h_prev = mctx_fold_cur ? fold_h_cur : nullptr;
+    res_params.syncfree = syncfree.armed && syncfree.mctx && mctx_fold_cur && ubatch.n_tokens == (uint32_t) syncfree.k + 1 ? const_cast<llama_syncfree_state *>(&syncfree) : nullptr;
 
     return res_params;
 }

@@ -1,3 +1,4 @@
+#include "syncfree.cuh"
 #include "ggml-round-trace.h"
 #include "allreduce.cuh"
 
@@ -562,9 +563,9 @@ void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline * p) {
     for (int i = 0; i < p->n_devices; ++i) {
         if (p->streams[i]) {
             ggml_cuda_set_device(p->devices[i]);
-            CUDA_CHECK(cudaStreamSynchronize(p->streams[i]));
+            CUDA_CHECK(ggml_cuda_syncfree_stream_synchronize(p->streams[i]));
             if (p->streams_h2d[i]) {
-                CUDA_CHECK(cudaStreamSynchronize(p->streams_h2d[i]));
+                CUDA_CHECK(ggml_cuda_syncfree_stream_synchronize(p->streams_h2d[i]));
             }
         }
     }

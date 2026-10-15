@@ -6,6 +6,7 @@
 #include "llama-impl.h"
 #include "llama-mmap.h"
 #include "llama-cparams.h"
+#include "llama-syncfree.h"
 #include "llama-model-loader.h"
 
 #include "llama-kv-cache.h"
@@ -3148,6 +3149,10 @@ ggml_cgraph * llama_model::build_graph(const llm_graph_params & params) const {
 
     // add backend sampling layers (if any)
     llm->build_sampling();
+
+    if (params.syncfree) {
+        llama_syncfree_build(*this, params);
+    }
 
     // if the gguf model was converted with --sentence-transformers-dense-modules
     // there will be two additional dense projection layers

@@ -13,6 +13,7 @@
 #include "common.h"
 #include "fit.h"
 #include "llama.h"
+#include "src/llama-ext.h"
 #include "log.h"
 #include "sampling.h"
 #include "speculative.h"
@@ -41,6 +42,45 @@
 #endif
 
 constexpr int HTTP_POLLING_SECONDS = 1;
+
+struct server_syncfree_probe {
+    using count_fn = uint64_t (*)();
+    count_fn count = nullptr;
+    uint64_t start = 0;
+    size_t np;
+
+    explicit server_syncfree_probe(size_t np) : np(np) {
+        if (llama_syncfree_enabled()) {
+            auto reg = ggml_backend_reg_by_name("CUDA");
+            if (reg) {
+                count = (count_fn) ggml_backend_reg_get_proc_address(reg, "ggml_backend_cuda_syncfree_stream_count");
+            }
+            if (count) {
+                start = count();
+            }
+        }
+    }
+
+    ~server_syncfree_probe() {
+        if (!count) {
+            return;
+        }
+        static uint64_t rounds = 0;
+        static uint64_t total = 0;
+        static const uint64_t every = [] {
+            const char * p = std::getenv("LLAMA_SYNCFREE_LOG_EVERY");
+            return p ? (uint64_t) std::max(1, std::atoi(p)) : UINT64_C(32);
+        }();
+        const uint64_t syncs = count() - start;
+        total += syncs;
+        if (++rounds % every == 0) {
+            LOG_INF("syncfree_syncs: np=%zu rounds=%" PRIu64 " host_stream_syncs=%" PRIu64 " per_round=%.3f last=%" PRIu64 "\n",
+                np, every, total, (double) total/every, syncs);
+            total = 0;
+        }
+    }
+};
+
 
 static common_speculative_output_limits server_output_limits(const common_params & params) {
     if (params.embedding ||
@@ -3292,6 +3332,8 @@ private:
             }
         }
 
+        server_syncfree_probe syncfree_probe(slots.size());
+
         try {
             scoped_timer t(t_pre_decode, n_pre_decode);
             pre_decode();
@@ -4276,6 +4318,23 @@ private:
 
         // yield to the queue, so we can still handle metrics tasks while decoding
         // note: the sync is done here too, so that the wait is also covered by the yield
+        if (llama_syncfree_enabled() && spec && params_base.speculative.draft.mtp_chain &&
+                params_base.speculative.draft.probabilistic && params_base.speculative.draft.backend_sampling) {
+            for (auto & slot : slots) {
+                if (slot.state == SLOT_STATE_GENERATING && !slot.spec_is_replay &&
+                        !slot.spec_draft.empty() && slot.spec_i_batch.size() == slot.spec_draft.size() + 1 &&
+                        slot.task->params.sampling.backend_sampling && slot.task->params.sampling.n_probs == 0 &&
+                        slot.lora.empty() && ctx_tgt_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_FULL &&
+                        (ctx_tgt_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_RS ||
+                            slot.spec_draft.size() <= llama_n_rs_seq(ctx_tgt)) &&
+                        slot.spec_draft.size() == (size_t) params_base.speculative.draft.n_max &&
+                        common_speculative_get_synth_probs(spec.get()).empty()) {
+                    llama_syncfree_arm(ctx_tgt, slot.id, slot.spec_draft, slot.spec_draft_q,
+                        slot.task->params.sampling.temp, slot.task->params.sampling.seed);
+                }
+            }
+        }
+
         int ret = 0;
         queue_tasks.yield_to_queue([&]() {
             ggml_round_trace_begin("V", batch.view.size());
@@ -4528,7 +4587,11 @@ private:
                 const bool use_rejection = slot.use_spec_rejection() && !slot.spec_draft_q.empty();
 
                 std::vector<llama_token> accepted;
-                if (!synth_probs.empty()) {
+                if (llama_syncfree_enabled() && llama_syncfree_accept(ctx_tgt, accepted)) {
+                    for (const auto id : accepted) {
+                        common_sampler_accept(slot.smpl.get(), id, true);
+                    }
+                } else if (!synth_probs.empty()) {
                     // synthetic acceptance replaces verification entirely, so it comes first
                     accepted = server_sample_and_accept_synth(
                             slot.smpl.get(), slot.ctx_tgt, slot.spec_i_batch, slot.spec_draft,

@@ -20,6 +20,7 @@ struct ggml_tensor;
 struct llama_cparams;
 struct llama_layer;
 struct llama_prec_policy;
+struct llama_syncfree_state;
 
 class llama_moe_cache;
 
@@ -923,7 +924,8 @@ struct llm_graph_params {
             cross == other.cross &&
             (mctx_fold != nullptr) == (other.mctx_fold != nullptr) &&
             sampling_vocab_ids == other.sampling_vocab_ids &&
-            sampling_n_shards  == other.sampling_n_shards;
+            sampling_n_shards  == other.sampling_n_shards &&
+            syncfree == other.syncfree && syncfree_draft == other.syncfree_draft;
     }
 
     // tensor split: the logits are split across sampling_n_shards devices by vocab, and backend samplers start
@@ -935,6 +937,8 @@ struct llm_graph_params {
     // paired with its first token; nullptr = no fold nodes in the graph
     const llama_memory_context_i * mctx_fold   = nullptr;
     const float                  * fold_h_prev = nullptr;
+    llama_syncfree_state * syncfree = nullptr;
+    bool syncfree_draft = false;
 };
 
 struct llm_graph_fused_node {

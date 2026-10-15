@@ -1460,6 +1460,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         if (this->params.mtp_chain && n_seq != 1) {
             SPC_INF("MTP chain disabled: needs one sequence (n_seq=%u)\n", (unsigned) n_seq);
+            if (llama_syncfree_enabled()) {
+                SPC_INF("syncfree: fallback np=%u (prototype supports one sequence)\n", (unsigned) n_seq);
+            }
         }
 
         SPC_TRC("%s", "adding speculative implementation 'draft-mtp'\n");
@@ -1555,6 +1558,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     }
 
     void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
+        if (llama_syncfree_enabled()) {
+            llama_syncfree_reset(params.ctx_tgt);
+        }
         // reset here rather than per round, or two identical requests differ
         common_sampler_reset(smpls[seq_id].get());
         if (mtp_chain_seqs[seq_id].smpl) {
@@ -1787,7 +1793,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 seq_id = s;
             }
         }
-        eligible = eligible && seq_id >= 0 && dparams[seq_id].result_q && backend_chains[seq_id];
+        eligible = eligible && seq_id >= 0 && (dparams[seq_id].result_q || llama_syncfree_enabled()) && backend_chains[seq_id];
 
         if (eligible && !mtp_chain_attach(seq_id, dparams[seq_id].temp, dparams[seq_id].seed)) {
             SPC_WRN("%s", "the draft context does not take the MTP chain's sampler; drafting step by step\n");
@@ -1805,6 +1811,15 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         auto & dp   = dparams[seq_id];
         auto * smpl = smpls[seq_id].get();
+
+        if (llama_syncfree_enabled() && dp.n_max >= k &&
+                llama_syncfree_draft(params.ctx_tgt, dp.pos0, dp.id_last, *dp.result, dp.result_q)) {
+            for (const auto id : *dp.result) {
+                common_sampler_accept(smpl, id, true);
+                llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
+            }
+            return true;
+        }
 
         batch.clear();
         for (int32_t s = 0; s < k; ++s) {
@@ -1845,7 +1860,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
 
             dp.result->push_back(id);
-            dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
+            if (dp.result_q) {
+                dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
+            }
         }
 
         return true;

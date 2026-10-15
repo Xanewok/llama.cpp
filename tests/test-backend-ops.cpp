@@ -20,6 +20,7 @@
 #include "ggml-backend.h"
 #include "ggml-cpp.h"
 #include "../ggml/src/ggml-ssm-conv.h"
+#include "../ggml/src/ggml-syncfree.h"
 
 #include <algorithm>
 #include <atomic>
@@ -7352,6 +7353,113 @@ struct test_argsort : public test_case {
     }
 };
 
+struct test_syncfree : public test_case {
+    static constexpr int k = 5;
+    const bool greedy;
+    const int prefix;
+    const bool mask;
+    ggml_tensor * p = nullptr;
+    ggml_tensor * ids = nullptr;
+    ggml_tensor * sampled = nullptr;
+    ggml_tensor * packet = nullptr;
+    ggml_tensor * base_mask = nullptr;
+    ggml_tensor * cell_pos = nullptr;
+
+    test_syncfree(bool greedy, int prefix, bool mask) : greedy(greedy), prefix(prefix), mask(mask) {}
+
+    std::string vars() override { return VARS_TO_STR3(greedy, prefix, mask); }
+    double max_err() override { return 0.0; }
+    bool run_whole_graph() override { return true; }
+    double err(const float * a, const float * b, size_t n) override {
+        for (size_t i = 0; i < n; ++i) {
+            if (a[i] != b[i]) {
+                return 1.0;
+            }
+        }
+        return 0.0;
+    }
+
+    static void accept_cpu(ggml_tensor * dst, int, int, void *) {
+        ggml_syncfree_accept((const float *) dst->src[0]->data, (const int32_t *) dst->src[1]->data,
+            (const int32_t *) dst->src[2]->data, (const float *) dst->src[3]->data,
+            (int32_t *) dst->data, k, 4, 3);
+    }
+
+    static void mask_cpu(ggml_tensor * dst, int, int, void *) {
+        const float * base = (const float *) dst->src[0]->data;
+        const int32_t * pos = (const int32_t *) dst->src[1]->data;
+        const int32_t * accepted = (const int32_t *) dst->src[2]->data;
+        auto * out = (float *) dst->data;
+        for (int i = 0; i < 32*k; ++i) {
+            out[i] = pos[i % 32] >= accepted[2] && pos[i % 32] < 16 + k + 1 ? -INFINITY : base[i];
+        }
+    }
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        p = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 3, k + 1);
+        ids = ggml_new_tensor_2d(ctx, GGML_TYPE_I32, 3, k + 1);
+        sampled = ggml_new_tensor_1d(ctx, GGML_TYPE_I32, k + 1);
+        packet = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 2 + 23*k);
+        ggml_tensor * args[] = {p, ids, sampled, packet};
+        auto * accepted = ggml_custom_4d(ctx, GGML_TYPE_I32, 4 + k + 4*k, 1, 1, 1, args, 4, accept_cpu, 1, nullptr);
+        ggml_set_name(accepted, "syncfree_accept");
+        if (!mask) {
+            return accepted;
+        }
+        base_mask = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 32, k);
+        cell_pos = ggml_new_tensor_1d(ctx, GGML_TYPE_I32, 32);
+        ggml_tensor * mask_args[] = {base_mask, cell_pos, accepted, packet};
+        auto * out = ggml_custom_4d(ctx, GGML_TYPE_F32, 32, k, 1, 1, mask_args, 4, mask_cpu, 1, nullptr);
+        ggml_set_name(out, "syncfree_mask");
+        return out;
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        test_case::initialize_tensors(ctx);
+        float probs[3*(k + 1)];
+        int32_t candidates[3*(k + 1)];
+        int32_t tokens[k + 1];
+        float data[2 + 23*k] = {};
+        data[0] = 16;
+        data[1] = greedy;
+        for (int i = 0; i <= k; ++i) {
+            probs[3*i] = 0.2f;
+            probs[3*i + 1] = 0.3f;
+            probs[3*i + 2] = 0.5f;
+            for (int j = 0; j < 3; ++j) {
+                candidates[3*i + j] = j;
+            }
+            tokens[i] = i < prefix ? 0 : 2;
+            if (i == k) {
+                continue;
+            }
+            for (int j = 0; j < 10; ++j) {
+                data[2 + k + i*10 + j] = j < 2 ? j : -1;
+            }
+            data[2 + 11*k + i*10] = 0.75f;
+            data[2 + 11*k + i*10 + 1] = 0.25f;
+            data[2 + 21*k + i*2] = i < prefix ? 0.0f : 0.99f;
+            data[2 + 21*k + i*2 + 1] = 0.5f;
+        }
+        ggml_backend_tensor_set(p, probs, 0, sizeof(probs));
+        ggml_backend_tensor_set(ids, candidates, 0, sizeof(candidates));
+        ggml_backend_tensor_set(sampled, tokens, 0, sizeof(tokens));
+        ggml_backend_tensor_set(packet, data, 0, sizeof(data));
+        if (mask) {
+            float base[32*k];
+            int32_t positions[32];
+            for (int i = 0; i < 32; ++i) {
+                positions[i] = i;
+                for (int step = 0; step < k; ++step) {
+                    base[step*32 + i] = i <= 16 + k + 1 + step ? 0.0f : -INFINITY;
+                }
+            }
+            ggml_backend_tensor_set(base_mask, base, 0, sizeof(base));
+            ggml_backend_tensor_set(cell_pos, positions, 0, sizeof(positions));
+        }
+    }
+};
+
 // GGML_OP_TOP_K
 struct test_top_k : public test_case {
     const ggml_type type;
@@ -11745,6 +11853,14 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         for (int dim = 0; dim < 4; ++dim) {
             for (int64_t n : {1, 17, 32, 33}) {
                 test_cases.emplace_back(new test_concat(type, {n, 7, 3, 2}, dim == 0 ? 1 : 5, dim, 17));
+            }
+        }
+    }
+
+    for (bool greedy : {false, true}) {
+        for (int prefix = 0; prefix <= 5; ++prefix) {
+            for (bool mask : {false, true}) {
+                test_cases.emplace_back(new test_syncfree(greedy, prefix, mask));
             }
         }
     }

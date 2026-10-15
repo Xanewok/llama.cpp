@@ -1,4 +1,5 @@
 #include "models.h"
+#include "llama-syncfree.h"
 #include "llama-impl.h"
 #include "llama-kv-cache.h"
 #include "llama-memory-recurrent.h"
@@ -646,16 +647,29 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
     ggml_set_input(inp->h);
     ggml_set_name(inp->h, "mtp_h_input");
 
-    ggml_tensor * h_embd = inp->h;
+    ggml_tensor * h_embd = params.syncfree_draft ? params.syncfree->hidden : inp->h;
 
-    ggml_tensor * inp_tokens = inp->tokens;
+    ggml_tensor * inp_tokens = params.syncfree_draft ? params.syncfree->token : inp->tokens;
 
-    res->add_input(std::move(inp));
+    if (!params.syncfree_draft) {
+        res->add_input(std::move(inp));
+    }
 
-    ggml_tensor * inp_pos     = build_inp_pos();
+    ggml_tensor * inp_pos     = params.syncfree_draft ? params.syncfree->positions : build_inp_pos();
     ggml_tensor * inp_out_ids = chain ? nullptr : build_inp_out_ids();
 
     auto * inp_attn = build_attn_inp_kv();
+
+    ggml_tensor * chain_mask = inp_attn->self_kq_mask_cnv;
+    if (params.syncfree_draft) {
+        auto * sf = params.syncfree;
+        auto * positions = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, inp_attn->self_kq_mask_cnv->ne[0]);
+        ggml_set_input(positions);
+        ggml_set_name(positions, "syncfree_cell_pos");
+        sf->cell_positions = positions;
+        chain_mask = ggml_cast(ctx0,
+            llama_syncfree_mask(ctx0, sf, ggml_cast(ctx0, inp_attn->self_kq_mask_cnv, GGML_TYPE_F32), positions), GGML_TYPE_F16);
+    }
 
     // one MTP block over the rows of e_in and h_in, returns h_nextn
     auto mtp_block = [&](ggml_tensor * e_in, ggml_tensor * h_in, ggml_tensor * pos, llm_graph_input_attn_kv * attn) {
@@ -765,7 +779,7 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
         GGML_ASSERT(model.draft_output && model.draft_token_embd && model.draft_vocab_map);
         GGML_ASSERT(ggml_nelements(inp_attn->self_v_idxs) == n_tokens && "MTP chain needs flash attention (untransposed V)");
 
-        ggml_tensor * mask = inp_attn->self_kq_mask_cnv;
+        ggml_tensor * mask = chain_mask;
         GGML_ASSERT(mask->ne[1] == n_tokens && mask->ne[2] == 1 && mask->ne[3] == 1);
 
         const llama_seq_id seq_id  = samplers.begin()->first;
@@ -789,6 +803,9 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
             ggml_tensor * h_in;
             if (s == 0) {
                 e_in = ggml_get_rows(ctx0, tok_embd_w, ggml_view_1d(ctx0, inp_tokens, 1, 0));
+                if (params.syncfree_draft) {
+                    ggml_backend_sched_set_tensor_backend(sched, e_in, ggml_backend_sched_get_backend(sched, 0));
+                }
                 h_in = ggml_view_2d(ctx0, h_embd, h_embd->ne[0], 1, h_embd->nb[1], 0);
             } else {
                 ggml_tensor * row = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, vocab_map, ggml_reshape_1d(ctx0, sampled, 1)), 1);

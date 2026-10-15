@@ -8,6 +8,7 @@
 #include "llama-impl.h"
 #include "llama-memory.h"
 #include "llama-moe-cache.h"
+#include "llama-syncfree.h"
 
 #include "ggml-cpp.h"
 #include "ggml-opt.h"
@@ -126,6 +127,13 @@ struct llama_context {
     void set_embeddings_layer_inp(uint32_t lid, bool enable);
     void set_nextn_layer_offset(int32_t offset);
     bool set_mtp_chain(int32_t n_chain);
+
+    friend bool llama_syncfree_arm(llama_context *, llama_seq_id, const std::vector<llama_token> &,
+        const std::vector<std::vector<llama_token_data>> &, float, uint32_t);
+    llama_syncfree_state syncfree;
+    bool syncfree_prepare(const llama_ubatch & ubatch);
+    llm_graph_params syncfree_graph_params(llm_graph_result * res) const;
+    void syncfree_readback();
     void set_causal_attn(bool value);
     void set_warmup(bool value);
 
