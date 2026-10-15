@@ -601,6 +601,94 @@ static void mul_mat_vec_f_cuda_switch_ncols_dst(
                  stride_channel_dst, nsamples_x, nsamples_dst, stride_sample_x, stride_sample_y, stride_sample_dst,
                  nsamples_dst, ids_stride, stream);
             break;
+        case 9:
+            if constexpr (std::is_same_v<T, float>) {
+                launch_mul_mat_vec_f_cuda<T, type_acc, 9>
+                    (x, y, ids, fusion, dst, ncols, nrows, stride_row, stride_col_y, stride_col_dst,
+                     nchannels_x, nchannels_y, nchannels_dst, stride_channel_x, stride_channel_y,
+                     stride_channel_dst, nsamples_x, nsamples_dst, stride_sample_x, stride_sample_y, stride_sample_dst,
+                     nsamples_dst, ids_stride, stream);
+            } else {
+                GGML_ABORT("unsupported batch size");
+            }
+            break;
+        case 10:
+            if constexpr (std::is_same_v<T, float>) {
+                launch_mul_mat_vec_f_cuda<T, type_acc, 10>
+                    (x, y, ids, fusion, dst, ncols, nrows, stride_row, stride_col_y, stride_col_dst,
+                     nchannels_x, nchannels_y, nchannels_dst, stride_channel_x, stride_channel_y,
+                     stride_channel_dst, nsamples_x, nsamples_dst, stride_sample_x, stride_sample_y, stride_sample_dst,
+                     nsamples_dst, ids_stride, stream);
+            } else {
+                GGML_ABORT("unsupported batch size");
+            }
+            break;
+        case 11:
+            if constexpr (std::is_same_v<T, float>) {
+                launch_mul_mat_vec_f_cuda<T, type_acc, 11>
+                    (x, y, ids, fusion, dst, ncols, nrows, stride_row, stride_col_y, stride_col_dst,
+                     nchannels_x, nchannels_y, nchannels_dst, stride_channel_x, stride_channel_y,
+                     stride_channel_dst, nsamples_x, nsamples_dst, stride_sample_x, stride_sample_y, stride_sample_dst,
+                     nsamples_dst, ids_stride, stream);
+            } else {
+                GGML_ABORT("unsupported batch size");
+            }
+            break;
+        case 12:
+            if constexpr (std::is_same_v<T, float>) {
+                launch_mul_mat_vec_f_cuda<T, type_acc, 12>
+                    (x, y, ids, fusion, dst, ncols, nrows, stride_row, stride_col_y, stride_col_dst,
+                     nchannels_x, nchannels_y, nchannels_dst, stride_channel_x, stride_channel_y,
+                     stride_channel_dst, nsamples_x, nsamples_dst, stride_sample_x, stride_sample_y, stride_sample_dst,
+                     nsamples_dst, ids_stride, stream);
+            } else {
+                GGML_ABORT("unsupported batch size");
+            }
+            break;
+        case 13:
+            if constexpr (std::is_same_v<T, float>) {
+                launch_mul_mat_vec_f_cuda<T, type_acc, 13>
+                    (x, y, ids, fusion, dst, ncols, nrows, stride_row, stride_col_y, stride_col_dst,
+                     nchannels_x, nchannels_y, nchannels_dst, stride_channel_x, stride_channel_y,
+                     stride_channel_dst, nsamples_x, nsamples_dst, stride_sample_x, stride_sample_y, stride_sample_dst,
+                     nsamples_dst, ids_stride, stream);
+            } else {
+                GGML_ABORT("unsupported batch size");
+            }
+            break;
+        case 14:
+            if constexpr (std::is_same_v<T, float>) {
+                launch_mul_mat_vec_f_cuda<T, type_acc, 14>
+                    (x, y, ids, fusion, dst, ncols, nrows, stride_row, stride_col_y, stride_col_dst,
+                     nchannels_x, nchannels_y, nchannels_dst, stride_channel_x, stride_channel_y,
+                     stride_channel_dst, nsamples_x, nsamples_dst, stride_sample_x, stride_sample_y, stride_sample_dst,
+                     nsamples_dst, ids_stride, stream);
+            } else {
+                GGML_ABORT("unsupported batch size");
+            }
+            break;
+        case 15:
+            if constexpr (std::is_same_v<T, float>) {
+                launch_mul_mat_vec_f_cuda<T, type_acc, 15>
+                    (x, y, ids, fusion, dst, ncols, nrows, stride_row, stride_col_y, stride_col_dst,
+                     nchannels_x, nchannels_y, nchannels_dst, stride_channel_x, stride_channel_y,
+                     stride_channel_dst, nsamples_x, nsamples_dst, stride_sample_x, stride_sample_y, stride_sample_dst,
+                     nsamples_dst, ids_stride, stream);
+            } else {
+                GGML_ABORT("unsupported batch size");
+            }
+            break;
+        case 16:
+            if constexpr (std::is_same_v<T, float>) {
+                launch_mul_mat_vec_f_cuda<T, type_acc, 16>
+                    (x, y, ids, fusion, dst, ncols, nrows, stride_row, stride_col_y, stride_col_dst,
+                     nchannels_x, nchannels_y, nchannels_dst, stride_channel_x, stride_channel_y,
+                     stride_channel_dst, nsamples_x, nsamples_dst, stride_sample_x, stride_sample_y, stride_sample_dst,
+                     nsamples_dst, ids_stride, stream);
+            } else {
+                GGML_ABORT("unsupported batch size");
+            }
+            break;
         default:
             GGML_ABORT("fatal error");
             break;
@@ -809,6 +897,10 @@ bool ggml_cuda_should_use_mmvf(enum ggml_type type, int cc, int warp_size, const
 
     switch (type) {
         case GGML_TYPE_F32:
+            // Thin matrices cannot fill an MMF row tile; avoid the cuBLAS split-K fallback at small batch sizes.
+            if (src0_ne[1] > 1 && src0_ne[1] < MMF_ROWS_PER_BLOCK && src0_ne[2] == 1 && src0_ne[3] == 1) {
+                return ne11 <= 16;
+            }
             if (GGML_CUDA_CC_IS_NVIDIA(cc)) {
                 if (ampere_mma_available(cc)) {
                     return ne11 <= 3;

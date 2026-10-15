@@ -5603,6 +5603,15 @@ struct test_mul_mat : public test_case {
     }
 };
 
+struct test_mul_mat_f32_small : public test_mul_mat {
+    test_mul_mat_f32_small(int64_t m, int64_t n, int64_t k)
+        : test_mul_mat(GGML_TYPE_F32, GGML_TYPE_F32, m, n, k, {1, 1}, {1, 1}) {}
+
+    double max_nmse_err() override {
+        return 1e-7;
+    }
+};
+
 struct test_mul_mat_shared : public test_case {
     const ggml_type type;
     const int64_t rows;
@@ -11082,6 +11091,15 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q8_0, GGML_TYPE_F32, 2880, 32, 2880, {1, 1}, {1, 1}));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_MXFP4, GGML_TYPE_F32, 2880, 32, 2880, {1, 1}, {1, 1}));
 
+    for (int64_t n : {1, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}) {
+        test_cases.emplace_back(new test_mul_mat_f32_small(24, n, 5120));
+    }
+    for (int64_t m : {31, 32, 33, 48}) {
+        for (int64_t n : {1, 6, 12}) {
+            test_cases.emplace_back(new test_mul_mat_f32_small(m, n, 5120));
+        }
+    }
+
     // m == 1, with n on both sides of MMVF_MAX_BATCH_SIZE (8): mmvf below, operand swap above
     for (int64_t n : {1, 7, 8, 9, 16, 127, 128, 511, 512}) {
         test_cases.emplace_back(new test_mul_mat(GGML_TYPE_F32, GGML_TYPE_F32, 1, n, 2048, {1, 1}, {1, 1}));
@@ -12446,6 +12464,12 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
 // Test cases for performance evaluation: should be representative of real-world use cases
 static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     std::vector<std::unique_ptr<test_case>> test_cases;
+
+    for (int64_t m : {24, 31, 32, 33, 48}) {
+        for (int64_t n : {1, 6, 12}) {
+            test_cases.emplace_back(new test_mul_mat_f32_small(m, n, 5120));
+        }
+    }
 
     // CUDA MMQ small-column tile selection at 27B-class TP2 shapes (m, k): gate/up, down, attention and output projections, lm_head
     for (ggml_type type_a : { GGML_TYPE_IQ4_XS, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0 }) {
