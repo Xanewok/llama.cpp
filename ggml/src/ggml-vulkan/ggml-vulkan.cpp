@@ -15351,7 +15351,7 @@ static ggml_backend_t ggml_backend_vk_device_init(ggml_backend_dev_t dev, const 
 }
 
 static bool ggml_backend_vk_device_supports_op(ggml_backend_dev_t dev, const ggml_tensor * op) {
-    if (op->op == GGML_OP_GATED_DELTA_NET && op->src[6]) {
+    if (op->op == GGML_OP_GATED_DELTA_NET && (op->src[6] || op->src[7])) {
         return false;
     }
 

@@ -8860,7 +8860,7 @@ static bool ggml_hexagon_supported_roll(const struct ggml_hexagon_session * sess
 }
 
 static bool ggml_backend_hexagon_device_supports_op(ggml_backend_dev_t dev, const struct ggml_tensor * op) {
-    if (op->op == GGML_OP_GATED_DELTA_NET && op->src[6]) {
+    if (op->op == GGML_OP_GATED_DELTA_NET && (op->src[6] || op->src[7])) {
         return false;
     }
 

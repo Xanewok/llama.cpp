@@ -2685,6 +2685,17 @@ extern "C" {
             struct ggml_tensor  * ids,
             int64_t               K);
 
+    // Retain exact q, k, v, g, beta rows and the initial state for prefix replay; sequence slots must be distinct.
+    GGML_API struct ggml_tensor * ggml_gated_delta_net_retain_buffer(
+            struct ggml_context * ctx, struct ggml_tensor * q, struct ggml_tensor * k,
+            struct ggml_tensor * v, struct ggml_tensor * g, struct ggml_tensor * beta, int64_t capacity);
+    GGML_API struct ggml_tensor * ggml_gated_delta_net_retain(
+            struct ggml_context * ctx, struct ggml_tensor * q, struct ggml_tensor * k,
+            struct ggml_tensor * v, struct ggml_tensor * g, struct ggml_tensor * beta,
+            struct ggml_tensor * state, struct ggml_tensor * ids, struct ggml_tensor * retained, struct ggml_tensor * slots);
+    GGML_API struct ggml_tensor * ggml_gated_delta_net_replay(
+            struct ggml_context * ctx, struct ggml_tensor * retained, int64_t slot, int64_t rows);
+
     // DSA lightning indexer
     //
     // q:       [n_embd_idx, n_head_idx, n_batch, ne3 ]

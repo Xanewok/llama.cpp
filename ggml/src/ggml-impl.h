@@ -32,6 +32,8 @@ void ggml_print_backtrace(void);
 
 uint64_t ggml_graph_next_uid(void);
 
+#define GGML_GDN_REPLAY_VIEW_MAGIC 0x47444e52
+
 #ifndef MIN
 #    define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif

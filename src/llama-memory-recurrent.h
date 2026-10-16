@@ -6,6 +6,8 @@
 
 #include <map>
 #include <set>
+#include <array>
+#include <tuple>
 #include <vector>
 
 //
@@ -78,6 +80,17 @@ public:
 
     void set_rs_idx(llama_seq_id seq_id, uint32_t idx);
 
+    struct gdn_replay_layer {
+        ggml_tensor * data = nullptr;
+    };
+
+    using gdn_replay_compute = std::function<ggml_status(ggml_backend_sched_t, ggml_cgraph *)>;
+    void set_gdn_replay_executor(std::vector<ggml_backend_t> backends, gdn_replay_compute compute);
+    const gdn_replay_layer * get_gdn_replay(int il, const std::array<ggml_tensor *, 5> & inputs);
+    void prepare_gdn_replay(const llama_ubatch & ubatch, const std::vector<int> & layers);
+    bool prepare_ubatch(const llama_ubatch & ubatch);
+    void invalidate_gdn_replay(const llama_ubatch & ubatch, bool failed = false);
+
     // computed before each graph build
     uint32_t n = 0;
 
@@ -122,6 +135,27 @@ private:
 
     // ggml contexts for the KV cache along with the allocated backend buffers:
     std::vector<std::pair<ggml_context_ptr, ggml_backend_buffer_ptr>> ctxs_bufs;
+
+    struct gdn_replay_record {
+        llama_pos pos = -1;
+        bool failed = false;
+        std::vector<int> layers;
+    };
+    struct gdn_replay_plan {
+        ggml_context_ptr ctx;
+        ggml_cgraph * graph = nullptr;
+        ggml_backend_sched_ptr sched;
+    };
+    std::vector<gdn_replay_layer> gdn_layers;
+    std::vector<gdn_replay_record> gdn_records;
+    std::vector<ggml_backend_t> gdn_backends;
+    gdn_replay_compute gdn_compute;
+    bool gdn_logged = false;
+    bool gdn_restored_logged = false;
+    std::map<std::tuple<llama_seq_id, int32_t, uint32_t, std::vector<int>>, gdn_replay_plan> gdn_plans;
+
+    bool replay_gdn(llama_seq_id seq_id, uint32_t depth);
+    void materialize_gdn(llama_seq_id seq_id);
 
     // true if no layers - can happen if the layer filter removes all layers
     bool is_empty() const;
@@ -181,6 +215,10 @@ public:
     ggml_tensor * get_p_l(int32_t il) const;
 
     int32_t s_copy(int i) const;
+
+    const llama_memory_recurrent::gdn_replay_layer * get_gdn_replay(int il, const std::array<ggml_tensor *, 5> & inputs) const;
+    void prepare_gdn_replay(const llama_ubatch & ubatch, const std::vector<int> & layers) const;
+    void on_compute(bool success) override;
 
 private:
     const llama_memory_status status;

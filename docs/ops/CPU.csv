@@ -20410,3 +20410,5 @@
 "CPU","LIGHTNING_INDEXER","hsk=128,nh=64,kv=65,nb=32,ns=4,nm=1,type_K=q5_0","support","1","yes","CPU"
 "CPU","LIGHTNING_INDEXER","hsk=128,nh=64,kv=65,nb=32,ns=4,nm=1,type_K=q4_1","support","1","yes","CPU"
 "CPU","LIGHTNING_INDEXER","hsk=128,nh=64,kv=65,nb=32,ns=4,nm=1,type_K=q4_0","support","1","yes","CPU"
+"CPU","GATED_DELTA_NET_RETAIN","type=f32,head_count=2,head_size=128,n_seq_tokens=6,n_seqs=2,v_repeat=2,permuted=0,kda=0,K=1","support","1","yes","CPU"
+"CPU","GATED_DELTA_NET_RETAIN","type=f32,head_count=2,head_size=128,n_seq_tokens=6,n_seqs=2,v_repeat=2,permuted=0,kda=1,K=1","support","1","yes","CPU"

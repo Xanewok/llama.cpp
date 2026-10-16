@@ -593,14 +593,28 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
     const bool keep = cparams.n_rs_seq > 0;
 
     const int64_t K = cparams.n_rs_seq + 1;
+    const llama_memory_recurrent::gdn_replay_layer * retained = nullptr;
     // The getter reads states in place, so nothing else may write the cache rows it reads before it runs. The extra states
     // (cells in the range but not in the ubatch) are copied by a gather that is ordered against the getter only by node
     // order, and a fused snapshot write runs before that gather reads, so a ubatch with extra states keeps the gather.
     llm_graph_get_rows_fn get_state_rows;
     if (keep && cparams.offload_kqv && mctx_cur->get_n_rs() == (uint32_t) n_seqs) {
+        bool replay = n_seq_tokens == K && ggml_are_same_shape(q, k) && q->ne[0] == S_v &&
+            q->ne[2] == n_seq_tokens && q->ne[3] == n_seqs;
+        for (int64_t seq = 0; seq < n_seqs && replay; ++seq) {
+            replay = ubatch.n_seq_id[seq * n_seq_tokens] == 1;
+        }
+        if (replay) {
+            retained = mctx_cur->get_gdn_replay(il, {q, k, v, g, b});
+            if (retained && !inp->replay_seqs) {
+                inp->replay_seqs = ggml_new_tensor_1d(ctx0, GGML_TYPE_I64, n_seqs);
+                ggml_set_input(inp->replay_seqs);
+            }
+        }
         auto get_gdn_rows = [&](ggml_context * ctx, ggml_tensor * states, ggml_tensor * ids) {
             states = ggml_reshape_4d(ctx, states, S_v, S_v, H_v, states->ne[1]);
-            return ggml_gated_delta_net(ctx, q, k, v, g, b, states, ids, K);
+            return retained ? ggml_gated_delta_net_retain(ctx, q, k, v, g, b, states, ids, retained->data, inp->replay_seqs) :
+                ggml_gated_delta_net(ctx, q, k, v, g, b, states, ids, K);
         };
         ggml_tensor * probe = get_gdn_rows(ctx0, ssm_states_all, inp->s_copy_main);
         ggml_backend_buffer_type_t buft = ggml_backend_buffer_get_type(ssm_states_all->buffer);
@@ -608,8 +622,15 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
         if (!dev && ggml_backend_buft_is_host(buft)) {
             dev = ggml_backend_get_device(backend_cpu);
         }
+        if (retained && (!dev || !ggml_backend_dev_supports_op(dev, probe))) {
+            retained = nullptr;
+            probe = get_gdn_rows(ctx0, ssm_states_all, inp->s_copy_main);
+        }
         if (dev && ggml_backend_dev_supports_op(dev, probe)) {
             get_state_rows = get_gdn_rows;
+            if (retained) { inp->replay_layers.push_back(il); }
+        } else {
+            retained = nullptr;
         }
     }
 
@@ -657,7 +678,7 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
     const size_t row_size = hparams.n_embd_s() * ggml_element_size(ssm_states_all);
 
     // op writes the last min(n_seq_tokens, K) snapshots; trailing slots are left unwritten
-    const int64_t n_written = std::min<int64_t>(n_seq_tokens, K);
+    const int64_t n_written = retained ? 1 : std::min<int64_t>(n_seq_tokens, K);
 
     // write the produced snapshots into the recurrent cache (snapshot slot i -> rollback group i)
     ggml_tensor * src = ggml_view_3d(ctx0, gdn_out,

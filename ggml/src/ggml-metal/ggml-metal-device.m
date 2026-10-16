@@ -1536,7 +1536,7 @@ static bool ggml_metal_supports_mul_mat_op(
 }
 
 bool ggml_metal_device_supports_op(ggml_metal_device_t dev, const struct ggml_tensor * op) {
-    if (op->op == GGML_OP_GATED_DELTA_NET && op->src[6]) {
+    if (op->op == GGML_OP_GATED_DELTA_NET && (op->src[6] || op->src[7])) {
         return false;
     }
 

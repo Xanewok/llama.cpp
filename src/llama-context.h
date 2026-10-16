@@ -83,6 +83,8 @@ struct llama_context {
     // return true if the memory was updated
     bool memory_update(bool optimize);
 
+    ggml_status compute_recurrent_replay(ggml_backend_sched_t replay_sched, ggml_cgraph * graph);
+
     enum llama_pooling_type pooling_type() const;
 
     float * get_logits();

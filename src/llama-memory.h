@@ -59,6 +59,8 @@ struct llama_memory_context_i {
     // return false on failure
     virtual bool apply() = 0;
 
+    virtual void on_compute(bool success) { (void) success; }
+
     // get the current ubatch
     virtual const llama_ubatch & get_ubatch() const = 0;
 

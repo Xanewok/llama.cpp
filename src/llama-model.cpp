@@ -414,6 +414,7 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
     static const std::regex pattern_r_cache         ("cache_r_l\\d*");
     static const std::regex pattern_ple_r_cache     ("cache_ple_r_l\\d*");
     static const std::regex pattern_s_cache         ("cache_s_l\\d*");
+    static const std::regex pattern_gdn_cache       ("cache_gdn_l\\d*");
     static const std::regex pattern_ssm_conv1d      ("blk\\.\\d*\\.ssm_conv1d.weight");
     static const std::regex pattern_ssm_out_weight  ("blk\\.\\d*\\.ssm_out.weight");
 
@@ -564,6 +565,9 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
                 std::regex_match(tensor_name, pattern_ssm_beta_alpha)) {
             return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_1, "ssm_out.weight");
         }
+        if (std::regex_match(tensor_name, pattern_gdn_cache)) {
+            return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_0, "ssm_out.weight");
+        }
         if (std::regex_match(tensor_name, pattern_r_cache) || std::regex_match(tensor_name, pattern_s_cache)) {
             if (ud->model->arch == LLM_ARCH_LFM2 || ud->model->arch == LLM_ARCH_LFM2MOE) {
                 // the LFM2 shortconv block runs fully mirrored, so its conv state must be mirrored too
@@ -630,6 +634,17 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
 
     // if a model has fused tensors they need to be separated into "segments", see the comments on ggml_backend_meta_split_state struct
     auto get_split_segments = [&](int axis, uint32_t il) -> std::vector<std::pair<int64_t, uint32_t>> {
+        if (std::regex_match(tensor_name, pattern_gdn_cache)) {
+            int64_t shape[5];
+            memcpy(shape, tensor->op_params, sizeof(shape));
+            const int64_t S = shape[0], Hq = shape[1], H = shape[2], G = shape[3], T = shape[4];
+            GGML_ASSERT(S > 0 && Hq > 0 && H >= Hq && H % Hq == 0 && T > 0);
+            GGML_ASSERT(H / Hq <= UINT32_MAX);
+            const uint32_t ratio = H / Hq;
+            GGML_ASSERT((uint64_t) T <= UINT32_MAX / ratio);
+            return {{S * Hq, (uint32_t) T}, {S * Hq, (uint32_t) T}, {S * Hq, (uint32_t) T * ratio},
+                    {G * Hq, (uint32_t) T * ratio}, {Hq, (uint32_t) T * ratio}, {S * S * Hq, ratio}};
+        }
         // TODO: deduplicate condition [TAG_SPLIT_QGATE_QWEN]
         if (ud->model->arch == LLM_ARCH_QWEN3NEXT || ud->model->arch == LLM_ARCH_QWEN35 || ud->model->arch == LLM_ARCH_QWEN35MOE || ud->model->arch == LLM_ARCH_CLEF ||
                 ud->model->arch == LLM_ARCH_QWEN4EXP) {
@@ -720,6 +735,16 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
     };
 
     auto get_split_granularity = [&](int64_t blck_size, uint32_t il, const std::vector<std::pair<int64_t, uint32_t>> & segments) -> std::vector<int64_t> {
+        if (std::regex_match(tensor_name, pattern_gdn_cache)) {
+            int64_t shape[5];
+            memcpy(shape, tensor->op_params, sizeof(shape));
+            const int64_t head_group = std::lcm(shape[0], (int64_t) 128) / shape[0];
+            std::vector<int64_t> result;
+            for (const auto & segment : segments) {
+                result.push_back(segment.first / shape[1] * head_group);
+            }
+            return result;
+        }
         // for better performance it may make sense to round up blck_size to a higher power of 2 so that more efficient kernels can be used
         if (hparams.is_recr(il)) {
             // linear attention

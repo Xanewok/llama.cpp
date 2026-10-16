@@ -2,7 +2,9 @@
 
 List of GGML operations and backend support status.
 
-`GATED_DELTA_NET` accepts optional state-row ids on CPU and CUDA. Other backends reject indexed inputs; llama uses gather-then-plain GDN on those backends. CUDA disables snapshot cache fusion for indexed multi-sequence batches.
+`GATED_DELTA_NET` accepts optional state-row ids on CPU and CUDA. Other backends reject indexed inputs; llama uses gather-then-plain GDN on those backends. CUDA uses a joint sequence kernel when fusing indexed multi-sequence cache writes.
+
+CPU and CUDA also support final-state verification with retained inputs (`src[7]`) and distinct sequence slots (`src[8]`). `ggml_gated_delta_net_retain_buffer` allocates a packet of raw q/k/v/g/beta inputs and pre-verify state per sequence; `ggml_gated_delta_net_retain` writes it without changing the recurrence, and `ggml_gated_delta_net_replay` builds a prefix replay from it. Other backends reject this extension and keep the snapshot path. Tensor-parallel packets split each component by the same head groups as the recurrent cache.
 
 ## How to add a backend to this table:
 

@@ -11263,6 +11263,12 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
     // K (snapshot slot count) is an op param; state holds s0 only [S_v, S_v, H, n_seqs].
     const int64_t K = ggml_get_op_params_i32(dst, 0);
     GGML_ASSERT(K >= 1);
+    if (dst->src[7]) {
+        GGML_ASSERT(K == 1 && dst->src[8]);
+        GGML_ASSERT(dst->src[7]->type == GGML_TYPE_F32 && ggml_is_contiguous(dst->src[7]));
+        GGML_ASSERT(dst->src[8]->type == GGML_TYPE_I64 && ggml_is_contiguous(dst->src[8]) && ggml_nelements(dst->src[8]) == n_seqs);
+        GGML_ASSERT(ggml_are_same_shape(src_q, src_k) && src_q->ne[3] == n_seqs);
+    }
     // per-seq stride in floats (seq s starts at state + s * seq_stride)
     const int64_t state_seq_stride = src_state->nb[3] / sizeof(float);
 
@@ -11314,6 +11320,21 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
         const float * s_in = state_in_base + state_row * state_seq_stride + iv1 * S_v * S_v;
         memcpy(s_out, s_in, S_v * S_v * sizeof(float));
 
+        float * retained = nullptr;
+        const int64_t q_elems = S_v * neq1 * n_tokens;
+        const int64_t v_elems = S_v * H * n_tokens;
+        const int64_t g_width = kda ? S_v : 1;
+        const int64_t g_elems = g_width * H * n_tokens;
+        const int64_t b_elems = H * n_tokens;
+        if (dst->src[7]) {
+            const int64_t slot = ((const int64_t *) dst->src[8]->data)[iv3];
+            GGML_ASSERT(slot >= 0 && slot < dst->src[7]->ne[1]);
+            GGML_ASSERT(dst->src[7]->ne[0] == 2 * q_elems + v_elems + g_elems + b_elems + S_v * S_v * H);
+            retained = (float *) dst->src[7]->data + slot * dst->src[7]->ne[0];
+            memcpy(retained + 2 * q_elems + v_elems + g_elems + b_elems + iv1 * S_v * S_v,
+                    s_in, S_v * S_v * sizeof(float));
+        }
+
         // attn output pointer for first token of this (head, seq)
         float * attn_data = attn_out_base + (iv3 * n_tokens * H + iv1) * S_v;
 
@@ -11324,6 +11345,16 @@ static void ggml_compute_forward_gated_delta_net_one_chunk(
 
             const float beta_val = *(const float *)((const char *)src_beta->data + iv3 * nbb3 + t * nbb2 + iv1 * nbb1);
             const float * g_d    =  (const float *)((const char *)src_g->data    + iv3 * nbg3 + t * nbg2 + iv1 * nbg1);
+
+            if (retained) {
+                if (iv1 < neq1) {
+                    memcpy(retained + (t * neq1 + iv1) * S_v, q_d, S_v * sizeof(float));
+                    memcpy(retained + q_elems + (t * neq1 + iv1) * S_v, k_d, S_v * sizeof(float));
+                }
+                memcpy(retained + 2 * q_elems + (t * H + iv1) * S_v, v_d, S_v * sizeof(float));
+                memcpy(retained + 2 * q_elems + v_elems + (t * H + iv1) * g_width, g_d, g_width * sizeof(float));
+                retained[2 * q_elems + v_elems + g_elems + t * H + iv1] = beta_val;
+            }
 
             // state is stored transposed: s_out[j*S_v + i] = S[i][j]
             // so row j of s_out = column j of S (contiguous access)

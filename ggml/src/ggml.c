@@ -6482,6 +6482,80 @@ struct ggml_tensor * ggml_gated_delta_net(
     return result;
 }
 
+static int64_t ggml_gdn_retained_size(const int64_t shape[5]) {
+    const int64_t S = shape[0], Hq = shape[1], H = shape[2], G = shape[3], T = shape[4];
+    GGML_ASSERT(S > 0 && Hq > 0 && H > 0 && T > 0 && (G == 1 || G == S) && H % Hq == 0);
+    GGML_ASSERT(S <= INT64_MAX / S);
+    const int64_t widths[] = { S, S, S, G, 1, S * S };
+    const int64_t heads[] = { Hq, Hq, H, H, H, H };
+    int64_t size = 0;
+    for (int i = 0; i < 6; ++i) {
+        const int64_t rows = i == 5 ? 1 : T;
+        GGML_ASSERT(widths[i] <= INT64_MAX / heads[i]);
+        const int64_t width = widths[i] * heads[i];
+        GGML_ASSERT(width <= INT64_MAX / rows && size <= INT64_MAX - width * rows);
+        size += width * rows;
+    }
+    return size;
+}
+
+struct ggml_tensor * ggml_gated_delta_net_retain_buffer(
+        struct ggml_context * ctx, struct ggml_tensor * q, struct ggml_tensor * k,
+        struct ggml_tensor * v, struct ggml_tensor * g, struct ggml_tensor * beta, int64_t capacity) {
+    GGML_ASSERT(ggml_are_same_shape(q, k) && q->ne[0] == v->ne[0]);
+    GGML_ASSERT(q->ne[2] == v->ne[2] && q->ne[3] == v->ne[3]);
+    GGML_ASSERT(g->ne[1] == v->ne[1] && g->ne[2] == v->ne[2] && g->ne[3] == v->ne[3]);
+    GGML_ASSERT(beta->ne[0] == 1 && beta->ne[1] == v->ne[1] && beta->ne[2] == v->ne[2] && beta->ne[3] == v->ne[3]);
+    const int64_t shape[5] = { v->ne[0], q->ne[1], v->ne[1], g->ne[0], v->ne[2] };
+    const int64_t size = ggml_gdn_retained_size(shape);
+    GGML_ASSERT(capacity > 0 && size <= INT64_MAX / capacity && (uint64_t) size * capacity <= SIZE_MAX / sizeof(float));
+    struct ggml_tensor * retained = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, size, capacity);
+    // Leaf metadata also defines the segments of a tensor-parallel retention buffer.
+    memcpy(retained->op_params, shape, sizeof(shape));
+    return retained;
+}
+
+struct ggml_tensor * ggml_gated_delta_net_retain(
+        struct ggml_context * ctx, struct ggml_tensor * q, struct ggml_tensor * k,
+        struct ggml_tensor * v, struct ggml_tensor * g, struct ggml_tensor * beta,
+        struct ggml_tensor * state, struct ggml_tensor * ids, struct ggml_tensor * retained, struct ggml_tensor * slots) {
+    const int64_t shape[5] = { v->ne[0], q->ne[1], v->ne[1], g->ne[0], v->ne[2] };
+    GGML_ASSERT(ggml_are_same_shape(q, k) && q->ne[0] == v->ne[0]);
+    GGML_ASSERT(q->ne[2] == v->ne[2] && q->ne[3] == v->ne[3]);
+    GGML_ASSERT(g->ne[1] == v->ne[1] && g->ne[2] == v->ne[2] && g->ne[3] == v->ne[3]);
+    GGML_ASSERT(beta->ne[1] == v->ne[1] && beta->ne[2] == v->ne[2] && beta->ne[3] == v->ne[3]);
+    GGML_ASSERT(retained->type == GGML_TYPE_F32 && ggml_is_contiguous(retained) && ggml_is_matrix(retained));
+    GGML_ASSERT(retained->ne[0] == ggml_gdn_retained_size(shape) && memcmp(retained->op_params, shape, sizeof(shape)) == 0);
+    GGML_ASSERT(slots->type == GGML_TYPE_I64 && ggml_is_vector(slots) && ggml_is_contiguous(slots) && slots->ne[0] == v->ne[3]);
+    struct ggml_tensor * result = ggml_gated_delta_net(ctx, q, k, v, g, beta, state, ids, 1);
+    result->src[7] = retained;
+    result->src[8] = slots;
+    return result;
+}
+
+struct ggml_tensor * ggml_gated_delta_net_replay(
+        struct ggml_context * ctx, struct ggml_tensor * retained, int64_t slot, int64_t rows) {
+    int64_t shape[5];
+    memcpy(shape, retained->op_params, sizeof(shape));
+    GGML_ASSERT(retained->type == GGML_TYPE_F32 && ggml_is_contiguous(retained) && ggml_is_matrix(retained));
+    GGML_ASSERT(retained->ne[0] == ggml_gdn_retained_size(shape) && slot >= 0 && slot < retained->ne[1]);
+    const int64_t S = shape[0], Hq = shape[1], H = shape[2], G = shape[3], T = shape[4];
+    GGML_ASSERT(rows > 0 && rows <= T);
+    const int64_t widths[] = { S, S, S, G, 1, S };
+    const int64_t heads[] = { Hq, Hq, H, H, H, S };
+    struct ggml_tensor * inputs[6];
+    size_t offset = slot * retained->nb[1];
+    for (int i = 0; i < 6; ++i) {
+        const int64_t planes = i == 5 ? H : rows;
+        inputs[i] = ggml_view_4d(ctx, retained, widths[i], heads[i], planes, 1,
+                widths[i] * sizeof(float), widths[i] * heads[i] * sizeof(float), retained->nb[1], offset);
+        ggml_set_op_params_i32(inputs[i], 2, i);
+        ggml_set_op_params_i32(inputs[i], 3, GGML_GDN_REPLAY_VIEW_MAGIC);
+        offset += widths[i] * heads[i] * (i == 5 ? H : T) * sizeof(float);
+    }
+    return ggml_gated_delta_net(ctx, inputs[0], inputs[1], inputs[2], inputs[3], inputs[4], inputs[5], NULL, 1);
+}
+
 // ggml_lightning_indexer
 
 struct ggml_tensor * ggml_lightning_indexer(

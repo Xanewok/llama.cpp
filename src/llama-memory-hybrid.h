@@ -116,6 +116,7 @@ public:
 
     bool next()  override;
     bool apply() override;
+    void on_compute(bool success) override { ctx_recr->on_compute(success); }
 
     llama_memory_status  get_status() const override;
     const llama_ubatch & get_ubatch() const override;

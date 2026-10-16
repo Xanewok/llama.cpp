@@ -5186,6 +5186,143 @@ struct test_gated_delta_net : public test_case {
     }
 };
 
+struct test_gated_delta_net_retain : public test_gated_delta_net {
+    ggml_tensor * slots = nullptr;
+
+    test_gated_delta_net_retain(bool kda) : test_gated_delta_net(GGML_TYPE_F32, 2, 128, 6, 2, 2, false, kda, 1) {}
+    std::string op_desc(ggml_tensor *) override { return "GATED_DELTA_NET_RETAIN"; }
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        auto * out = test_gated_delta_net::build_graph(ctx);
+        auto * retained = ggml_gated_delta_net_retain_buffer(ctx, out->src[0], out->src[1], out->src[2], out->src[3], out->src[4], n_seqs);
+        slots = ggml_new_tensor_1d(ctx, GGML_TYPE_I64, n_seqs);
+        return ggml_gated_delta_net_retain(ctx, out->src[0], out->src[1], out->src[2], out->src[3], out->src[4], out->src[5], nullptr, retained, slots);
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        test_gated_delta_net::initialize_tensors(ctx);
+        const int64_t ids[] = {1, 0};
+        ggml_backend_tensor_set(slots, ids, 0, sizeof(ids));
+    }
+};
+
+struct test_gated_delta_net_replay : public test_gated_delta_net {
+    const int64_t accepted;
+    const int64_t accepted_second;
+    const bool fused;
+    ggml_tensor * indices = nullptr;
+    ggml_tensor * slots = nullptr;
+
+    test_gated_delta_net_replay(int64_t K, int64_t n_seqs, int64_t accepted, int64_t accepted_second,
+            bool kda, int64_t S, bool fused)
+        : test_gated_delta_net(GGML_TYPE_F32, 2, S, K, n_seqs, 2, false, kda, K),
+          accepted(accepted), accepted_second(accepted_second), fused(fused) {}
+
+    std::string vars() override {
+        return test_gated_delta_net::vars() + "," + VAR_TO_STR(accepted) + "," + VAR_TO_STR(accepted_second) + "," + VAR_TO_STR(fused);
+    }
+
+    std::string op_desc(ggml_tensor *) override { return "GATED_DELTA_NET_REPLAY"; }
+    bool run_whole_graph() override { return true; }
+    double max_nmse_err() override { return 0; }
+    double err(const float * a, const float * b, size_t n) override {
+        // Compare the two paths within each backend, including signed zero; CPU and CUDA need not match each other.
+        const size_t bytes = n / 2 * sizeof(float);
+        return memcmp(a, a + n / 2, bytes) != 0 || memcmp(b, b + n / 2, bytes) != 0;
+    }
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        ggml_tensor * snapshots = test_gated_delta_net::build_graph(ctx);
+        const int64_t H = head_count * v_repeat;
+        const int64_t D = head_size * head_size * H;
+        const int64_t scores = head_size * H * n_seq_tokens * n_seqs;
+        ggml_tensor * initial = snapshots->src[5];
+        ggml_tensor * written = nullptr;
+        ggml_tensor * final = nullptr;
+        ggml_tensor * final_written = nullptr;
+        ggml_tensor * retained = nullptr;
+        if (fused) {
+            auto * cache = ggml_new_tensor_3d(ctx, type, D, n_seqs, K);
+            auto * row0 = ggml_view_2d(ctx, cache, D, n_seqs, D * sizeof(float), 0);
+            ggml_build_forward_expand(gf, ggml_cpy(ctx, ggml_reshape_2d(ctx, initial, D, n_seqs), row0));
+            indices = ggml_new_tensor_1d(ctx, GGML_TYPE_I32, n_seqs);
+            auto * state = ggml_reshape_4d(ctx, cache, head_size, head_size, H, n_seqs * K);
+            snapshots = ggml_gated_delta_net(ctx, snapshots->src[0], snapshots->src[1], snapshots->src[2],
+                    snapshots->src[3], snapshots->src[4], state, indices, K);
+            auto * src = ggml_view_3d(ctx, snapshots, D, n_seqs, K, D * sizeof(float), D * n_seqs * sizeof(float), scores * sizeof(float));
+            auto * dst = ggml_view_3d(ctx, cache, D, n_seqs, K, D * sizeof(float), D * n_seqs * sizeof(float), 0);
+            written = ggml_cpy(ctx, src, dst);
+            ggml_build_forward_expand(gf, written);
+
+            retained = ggml_gated_delta_net_retain_buffer(ctx, snapshots->src[0], snapshots->src[1], snapshots->src[2],
+                    snapshots->src[3], snapshots->src[4], n_seqs);
+            slots = ggml_new_tensor_1d(ctx, GGML_TYPE_I64, n_seqs);
+            auto * final_cache = ggml_new_tensor_3d(ctx, type, D, n_seqs, 1);
+            auto * final_row0 = ggml_view_2d(ctx, final_cache, D, n_seqs, D * sizeof(float), 0);
+            ggml_build_forward_expand(gf, ggml_cpy(ctx, ggml_reshape_2d(ctx, initial, D, n_seqs), final_row0));
+            auto * final_state = ggml_reshape_4d(ctx, final_cache, head_size, head_size, H, n_seqs);
+            final = ggml_gated_delta_net_retain(ctx, snapshots->src[0], snapshots->src[1], snapshots->src[2],
+                    snapshots->src[3], snapshots->src[4], final_state, indices, retained, slots);
+            src = ggml_view_3d(ctx, final, D, n_seqs, 1, D * sizeof(float), D * n_seqs * sizeof(float), scores * sizeof(float));
+            dst = ggml_view_3d(ctx, final_cache, D, n_seqs, 1, D * sizeof(float), D * n_seqs * sizeof(float), 0);
+            final_written = ggml_cpy(ctx, src, dst);
+            ggml_build_forward_expand(gf, final_written);
+        }
+        ggml_tensor * expected = nullptr;
+        ggml_tensor * replayed = nullptr;
+
+        for (int64_t seq = 0; seq < n_seqs; ++seq) {
+            // Accepting zero drafts still consumes the verify batch's initial token.
+            const int64_t rows = (seq == 0 ? accepted : accepted_second) + 1;
+            auto prefix = [&](ggml_tensor * t, int64_t count) {
+                return ggml_view_4d(ctx, t, t->ne[0], t->ne[1], count, 1,
+                        t->nb[1], t->nb[2], t->nb[3], seq * t->nb[3]);
+            };
+            ggml_tensor * replay = ggml_gated_delta_net(ctx,
+                    prefix(snapshots->src[0], rows), prefix(snapshots->src[1], rows),
+                    prefix(snapshots->src[2], rows), prefix(snapshots->src[3], rows),
+                    prefix(snapshots->src[4], rows),
+                    ggml_view_4d(ctx, initial, head_size, head_size, H, 1,
+                        initial->nb[1], initial->nb[2], initial->nb[3],
+                        (fused ? n_seqs - 1 - seq : seq) * initial->nb[3]), nullptr, 1);
+            if (fused) {
+                replay = ggml_gated_delta_net_replay(ctx, retained, n_seqs - 1 - seq, rows);
+            }
+            const int64_t slot = n_seq_tokens - rows;
+            ggml_tensor * state = ggml_view_1d(ctx, written ? written : snapshots, D,
+                    ((written ? 0 : scores) + (slot * n_seqs + seq) * D) * sizeof(float));
+            ggml_tensor * attn = ggml_view_1d(ctx, snapshots, head_size * H * rows,
+                    seq * head_size * H * n_seq_tokens * sizeof(float));
+            ggml_tensor * reference = ggml_concat(ctx, attn, state, 0);
+            replay = ggml_reshape_1d(ctx, replay, ggml_nelements(replay));
+            expected = expected ? ggml_concat(ctx, expected, reference, 0) : reference;
+            replayed = replayed ? ggml_concat(ctx, replayed, replay, 0) : replay;
+        }
+        if (fused) {
+            auto * reference = ggml_concat(ctx, ggml_view_1d(ctx, snapshots, scores, 0),
+                    ggml_view_1d(ctx, written, D * n_seqs, 0), 0);
+            auto * actual = ggml_concat(ctx, ggml_view_1d(ctx, final, scores, 0),
+                    ggml_reshape_1d(ctx, final_written, D * n_seqs), 0);
+            expected = ggml_concat(ctx, expected, reference, 0);
+            replayed = ggml_concat(ctx, replayed, actual, 0);
+        }
+        return ggml_concat(ctx, expected, replayed, 0);
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        test_gated_delta_net::initialize_tensors(ctx);
+        init_tensor_uniform(ggml_get_tensor(ctx, "g"), -0.1f, -0.01f);
+        if (indices) {
+            std::vector<int32_t> ids(n_seqs);
+            std::vector<int64_t> retained_slots(n_seqs);
+            for (int64_t s = 0; s < n_seqs; ++s) { ids[s] = n_seqs - 1 - s; }
+            for (int64_t s = 0; s < n_seqs; ++s) { retained_slots[s] = n_seqs - 1 - s; }
+            ggml_backend_tensor_set(indices, ids.data(), 0, ggml_nbytes(indices));
+            ggml_backend_tensor_set(slots, retained_slots.data(), 0, ggml_nbytes(slots));
+        }
+    }
+};
+
 struct test_gated_delta_net_indexed : public test_gated_delta_net {
     const bool repeated;
     ggml_tensor * indices = nullptr;
@@ -10881,6 +11018,9 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_ssm_scan(GGML_TYPE_F32, 16, 1, 1024, 1, 32, 4)); // Mamba-1
     test_cases.emplace_back(new test_ssm_scan(GGML_TYPE_F32, 96, 64, 128, 8, 1, 1)); // Nemotron-3-Puzzle decode (scan path, unused warp in last block)
     test_cases.emplace_back(new test_ssm_scan(GGML_TYPE_F32, 96, 64, 16, 8, 300, 2, false, /*K=*/1, /*weak_decay=*/true)); // d_state=96 SSD multi-chunk (partial 2nd chunk, 2 seqs)
+    for (bool kda : {false, true}) {
+        test_cases.emplace_back(new test_gated_delta_net_retain(kda));
+    }
     for (int64_t K = 1; K <= 6; ++K) {
         for (int64_t tokens : {1, 2, 6, 9}) {
             for (int64_t channels : {7, 128}) {
@@ -12334,6 +12474,21 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_moe_reduce(2048, 15, 40, false, true));
     test_cases.emplace_back(new test_moe_reduce(2048, 16, 32, false, true));
 
+    for (int64_t K = 1; K <= 6; ++K) {
+        for (int64_t n_seqs : { 1, 2 }) {
+            for (int64_t accepted = 0; accepted < K; ++accepted) {
+                for (int64_t accepted_second = 0; accepted_second < (n_seqs == 1 ? 1 : K); ++accepted_second) {
+                    for (bool kda : { false, true }) {
+                        for (int64_t S : { 16, 32, 64, 128 }) {
+                            for (bool fused : { false, true }) {
+                                test_cases.emplace_back(new test_gated_delta_net_replay(K, n_seqs, accepted, accepted_second, kda, S, fused));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 128, 1, 1));
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 16, 1, 1));
     test_cases.emplace_back(new test_gated_delta_net(GGML_TYPE_F32, 32, 16, 1, 1, 1, true, true));
@@ -13094,6 +13249,53 @@ static bool op_names_filter_selects(const char * op_names_filter, const char * o
     return false;
 }
 
+static bool run_gdn_replay_graph_identity(ggml_backend_t backend, const char * filter) {
+    int cases = 0;
+    for (int64_t K = 1; K <= 6; ++K) {
+        for (int64_t B : { 1, 2 }) {
+            for (int64_t a0 = 0; a0 < K; ++a0) {
+                for (int64_t a1 = 0; a1 < (B == 1 ? 1 : K); ++a1) {
+                    for (bool kda : { false, true }) {
+                        test_gated_delta_net_replay test(K, B, a0, a1, kda, 128, true);
+                        ggml_init_params params = { 160 * ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true };
+                        ggml_context_ptr ctx(ggml_init(params));
+                        test.gf = ggml_new_graph(ctx.get());
+                        auto * out = test.build_graph(ctx.get());
+                        if (!test.matches_filter(out, filter)) { return true; }
+                        ggml_build_forward_expand(test.gf, out);
+                        for (int i = 0; i < ggml_graph_n_nodes(test.gf); ++i) {
+                            if (!ggml_backend_supports_op(backend, ggml_graph_node(test.gf, i))) {
+                                printf("  GATED_DELTA_NET_REPLAY: graph replay unsupported\n");
+                                return true;
+                            }
+                        }
+                        ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors(ctx.get(), backend));
+                        if (!buffer) { return false; }
+                        std::vector<float> values(ggml_nelements(out));
+                        for (int replay = 0; replay < 4; ++replay) {
+                            test.initialize_tensors(ctx.get());
+                            if (ggml_backend_graph_compute(backend, test.gf) != GGML_STATUS_SUCCESS) { return false; }
+                            ggml_backend_tensor_get(out, values.data(), 0, ggml_nbytes(out));
+                            if (test.err(values.data(), values.data(), values.size()) != 0) {
+                                printf("  GATED_DELTA_NET_REPLAY: %s graph replay=%d differs\n", test.vars().c_str(), replay);
+                                return false;
+                            }
+                            reinterpret_cast<uint8_t *>(values.data())[0] ^= 1;
+                            if (test.err(values.data(), values.data(), values.size()) == 0) {
+                                printf("  GATED_DELTA_NET_REPLAY: one-bit control missed\n");
+                                return false;
+                            }
+                        }
+                        cases++;
+                    }
+                }
+            }
+        }
+    }
+    printf("  GATED_DELTA_NET_REPLAY: changing-input graph replay byte identity PASS cases=%d rounds=4\n", cases);
+    return true;
+}
+
 // Covers padded rows, sinks, kvpad, multi-SIMDgroup reduction, quantized K/V, and MLA views.
 // The override is backend-global, so this runs after all parallel workers have joined.
 static bool run_alpha_gate_identity(ggml_backend_t backend, const char * filter) {
@@ -13709,6 +13911,10 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
         output_printer->print_failed_tests(failed_tests);
 
         if (!run_shared_activation_identity(backend, op_names_filter)) {
+            return false;
+        }
+        if (!run_gdn_replay_graph_identity(backend, op_names_filter)) {
+            printf("  GATED_DELTA_NET_REPLAY: FAIL graph replay byte identity\n");
             return false;
         }
 

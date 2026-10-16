@@ -2782,7 +2782,7 @@ static ggml_backend_buffer_type_t ggml_backend_rpc_device_get_buffer_type(ggml_b
 static bool ggml_backend_rpc_device_supports_op(ggml_backend_dev_t dev, const struct ggml_tensor * op) {
     GGML_UNUSED(dev);
     //TODO: call the remote backend and cache the results
-    return op->op != GGML_OP_GATED_DELTA_NET || !op->src[6];
+    return op->op != GGML_OP_GATED_DELTA_NET || (!op->src[6] && !op->src[7]);
 }
 
 static bool ggml_backend_rpc_device_supports_buft(ggml_backend_dev_t dev, ggml_backend_buffer_type_t buft) {

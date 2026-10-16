@@ -733,6 +733,11 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_calculate_split_st
     };
 
     auto handle_view = [&](const std::vector<ggml_backend_meta_split_state> & src_ss) -> ggml_backend_meta_split_state {
+        if (ggml_get_op_params_i32(tensor, 3) == GGML_GDN_REPLAY_VIEW_MAGIC && src_ss[0].axis == GGML_BACKEND_SPLIT_AXIS_0) {
+            const int component = ggml_get_op_params_i32(tensor, 2);
+            GGML_ASSERT(component >= 0 && component < 6);
+            return {component == 5 ? GGML_BACKEND_SPLIT_AXIS_2 : GGML_BACKEND_SPLIT_AXIS_1, {0}, {1}, 1};
+        }
         if (ggml_is_contiguous(tensor) && ggml_is_contiguous(tensor->src[0])) {
             return handle_reshape(src_ss);
         }
@@ -890,6 +895,10 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_calculate_split_st
     };
 
     auto handle_gated_delta_net = [&](const std::vector<ggml_backend_meta_split_state> & src_ss) -> ggml_backend_meta_split_state {
+        if (tensor->src[7]) {
+            GGML_ASSERT(src_ss[8].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED);
+            GGML_ASSERT(src_ss[7].axis == GGML_BACKEND_SPLIT_AXIS_0 || src_ss[7].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED);
+        }
         if (tensor->src[6]) {
             GGML_ASSERT(src_ss[6].axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED);
         }

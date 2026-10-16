@@ -576,6 +576,7 @@ llama_context::~llama_context() {
     reset_graphs();
     sched_output.reset();
     sched.reset();
+    memory.reset();
 }
 
 void llama_context::resolve_fused_ops(const llama_memory_context_i * mctx, uint32_t n_seqs) {
@@ -1005,6 +1006,11 @@ bool llama_context::memory_update(bool optimize) {
     }
 
     return true;
+}
+
+ggml_status llama_context::compute_recurrent_replay(ggml_backend_sched_t replay_sched, ggml_cgraph * graph) {
+    backend_pending = true;
+    return ggml_backend_sched_graph_compute_async(replay_sched, graph);
 }
 
 enum llama_pooling_type llama_context::pooling_type() const {
@@ -1722,6 +1728,9 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
 
     ggml_round_trace_scope trace_compute("compute_submit");
     const auto status = graph_compute(res->get_gf(), ubatch.n_tokens > 1);
+    if (mctx) {
+        mctx->on_compute(status == GGML_STATUS_SUCCESS);
+    }
     if (status != GGML_STATUS_SUCCESS) {
         LLAMA_LOG_ERROR("%s: failed to compute graph, compute status: %d\n", __func__, status);
         ret = status;

@@ -278,6 +278,7 @@ public:
     void set_input(const llama_ubatch * ubatch) override;
 
     bool can_reuse(const llm_graph_params & params) override;
+    bool can_reuse(const llama_memory_recurrent_context * mctx, const llama_ubatch & ubatch);
 
     ggml_tensor * s_copy;  // I32 [n_rs]
 
@@ -286,6 +287,9 @@ public:
     ggml_tensor * s_copy_main; // I32 [n_seqs]
     ggml_tensor * s_copy_tail; // I32 [n_rs - 1]
     ggml_tensor * s_copy_none; // I32 [0]
+
+    ggml_tensor * replay_seqs = nullptr;
+    std::vector<int> replay_layers;
 
     const llama_memory_recurrent_context * mctx;
 

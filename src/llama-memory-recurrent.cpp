@@ -5,10 +5,12 @@
 #include "llama-io.h"
 #include "llama-batch.h"
 #include "llama-model.h"
+#include "llama-context.h"
 
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <cstdlib>
 #include <limits>
 #include <map>
 #include <stdexcept>
@@ -34,6 +36,8 @@ llama_memory_recurrent::llama_memory_recurrent(
 
     this->n_rs_seq = n_rs_seq;
     rs_idx.assign(n_seq_max, 0);
+    gdn_records.resize(n_seq_max);
+    gdn_layers.resize(n_layer);
 
     cells.clear();
     cells.resize(mem_size);
@@ -146,6 +150,7 @@ llama_memory_recurrent::llama_memory_recurrent(
 }
 
 void llama_memory_recurrent::clear(bool data) {
+    std::fill(gdn_records.begin(), gdn_records.end(), gdn_replay_record{});
     for (int32_t i = 0; i < (int32_t) size; ++i) {
         cells[i].pos = -1;
         cells[i].seq_id.clear();
@@ -184,6 +189,7 @@ bool llama_memory_recurrent::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos
     const bool rm_all = p0 == 0 && p1 == std::numeric_limits<llama_pos>::max();
     if (rm_all) {
         set_rs_idx(seq_id, 0);
+        gdn_records[seq_id] = {};
     }
 
     // models like Mamba or RWKV can't have a state partially erased at the end
@@ -199,6 +205,9 @@ bool llama_memory_recurrent::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos
 
             // partial rollback via per-token snapshot index (bounded by n_rs_seq)
             if (0 < p0 && p0 <= cell.pos && p1 > cell.pos) {
+                if (gdn_records[seq_id].failed) {
+                    return false;
+                }
                 // a cell shared by several sequences cannot move back for only one of them
                 if (cell.seq_id.size() > 1) {
                     return false;
@@ -212,6 +221,10 @@ bool llama_memory_recurrent::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos
                 // pending rollback is single-use
                 const bool pending = rs_idx[seq_id] != 0;
                 if (!pending && rollback >= 1 && rollback <= (llama_pos) n_rs_seq) {
+                    const auto & replay = gdn_records[seq_id];
+                    if (!replay.layers.empty() && (replay.pos != cell.pos || !replay_gdn(seq_id, rollback))) {
+                        return false;
+                    }
                     set_rs_idx(seq_id, (uint32_t) rollback);
                     cell.pos = p0 - 1;
                     return true;
@@ -221,6 +234,7 @@ bool llama_memory_recurrent::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos
             // invalidate tails which will be cleared
             if (p0 <= cell.pos && cell.pos < p1) {
                 tail_id = -1;
+                gdn_records[seq_id] = {};
             }
         }
     } else {
@@ -266,6 +280,12 @@ void llama_memory_recurrent::seq_cp(llama_seq_id seq_id_src, llama_seq_id seq_id
     if (seq_id_src == seq_id_dst) {
         return;
     }
+    if (seq_id_src >= 0 && (uint32_t) seq_id_src < n_seq_max &&
+        seq_id_dst >= 0 && (uint32_t) seq_id_dst < n_seq_max) {
+        materialize_gdn(seq_id_src);
+        gdn_records[seq_id_dst] = {};
+        rs_idx[seq_id_dst] = rs_idx[seq_id_src];
+    }
 
     if (p0 < 0) {
         p0 = 0;
@@ -300,6 +320,8 @@ void llama_memory_recurrent::seq_cp(llama_seq_id seq_id_src, llama_seq_id seq_id
 }
 
 void llama_memory_recurrent::seq_keep(llama_seq_id seq_id) {
+    materialize_gdn(seq_id);
+    std::fill(gdn_records.begin(), gdn_records.end(), gdn_replay_record{});
     uint32_t new_head = size;
 
     for (uint32_t i = 0; i < size; ++i) {
@@ -355,6 +377,7 @@ void llama_memory_recurrent::seq_add(llama_seq_id seq_id, llama_pos p0, llama_po
         if (tail_id >= 0) {
             auto & cell = cells[tail_id];
             if (cell.has_seq_id(seq_id) && p0 <= cell.pos && cell.pos < p1) {
+                materialize_gdn(seq_id);
                 cell.pos += shift;
             }
         }
@@ -385,6 +408,7 @@ void llama_memory_recurrent::seq_div(llama_seq_id seq_id, llama_pos p0, llama_po
         if (tail_id >= 0) {
             auto & cell = cells[tail_id];
             if (cell.has_seq_id(seq_id) && p0 <= cell.pos && cell.pos < p1) {
+                materialize_gdn(seq_id);
                 cell.pos /= d;
             }
         }
@@ -441,6 +465,168 @@ std::map<ggml_backend_buffer_type_t, size_t> llama_memory_recurrent::memory_brea
     return ret;
 }
 
+void llama_memory_recurrent::set_gdn_replay_executor(std::vector<ggml_backend_t> backends, gdn_replay_compute compute) {
+    GGML_ASSERT(gdn_plans.empty());
+    gdn_backends = std::move(backends);
+    gdn_compute = std::move(compute);
+}
+
+const llama_memory_recurrent::gdn_replay_layer * llama_memory_recurrent::get_gdn_replay(
+        int il, const std::array<ggml_tensor *, 5> & inputs) {
+    const char * enabled = getenv("LLAMA_GDN_REPLAY");
+    if (n_rs_seq == 0 || (enabled && atoi(enabled) == 0) || !s_l[il] || s_l[il]->type != GGML_TYPE_F32) {
+        return nullptr;
+    }
+    auto & layer = gdn_layers[il];
+    if (layer.data) {
+        const int64_t shape[5] = { inputs[2]->ne[0], inputs[0]->ne[1], inputs[2]->ne[1], inputs[3]->ne[0], inputs[2]->ne[2] };
+        if (memcmp(layer.data->op_params, shape, sizeof(shape)) != 0) { return nullptr; }
+        return &layer;
+    }
+    ggml_init_params params = { ggml_tensor_overhead(), nullptr, true };
+    ggml_context_ptr ctx(ggml_init(params));
+    if (!ctx) {
+        return nullptr;
+    }
+    auto * data = ggml_gated_delta_net_retain_buffer(ctx.get(), inputs[0], inputs[1], inputs[2], inputs[3], inputs[4], n_seq_max);
+    ggml_format_name(data, "cache_gdn_l%d", il);
+    const auto buft = ggml_backend_buffer_get_type(s_l[il]->buffer);
+    auto * dev = ggml_backend_buft_get_device(buft);
+    if (!dev && ggml_backend_buft_is_host(buft)) {
+        dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    }
+    ggml_init_params probe_params = { 8 * ggml_tensor_overhead(), nullptr, true };
+    ggml_context_ptr probe_ctx(ggml_init(probe_params));
+    if (!dev || !probe_ctx) { return nullptr; }
+    const int64_t S = inputs[2]->ne[0], H = inputs[2]->ne[1], B = inputs[2]->ne[3];
+    auto * state = ggml_reshape_4d(probe_ctx.get(), s_l[il], S, S, H, s_l[il]->ne[1]);
+    auto * ids = ggml_new_tensor_1d(probe_ctx.get(), GGML_TYPE_I32, B);
+    auto * slots = ggml_new_tensor_1d(probe_ctx.get(), GGML_TYPE_I64, B);
+    auto * probe = ggml_gated_delta_net_retain(probe_ctx.get(), inputs[0], inputs[1], inputs[2], inputs[3], inputs[4], state, ids, data, slots);
+    if (!ggml_backend_dev_supports_op(dev, probe)) { return nullptr; }
+    ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), buft));
+    if (!buffer) {
+        return nullptr;
+    }
+    ctxs_bufs.emplace_back(std::move(ctx), std::move(buffer));
+    layer.data = data;
+    return &layer;
+}
+
+void llama_memory_recurrent::invalidate_gdn_replay(const llama_ubatch & ubatch, bool failed) {
+    for (uint32_t s = 0; s < ubatch.n_seqs; ++s) {
+        const uint32_t i = s * ubatch.n_seq_tokens;
+        for (int j = 0; j < ubatch.n_seq_id[i]; ++j) {
+            gdn_records[ubatch.seq_id[i][j]] = {};
+            gdn_records[ubatch.seq_id[i][j]].failed = failed;
+        }
+    }
+}
+
+bool llama_memory_recurrent::prepare_ubatch(const llama_ubatch & ubatch) {
+    for (uint32_t s = 0; s < ubatch.n_seqs; ++s) {
+        const uint32_t i = s * ubatch.n_seq_tokens;
+        for (int j = 0; j < ubatch.n_seq_id[i]; ++j) {
+            const auto seq = ubatch.seq_id[i][j];
+            if (seq < 0 || (uint32_t) seq >= n_seq_max) {
+                return false;
+            }
+        }
+    }
+    if (ubatch.n_seq_tokens != n_rs_seq + 1) {
+        for (uint32_t s = 0; s < ubatch.n_seqs; ++s) {
+            const uint32_t i = s * ubatch.n_seq_tokens;
+            for (int j = 0; j < ubatch.n_seq_id[i]; ++j) {
+                materialize_gdn(ubatch.seq_id[i][j]);
+            }
+        }
+    }
+    invalidate_gdn_replay(ubatch);
+    return true;
+}
+
+void llama_memory_recurrent::prepare_gdn_replay(const llama_ubatch & ubatch, const std::vector<int> & layers) {
+    const char * log = getenv("LLAMA_GDN_REPLAY_LOG");
+    if (!gdn_logged && log && atoi(log) != 0) {
+        LLAMA_LOG_INFO("gdn_replay: enabled sequences=%u rows=%u layers=%zu\n", ubatch.n_seqs, ubatch.n_seq_tokens, layers.size());
+        gdn_logged = true;
+    }
+    for (uint32_t s = 0; s < ubatch.n_seqs; ++s) {
+        const uint32_t i = s * ubatch.n_seq_tokens;
+        GGML_ASSERT(ubatch.n_seq_id[i] == 1);
+        auto & record = gdn_records[ubatch.seq_id[i][0]];
+        record.pos = ubatch.pos[i + ubatch.n_seq_tokens - 1];
+        record.layers = layers;
+    }
+}
+
+bool llama_memory_recurrent::replay_gdn(llama_seq_id seq_id, uint32_t depth) {
+    GGML_ASSERT(seq_id >= 0 && (uint32_t) seq_id < n_seq_max && depth > 0 && depth <= n_rs_seq);
+    const auto & record = gdn_records[seq_id];
+    const auto & cell = cells[cells[seq_id].tail];
+    const int32_t row = cell.src >= 0 ? cell.src : cells[seq_id].tail;
+    auto & plan = gdn_plans[{seq_id, row, depth, record.layers}];
+    if (!plan.ctx) {
+        if (!gdn_compute || gdn_backends.empty()) {
+            return false;
+        }
+        const size_t nodes = 32 * record.layers.size() + 16;
+        ggml_init_params params = { nodes * ggml_tensor_overhead() + ggml_graph_overhead_custom(nodes, false), nullptr, true };
+        plan.ctx.reset(ggml_init(params));
+        if (!plan.ctx) {
+            return false;
+        }
+        auto * ctx = plan.ctx.get();
+        plan.graph = ggml_new_graph_custom(ctx, nodes, false);
+        const int64_t K = (int64_t) n_rs_seq + 1;
+        const int64_t rows = K - depth;
+        for (int il : record.layers) {
+            const auto & layer = gdn_layers[il];
+            auto * out = ggml_gated_delta_net_replay(ctx, layer.data, seq_id, rows);
+            const int64_t S = out->src[2]->ne[0];
+            const int64_t H = out->src[2]->ne[1];
+            const int64_t D = S * S * H;
+            auto * src = ggml_view_3d(ctx, out, D, 1, 1, D * sizeof(float), D * sizeof(float), S * H * rows * sizeof(float));
+            auto * dst = ggml_view_3d(ctx, s_l[il], D, 1, 1, s_l[il]->nb[1], size * s_l[il]->nb[1],
+                    ((size_t) depth * size + row) * s_l[il]->nb[1]);
+            ggml_build_forward_expand(plan.graph, ggml_cpy(ctx, src, dst));
+        }
+        plan.sched.reset(ggml_backend_sched_new(gdn_backends.data(), nullptr, gdn_backends.size(), nodes, false, true));
+        if (!plan.sched || !ggml_backend_sched_alloc_graph(plan.sched.get(), plan.graph)) {
+            plan.sched.reset();
+            plan.ctx.reset();
+            plan.graph = nullptr;
+            return false;
+        }
+    }
+    const bool success = gdn_compute(plan.sched.get(), plan.graph) == GGML_STATUS_SUCCESS;
+    const char * log = getenv("LLAMA_GDN_REPLAY_LOG");
+    if (success && !gdn_restored_logged && log && atoi(log) != 0) {
+        LLAMA_LOG_INFO("gdn_replay: restored seq=%d rows=%u layers=%zu depth=%u\n", seq_id, n_rs_seq + 1 - depth, record.layers.size(), depth);
+        gdn_restored_logged = true;
+    }
+    return success;
+}
+
+void llama_memory_recurrent::materialize_gdn(llama_seq_id seq_id) {
+    if (seq_id >= 0 && (uint32_t) seq_id < n_seq_max && gdn_records[seq_id].failed) {
+        throw std::runtime_error("cannot materialize failed recurrent computation");
+    }
+    if (seq_id < 0 || (uint32_t) seq_id >= n_seq_max || gdn_records[seq_id].layers.empty()) {
+        return;
+    }
+    if (cells[seq_id].tail < 0) {
+        gdn_records[seq_id] = {};
+        return;
+    }
+    for (uint32_t depth = 1; depth <= n_rs_seq; ++depth) {
+        if (!replay_gdn(seq_id, depth)) {
+            throw std::runtime_error("failed to materialize recurrent rollback state");
+        }
+    }
+    gdn_records[seq_id] = {};
+}
+
 llama_memory_context_ptr llama_memory_recurrent::init_batch(llama_batch_allocr & balloc, uint32_t n_ubatch, bool embd_all) {
     do {
         balloc.split_reset();
@@ -488,8 +674,17 @@ llama_memory_context_ptr llama_memory_recurrent::init_full() {
 }
 
 llama_memory_context_ptr llama_memory_recurrent::init_update(llama_context * lctx, bool optimize) {
-    GGML_UNUSED(lctx);
     GGML_UNUSED(optimize);
+
+    if (!gdn_compute && lctx->get_sched()) {
+        std::vector<ggml_backend_t> backends;
+        for (int i = 0; i < ggml_backend_sched_get_n_backends(lctx->get_sched()); ++i) {
+            backends.push_back(ggml_backend_sched_get_backend(lctx->get_sched(), i));
+        }
+        set_gdn_replay_executor(std::move(backends), [lctx](ggml_backend_sched_t sched, ggml_cgraph * graph) {
+            return lctx->compute_recurrent_replay(sched, graph);
+        });
+    }
 
     return std::make_unique<llama_memory_recurrent_context>(LLAMA_MEMORY_STATUS_NO_UPDATE);
 }
@@ -1322,9 +1517,22 @@ bool llama_memory_recurrent_context::apply() {
         return true;
     }
 
-    mem->find_slot(ubatches[i_next]);
+    return mem->prepare_ubatch(ubatches[i_next]) && mem->find_slot(ubatches[i_next]);
+}
 
-    return true;
+void llama_memory_recurrent_context::on_compute(bool success) {
+    if (!success && !ubatches.empty()) {
+        mem->invalidate_gdn_replay(ubatches[i_next], true);
+    }
+}
+
+const llama_memory_recurrent::gdn_replay_layer * llama_memory_recurrent_context::get_gdn_replay(
+        int il, const std::array<ggml_tensor *, 5> & inputs) const {
+    return mem->get_gdn_replay(il, inputs);
+}
+
+void llama_memory_recurrent_context::prepare_gdn_replay(const llama_ubatch & ubatch, const std::vector<int> & layers) const {
+    mem->prepare_gdn_replay(ubatch, layers);
 }
 
 llama_memory_status llama_memory_recurrent_context::get_status() const {

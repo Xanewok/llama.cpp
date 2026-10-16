@@ -30,8 +30,8 @@ static void ggml_backend_remoting_device_get_memory(ggml_backend_dev_t dev, size
 }
 
 static bool ggml_backend_remoting_device_supports_op(ggml_backend_dev_t dev, const ggml_tensor * op) {
-    // the host may not know the optional state ids (src[6]) and would read the state as a plain input
-    if (op->op == GGML_OP_GATED_DELTA_NET && op->src[6]) {
+    // The host may not support indexed state or input retention.
+    if (op->op == GGML_OP_GATED_DELTA_NET && (op->src[6] || op->src[7])) {
         return false;
     }
 
