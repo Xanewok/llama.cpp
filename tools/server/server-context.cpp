@@ -4428,19 +4428,34 @@ private:
         if (llama_syncfree_enabled()) {
             llama_syncfree_disarm(ctx_tgt);
         }
-        if (llama_syncfree_enabled() && spec && params_base.speculative.draft.mtp_chain &&
-                params_base.speculative.draft.probabilistic && params_base.speculative.draft.backend_sampling) {
-            for (auto & slot : slots) {
-                if (slot.state == SLOT_STATE_GENERATING && !slot.spec_is_replay &&
-                        !slot.spec_draft.empty() && slot.spec_i_batch.size() == slot.spec_draft.size() + 1 &&
-                        slot.task->params.sampling.backend_sampling && slot.task->params.sampling.n_probs == 0 &&
-                        slot.lora.empty() && ctx_tgt_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_FULL &&
-                        (ctx_tgt_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_RS ||
-                            slot.spec_draft.size() <= llama_n_rs_seq(ctx_tgt)) &&
-                        slot.spec_draft.size() == (size_t) params_base.speculative.draft.n_max &&
-                        common_speculative_get_synth_probs(spec.get()).empty()) {
-                    llama_syncfree_arm(ctx_tgt, slot.id, slot.spec_draft, slot.spec_draft_q,
-                        slot.task->params.sampling.temp, slot.task->params.sampling.seed);
+        if (llama_syncfree_enabled()) {
+            const auto & draft = params_base.speculative.draft;
+            const char * reason = !spec ? "speculative context is unavailable" :
+                !draft.mtp_chain ? "MTP chain is disabled" :
+                !draft.probabilistic ? "draft sampling is not probabilistic" :
+                !draft.backend_sampling ? "draft backend sampling is disabled" : nullptr;
+            if (reason) {
+                llama_syncfree_not_armed(ctx_tgt, reason);
+            } else {
+                for (auto & slot : slots) {
+                    if (slot.state != SLOT_STATE_GENERATING || slot.spec_draft.empty()) {
+                        continue;
+                    }
+                    reason = slot.spec_is_replay ? "slot is replaying a checkpoint" :
+                        slot.spec_i_batch.size() != slot.spec_draft.size() + 1 ? "verification row count differs from draft length plus one" :
+                        !slot.task->params.sampling.backend_sampling ? "target backend sampling is disabled" :
+                        slot.task->params.sampling.n_probs != 0 ? "request asks for output probabilities" :
+                        !slot.lora.empty() ? "request has adapters" :
+                        ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL ? "target supports only full-sequence rollback" :
+                        (ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS && slot.spec_draft.size() > llama_n_rs_seq(ctx_tgt)) ? "draft exceeds target rollback capacity" :
+                        slot.spec_draft.size() != (size_t) draft.n_max ? "draft is shorter than the configured fused round" :
+                        !common_speculative_get_synth_probs(spec.get()).empty() ? "synthetic acceptance is enabled" : nullptr;
+                    if (reason) {
+                        llama_syncfree_not_armed(ctx_tgt, reason);
+                    } else {
+                        llama_syncfree_arm(ctx_tgt, slot.id, slot.spec_draft, slot.spec_draft_q,
+                            slot.task->params.sampling.temp, slot.task->params.sampling.seed);
+                    }
                 }
             }
         }

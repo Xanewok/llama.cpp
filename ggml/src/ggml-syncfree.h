@@ -86,7 +86,7 @@ GGML_SYNCFREE_HD inline void ggml_syncfree_accept(
     }
     for (int axis = 0; axis < n_pos; ++axis) {
         for (int s = 0; s < k; ++s) {
-            out[4 + k + axis*k + s] = out[2] + s;
+            out[4 + k + axis*k + s] = axis < 3 ? out[2] + s : 0;
         }
     }
 }

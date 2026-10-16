@@ -18,6 +18,14 @@ bool llama_syncfree_enabled() {
     return enabled;
 }
 
+void llama_syncfree_not_armed(llama_context * ctx, const char * reason) {
+    auto & sf = ctx->syncfree;
+    if (llama_syncfree_enabled() && !sf.reported_not_armed && !sf.logged_np) {
+        sf.reported_not_armed = true;
+        LLAMA_LOG_INFO("syncfree: not armed: %s\n", reason);
+    }
+}
+
 bool llama_syncfree_samplers_supported(const llama_sampler * target, const llama_sampler * draft) {
     return llama_sampler_chain_leading_top_k(target) > 0 && llama_sampler_chain_supports_syncfree(target, 40) &&
         llama_sampler_chain_leading_top_k(draft) == 10 && llama_sampler_chain_supports_syncfree(draft, 10);
@@ -47,26 +55,31 @@ bool llama_syncfree_arm(llama_context * ctx, llama_seq_id seq, const std::vector
         const std::vector<std::vector<llama_token_data>> & q, float temp, uint32_t seed) {
     auto & sf = ctx->syncfree;
     auto * dft = ctx->mtp_fold_dft;
-    if (!llama_syncfree_enabled() || seq < 0 || seq >= (llama_seq_id) ctx->n_seq_max() || !dft ||
-            draft.size() < 2 || draft.size() > LLAMA_MTP_CHAIN_MAX ||
-            !ctx->get_cparams().flash_attn || !dft->get_cparams().flash_attn ||
-            ctx->get_cparams().cb_eval || !dft->set_mtp_chain(draft.size()) ||
-            !ctx->sampling.samplers.count(seq) || !dft->sampling.samplers.count(seq)) {
+    if (!llama_syncfree_enabled()) {
         return false;
     }
+    auto reject = [&](const char * reason) { llama_syncfree_not_armed(ctx, reason); return false; };
+    if (seq < 0 || seq >= (llama_seq_id) ctx->n_seq_max()) { return reject("sequence is outside the target context"); }
+    if (!dft) { return reject("MTP fold context is unavailable"); }
+    if (draft.size() < 2 || draft.size() > LLAMA_MTP_CHAIN_MAX) { return reject("draft length is outside the fused range"); }
+    if (!ctx->get_cparams().flash_attn || !dft->get_cparams().flash_attn) { return reject("target and draft need flash attention"); }
+    if (ctx->get_cparams().cb_eval) { return reject("evaluation callback is installed"); }
+    if (!dft->set_mtp_chain(draft.size())) { return reject("draft context rejected the MTP chain"); }
+    if (!ctx->sampling.samplers.count(seq)) { return reject("target backend sampler is unavailable"); }
+    if (!dft->sampling.samplers.count(seq)) { return reject("draft backend sampler is unavailable"); }
     const auto & model = ctx->get_model();
     const auto & nextn = model.layers[model.hparams.n_layer()].nextn;
     auto * table = nextn.embed_tokens ? nextn.embed_tokens : model.tok_embd;
     auto * backend = ggml_backend_sched_get_backend(ctx->get_sched(), 0);
     if (!table || !table->buffer || !ggml_backend_supports_buft(backend, ggml_backend_buffer_get_type(table->buffer))) {
-        return false;
+        return reject("MTP token embedding buffer is not readable by the compute backend");
     }
     if (!llama_syncfree_samplers_supported(ctx->sampling.samplers.at(seq), dft->sampling.samplers.at(seq))) {
-        return false;
+        return reject("target or draft sampler is not a fully supported device distribution chain");
     }
     for (const auto id : draft) {
         if (id < 0 || id >= (1 << 24)) {
-            return false;
+            return reject("draft token ID cannot be represented in the packet");
         }
     }
     sf.ctx_dft = dft;
@@ -77,15 +90,15 @@ bool llama_syncfree_arm(llama_context * ctx, llama_seq_id seq, const std::vector
     state.greedy = temp <= 0.0f;
     if (!state.greedy) {
         if (q.size() != draft.size()) {
-            return false;
+            return reject("draft probability row count differs from draft length");
         }
         for (const auto & row : q) {
             if (row.empty() || row.size() > 10) {
-                return false;
+                return reject("draft probability row is empty or exceeds top-k 10");
             }
             for (const auto & token : row) {
                 if (token.id < 0 || token.id >= (1 << 24)) {
-                    return false;
+                    return reject("draft probability token ID cannot be represented in the packet");
                 }
             }
         }
@@ -121,17 +134,21 @@ bool llama_context::syncfree_prepare(const llama_ubatch & verify) {
     auto & sf = syncfree;
     sf.ready = false;
     sf.mctx.reset();
-    auto fail = [&]() {
+    if (!sf.armed) {
+        return false;
+    }
+    auto fail = [&](const char * reason) {
+        llama_syncfree_not_armed(this, reason);
         sf.armed = false;
         for (auto & state : sf.seqs) {
             state.armed = false;
         }
         return false;
     };
-    if (!sf.armed || !mctx_fold_cur || verify.n_seqs_unq == 0 ||
-            n_outputs != verify.n_tokens || !loras->empty() ||
+    if (!mctx_fold_cur) { return fail("verification has no MTP fold memory context"); }
+    if (verify.n_seqs_unq == 0 || n_outputs != verify.n_tokens || !loras->empty() ||
             !verify.token || verify.n_pos != model.hparams.n_pos_per_embd() || (verify.n_pos != 1 && verify.n_pos != 4)) {
-        return fail();
+        return fail("verification needs text tokens, all output rows, no adapters and 1 or 4 position axes");
     }
     const int ns = verify.n_seqs_unq;
     sf.active.assign(verify.seq_id_unq, verify.seq_id_unq + ns);
@@ -141,7 +158,7 @@ bool llama_context::syncfree_prepare(const llama_ubatch & verify) {
         const auto seq = sf.active[s];
         if (seq < 0 || (size_t) seq >= sf.seqs.size() || !sf.seqs[seq].armed ||
                 !sampling.samplers.count(seq) || !sf.ctx_dft->sampling.samplers.count(seq)) {
-            return fail();
+            return fail("an active sequence has no armed round or backend sampler");
         }
         auto & state = sf.seqs[seq];
         if (s == 0) {
@@ -150,23 +167,21 @@ bool llama_context::syncfree_prepare(const llama_ubatch & verify) {
         if (state.greedy != sf.seqs[sf.active[0]].greedy || sf.k != state.k || verify.n_tokens != (uint32_t) ns*(sf.k + 1) ||
                 llama_sampler_chain_leading_top_k(sampling.samplers.at(seq)) !=
                     llama_sampler_chain_leading_top_k(sampling.samplers.at(sf.active[0]))) {
-            return fail();
+            return fail("verification sequence lengths, sampling modes or candidate widths differ");
         }
         const int begin = s*(sf.k + 1);
         const llama_pos base = verify.pos[begin];
         if (base < 0 || base > (1 << 23)) {
-            return fail();
+            return fail("verification position is outside the packet range");
         }
         for (int i = 0; i <= sf.k; ++i) {
             if (verify.n_seq_id[begin + i] != 1 || verify.seq_id[begin + i][0] != seq ||
                     (i > 0 && verify.token[begin + i] != (llama_token) state.packet[2 + i - 1])) {
-                return fail();
+                return fail("verification rows do not match the drafted sequence");
             }
-            for (uint32_t axis = 0; axis < verify.n_pos; ++axis) {
-                if (verify.pos[axis*verify.n_tokens + begin + i] != base + i) {
-                    return fail();
-                }
-            }
+        }
+        if (!llama_syncfree_text_positions(verify, begin, sf.k + 1)) {
+            return fail("verification positions are not consecutive text positions");
         }
         state.packet[0] = base;
         sf.packet.insert(sf.packet.end(), state.packet.begin(), state.packet.end());
@@ -180,7 +195,7 @@ bool llama_context::syncfree_prepare(const llama_ubatch & verify) {
         auto * buft = device ? ggml_backend_dev_host_buffer_type(device) : nullptr;
         sf.host_buffer.reset(ggml_backend_buft_alloc_buffer(buft ? buft : ggml_backend_cpu_buffer_type(), host_bytes));
         if (!sf.host_buffer) {
-            return fail();
+            return fail("host output buffer allocation failed");
         }
     }
     if (!sf.completion_checked) {
@@ -224,7 +239,7 @@ bool llama_context::syncfree_prepare(const llama_ubatch & verify) {
             data->seq_id[row] = &data->seq_id_data[row];
             data->batch_idxs[row] = row;
             for (uint32_t axis = 0; axis < verify.n_pos; ++axis) {
-                data->pos[axis*nt + row] = scratch_pos + i;
+                data->pos[axis*nt + row] = axis < 3 ? scratch_pos + i : 0;
             }
         }
     }
@@ -242,7 +257,7 @@ bool llama_context::syncfree_prepare(const llama_ubatch & verify) {
             sf.ctx_dft->get_memory()->seq_rm(seq, (llama_pos) sf.seqs[seq].packet[0] + sf.k + 1, -1);
         }
         sf.mctx.reset();
-        return fail();
+        return fail("draft scratch memory reservation failed");
     }
     for (const auto & entry : sf.ctx_dft->sampling.samplers) {
         llama_sampler_backend_begin(entry.second);

@@ -1,6 +1,8 @@
 // Model-free contract tests of common_speculative: the draft prompt is built only for drafters that read it.
 
 #include "common.h"
+#include "arg.h"
+#include "json.h"
 #include "speculative.h"
 #include "sampling.h"
 #include "ggml-alloc.h"
@@ -9,10 +11,13 @@
 #include "../ggml/src/ggml-syncfree.h"
 #include "../src/llama-ext.h"
 #include "../src/llama-sampler.h"
+#include "../src/llama-syncfree.h"
 #include "../tools/server/server-output.h"
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <random>
 
 #include <cstdio>
@@ -131,7 +136,7 @@ static void test_syncfree_greedy() {
                         }
                         for (int axis = 0; axis < np; ++axis) {
                             for (int step = 0; step < k; ++step) {
-                                CHECK(row[4 + k + axis*k + step] == row[2] + step);
+                                CHECK(row[4 + k + axis*k + step] == (axis < 3 ? row[2] + step : 0));
                             }
                         }
                         for (int pos = base - 1; pos <= base + 2*k + 1; ++pos) {
@@ -172,8 +177,102 @@ static llama_model * sampler_test_model() {
     return model;
 }
 
-static void test_syncfree_served_samplers() {
+static common_params parse_served_params(int argc, char ** argv) {
+    std::vector<std::string> command;
+    common_json env;
+    std::filesystem::path dir;
+    if (argc == 3) {
+        auto read_json = [](const char * path) {
+            std::ifstream file(path);
+            CHECK(file.good());
+            return common_json::parse(std::string(std::istreambuf_iterator<char>(file), {}));
+        };
+        for (const auto & arg : read_json(argv[1])) {
+            command.push_back(arg.get<std::string>());
+        }
+        env = read_json(argv[2]);
+    } else {
+        CHECK(argc == 1);
+        dir = std::filesystem::temp_directory_path() / ("test-syncfree-" + std::to_string(std::random_device{}()));
+        CHECK(std::filesystem::create_directory(dir));
+        std::ofstream(dir / "chat.jinja") << "{{ messages }}";
+        std::ofstream(dir / "vocab.json") << "[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]";
+        command = {"server", "-m", "synthetic.gguf", "-c", "102400", "-np", "1", "-ctk", "q8_0", "-ctv", "q8_0",
+            "-ngl", "99", "-fa", "on", "--spec-type", "draft-mtp", "--spec-draft-n-max", "5", "--spec-draft-n-min", "0",
+            "--spec-draft-p-min", "0", "--spec-draft-type-k", "f16", "--spec-draft-type-v", "f16", "-sm", "tensor",
+            "--tensor-split", "50,50", "-b", "2048", "-ub", "512", "--jinja", "--chat-template-file", (dir / "chat.jinja").string(),
+            "--temp", "1", "--top-k", "20", "--top-p", "0.95", "--min-p", "0.05", "--host", "127.0.0.1", "--port", "18100",
+            "--metrics", "--spec-draft-sampling", "probabilistic", "--spec-draft-backend-sampling", "--backend-sampling",
+            "-t", "8", "-tb", "8", "--spec-draft-vocab", (dir / "vocab.json").string(), "--cache-ram", "0"};
+        env = common_json::parse(R"({"LLAMA_MTP_CHAIN":"1","LLAMA_MTP_FOLD_C":"1","LLAMA_ARG_KV_PAD":"4096","LLAMA_ARG_LOG_VERBOSITY":"5"})");
+    }
+    // Replay configuration variables without redirecting CPU logs/traces into the canary's result directory.
+    std::vector<std::pair<std::string, std::string>> saved;
+    for (const char * name : {"LLAMA_MTP_CHAIN", "LLAMA_MTP_FOLD_C", "LLAMA_ARG_KV_PAD", "LLAMA_ARG_LOG_VERBOSITY"}) {
+        const char * old = std::getenv(name);
+        saved.emplace_back(name, old ? old : "");
+        common_set_env(name, !env.contains(name) || env[name].is_null() ? "" : env[name].get<std::string>());
+    }
+    std::vector<char *> args;
+    for (auto & arg : command) {
+        args.push_back(arg.data());
+    }
+    common_params params;
+    CHECK(common_params_parse(args.size(), args.data(), params, LLAMA_EXAMPLE_SERVER));
+    CHECK(std::find(params.speculative.types.begin(), params.speculative.types.end(), COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != params.speculative.types.end());
+    CHECK(params.speculative.draft.mtp_chain && params.speculative.draft.probabilistic && params.speculative.draft.backend_sampling);
+    CHECK(params.speculative.draft.n_max == 5 && params.speculative.draft.p_min == 0.0f && !params.speculative.draft.vocab_ids.empty());
+    CHECK(params.sampling.backend_sampling && params.sampling.temp == 1.0f && params.sampling.top_k == 20);
+    CHECK(params.sampling.top_p == 0.95f && params.sampling.min_p == 0.05f);
+    CHECK(params.n_parallel == 1 || params.n_parallel == 2);
+    CHECK(params.split_mode == LLAMA_SPLIT_MODE_TENSOR && params.tensor_split[0] == 50.0f && params.tensor_split[1] == 50.0f);
+    const auto limits = common_speculative_get_output_limits(params.n_batch, params.n_parallel, params.speculative.draft.n_max);
+    params.n_outputs_max = limits.total;
+    params.n_outputs_max_per_seq = limits.per_seq;
+    const auto target = common_context_params_to_llama(params);
+    const auto draft = common_context_params_to_llama(common_base_params_to_speculative(params));
+    CHECK(target.n_outputs_max_per_seq == 6 && target.n_rs_seq == 5);
+    CHECK(draft.n_outputs_max_per_seq == (params.n_parallel == 1 || llama_syncfree_enabled() ? 5u : 1u));
+    for (const auto & [name, value] : saved) {
+        common_set_env(name, value);
+    }
+    if (!dir.empty()) {
+        std::filesystem::remove_all(dir);
+    }
+    printf("syncfree: parsed served server args/env, np=%d, target rows=%u, draft rows=%u: OK\n", params.n_parallel, target.n_outputs_max_per_seq, draft.n_outputs_max_per_seq);
+    return params;
+}
+
+static void test_syncfree_served_positions(const llama_model * model) {
+    for (int ns : {1, 2}) {
+        llama_batch_ext batch(12, 1, 1, ns, nullptr, 64, 4);
+        for (int seq = 0; seq < ns; ++seq) {
+            for (int step = 0; step <= 5; ++step) {
+                const int row = llama_batch_ext_add_token(&batch, seq, step);
+                const llama_pos pos[] = {8192 + seq*4096 + step, 0, 0, 0};
+                CHECK(llama_batch_ext_set_pos(&batch, row, pos));
+                CHECK(llama_batch_ext_set_output_logits(&batch, row, true));
+            }
+        }
+        llama_batch_allocr alloc(4);
+        CHECK(alloc.init(batch, *llama_model_get_vocab(model), true));
+        auto verify = alloc.split_simple(12);
+        CHECK(verify.n_tokens == (uint32_t) ns*6 && verify.n_pos == 4);
+        for (int seq = 0; seq < ns; ++seq) {
+            CHECK(llama_syncfree_text_positions(verify, seq*6, 6));
+            CHECK(verify.pos[3*verify.n_tokens + seq*6] == 0);
+            // The old guard required this value to equal base_pos, so every served text round failed.
+            CHECK(verify.pos[3*verify.n_tokens + seq*6] != verify.pos[seq*6]);
+        }
+        verify.pos[3*verify.n_tokens] = verify.pos[0];
+        CHECK(!llama_syncfree_text_positions(verify, 0, 6));
+    }
+    printf("syncfree: served batch allocator text positions [p,p,p,0], np1/np2 k=5: OK\n");
+}
+
+static void test_syncfree_served_samplers(const common_params & served) {
     auto * model = sampler_test_model();
+    test_syncfree_served_positions(model);
     auto * backend = ggml_backend_cpu_init();
     CHECK(backend);
     auto * buft = ggml_backend_get_default_buffer_type(backend);
@@ -183,13 +282,8 @@ static void test_syncfree_served_samplers() {
     llama_sampler_chain_add(draft, llama_sampler_init_dist(1729 ^ 0x85ebca6bu));
     CHECK(draft->iface->backend_init(draft, buft, 5));
 
-    common_params_sampling params;
-    params.backend_sampling = true;
+    common_params_sampling params = served.sampling;
     params.seed = 1729;
-    params.temp = 1.0f;
-    params.top_k = 20;
-    params.top_p = 0.95f;
-    params.min_p = 0.05f;
     // The server merges ignore_eos and model suppression into the same banning bias.
     params.logit_bias = {{0, -INFINITY}, {7, -INFINITY}, {25, -INFINITY}};
 
@@ -238,12 +332,6 @@ static void test_syncfree_served_samplers() {
                 owners.push_back(owner);
                 chains.push_back(chain);
             }
-            if (!llama_syncfree_enabled()) {
-                for (auto * owner : owners) {
-                    common_sampler_free(owner);
-                }
-                continue;
-            }
             constexpr int max_nodes = 4096;
             auto * ctx = ggml_init({max_nodes*ggml_tensor_overhead() + ggml_graph_overhead_custom(max_nodes, false), nullptr, true});
             CHECK(ctx);
@@ -264,10 +352,14 @@ static void test_syncfree_served_samplers() {
                     candidate_inputs.push_back(ids);
                     llama_sampler_data row = {logits, nullptr, nullptr, ids};
                     chains[seq]->iface->backend_apply(chains[seq], ctx, graph, &row);
-                    CHECK(row.probs && row.sampled && row.candidates);
-                    CHECK(ggml_nelements(row.probs) == 20);
+                    CHECK(row.candidates);
+                    CHECK(bool(row.probs) == llama_syncfree_enabled());
+                    CHECK(bool(row.sampled) == llama_syncfree_enabled());
+                    CHECK(ggml_nelements(row.candidates) == (llama_syncfree_enabled() ? 20 : 24));
                     for (auto * output : {row.logits, row.probs, row.sampled, row.candidates}) {
-                        ggml_build_forward_expand(graph, output);
+                        if (output) {
+                            ggml_build_forward_expand(graph, output);
+                        }
                     }
                     rows.push_back(row);
                 }
@@ -302,11 +394,6 @@ static void test_syncfree_served_samplers() {
             }
             CHECK(ggml_backend_graph_compute(backend, graph) == GGML_STATUS_SUCCESS);
             for (size_t i = 0; i < rows.size(); ++i) {
-                float probs[20];
-                llama_token ids[20], sampled;
-                ggml_backend_tensor_get(rows[i].probs, probs, 0, sizeof(probs));
-                ggml_backend_tensor_get(rows[i].candidates, ids, 0, sizeof(ids));
-                ggml_backend_tensor_get(rows[i].sampled, &sampled, 0, sizeof(sampled));
                 const auto logits = logits_for(i);
                 std::vector<llama_token_data> tokens(64);
                 for (int id = 0; id < 64; ++id) {
@@ -318,6 +405,36 @@ static void test_syncfree_served_samplers() {
                 if (i % 3 != 0) {
                     CHECK(expected.size == (i % 3 == 1 ? 1 : 2));
                 }
+                if (!llama_syncfree_enabled()) {
+                    float compact[24];
+                    llama_token ids[24];
+                    ggml_backend_tensor_get(rows[i].logits, compact, 0, sizeof(compact));
+                    ggml_backend_tensor_get(rows[i].candidates, ids, 0, sizeof(ids));
+                    auto * owner = owners[i/6];
+                    common_sampler_reset(owner);
+                    int full_reads = 0;
+                    common_sampler_row row;
+                    row.n_vocab = 64;
+                    row.cand_ids = ids;
+                    row.cand_logits = compact;
+                    row.n_cand = 24;
+                    row.logits = [&] { ++full_reads; return logits.data(); };
+                    CHECK(common_sampler_sample_row(owner, row) == expected.data[expected.selected].id);
+                    CHECK(full_reads == 0);
+                    const auto * actual = common_sampler_get_candidates(owner, true);
+                    CHECK(actual->size == expected.size);
+                    for (size_t j = 0; j < expected.size; ++j) {
+                        CHECK(actual->data[j].id == expected.data[j].id);
+                        CHECK(actual->data[j].p == expected.data[j].p);
+                    }
+                    common_sampler_free(host);
+                    continue;
+                }
+                float probs[20];
+                llama_token ids[20], sampled;
+                ggml_backend_tensor_get(rows[i].probs, probs, 0, sizeof(probs));
+                ggml_backend_tensor_get(rows[i].candidates, ids, 0, sizeof(ids));
+                ggml_backend_tensor_get(rows[i].sampled, &sampled, 0, sizeof(sampled));
                 float sum = 0.0f;
                 bool found = false;
                 for (int j = 0; j < 20; ++j) {
@@ -335,7 +452,7 @@ static void test_syncfree_served_samplers() {
                 CHECK(found && std::fabs(sum - 1.0f) < 2e-6f);
                 common_sampler_free(host);
             }
-            if (ns == 1) {
+            if (ns == 1 && llama_syncfree_enabled()) {
                 auto * uniform = ggml_get_tensor(ctx, "uniform_0");
                 CHECK(uniform);
                 std::mt19937 rng(params.seed);
@@ -630,8 +747,8 @@ static void test_output_overlap() {
     printf("syncfree: output overlap %d greedy streams, EOS/stop/budget/cancel, np1/np2, owned records and backpressure: OK\n", n_cases);
 }
 
-int main() {
-    test_syncfree_served_samplers();
+int main(int argc, char ** argv) {
+    test_syncfree_served_samplers(parse_served_params(argc, argv));
     test_syncfree_greedy();
     test_syncfree_rejection();
     test_syncfree_output_limits();

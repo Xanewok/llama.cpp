@@ -8,6 +8,17 @@
 struct llama_context;
 struct llama_model;
 
+inline bool llama_syncfree_text_positions(const llama_ubatch & batch, int32_t begin, int32_t count) {
+    for (uint32_t axis = 0; axis < batch.n_pos; ++axis) {
+        for (int32_t i = 0; i < count; ++i) {
+            if (batch.pos[axis*batch.n_tokens + begin + i] != (axis < 3 ? batch.pos[begin] + i : 0)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 inline ggml_tensor * llama_syncfree_step_idxs(ggml_context * ctx, ggml_tensor * idxs,
         int64_t n_chain, int64_t n_seq, int64_t step) {
     // SET_ROWS accepts strided indices; keep the I64 packet as a view.
@@ -35,6 +46,7 @@ struct llama_syncfree_state {
     int32_t k = 0;
     int32_t n_candidates = 0;
     uint32_t logged_np = 0;
+    bool reported_not_armed = false;
     std::vector<llama_syncfree_seq> seqs;
     std::vector<llama_seq_id> active;
     std::vector<float> packet;

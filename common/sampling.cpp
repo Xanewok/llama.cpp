@@ -148,6 +148,9 @@ struct common_sampler {
             for (uint32_t i = 0; i < sampled_probs_count; ++i) {
                 cur[i] = llama_token_data{sampled_ids[i], sampled_logits[i], sampled_probs[i]};
             }
+            if (backend_candidates) {
+                LOG_DBG("%s: using backend candidates: n_cand = %u, n_ban = %zu, top_k = %d (device filters)\n", __func__, sampled_probs_count, prefilter_bias.size(), prefilter_k);
+            }
         } else if (sampled_logits) {
             const uint32_t sampled_logits_count = row.n_cand;
             cur.resize(sampled_logits_count);
