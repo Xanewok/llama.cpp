@@ -1,6 +1,6 @@
-purpose: GDN alpha/beta F32 projections run as cuBLAS GEMM + splitKreduce at 6/12 columns (22 % BW, T-9); general dispatch fix (Sol, brief orchestration/briefs/2026-10-15-ssm-ab-gemv.md)
-base: 9dd7d8c9bc5cd5e61931ba5c41aa28706bba340b
+purpose: T-12 MMVF thin-F32 width gate (<= 6 columns) + matched op baseline
+base: 1d45e0cc58d73bc8f49bc256f8ff9b1084f59116
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/ssm-ab-gemv
-created: 2026-10-15T22:24:09+02:00
+branch: topic/t12-width
+created: 2026-10-16T12:26:42+02:00
 creator: xanewok

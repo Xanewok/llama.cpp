@@ -897,9 +897,9 @@ bool ggml_cuda_should_use_mmvf(enum ggml_type type, int cc, int warp_size, const
 
     switch (type) {
         case GGML_TYPE_F32:
-            // Thin matrices cannot fill an MMF row tile; avoid the cuBLAS split-K fallback at small batch sizes.
-            if (src0_ne[1] > 1 && src0_ne[1] < MMF_ROWS_PER_BLOCK && src0_ne[2] == 1 && src0_ne[3] == 1) {
-                return ne11 <= 16;
+            // Thin matrices cannot fill an MMF row tile; MMVF loses its advantage as the column count grows.
+            if (src0_ne[1] > 1 && src0_ne[1] < MMF_ROWS_PER_BLOCK && src0_ne[2] == 1 && src0_ne[3] == 1 && ne11 <= 6) {
+                return true;
             }
             if (GGML_CUDA_CC_IS_NVIDIA(cc)) {
                 if (ampere_mma_available(cc)) {

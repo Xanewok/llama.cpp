@@ -5609,7 +5609,7 @@ struct test_mul_mat_f32_small : public test_mul_mat {
 
     // The tight bound holds only on the thin MMVF path (rows < MMF tile); wider shapes take MMF/cuBLAS.
     double max_nmse_err() override {
-        return m < 32 ? 1e-7 : test_mul_mat::max_nmse_err();
+        return m < 32 && n <= 6 ? 1e-7 : test_mul_mat::max_nmse_err();
     }
 };
 
@@ -11092,11 +11092,11 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q8_0, GGML_TYPE_F32, 2880, 32, 2880, {1, 1}, {1, 1}));
     test_cases.emplace_back(new test_mul_mat(GGML_TYPE_MXFP4, GGML_TYPE_F32, 2880, 32, 2880, {1, 1}, {1, 1}));
 
-    for (int64_t n : {1, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}) {
+    for (int64_t n : {1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}) {
         test_cases.emplace_back(new test_mul_mat_f32_small(24, n, 5120));
     }
     for (int64_t m : {31, 32, 33, 48}) {
-        for (int64_t n : {1, 6, 12}) {
+        for (int64_t n : {1, 6, 7, 12}) {
             test_cases.emplace_back(new test_mul_mat_f32_small(m, n, 5120));
         }
     }
@@ -12467,7 +12467,7 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     std::vector<std::unique_ptr<test_case>> test_cases;
 
     for (int64_t m : {24, 31, 32, 33, 48}) {
-        for (int64_t n : {1, 6, 12}) {
+        for (int64_t n : {1, 3, 6, 7, 8, 12}) {
             test_cases.emplace_back(new test_mul_mat_f32_small(m, n, 5120));
         }
     }
