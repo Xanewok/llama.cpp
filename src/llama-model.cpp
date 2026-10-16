@@ -3112,6 +3112,36 @@ llama_memory_i * llama_model::create_memory(const llama_memory_params & params, 
                                     reuse,
                                     share);
                         }
+                    } else if (cparams.swa_window > 0) {
+                        GGML_ASSERT(!hparams.is_swa_any());
+
+                        // Keep one ubatch of slack; padding the read extent further only adds masked cells.
+                        const uint32_t n_seq_cells = cparams.kv_unified ? cparams.n_seq_max : 1;
+                        const uint64_t n_cells     = (uint64_t(cparams.swa_window) + cparams.swa_sinks)*n_seq_cells + cparams.n_ubatch;
+                        const uint64_t kv_size     = GGML_PAD(std::min<uint64_t>(cparams.n_ctx_seq, n_cells), 256);
+                        if (kv_size > UINT32_MAX) {
+                            throw std::runtime_error("attention window cache exceeds the cell count range");
+                        }
+
+                        res = new llama_kv_cache(
+                                *this,
+                                hparams,
+                                params.type_k,
+                                params.type_v,
+                                !cparams.flash_attn,
+                                cparams.offload_kqv,
+                                cparams.kv_unified,
+                                uint32_t(kv_size),
+                                cparams.n_seq_max,
+                                1,
+                                cparams.swa_window,
+                                LLAMA_SWA_TYPE_STANDARD,
+                                nullptr,
+                                filter,
+                                nullptr,
+                                nullptr,
+                                "",
+                                cparams.swa_sinks);
                     } else {
                         GGML_ASSERT(!hparams.is_swa_any());
 

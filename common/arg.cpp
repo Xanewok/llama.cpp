@@ -4232,6 +4232,26 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_DRAFT_P_MIN"));
     add_opt(common_arg(
+        {"--spec-draft-swa"}, "N",
+        string_format("draft attention window: retain the last N positions plus sinks in a compact KV cache; the target is unaffected (default: %d, 0 = full context)", params.speculative.draft.swa_window),
+        [](common_params & params, int value) {
+            if (value < 0) {
+                throw std::invalid_argument("--spec-draft-swa must be >= 0");
+            }
+            params.speculative.draft.swa_window = value;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_DRAFT_SWA"));
+    add_opt(common_arg(
+        {"--spec-draft-swa-sinks"}, "N",
+        string_format("with --spec-draft-swa: the first N positions stay visible to the draft (default: %d)", params.speculative.draft.swa_sinks),
+        [](common_params & params, int value) {
+            if (value < 0) {
+                throw std::invalid_argument("--spec-draft-swa-sinks must be >= 0");
+            }
+            params.speculative.draft.swa_sinks = value;
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_DRAFT_SWA_SINKS"));
+    add_opt(common_arg(
         {"--spec-draft-backend-sampling"},
         {"--no-spec-draft-backend-sampling"},
         string_format("offload draft sampling to the backend (default: %s)",

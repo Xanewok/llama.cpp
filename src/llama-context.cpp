@@ -161,6 +161,12 @@ llama_context::llama_context(
         LLAMA_LOG_WARN("%s: n_kv_pad = %u is not a multiple of 256, rounded up to %u\n", __func__, params.n_kv_pad, cparams.n_kv_pad);
     }
 
+    if (params.swa_window > INT32_MAX || params.swa_sinks > INT32_MAX) {
+        throw std::runtime_error("swa_window and swa_sinks exceed the position range");
+    }
+    cparams.swa_window = params.swa_window;
+    cparams.swa_sinks  = params.swa_window > 0 ? params.swa_sinks : 0;
+
     cparams.n_rs_seq = params.n_rs_seq;
     if (cparams.n_rs_seq > 0 && !llm_arch_supports_rs_rollback(model.arch)) {
         LLAMA_LOG_DEBUG("%s: n_rs_seq=%u requested but model does not support recurrent partial rollback; clamping to 0\n",
@@ -458,6 +464,18 @@ llama_context::llama_context(
         };
 
         memory.reset(model.create_memory(params_mem, cparams));
+
+        if (cparams.swa_window > 0) {
+            const auto * kv = dynamic_cast<const llama_kv_cache *>(memory.get());
+            if (kv && kv->get_n_swa() == cparams.swa_window) {
+                LLAMA_LOG_INFO("%s: swa_window            = %u, swa_sinks = %u, kv_size = %u\n", __func__,
+                        cparams.swa_window, cparams.swa_sinks, kv->get_size());
+            } else {
+                LLAMA_LOG_WARN("%s: swa_window = %u ignored: only a single non-SWA KV cache supports it\n", __func__, cparams.swa_window);
+                cparams.swa_window = 0;
+                cparams.swa_sinks  = 0;
+            }
+        }
     }
 
     // init backends
@@ -4292,6 +4310,8 @@ llama_context_params llama_context_default_params() {
         /*.n_outputs_max               =*/ 0,
         /*.n_outputs_max_per_seq       =*/ 1,
         /*.n_kv_pad                    =*/ 0,
+        /*.swa_window                  =*/ 0,
+        /*.swa_sinks                   =*/ 0,
         /*.n_threads                   =*/ GGML_DEFAULT_N_THREADS, // TODO: better default
         /*.n_threads_batch             =*/ GGML_DEFAULT_N_THREADS,
         /*.ctx_type                    =*/ LLAMA_CONTEXT_TYPE_DEFAULT,
@@ -4468,6 +4488,11 @@ uint32_t llama_n_seq_max(const llama_context * ctx) {
 
 uint32_t llama_n_rs_seq(const llama_context * ctx) {
     return ctx->get_cparams().n_rs_seq;
+}
+
+int32_t llama_n_swa(const llama_context * ctx) {
+    const uint32_t window = ctx->get_cparams().swa_window;
+    return window > 0 ? (int32_t) window : llama_model_n_swa(&ctx->get_model());
 }
 
 const llama_model * llama_get_model(const llama_context * ctx) {

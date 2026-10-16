@@ -350,6 +350,9 @@ struct common_params_speculative_draft {
     ggml_type cache_type_k = GGML_TYPE_F16; // KV cache data type for the K
     ggml_type cache_type_v = GGML_TYPE_F16; // KV cache data type for the V
 
+    int32_t swa_window = 0; // draft attention window in tokens (0 = full context)
+    int32_t swa_sinks  = 16; // with swa_window: leading positions the draft always attends to
+
     common_cpu_params cpuparams;
     common_cpu_params cpuparams_batch;
 
@@ -466,6 +469,8 @@ struct common_params {
     int32_t n_outputs_max         =     0; // max outputs in a batch (0 = n_batch)
     int32_t n_outputs_max_per_seq =     1; // max outputs per sequence
     int32_t n_kv_pad              =     0; // KV cache view size granularity in cells (0 = 256)
+    int32_t swa_window            =     0; // see llama_context_params::swa_window
+    int32_t swa_sinks             =     0;
     int32_t grp_attn_n            =     1; // group-attention factor
     int32_t grp_attn_w            =   512; // group-attention width
     int32_t n_print               =    -1; // print token count every n tokens (-1 = disabled)

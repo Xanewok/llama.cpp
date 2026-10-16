@@ -376,6 +376,8 @@ extern "C" {
         uint32_t n_outputs_max;         // max outputs in a ubatch (0 = n_batch)
         uint32_t n_outputs_max_per_seq; // max outputs per sequence (0 = n_outputs_max)
         uint32_t n_kv_pad;              // KV cache view size granularity in cells, multiple of 256 (0 = 256); larger values rebuild the graph less often
+        uint32_t swa_window;            // > 0: retain this many recent positions in a compact cache (single non-SWA KV cache only)
+        uint32_t swa_sinks;             // with swa_window: positions [0, swa_sinks) of every sequence stay visible as well
         int32_t  n_threads;             // number of threads to use for generation
         int32_t  n_threads_batch;       // number of threads to use for batch processing
 
@@ -585,6 +587,9 @@ extern "C" {
     LLAMA_API uint32_t llama_n_batch    (const struct llama_context * ctx);
     LLAMA_API uint32_t llama_n_ubatch   (const struct llama_context * ctx);
     LLAMA_API uint32_t llama_n_seq_max  (const struct llama_context * ctx);
+
+    // Effective context window, or the model's native SWA window when no override applies.
+    LLAMA_API int32_t  llama_n_swa      (const struct llama_context * ctx);
     LLAMA_API uint32_t llama_n_rs_seq   (const struct llama_context * ctx);
 
     DEPRECATED(LLAMA_API int32_t llama_n_ctx_train(const struct llama_model * model), "use llama_model_n_ctx_train instead");

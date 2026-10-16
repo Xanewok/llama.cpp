@@ -2779,6 +2779,14 @@ common_params common_base_params_to_speculative(const common_params & params) {
 
     result.cache_type_k  = params_spec.cache_type_k;
     result.cache_type_v  = params_spec.cache_type_v;
+    result.swa_window    = params_spec.swa_window;
+    result.swa_sinks     = params_spec.swa_sinks;
+    if (params_spec.swa_window > 0) {
+        // The ring's ubatch slack must hold a whole rejected draft round.
+        const int64_t n_round = int64_t(std::max(1, params_spec.n_max))*std::max(1, params.n_parallel);
+        result.n_ubatch = std::max(result.n_ubatch, int32_t(std::min<int64_t>(n_round, INT32_MAX)));
+        result.n_batch = std::max(result.n_batch, result.n_ubatch);
+    }
     result.n_outputs_max = params.n_parallel;
     result.n_outputs_max_per_seq = 1;
 

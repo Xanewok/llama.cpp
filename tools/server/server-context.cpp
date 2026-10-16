@@ -2679,7 +2679,7 @@ private:
         // can seq_rm partially needs no copy: rows before the restored position were computed from the same
         // prefix and are kept, and the restore's slot.mem.seq_rm() drops the rest. Not with a sliding window: its
         // cells may since hold newer rows, and only the copy brings the window of the restored position back
-        if (ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART || llama_model_n_swa(llama_get_model(ctx_dft)) > 0) {
+        if (ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART || llama_n_swa(ctx_dft) > 0) {
             cur.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
         }
         // stash the draft's speculative state with the checkpoint
