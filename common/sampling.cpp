@@ -7,6 +7,7 @@
 #include "reasoning-budget.h"
 
 #include "ggml.h"
+#include "../src/llama-ext.h"
 
 #include <algorithm>
 #include <cctype>
@@ -131,6 +132,7 @@ struct common_sampler {
         prev.clear();
 
         llama_sampler_reset(chain);
+        llama_sampler_reset(backend_candidates);
     }
 
     // prefilter: the caller guarantees that nothing ahead of the chain reads the row (see common_sampler_sample)
@@ -621,6 +623,11 @@ struct common_sampler * common_sampler_init(
     if (use_candidates) {
         result->backend_candidates = llama_sampler_chain_init(lparams);
         llama_sampler_chain_add(result->backend_candidates, llama_sampler_init_top_k(candidate_k + 1 + n_ban));
+        // Tensor splitting needs top-k first; retain enough rows to apply all bans before the real top-k.
+        if (llama_syncfree_enabled() && !grmr && !rbudget) {
+            // A nested chain commits the whole device suffix or leaves only the candidate prefilter active.
+            llama_sampler_chain_add(result->backend_candidates, llama_sampler_clone(chain));
+        }
     }
 
     return result;
@@ -684,6 +691,7 @@ void common_sampler_accept(struct common_sampler * gsmpl, llama_token token, boo
     }
 
     llama_sampler_accept(gsmpl->chain, token);
+    llama_sampler_accept(gsmpl->backend_candidates, token);
 
     gsmpl->prev.push_back(token);
 }
@@ -727,6 +735,7 @@ void common_sampler_copy(const common_sampler * src, common_sampler * dst) {
     llama_sampler_copy(src->grmr,    dst->grmr);
     llama_sampler_copy(src->rbudget, dst->rbudget);
     llama_sampler_copy(src->chain,   dst->chain);
+    llama_sampler_copy(src->backend_candidates, dst->backend_candidates);
 
     dst->params     = src->params;
     dst->prev       = src->prev;

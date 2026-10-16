@@ -2,8 +2,13 @@
 
 #include "common.h"
 #include "speculative.h"
+#include "sampling.h"
+#include "ggml-alloc.h"
+#include "ggml-cpu.h"
+#include "gguf.h"
 #include "../ggml/src/ggml-syncfree.h"
 #include "../src/llama-ext.h"
+#include "../src/llama-sampler.h"
 #include "../tools/server/server-output.h"
 
 #include <algorithm>
@@ -140,6 +145,244 @@ static void test_syncfree_greedy() {
         }
     }
     printf("syncfree: np1/np2 greedy prefix pairs, 1/4 position axes and per-sequence masks: OK\n");
+}
+
+static llama_model * sampler_test_model() {
+    auto * meta = gguf_init_empty();
+    gguf_set_val_str(meta, "general.architecture", "llama");
+    gguf_set_val_str(meta, "tokenizer.ggml.model", "none");
+    gguf_set_val_u32(meta, "llama.vocab_size", 64);
+    std::vector<uint8_t> bytes(gguf_get_meta_size(meta));
+    gguf_get_meta_data(meta, bytes.data());
+    gguf_free(meta);
+    FILE * file = std::tmpfile();
+    CHECK(file);
+    CHECK(std::fwrite(bytes.data(), 1, bytes.size(), file) == bytes.size());
+    std::rewind(file);
+    auto params = llama_model_default_params();
+    ggml_backend_dev_t devices[] = {nullptr};
+    params.devices = devices;
+    params.vocab_only = true;
+    params.load_mode = LLAMA_LOAD_MODE_NONE;
+    params.n_gpu_layers = 0;
+    auto * model = llama_model_load_from_file_ptr(file, params);
+    std::fclose(file);
+    CHECK(model);
+    CHECK(llama_vocab_n_tokens(llama_model_get_vocab(model)) == 64);
+    return model;
+}
+
+static void test_syncfree_served_samplers() {
+    auto * model = sampler_test_model();
+    auto * backend = ggml_backend_cpu_init();
+    CHECK(backend);
+    auto * buft = ggml_backend_get_default_buffer_type(backend);
+    auto * draft = llama_sampler_chain_init(llama_sampler_chain_default_params());
+    llama_sampler_chain_add(draft, llama_sampler_init_top_k_sorted(10));
+    llama_sampler_chain_add(draft, llama_sampler_init_temp_ext(1.0f, 0.0f, 1.0f));
+    llama_sampler_chain_add(draft, llama_sampler_init_dist(1729 ^ 0x85ebca6bu));
+    CHECK(draft->iface->backend_init(draft, buft, 5));
+
+    common_params_sampling params;
+    params.backend_sampling = true;
+    params.seed = 1729;
+    params.temp = 1.0f;
+    params.top_k = 20;
+    params.top_p = 0.95f;
+    params.min_p = 0.05f;
+    // The server merges ignore_eos and model suppression into the same banning bias.
+    params.logit_bias = {{0, -INFINITY}, {7, -INFINITY}, {25, -INFINITY}};
+
+    auto * unsupported = common_sampler_init(model, params);
+    auto * candidate_only = common_sampler_get_backend(unsupported);
+    CHECK(!llama_syncfree_samplers_supported(candidate_only, draft));
+    common_sampler_free(unsupported);
+    for (bool typical : {true, false}) {
+        params.typ_p = typical ? 0.8f : 1.0f;
+        params.min_keep = typical ? 0 : 2;
+        unsupported = common_sampler_init(model, params);
+        candidate_only = common_sampler_get_backend(unsupported);
+        CHECK(candidate_only->iface->backend_init(candidate_only, buft, 6) == !llama_syncfree_enabled());
+        CHECK(!llama_syncfree_samplers_supported(candidate_only, draft));
+        common_sampler_free(unsupported);
+    }
+    params.typ_p = 1.0f;
+    params.min_keep = 0;
+
+    auto logits_for = [](size_t row) {
+        std::vector<float> logits(64);
+        for (int id = 0; id < 64; ++id) {
+            logits[id] = row % 3 == 0 ? -0.17f*((id*19 + int(row)*7) % 64) :
+                row % 3 == 1 ? -3.2f - 0.001f*id : -10.0f - 0.01f*id;
+        }
+        if (row % 3 != 0) {
+            logits[1] = 0.0f;
+        }
+        if (row % 3 == 2) {
+            logits[2] = std::log(0.05f);
+            logits[3] = std::log(0.04f);
+        }
+        return logits;
+    };
+
+    for (int ns : {1, 2}) {
+        for (float temp : {1.0f, 0.7f}) {
+            params.temp = temp;
+            std::vector<common_sampler *> owners;
+            std::vector<llama_sampler *> chains;
+            for (int seq = 0; seq < ns; ++seq) {
+                auto * owner = common_sampler_init(model, params);
+                auto * chain = common_sampler_get_backend(owner);
+                CHECK(chain->iface->backend_init(chain, buft, 6));
+                CHECK(llama_syncfree_samplers_supported(chain, draft) == llama_syncfree_enabled());
+                owners.push_back(owner);
+                chains.push_back(chain);
+            }
+            if (!llama_syncfree_enabled()) {
+                for (auto * owner : owners) {
+                    common_sampler_free(owner);
+                }
+                continue;
+            }
+            constexpr int max_nodes = 4096;
+            auto * ctx = ggml_init({max_nodes*ggml_tensor_overhead() + ggml_graph_overhead_custom(max_nodes, false), nullptr, true});
+            CHECK(ctx);
+            auto * graph = ggml_new_graph_custom(ctx, max_nodes, false);
+            std::vector<llama_sampler_data> rows;
+            std::vector<ggml_tensor *> inputs;
+            std::vector<ggml_tensor *> candidate_inputs;
+            for (int seq = 0; seq < ns; ++seq) {
+                for (int step = 0; step <= 5; ++step) {
+                    const bool split = step % 2 == 0;
+                    auto * logits = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, split ? 48 : 64);
+                    auto * ids = split ? ggml_new_tensor_1d(ctx, GGML_TYPE_I32, 48) : nullptr;
+                    ggml_set_input(logits);
+                    if (ids) {
+                        ggml_set_input(ids);
+                    }
+                    inputs.push_back(logits);
+                    candidate_inputs.push_back(ids);
+                    llama_sampler_data row = {logits, nullptr, nullptr, ids};
+                    chains[seq]->iface->backend_apply(chains[seq], ctx, graph, &row);
+                    CHECK(row.probs && row.sampled && row.candidates);
+                    CHECK(ggml_nelements(row.probs) == 20);
+                    for (auto * output : {row.logits, row.probs, row.sampled, row.candidates}) {
+                        ggml_build_forward_expand(graph, output);
+                    }
+                    rows.push_back(row);
+                }
+            }
+            auto * buffer = ggml_backend_alloc_ctx_tensors(ctx, backend);
+            CHECK(buffer);
+            for (auto * chain : chains) {
+                chain->iface->backend_set_input(chain);
+            }
+            for (size_t i = 0; i < rows.size(); ++i) {
+                const auto logits = logits_for(i);
+                if (candidate_inputs[i]) {
+                    // Tensor splitting gathers the top 24 from each of two vocabulary shards.
+                    std::vector<llama_token> ids;
+                    std::vector<float> compact;
+                    for (int device = 0; device < 2; ++device) {
+                        std::vector<llama_token> shard(32);
+                        for (int id = 0; id < 32; ++id) {
+                            shard[id] = device*32 + id;
+                        }
+                        std::sort(shard.begin(), shard.end(), [&](llama_token a, llama_token b) { return logits[a] > logits[b]; });
+                        for (int j = 0; j < 24; ++j) {
+                            ids.push_back(shard[j]);
+                            compact.push_back(logits[shard[j]]);
+                        }
+                    }
+                    ggml_backend_tensor_set(inputs[i], compact.data(), 0, compact.size()*sizeof(float));
+                    ggml_backend_tensor_set(candidate_inputs[i], ids.data(), 0, ids.size()*sizeof(llama_token));
+                } else {
+                    ggml_backend_tensor_set(inputs[i], logits.data(), 0, logits.size()*sizeof(float));
+                }
+            }
+            CHECK(ggml_backend_graph_compute(backend, graph) == GGML_STATUS_SUCCESS);
+            for (size_t i = 0; i < rows.size(); ++i) {
+                float probs[20];
+                llama_token ids[20], sampled;
+                ggml_backend_tensor_get(rows[i].probs, probs, 0, sizeof(probs));
+                ggml_backend_tensor_get(rows[i].candidates, ids, 0, sizeof(ids));
+                ggml_backend_tensor_get(rows[i].sampled, &sampled, 0, sizeof(sampled));
+                const auto logits = logits_for(i);
+                std::vector<llama_token_data> tokens(64);
+                for (int id = 0; id < 64; ++id) {
+                    tokens[id] = {id, logits[id], 0.0f};
+                }
+                auto * host = common_sampler_init(model, params);
+                llama_token_data_array expected = {tokens.data(), tokens.size(), -1, false};
+                llama_sampler_apply(common_sampler_get(host), &expected);
+                if (i % 3 != 0) {
+                    CHECK(expected.size == (i % 3 == 1 ? 1 : 2));
+                }
+                float sum = 0.0f;
+                bool found = false;
+                for (int j = 0; j < 20; ++j) {
+                    float p = 0.0f;
+                    for (size_t k = 0; k < expected.size; ++k) {
+                        if (expected.data[k].id == ids[j]) {
+                            p = expected.data[k].p;
+                        }
+                    }
+                    CHECK(std::fabs(probs[j] - p) < 2e-6f);
+                    CHECK(ids[j] != 0 && ids[j] != 7 && ids[j] != 25);
+                    found = found || (sampled == ids[j] && probs[j] > 0.0f);
+                    sum += probs[j];
+                }
+                CHECK(found && std::fabs(sum - 1.0f) < 2e-6f);
+                common_sampler_free(host);
+            }
+            if (ns == 1) {
+                auto * uniform = ggml_get_tensor(ctx, "uniform_0");
+                CHECK(uniform);
+                std::mt19937 rng(params.seed);
+                std::uniform_real_distribution<double> dist(0.0, 1.0);
+                float draws[4];
+                for (auto & draw : draws) {
+                    draw = dist(rng);
+                }
+                auto check_draw = [&](float expected) {
+                    float actual;
+                    ggml_backend_tensor_get(uniform, &actual, 0, sizeof(actual));
+                    CHECK(actual == expected);
+                };
+                auto begin = [&] {
+                    llama_sampler_backend_begin(chains[0]);
+                    chains[0]->iface->backend_set_input(chains[0]);
+                };
+                check_draw(draws[0]);
+                common_sampler_accept(owners[0], 1, true);
+                common_sampler_accept(owners[0], 2, true);
+                begin();
+                check_draw(draws[2]);
+                common_sampler_reset(owners[0]);
+                begin();
+                check_draw(draws[0]);
+                auto * saved = common_sampler_clone(owners[0]);
+                for (int i = 0; i < 3; ++i) {
+                    common_sampler_accept(owners[0], 1, true);
+                }
+                begin();
+                check_draw(draws[3]);
+                common_sampler_copy(saved, owners[0]);
+                begin();
+                check_draw(draws[0]);
+                common_sampler_free(saved);
+            }
+            ggml_backend_buffer_free(buffer);
+            ggml_free(ctx);
+            for (auto * owner : owners) {
+                common_sampler_free(owner);
+            }
+        }
+    }
+    llama_sampler_free(draft);
+    ggml_backend_free(backend);
+    llama_model_free(model);
+    printf("syncfree: served common sampler arming, unsupported chain rejection, np1/np2 k=5 probabilities and RNG accept/reset/copy: OK (enabled=%d)\n", llama_syncfree_enabled());
 }
 
 static void test_syncfree_rejection() {
@@ -388,6 +631,7 @@ static void test_output_overlap() {
 }
 
 int main() {
+    test_syncfree_served_samplers();
     test_syncfree_greedy();
     test_syncfree_rejection();
     test_syncfree_output_limits();

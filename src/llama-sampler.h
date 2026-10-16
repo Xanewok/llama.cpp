@@ -46,6 +46,8 @@ std::function<void()> llama_sampler_backend_bindings(llama_sampler * sampler);
 // When k > 0 the chain can only ever pick among the k highest logits, so it may start from any superset of them.
 int32_t llama_sampler_chain_leading_top_k(const llama_sampler * sampler);
 
+bool llama_sampler_chain_supports_syncfree(const llama_sampler * sampler, int32_t max_candidates);
+
 struct llama_sampler * llama_sampler_init_dry_testing(
         float   dry_multiplier,
         float   dry_base,

@@ -1499,7 +1499,7 @@ static void llama_sampler_top_k_backend_apply(
     ggml_set_name(top_k, "top_k");
 
     if (data->candidates) {
-        struct ggml_tensor * candidates_rows = ggml_reshape_2d(ctx, data->candidates, 1, data->candidates->ne[0]);
+        struct ggml_tensor * candidates_rows = ggml_reshape_2d(ctx, data->candidates, 1, ggml_nelements(data->candidates));
         data->candidates = ggml_get_rows(ctx, candidates_rows, top_k);
         ggml_set_name(data->candidates, "top_k_candidates");
     } else {
@@ -1648,7 +1648,7 @@ static bool llama_sampler_top_p_backend_init(
     auto * sctx = (llama_sampler_top_p *) smpl->ctx;
     GGML_UNUSED(n_outputs_max_per_seq);
 
-    const bool res = llama_sampler_backend_support(smpl, buft);
+    const bool res = sctx->min_keep <= 1 && llama_sampler_backend_support(smpl, buft);
 
     sctx->init(res);
 
@@ -1849,7 +1849,7 @@ static bool llama_sampler_min_p_backend_init(
     auto * sctx = (llama_sampler_min_p *) smpl->ctx;
     GGML_UNUSED(n_outputs_max_per_seq);
 
-    const bool res = llama_sampler_backend_support(smpl, buft);
+    const bool res = sctx->min_keep <= 1 && llama_sampler_backend_support(smpl, buft);
 
     sctx->init(res);
 
@@ -1878,12 +1878,9 @@ static void llama_sampler_min_p_backend_apply(
     struct ggml_tensor * threshold = ggml_scale_bias(ctx, max_logit, 1.0f, logf(sctx->p));
     ggml_set_name(threshold, "min_p_threshold");
 
-    // Subtract the threshold from logits.
+    // Keep equality, as the host sampler does at the min-p boundary.
     struct ggml_tensor * sub = ggml_sub(ctx, logits, threshold);
-
-    // Create a mask where logits below the threshold are 0 (discard),
-    // and others are 1 (keep).
-    struct ggml_tensor * mask = ggml_step(ctx, sub);
+    struct ggml_tensor * mask = ggml_scale_bias(ctx, ggml_step(ctx, ggml_neg(ctx, sub)), -1.0f, 1.0f);
     ggml_set_name(mask, "min_p_mask");
 
     // Apply -INFINITY bias for masked-out tokens
@@ -4001,13 +3998,19 @@ static void llama_sampler_logit_bias_backend_apply(
         ggml_set_input(sctx->inp_logit_idxs);
     }
 
-    ggml_tensor * cur = ggml_fill(ctx, data->logits, 0.0f);
+    // Candidate IDs are vocabulary IDs, not offsets into the compact logit row.
+    auto * shape = data->candidates ? ggml_new_tensor_1d(ctx, GGML_TYPE_F32, sctx->n_vocab) : data->logits;
+    ggml_tensor * cur = ggml_fill(ctx, shape, 0.0f);
 
     cur = ggml_reshape_2d(ctx, cur, 1, ggml_nelements(cur));
     cur = ggml_set_rows(ctx, cur, sctx->inp_logit_bias, sctx->inp_logit_idxs);
     cur = ggml_reshape_1d(ctx, cur, ggml_nelements(cur));
+    if (data->candidates) {
+        auto * ids = ggml_reshape_1d(ctx, data->candidates, ggml_nelements(data->candidates));
+        cur = ggml_get_rows(ctx, ggml_reshape_2d(ctx, cur, 1, sctx->n_vocab), ids);
+    }
 
-    data->logits = ggml_add(ctx, data->logits, cur);
+    data->logits = ggml_add(ctx, data->logits, ggml_reshape(ctx, cur, data->logits));
 }
 
 static void llama_sampler_logit_bias_backend_set_input(struct llama_sampler * smpl) {
@@ -4434,6 +4437,56 @@ int32_t llama_sampler_chain_leading_top_k(const llama_sampler * sampler) {
     }
 
     return -1;
+}
+
+static int32_t llama_sampler_chain_syncfree_candidates(const llama_sampler * sampler) {
+    if (!sampler || sampler->iface != &llama_sampler_chain_i) {
+        return -1;
+    }
+    const auto * chain = (const llama_sampler_chain *) sampler->ctx;
+    if (!chain->is_init || chain->samplers.empty()) {
+        return -1;
+    }
+    int32_t n_candidates = INT32_MAX;
+    bool selects = false;
+    for (size_t i = 0; i < chain->samplers.size(); ++i) {
+        const auto & entry = chain->samplers[i];
+        const auto * iface = entry.ptr->iface;
+        if (!entry.is_backend) {
+            return -1;
+        }
+        if (iface == &llama_sampler_chain_i || iface == &llama_sampler_dist_i) {
+            if (i + 1 != chain->samplers.size()) {
+                return -1;
+            }
+            if (iface == &llama_sampler_chain_i) {
+                const int32_t child = llama_sampler_chain_syncfree_candidates(entry.ptr);
+                if (child <= 0) {
+                    return -1;
+                }
+                n_candidates = std::min(n_candidates, child);
+            }
+            selects = true;
+        } else if (iface == &llama_sampler_top_k_i) {
+            const int32_t k = ((const llama_sampler_top_k *) entry.ptr->ctx)->k;
+            if (k > 0) {
+                n_candidates = std::min(n_candidates, k);
+            }
+        } else if ((iface == &llama_sampler_top_p_i && ((const llama_sampler_top_p *) entry.ptr->ctx)->min_keep > 1) ||
+                (iface == &llama_sampler_min_p_i && ((const llama_sampler_min_p *) entry.ptr->ctx)->min_keep > 1)) {
+            return -1;
+        } else if (iface != &llama_sampler_empty_i && iface != &llama_sampler_logit_bias_i &&
+                iface != &llama_sampler_top_p_i && iface != &llama_sampler_min_p_i &&
+                iface != &llama_sampler_temp_i && iface != &llama_sampler_temp_ext_i) {
+            return -1;
+        }
+    }
+    return selects ? n_candidates : -1;
+}
+
+bool llama_sampler_chain_supports_syncfree(const llama_sampler * sampler, int32_t max_candidates) {
+    const int32_t n_candidates = llama_sampler_chain_syncfree_candidates(sampler);
+    return n_candidates > 0 && n_candidates <= max_candidates;
 }
 
 std::function<void()> llama_sampler_backend_bindings(llama_sampler * sampler) {

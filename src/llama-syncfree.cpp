@@ -18,6 +18,11 @@ bool llama_syncfree_enabled() {
     return enabled;
 }
 
+bool llama_syncfree_samplers_supported(const llama_sampler * target, const llama_sampler * draft) {
+    return llama_sampler_chain_leading_top_k(target) > 0 && llama_sampler_chain_supports_syncfree(target, 40) &&
+        llama_sampler_chain_leading_top_k(draft) == 10 && llama_sampler_chain_supports_syncfree(draft, 10);
+}
+
 void llama_syncfree_reset(llama_context * ctx, llama_seq_id seq) {
     auto & sf = ctx->syncfree;
     if (seq < 0) {
@@ -56,20 +61,13 @@ bool llama_syncfree_arm(llama_context * ctx, llama_seq_id seq, const std::vector
     if (!table || !table->buffer || !ggml_backend_supports_buft(backend, ggml_backend_buffer_get_type(table->buffer))) {
         return false;
     }
-    const int target_k = llama_sampler_chain_leading_top_k(ctx->sampling.samplers.at(seq));
-    if (target_k < 1 || target_k > 40) {
+    if (!llama_syncfree_samplers_supported(ctx->sampling.samplers.at(seq), dft->sampling.samplers.at(seq))) {
         return false;
     }
     for (const auto id : draft) {
         if (id < 0 || id >= (1 << 24)) {
             return false;
         }
-    }
-    auto * chain = dft->sampling.samplers.at(seq);
-    const int n = llama_sampler_chain_n(chain);
-    if (n < 3 || llama_sampler_chain_leading_top_k(chain) != 10 ||
-            std::strcmp(llama_sampler_name(llama_sampler_chain_get(chain, n - 1)), "dist") != 0) {
-        return false;
     }
     sf.ctx_dft = dft;
     sf.owner = ctx;
