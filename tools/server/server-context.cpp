@@ -4318,6 +4318,9 @@ private:
 
         // yield to the queue, so we can still handle metrics tasks while decoding
         // note: the sync is done here too, so that the wait is also covered by the yield
+        if (llama_syncfree_enabled()) {
+            llama_syncfree_disarm(ctx_tgt);
+        }
         if (llama_syncfree_enabled() && spec && params_base.speculative.draft.mtp_chain &&
                 params_base.speculative.draft.probabilistic && params_base.speculative.draft.backend_sampling) {
             for (auto & slot : slots) {
@@ -4587,7 +4590,7 @@ private:
                 const bool use_rejection = slot.use_spec_rejection() && !slot.spec_draft_q.empty();
 
                 std::vector<llama_token> accepted;
-                if (llama_syncfree_enabled() && llama_syncfree_accept(ctx_tgt, accepted)) {
+                if (llama_syncfree_enabled() && llama_syncfree_accept(ctx_tgt, slot.id, accepted)) {
                     for (const auto id : accepted) {
                         common_sampler_accept(slot.smpl.get(), id, true);
                     }

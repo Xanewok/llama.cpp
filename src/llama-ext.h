@@ -174,9 +174,10 @@ LLAMA_API uint32_t llama_model_get_tok_embd(const struct llama_model * model, fl
 
 // Private sync-free MTP prototype. Results are valid after the target context is synchronized.
 LLAMA_API bool llama_syncfree_enabled();
-LLAMA_API void llama_syncfree_reset(llama_context * ctx);
+LLAMA_API void llama_syncfree_reset(llama_context * ctx, llama_seq_id seq = -1);
+LLAMA_API void llama_syncfree_disarm(llama_context * ctx);
 LLAMA_API bool llama_syncfree_arm(llama_context * ctx, llama_seq_id seq, const std::vector<llama_token> & draft,
         const std::vector<std::vector<llama_token_data>> & q, float temp, uint32_t seed);
-LLAMA_API bool llama_syncfree_accept(llama_context * ctx, std::vector<llama_token> & accepted);
-LLAMA_API bool llama_syncfree_draft(llama_context * ctx, llama_pos pos, llama_token bonus,
+LLAMA_API bool llama_syncfree_accept(llama_context * ctx, llama_seq_id seq, std::vector<llama_token> & accepted);
+LLAMA_API bool llama_syncfree_draft(llama_context * ctx, llama_seq_id seq, llama_pos pos, llama_token bonus,
         std::vector<llama_token> & draft, std::vector<std::vector<llama_token_data>> * q);

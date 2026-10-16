@@ -400,6 +400,7 @@ private:
     int64_t n_sync_missed = 0;
     int64_t n_sync_idle_slow = 0;
     void tensor_get_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size);
+    bool syncfree_synchronize();
 
     // sequence embeddings output (map of [n_embd] vectors)
     // populated only when pooling_type != LLAMA_POOLING_TYPE_NONE

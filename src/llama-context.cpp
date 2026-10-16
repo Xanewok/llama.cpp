@@ -879,7 +879,10 @@ void llama_context::synchronize(bool force, const char * caller) {
         return;
     }
 
-    ggml_backend_sched_synchronize(sched.get());
+    if (force || !syncfree_synchronize()) {
+        ggml_backend_sched_synchronize(sched.get());
+    }
+    syncfree.completion_pending = false;
     backend_pending = false;
 
     // FIXME: if multiple single tokens are evaluated without a synchronization,
@@ -1012,6 +1015,7 @@ enum llama_pooling_type llama_context::pooling_type() const {
 }
 
 void llama_context::tensor_get_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
+    syncfree.completion_pending = false;
     if (sync_elide_env().mutant != 2) { backend_pending = true; }
     ggml_backend_tensor_get_async(backend, tensor, data, offset, size);
     if (sync_elide_env().mutant >= 3) { backend_pending = false; }
@@ -3044,7 +3048,7 @@ llm_graph_params llama_context::graph_params(
 
     res_params.mctx_fold   = mctx_fold_cur;
     res_params.fold_h_prev = mctx_fold_cur ? fold_h_cur : nullptr;
-    res_params.syncfree = syncfree.armed && syncfree.mctx && mctx_fold_cur && ubatch.n_tokens == (uint32_t) syncfree.k + 1 ? const_cast<llama_syncfree_state *>(&syncfree) : nullptr;
+    res_params.syncfree = syncfree.armed && syncfree.mctx && mctx_fold_cur && ubatch.n_tokens == syncfree.active.size()*(syncfree.k + 1) ? const_cast<llama_syncfree_state *>(&syncfree) : nullptr;
 
     return res_params;
 }
@@ -3071,6 +3075,7 @@ ggml_status llama_context::graph_compute(
 
     copy_experts.reset();
 
+    syncfree.completion_pending = false;
     if (sync_elide_env().mutant != 1) { backend_pending = true; }
     auto status = ggml_backend_sched_graph_compute_async(get_sched_graph(), gf);
     if (sync_elide_env().mutant >= 3) { backend_pending = false; }

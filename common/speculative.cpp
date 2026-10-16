@@ -1458,11 +1458,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
                 "MTP input row width must match the target h_nextn width");
         n_mtp_layers = std::max(1, (int) llama_model_n_layer_nextn(llama_get_model(ctx_dft)));
 
-        if (this->params.mtp_chain && n_seq != 1) {
+        if (this->params.mtp_chain && n_seq != 1 && !llama_syncfree_enabled()) {
             SPC_INF("MTP chain disabled: needs one sequence (n_seq=%u)\n", (unsigned) n_seq);
-            if (llama_syncfree_enabled()) {
-                SPC_INF("syncfree: fallback np=%u (prototype supports one sequence)\n", (unsigned) n_seq);
-            }
         }
 
         SPC_TRC("%s", "adding speculative implementation 'draft-mtp'\n");
@@ -1559,7 +1556,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
     void begin(llama_seq_id seq_id, const llama_tokens & prompt) override {
         if (llama_syncfree_enabled()) {
-            llama_syncfree_reset(params.ctx_tgt);
+            llama_syncfree_reset(params.ctx_tgt, seq_id);
         }
         // reset here rather than per round, or two identical requests differ
         common_sampler_reset(smpls[seq_id].get());
@@ -1777,60 +1774,76 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         return true;
     }
 
-    // Drafts one sequence's n_max tokens in a single decode, see llama_set_mtp_chain. p_min = 0 stops no step early,
-    // so it samples the tokens and candidates the step loop would. Returns false to leave the drafting to the loop.
+    // The chain cannot stop early, so it requires p_min = 0.
     bool draft_chain(common_speculative_draft_params_vec & dparams) {
         auto * ctx_dft = params.ctx_dft;
         const int32_t k = params.n_max;
 
-        llama_seq_id seq_id = -1;
-        // The chain graph requires one attached sampler; idle slots keep their samplers.
-        bool eligible = params.mtp_chain && n_seq == 1 && !chain_heads && !is_mem_shared && params.p_min <= 0.0f &&
+        std::vector<llama_seq_id> active;
+        bool eligible = params.mtp_chain && (n_seq == 1 || llama_syncfree_enabled()) && !chain_heads && !is_mem_shared && params.p_min <= 0.0f &&
                 params.probabilistic && params.backend_sampling && k >= 2 && k <= LLAMA_MTP_CHAIN_MAX;
-        for (llama_seq_id s = 0; eligible && s < (llama_seq_id) n_seq; ++s) {
-            if (dparams[s].drafting) {
-                eligible = seq_id < 0;
-                seq_id = s;
+        for (llama_seq_id seq = 0; eligible && seq < (llama_seq_id) n_seq; ++seq) {
+            if (dparams[seq].drafting) {
+                const auto & dp = dparams[seq];
+                eligible = (dp.result_q || llama_syncfree_enabled()) && backend_chains[seq] && (dp.n_max >= k || !llama_syncfree_enabled());
+                active.push_back(seq);
             }
         }
-        eligible = eligible && seq_id >= 0 && (dparams[seq_id].result_q || llama_syncfree_enabled()) && backend_chains[seq_id];
-
-        if (eligible && !mtp_chain_attach(seq_id, dparams[seq_id].temp, dparams[seq_id].seed)) {
-            SPC_WRN("%s", "the draft context does not take the MTP chain's sampler; drafting step by step\n");
-            params.mtp_chain = false;
-            eligible = false;
+        eligible = eligible && !active.empty();
+        if (llama_syncfree_enabled()) {
+            eligible = eligible && active.size()*k <= llama_n_ubatch(ctx_dft) && active.size()*k <= llama_n_batch(ctx_dft);
         }
-        for (llama_seq_id s = 0; s < (llama_seq_id) n_seq; ++s) {
-            if (!eligible || s != seq_id) {
-                mtp_chain_release(s);
+        for (auto seq : active) {
+            if (eligible && !mtp_chain_attach(seq, dparams[seq].temp, dparams[seq].seed)) {
+                SPC_WRN("%s", "the draft context does not take the MTP chain's sampler; drafting step by step\n");
+                params.mtp_chain = false;
+                eligible = false;
+            }
+        }
+        for (llama_seq_id seq = 0; seq < (llama_seq_id) n_seq; ++seq) {
+            if (!eligible || !dparams[seq].drafting) {
+                mtp_chain_release(seq);
             }
         }
         if (!eligible) {
             return false;
         }
 
-        auto & dp   = dparams[seq_id];
-        auto * smpl = smpls[seq_id].get();
-
-        if (llama_syncfree_enabled() && dp.n_max >= k &&
-                llama_syncfree_draft(params.ctx_tgt, dp.pos0, dp.id_last, *dp.result, dp.result_q)) {
-            for (const auto id : *dp.result) {
-                common_sampler_accept(smpl, id, true);
-                llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
+        bool cached = llama_syncfree_enabled();
+        for (auto seq : active) {
+            auto & dp = dparams[seq];
+            if (llama_syncfree_enabled()) {
+                cached = llama_syncfree_draft(params.ctx_tgt, seq, dp.pos0, dp.id_last, *dp.result, dp.result_q) && cached;
+            }
+        }
+        if (cached) {
+            for (auto seq : active) {
+                for (const auto id : *dparams[seq].result) {
+                    common_sampler_accept(smpls[seq].get(), id, true);
+                    llama_sampler_accept(mtp_chain_seqs[seq].smpl, id);
+                }
             }
             return true;
         }
-
         batch.clear();
-        for (int32_t s = 0; s < k; ++s) {
-            const int32_t idx = batch.add(dp.id_last, dp.pos0 + s, seq_id, true);
-            batch.set_embd_state(idx, { s == 0 ? pending_h.data() + (size_t) seq_id * n_embd : mtp_chain_zeros.data(), 1, (size_t) n_embd });
+        for (auto seq : active) {
+            auto & dp = dparams[seq];
+            dp.result->clear();
+            if (dp.result_q) {
+                dp.result_q->clear();
+            }
+            for (int32_t step = 0; step < k; ++step) {
+                const int32_t idx = batch.add(dp.id_last, dp.pos0 + step, seq, true);
+                batch.set_embd_state(idx, { step == 0 ? pending_h.data() + (size_t) seq*n_embd : mtp_chain_zeros.data(), 1, (size_t) n_embd });
+            }
         }
 
         if (!llama_set_mtp_chain(ctx_dft, k)) {
             SPC_WRN("%s", "the draft context cannot run the MTP chain; drafting step by step\n");
             params.mtp_chain = false;
-            mtp_chain_release(seq_id);
+            for (auto seq : active) {
+                mtp_chain_release(seq);
+            }
             batch.clear();
             return false;
         }
@@ -1849,19 +1862,22 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             return true;
         }
 
-        for (int32_t s = 0; s < k; ++s) {
-            const llama_token id = common_sampler_sample(smpl, ctx_dft, s, true);
-            GGML_ASSERT(id != LLAMA_TOKEN_NULL && llama_get_sampled_token_ith(ctx_dft, s) == id);
+        for (size_t q = 0; q < active.size(); ++q) {
+            const auto seq = active[q];
+            auto & dp = dparams[seq];
+            auto * smpl = smpls[seq].get();
+            for (int32_t step = 0; step < k; ++step) {
+                const int row = q*k + step;
+                const llama_token id = common_sampler_sample(smpl, ctx_dft, row, true);
+                GGML_ASSERT(id != LLAMA_TOKEN_NULL && llama_get_sampled_token_ith(ctx_dft, row) == id);
+                const auto * cur_p = common_sampler_get_candidates(smpl, true);
 
-            const auto * cur_p = common_sampler_get_candidates(smpl, true);
-
-            common_sampler_accept(smpl, id, true);
-            // commits the uniform behind this token, or the next round draws it again
-            llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
-
-            dp.result->push_back(id);
-            if (dp.result_q) {
-                dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
+                common_sampler_accept(smpl, id, true);
+                llama_sampler_accept(mtp_chain_seqs[seq].smpl, id);
+                dp.result->push_back(id);
+                if (dp.result_q) {
+                    dp.result_q->emplace_back(cur_p->data, cur_p->data + cur_p->size);
+                }
             }
         }
 
@@ -2803,8 +2819,8 @@ common_params common_base_params_to_speculative(const common_params & params) {
     result.moe_cache_size = 0;
 
     // the MTP chain samples every step of a round in one decode
-    if (params_spec.mtp_chain && params.n_parallel == 1 && params_spec.backend_sampling && params_spec.n_max > 1) {
-        result.n_outputs_max = std::max(result.n_outputs_max, params_spec.n_max);
+    if (params_spec.mtp_chain && (params.n_parallel == 1 || llama_syncfree_enabled()) && params_spec.backend_sampling && params_spec.n_max > 1) {
+        result.n_outputs_max = std::max(result.n_outputs_max, params.n_parallel*params_spec.n_max);
         result.n_outputs_max_per_seq = params_spec.n_max;
     }
 

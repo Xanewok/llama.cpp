@@ -1,5 +1,6 @@
 #include "models.h"
 #include "llama-syncfree.h"
+#include "llama-ext.h"
 #include "llama-impl.h"
 #include "llama-kv-cache.h"
 #include "llama-memory-recurrent.h"
@@ -620,11 +621,21 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
     inp->embd = ggml_new_tensor_2d(ctx0, GGML_TYPE_F32, hparams.n_embd_inp(), n_tokens);
     ggml_set_input(inp->embd);
 
-    // The chain runs the k rows of one decode as k serial draft steps, see llama_set_mtp_chain. Other shapes
-    // (a graph reserve, the catch-up decode) take the plain path.
+    // The chain runs k steps over all active sequences. Other shapes (reserve and catch-up) use the plain path.
     const int32_t n_chain = cparams.mtp_chain;
-    const bool    chain   = n_chain > 0 && (int64_t) n_tokens == n_chain && (int64_t) n_outputs == n_chain &&
-                            ubatch.token && ubatch.embd_state && samplers.size() == 1;
+    const int32_t n_chain_seq = llama_syncfree_enabled() ? ubatch.n_seqs_unq : 1;
+    bool          chain   = n_chain > 0 && n_chain_seq > 0 && (int64_t) n_tokens == n_chain*n_chain_seq && n_outputs == n_tokens &&
+                            ubatch.token && ubatch.embd_state && (samplers.size() == 1 || llama_syncfree_enabled());
+    if (chain && llama_syncfree_enabled()) {
+        for (int q = 0; q < n_chain_seq; ++q) {
+            const auto seq = ubatch.seq_id_unq[q];
+            chain = chain && samplers.count(seq);
+            for (int step = 0; step < n_chain; ++step) {
+                const int row = q*n_chain + step;
+                chain = chain && ubatch.n_seq_id[row] == 1 && ubatch.seq_id[row][0] == seq;
+            }
+        }
+    }
 
     // TODO: make static using `ggml_build_forward_select()`
     //       see llm_graph_context::build_inp_embd() for reference
@@ -663,7 +674,7 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
     ggml_tensor * chain_mask = inp_attn->self_kq_mask_cnv;
     if (params.syncfree_draft) {
         auto * sf = params.syncfree;
-        auto * positions = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, inp_attn->self_kq_mask_cnv->ne[0]);
+        auto * positions = ggml_new_tensor_2d(ctx0, GGML_TYPE_I32, inp_attn->self_kq_mask_cnv->ne[0], n_chain_seq);
         ggml_set_input(positions);
         ggml_set_name(positions, "syncfree_cell_pos");
         sf->cell_positions = positions;
@@ -780,11 +791,14 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
         GGML_ASSERT(ggml_nelements(inp_attn->self_v_idxs) == n_tokens && "MTP chain needs flash attention (untransposed V)");
 
         ggml_tensor * mask = chain_mask;
-        GGML_ASSERT(mask->ne[1] == n_tokens && mask->ne[2] == 1 && mask->ne[3] == 1);
+        GGML_ASSERT(mask->ne[1]*mask->ne[3] == n_tokens && mask->ne[2] == 1);
 
-        const llama_seq_id seq_id  = samplers.begin()->first;
-        llama_sampler *    sampler = samplers.begin()->second;
-        const int32_t      k_top   = llama_sampler_chain_leading_top_k(sampler);
+        int32_t k_top = 0;
+        for (int q = 0; q < n_chain_seq; ++q) {
+            const auto seq = ubatch.seq_id_unq[q];
+            GGML_ASSERT(samplers.count(seq));
+            k_top = std::max(k_top, llama_sampler_chain_leading_top_k(samplers.at(seq)));
+        }
         GGML_ASSERT(k_top > 0);
 
         ggml_tensor * tok_embd_w = layer.nextn.embed_tokens ? layer.nextn.embed_tokens : model.tok_embd;
@@ -792,7 +806,7 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
 
         const int64_t n_pp = hparams.n_pos_per_embd();
 
-        build_sampling_begin(n_chain);
+        build_sampling_begin(n_tokens);
 
         ggml_tensor * sampled = nullptr; // I32, the token the previous step picked
         ggml_tensor * h       = nullptr; // its h_nextn
@@ -802,30 +816,58 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
             ggml_tensor * e_in;
             ggml_tensor * h_in;
             if (s == 0) {
-                e_in = ggml_get_rows(ctx0, tok_embd_w, ggml_view_1d(ctx0, inp_tokens, 1, 0));
+                ggml_tensor * tokens;
+                if (params.syncfree_draft) {
+                    tokens = inp_tokens;
+                    h_in = h_embd;
+                } else if (n_chain_seq == 1) {
+                    tokens = ggml_view_1d(ctx0, inp_tokens, 1, 0);
+                    h_in = ggml_view_2d(ctx0, h_embd, h_embd->ne[0], 1, h_embd->nb[1], 0);
+                } else {
+                    tokens = ggml_cont_1d(ctx0, ggml_view_2d(ctx0, inp_tokens, 1, n_chain_seq, n_chain*inp_tokens->nb[0], 0), n_chain_seq);
+                    h_in = ggml_cont_2d(ctx0, ggml_view_2d(ctx0, h_embd, h_embd->ne[0], n_chain_seq, n_chain*h_embd->nb[1], 0), h_embd->ne[0], n_chain_seq);
+                }
+                e_in = ggml_get_rows(ctx0, tok_embd_w, tokens);
                 if (params.syncfree_draft) {
                     ggml_backend_sched_set_tensor_backend(sched, e_in, ggml_backend_sched_get_backend(sched, 0));
                 }
-                h_in = ggml_view_2d(ctx0, h_embd, h_embd->ne[0], 1, h_embd->nb[1], 0);
             } else {
-                ggml_tensor * row = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, vocab_map, ggml_reshape_1d(ctx0, sampled, 1)), 1);
+                ggml_tensor * row = ggml_reshape_1d(ctx0, ggml_get_rows(ctx0, vocab_map, ggml_reshape_1d(ctx0, sampled, n_chain_seq)), n_chain_seq);
                 e_in = ggml_get_rows(ctx0, model.draft_token_embd, row);
                 h_in = h;
             }
             cb(e_in, "mtp_tok_embd", il);
 
-            // positions are laid out [n_pp][n_tokens], rope reads a single row's n_pp values contiguously
-            ggml_tensor * pos = n_pp == 1
-                ? ggml_view_1d(ctx0, inp_pos, 1, s*ggml_element_size(inp_pos))
-                : ggml_reshape_1d(ctx0, ggml_cont(ctx0, ggml_view_2d(ctx0, inp_pos, 1, n_pp,
+            ggml_tensor * pos;
+            if (n_chain_seq == 1) {
+                pos = n_pp == 1 ? ggml_view_1d(ctx0, inp_pos, 1, s*ggml_element_size(inp_pos)) :
+                    ggml_reshape_1d(ctx0, ggml_cont(ctx0, ggml_view_2d(ctx0, inp_pos, 1, n_pp,
                         n_tokens*ggml_element_size(inp_pos), s*ggml_element_size(inp_pos))), n_pp);
+            } else {
+                // The input is [axis][sequence][step]. RoPE needs [axis][sequence] for this step.
+                pos = ggml_cont_1d(ctx0, ggml_view_3d(ctx0, inp_pos, 1, n_chain_seq, n_pp,
+                    n_chain*inp_pos->nb[0], n_tokens*inp_pos->nb[0], s*inp_pos->nb[0]), n_chain_seq*n_pp);
+            }
 
             llm_graph_input_attn_kv attn(hparams, cparams, inp_attn->mctx);
-            attn.self_k_rot       = inp_attn->self_k_rot;
-            attn.self_v_rot       = inp_attn->self_v_rot;
-            attn.self_k_idxs      = ggml_view_1d(ctx0, inp_attn->self_k_idxs, 1, s*inp_attn->self_k_idxs->nb[0]);
-            attn.self_v_idxs      = ggml_view_1d(ctx0, inp_attn->self_v_idxs, 1, s*inp_attn->self_v_idxs->nb[0]);
-            attn.self_kq_mask_cnv = ggml_view_4d(ctx0, mask, mask->ne[0], 1, 1, 1, mask->nb[1], mask->nb[2], mask->nb[3], s*mask->nb[1]);
+            attn.self_k_rot = inp_attn->self_k_rot;
+            attn.self_v_rot = inp_attn->self_v_rot;
+            auto step_idxs = [&](ggml_tensor * idxs) {
+                return n_chain_seq == 1 ? ggml_view_1d(ctx0, idxs, 1, s*idxs->nb[0]) :
+                    ggml_cont_1d(ctx0, ggml_view_2d(ctx0, idxs, 1, n_chain_seq, n_chain*idxs->nb[0], s*idxs->nb[0]), n_chain_seq);
+            };
+            attn.self_k_idxs = step_idxs(inp_attn->self_k_idxs);
+            attn.self_v_idxs = step_idxs(inp_attn->self_v_idxs);
+            if (n_chain_seq == 1) {
+                attn.self_kq_mask_cnv = ggml_view_4d(ctx0, mask, mask->ne[0], 1, 1, 1, mask->nb[1], mask->nb[2], mask->nb[3], s*mask->nb[1]);
+            } else if (mask->ne[3] == 1) {
+                attn.self_kq_mask_cnv = ggml_cont_4d(ctx0, ggml_view_2d(ctx0, mask, mask->ne[0], n_chain_seq,
+                    n_chain*mask->nb[1], s*mask->nb[1]), mask->ne[0], n_chain_seq, 1, 1);
+            } else {
+                GGML_ASSERT(mask->ne[3] == n_chain_seq);
+                attn.self_kq_mask_cnv = ggml_cont(ctx0, ggml_view_4d(ctx0, mask, mask->ne[0], 1, 1, n_chain_seq,
+                    mask->nb[1], mask->nb[2], mask->nb[3], s*mask->nb[1]));
+            }
 
             h     = mtp_block(e_in, h_in, pos, &attn);
             h_all = h_all ? ggml_concat(ctx0, h_all, h, 1) : h;
@@ -834,14 +876,23 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
             cb(logits, "result_output", -1);
 
             ggml_tensor * cand = build_sampling_cand(logits, k_top);
-            build_sampling_row(seq_id, sampler, logits, cand, 0, s, logits);
-
-            sampled = res->t_sampled[s];
-            GGML_ASSERT(sampled && "MTP chain: the sampler chain does not pick a token");
+            sampled = nullptr;
+            for (int q = 0; q < n_chain_seq; ++q) {
+                const auto seq = ubatch.seq_id_unq[q];
+                const int row = q*n_chain + s;
+                build_sampling_row(seq, samplers.at(seq), logits, cand, q, row, logits);
+                auto * token = res->t_sampled[row];
+                GGML_ASSERT(token && "MTP chain: the sampler chain does not pick a token");
+                sampled = sampled ? ggml_concat(ctx0, sampled, token, 0) : token;
+            }
         }
 
         build_sampling_end();
 
+        if (n_chain_seq > 1) {
+            h_all = ggml_cont_2d(ctx0, ggml_permute(ctx0, ggml_reshape_3d(ctx0, h_all, h_all->ne[0], n_chain_seq, n_chain),
+                0, 2, 1, 3), h_all->ne[0], n_tokens);
+        }
         res->t_h_nextn = h_all;
         ggml_build_forward_expand(gf, h_all);
         return;

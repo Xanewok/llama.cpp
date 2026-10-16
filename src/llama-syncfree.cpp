@@ -1,4 +1,5 @@
 #include "llama-syncfree.h"
+#include "ggml-round-trace.h"
 #include "llama-context.h"
 #include "llama-ext.h"
 #include "llama-kv-cache.h"
@@ -17,27 +18,45 @@ bool llama_syncfree_enabled() {
     return enabled;
 }
 
-void llama_syncfree_reset(llama_context * ctx) {
+void llama_syncfree_reset(llama_context * ctx, llama_seq_id seq) {
     auto & sf = ctx->syncfree;
-    sf.armed = sf.ready = sf.cache = false;
-    sf.k = 0;
+    if (seq < 0) {
+        sf.armed = sf.ready = false;
+        for (auto & state : sf.seqs) {
+            state = {};
+        }
+    } else if ((size_t) seq < sf.seqs.size()) {
+        sf.seqs[seq] = {};
+    }
+}
+
+void llama_syncfree_disarm(llama_context * ctx) {
+    auto & sf = ctx->syncfree;
+    sf.armed = sf.ready = false;
+    for (auto & state : sf.seqs) {
+        state.armed = state.ready = false;
+    }
 }
 
 bool llama_syncfree_arm(llama_context * ctx, llama_seq_id seq, const std::vector<llama_token> & draft,
         const std::vector<std::vector<llama_token_data>> & q, float temp, uint32_t seed) {
     auto & sf = ctx->syncfree;
-    sf.armed = sf.ready = sf.cache = false;
     auto * dft = ctx->mtp_fold_dft;
-    if (!llama_syncfree_enabled() || seq != 0 || ctx->n_seq_max() != 1 || !dft ||
+    if (!llama_syncfree_enabled() || seq < 0 || seq >= (llama_seq_id) ctx->n_seq_max() || !dft ||
             draft.size() < 2 || draft.size() > LLAMA_MTP_CHAIN_MAX ||
             !ctx->get_cparams().flash_attn || !dft->get_cparams().flash_attn ||
-            ctx->get_cparams().cb_eval || !dft->set_mtp_chain(draft.size())) {
+            ctx->get_cparams().cb_eval || !dft->set_mtp_chain(draft.size()) ||
+            !ctx->sampling.samplers.count(seq) || !dft->sampling.samplers.count(seq)) {
         return false;
     }
-    if (ctx->sampling.samplers.size() != 1 || !ctx->sampling.samplers.count(0)) {
+    const auto & model = ctx->get_model();
+    const auto & nextn = model.layers[model.hparams.n_layer()].nextn;
+    auto * table = nextn.embed_tokens ? nextn.embed_tokens : model.tok_embd;
+    auto * backend = ggml_backend_sched_get_backend(ctx->get_sched(), 0);
+    if (!table || !table->buffer || !ggml_backend_supports_buft(backend, ggml_backend_buffer_get_type(table->buffer))) {
         return false;
     }
-    const int target_k = llama_sampler_chain_leading_top_k(ctx->sampling.samplers.at(0));
+    const int target_k = llama_sampler_chain_leading_top_k(ctx->sampling.samplers.at(seq));
     if (target_k < 1 || target_k > 40) {
         return false;
     }
@@ -46,10 +65,7 @@ bool llama_syncfree_arm(llama_context * ctx, llama_seq_id seq, const std::vector
             return false;
         }
     }
-    if (dft->sampling.samplers.size() != 1 || !dft->sampling.samplers.count(0)) {
-        return false;
-    }
-    auto * chain = dft->sampling.samplers.at(0);
+    auto * chain = dft->sampling.samplers.at(seq);
     const int n = llama_sampler_chain_n(chain);
     if (n < 3 || llama_sampler_chain_leading_top_k(chain) != 10 ||
             std::strcmp(llama_sampler_name(llama_sampler_chain_get(chain, n - 1)), "dist") != 0) {
@@ -57,8 +73,11 @@ bool llama_syncfree_arm(llama_context * ctx, llama_seq_id seq, const std::vector
     }
     sf.ctx_dft = dft;
     sf.owner = ctx;
-    sf.greedy = temp <= 0.0f;
-    if (!sf.greedy) {
+    sf.seqs.resize(ctx->n_seq_max());
+    auto & state = sf.seqs[seq];
+    state.armed = state.ready = state.cache = false;
+    state.greedy = temp <= 0.0f;
+    if (!state.greedy) {
         if (q.size() != draft.size()) {
             return false;
         }
@@ -73,27 +92,29 @@ bool llama_syncfree_arm(llama_context * ctx, llama_seq_id seq, const std::vector
             }
         }
     }
-    if (sf.k == 0 || sf.seed != seed) {
-        sf.seed = seed;
-        sf.rng.seed(seed == LLAMA_DEFAULT_SEED ? std::random_device{}() : seed ^ 0x53465245u);
+    if (state.k == 0 || state.seed != seed) {
+        state.seed = seed;
+        state.rng.seed(seed == LLAMA_DEFAULT_SEED ? std::random_device{}() : seed ^ 0x53465245u);
     }
-    sf.k = draft.size();
-    sf.packet.assign(2 + 23*sf.k, 0.0f);
-    sf.packet[1] = sf.greedy ? 1.0f : 0.0f;
-    for (int i = 0; i < sf.k; ++i) {
-        sf.packet[2 + i] = draft[i];
+    state.k = draft.size();
+    state.packet.assign(2 + 23*state.k, 0.0f);
+    state.packet[1] = state.greedy ? 1.0f : 0.0f;
+    const int k = state.k;
+    for (int i = 0; i < k; ++i) {
+        state.packet[2 + i] = draft[i];
         for (int j = 0; j < 10; ++j) {
-            sf.packet[2 + sf.k + i*10 + j] = -1.0f;
-            if (!sf.greedy && j < (int) q[i].size()) {
-                sf.packet[2 + sf.k + i*10 + j] = q[i][j].id;
-                sf.packet[2 + 11*sf.k + i*10 + j] = q[i][j].p;
+            state.packet[2 + k + i*10 + j] = -1.0f;
+            if (!state.greedy && j < (int) q[i].size()) {
+                state.packet[2 + k + i*10 + j] = q[i][j].id;
+                state.packet[2 + 11*k + i*10 + j] = q[i][j].p;
             }
         }
     }
     std::uniform_real_distribution<float> uniform(0.0f, 1.0f);
-    for (int i = 0; i < 2*sf.k; ++i) {
-        sf.packet[2 + 21*sf.k + i] = uniform(sf.rng);
+    for (int i = 0; i < 2*k; ++i) {
+        state.packet[2 + 21*k + i] = uniform(state.rng);
     }
+    state.armed = true;
     sf.armed = true;
     return true;
 }
@@ -102,63 +123,111 @@ bool llama_context::syncfree_prepare(const llama_ubatch & verify) {
     auto & sf = syncfree;
     sf.ready = false;
     sf.mctx.reset();
-    if (!sf.armed || !mctx_fold_cur || verify.n_tokens != (uint32_t) sf.k + 1 ||
-            verify.n_seqs_unq != 1 || verify.seq_id_unq[0] != 0 ||
-            n_outputs != verify.n_tokens || sampling.samplers.size() != 1 ||
-            sf.ctx_dft->sampling.samplers.size() != 1 || !loras->empty()) {
+    auto fail = [&]() {
         sf.armed = false;
+        for (auto & state : sf.seqs) {
+            state.armed = false;
+        }
         return false;
+    };
+    if (!sf.armed || !mctx_fold_cur || verify.n_seqs_unq == 0 ||
+            n_outputs != verify.n_tokens || !loras->empty() ||
+            !verify.token || verify.n_pos != model.hparams.n_pos_per_embd() || (verify.n_pos != 1 && verify.n_pos != 4)) {
+        return fail();
     }
-    if (!verify.token || verify.n_pos != model.hparams.n_pos_per_embd() || (verify.n_pos != 1 && verify.n_pos != 4)) {
-        sf.armed = false;
-        return false;
-    }
-    for (uint32_t axis = 0; axis < verify.n_pos; ++axis) {
-        for (uint32_t i = 0; i < verify.n_tokens; ++i) {
-            if (verify.pos[axis*verify.n_tokens + i] != verify.pos[0] + (llama_pos) i ||
-                    verify.n_seq_id[i] != 1 || verify.seq_id[i][0] != 0) {
-                sf.armed = false;
-                return false;
+    const int ns = verify.n_seqs_unq;
+    sf.active.assign(verify.seq_id_unq, verify.seq_id_unq + ns);
+    sf.packet.clear();
+    sf.k = 0;
+    for (int s = 0; s < ns; ++s) {
+        const auto seq = sf.active[s];
+        if (seq < 0 || (size_t) seq >= sf.seqs.size() || !sf.seqs[seq].armed ||
+                !sampling.samplers.count(seq) || !sf.ctx_dft->sampling.samplers.count(seq)) {
+            return fail();
+        }
+        auto & state = sf.seqs[seq];
+        if (s == 0) {
+            sf.k = state.k;
+        }
+        if (state.greedy != sf.seqs[sf.active[0]].greedy || sf.k != state.k || verify.n_tokens != (uint32_t) ns*(sf.k + 1) ||
+                llama_sampler_chain_leading_top_k(sampling.samplers.at(seq)) !=
+                    llama_sampler_chain_leading_top_k(sampling.samplers.at(sf.active[0]))) {
+            return fail();
+        }
+        const int begin = s*(sf.k + 1);
+        const llama_pos base = verify.pos[begin];
+        if (base < 0 || base > (1 << 23)) {
+            return fail();
+        }
+        for (int i = 0; i <= sf.k; ++i) {
+            if (verify.n_seq_id[begin + i] != 1 || verify.seq_id[begin + i][0] != seq ||
+                    (i > 0 && verify.token[begin + i] != (llama_token) state.packet[2 + i - 1])) {
+                return fail();
+            }
+            for (uint32_t axis = 0; axis < verify.n_pos; ++axis) {
+                if (verify.pos[axis*verify.n_tokens + begin + i] != base + i) {
+                    return fail();
+                }
             }
         }
+        state.packet[0] = base;
+        sf.packet.insert(sf.packet.end(), state.packet.begin(), state.packet.end());
     }
-    if (verify.pos[0] < 0 || verify.pos[0] > (1 << 23)) {
-        sf.armed = false;
-        return false;
-    }
-    if (!sf.host_buffer) {
+    const size_t host_bytes = (size_t) ns*(4 + sf.k + verify.n_pos*sf.k + 31*sf.k)*sizeof(int32_t);
+    if (!sf.host_buffer || ggml_backend_buffer_get_size(sf.host_buffer.get()) < host_bytes) {
+        if (sf.host_buffer) {
+            synchronize();
+        }
         auto * device = model.dev_output();
         auto * buft = device ? ggml_backend_dev_host_buffer_type(device) : nullptr;
-        sf.host_buffer.reset(ggml_backend_buft_alloc_buffer(buft ? buft : ggml_backend_cpu_buffer_type(), 4096));
+        sf.host_buffer.reset(ggml_backend_buft_alloc_buffer(buft ? buft : ggml_backend_cpu_buffer_type(), host_bytes));
         if (!sf.host_buffer) {
-            sf.armed = false;
-            return false;
+            return fail();
         }
     }
-    sf.packet[0] = verify.pos[0];
+    if (!sf.completion_checked) {
+        sf.completion_checked = true;
+        sf.completion_supported = true;
+        for (const auto & backend : backends) {
+            auto * dev = ggml_backend_get_device(backend.get());
+            const bool synchronous = backend.get() == backend_cpu;
+            ggml_backend_event_ptr event(synchronous ? nullptr : ggml_backend_event_new(dev));
+            sf.completion_supported &= synchronous || bool(event);
+            sf.completion.push_back(std::move(event));
+        }
+    }
     sf.ubatch = verify;
     auto data = std::make_shared<llama_ubatch::data_t>();
     sf.ubatch.data = data;
-    sf.ubatch.n_tokens = sf.ubatch.n_seq_tokens = sf.k;
-    sf.ubatch.n_seqs = sf.ubatch.n_seqs_unq = sf.ubatch.b_equal_seqs = 1;
+    const int nt = ns*sf.k;
+    sf.ubatch.n_tokens = nt;
+    sf.ubatch.n_seq_tokens = sf.k;
+    sf.ubatch.n_seqs = sf.ubatch.n_seqs_unq = ns;
+    sf.ubatch.b_equal_seqs = 1;
     sf.ubatch.type = nullptr;
     sf.ubatch.decision_order = nullptr;
-    data->token.assign(sf.k, 0);
-    data->embd_state.assign((size_t) sf.k*model.hparams.n_embd, 0.0f);
-    data->pos.resize(sf.k*verify.n_pos);
-    data->n_seq_id.assign(sf.k, 1);
-    data->seq_id_data.assign(sf.k, 0);
-    data->seq_id.resize(sf.k);
-    data->seq_id_unq = {0};
-    data->seq_idx.assign(LLAMA_MAX_SEQ, 0);
-    data->output.assign(sf.k, 1);
-    data->batch_idxs.resize(sf.k);
-    const llama_pos scratch_pos = verify.pos[0] + sf.k + 1;
-    for (int i = 0; i < sf.k; ++i) {
-        data->seq_id[i] = &data->seq_id_data[i];
-        data->batch_idxs[i] = i;
-        for (uint32_t axis = 0; axis < verify.n_pos; ++axis) {
-            data->pos[axis*sf.k + i] = scratch_pos + i;
+    data->token.assign(nt, 0);
+    data->embd_state.assign((size_t) nt*model.hparams.n_embd, 0.0f);
+    data->pos.resize(nt*verify.n_pos);
+    data->n_seq_id.assign(nt, 1);
+    data->seq_id_data.resize(nt);
+    data->seq_id.resize(nt);
+    data->seq_id_unq = sf.active;
+    data->seq_idx.assign(LLAMA_MAX_SEQ, -1);
+    data->output.assign(nt, 1);
+    data->batch_idxs.resize(nt);
+    for (int s = 0; s < ns; ++s) {
+        const auto seq = sf.active[s];
+        data->seq_idx[seq] = s;
+        const llama_pos scratch_pos = (llama_pos) sf.seqs[seq].packet[0] + sf.k + 1;
+        for (int i = 0; i < sf.k; ++i) {
+            const int row = s*sf.k + i;
+            data->seq_id_data[row] = seq;
+            data->seq_id[row] = &data->seq_id_data[row];
+            data->batch_idxs[row] = row;
+            for (uint32_t axis = 0; axis < verify.n_pos; ++axis) {
+                data->pos[axis*nt + row] = scratch_pos + i;
+            }
         }
     }
     sf.ubatch.token = data->token.data();
@@ -171,9 +240,11 @@ bool llama_context::syncfree_prepare(const llama_ubatch & verify) {
     sf.ubatch.output = data->output.data();
     sf.mctx = sf.ctx_dft->mtp_fold_prepare(sf.ubatch);
     if (!sf.mctx || !sf.mctx->apply()) {
-        sf.ctx_dft->get_memory()->seq_rm(0, scratch_pos, -1);
-        sf.armed = false;
-        return false;
+        for (auto seq : sf.active) {
+            sf.ctx_dft->get_memory()->seq_rm(seq, (llama_pos) sf.seqs[seq].packet[0] + sf.k + 1, -1);
+        }
+        sf.mctx.reset();
+        return fail();
     }
     for (const auto & entry : sf.ctx_dft->sampling.samplers) {
         llama_sampler_backend_begin(entry.second);
@@ -184,7 +255,7 @@ bool llama_context::syncfree_prepare(const llama_ubatch & verify) {
 llm_graph_params llama_context::syncfree_graph_params(llm_graph_result * res) const {
     auto & sf = const_cast<llama_syncfree_state &>(syncfree);
     auto p = sf.ctx_dft->graph_params(res, sf.ubatch, sf.mctx.get(), LLM_GRAPH_TYPE_DECODER_MTP);
-    p.n_outputs = sf.k;
+    p.n_outputs = sf.k*sf.active.size();
     p.mctx_fold = nullptr;
     p.fold_h_prev = nullptr;
     p.syncfree = &sf;
@@ -194,9 +265,9 @@ llm_graph_params llama_context::syncfree_graph_params(llm_graph_result * res) co
 
 static void syncfree_accept_cpu(ggml_tensor * dst, int, int, void *) {
     const int k = dst->src[2]->ne[0] - 1;
-    ggml_syncfree_accept((const float *) dst->src[0]->data, (const int32_t *) dst->src[1]->data,
+    ggml_syncfree_accept_batch((const float *) dst->src[0]->data, (const int32_t *) dst->src[1]->data,
         (const int32_t *) dst->src[2]->data, (const float *) dst->src[3]->data,
-        (int32_t *) dst->data, k, (dst->ne[0] - 4 - k)/k, dst->src[0]->ne[0]);
+        (int32_t *) dst->data, k, (dst->ne[0] - 4 - k)/k, dst->src[0]->ne[0], dst->ne[1]);
 }
 
 static void syncfree_mask_cpu(ggml_tensor * dst, int, int, void *) {
@@ -206,9 +277,13 @@ static void syncfree_mask_cpu(ggml_tensor * dst, int, int, void *) {
     const float * packet = (const float *) dst->src[3]->data;
     const int k = (dst->src[3]->ne[0] - 2)/23;
     float * out = (float *) dst->data;
+    const int ns = dst->src[3]->ne[1];
+    const int stride = dst->src[2]->ne[0];
     for (int64_t i = 0; i < ggml_nelements(dst); ++i) {
-        const int p = pos[i % dst->ne[0]];
-        out[i] = p >= accept[2] && p < (int) packet[0] + k + 1 ? -INFINITY : mask[i];
+        const int seq = i/(dst->ne[0]*k);
+        GGML_ASSERT(seq < ns);
+        out[i] = ggml_syncfree_mask_value(mask[i], pos[seq*dst->ne[0] + i % dst->ne[0]],
+            accept + seq*stride, packet + seq*(2 + 23*k), k);
     }
 }
 
@@ -226,8 +301,11 @@ class llm_graph_input_syncfree : public llm_graph_input_i {
 public:
     llama_syncfree_state * sf;
     std::vector<llm_graph_input_ptr> children;
+    const std::vector<llama_seq_id> active;
+    const bool greedy;
 
-    explicit llm_graph_input_syncfree(llama_syncfree_state * sf) : sf(sf) {}
+    explicit llm_graph_input_syncfree(llama_syncfree_state * sf) :
+        sf(sf), active(sf->active), greedy(sf->seqs[sf->active[0]].greedy) {}
 
     void set_input(const llama_ubatch *) override {
         ggml_backend_tensor_set(sf->packet_tensor, sf->packet.data(), 0, sf->packet.size()*sizeof(float));
@@ -235,22 +313,27 @@ public:
             input->set_input(&sf->ubatch);
         }
         const auto * kv = dynamic_cast<const llama_kv_cache *>(sf->ctx_dft->get_memory());
-        const auto & cells = kv->get_cells(0);
-        std::vector<int32_t> positions(sf->cell_positions->ne[0], -1);
-        for (size_t i = 0; i < positions.size() && i < cells.size(); ++i) {
-            if (!cells.is_empty(i) && cells.seq_has(i, 0)) {
-                positions[i] = cells.pos_get(i);
+        const int nkv = sf->cell_positions->ne[0];
+        std::vector<int32_t> positions(nkv*sf->active.size(), -1);
+        for (size_t s = 0; s < sf->active.size(); ++s) {
+            const auto seq = sf->active[s];
+            const auto & cells = kv->get_cells(seq);
+            for (size_t i = 0; i < (size_t) nkv && i < cells.size(); ++i) {
+                if (!cells.is_empty(i) && cells.seq_has(i, seq)) {
+                    positions[s*nkv + i] = cells.pos_get(i);
+                }
             }
         }
         ggml_backend_tensor_set(sf->cell_positions, positions.data(), 0, positions.size()*sizeof(int32_t));
     }
 
     bool can_reuse(const llm_graph_params & params) override {
-        if (params.syncfree != sf || !sf->armed) {
+        if (params.syncfree != sf || !sf->armed || active != sf->active || greedy != sf->seqs[sf->active[0]].greedy) {
             return false;
         }
         auto p = sf->owner->syncfree_graph_params(params.res);
-        bool reuse = sf->packet_tensor->ne[0] == (int64_t) sf->packet.size();
+        bool reuse = sf->packet_tensor->ne[0]*sf->packet_tensor->ne[1] == (int64_t) sf->packet.size() &&
+            sf->packet_tensor->ne[1] == (int64_t) sf->active.size();
         for (const auto & input : children) {
             reuse = input->can_reuse(p) && reuse;
         }
@@ -270,15 +353,18 @@ void llama_syncfree_build(const llama_model & model, const llm_graph_params & pa
     const auto target_candidates = res->t_candidates;
     auto * target_h = res->t_h_nextn;
     auto * target_output = res->t_logits;
-    GGML_ASSERT(target_sampled.size() == (size_t) sf->k + 1);
+    const int ns = sf->active.size();
+    const int k = sf->k;
+    const bool greedy = sf->seqs[sf->active[0]].greedy;
+    GGML_ASSERT(target_sampled.size() == (size_t) ns*(k + 1));
 
     ggml_tensor * p = nullptr;
     ggml_tensor * ids = nullptr;
     ggml_tensor * sampled = nullptr;
-    for (int i = 0; i <= sf->k; ++i) {
+    for (int i = 0; i < ns*(k + 1); ++i) {
         auto * row_p = target_probs[i];
         auto * row_ids = target_candidates[i];
-        if (sf->greedy) {
+        if (greedy) {
             row_p = ggml_cast(ctx, target_sampled[i], GGML_TYPE_F32);
             row_ids = target_sampled[i];
         }
@@ -290,19 +376,32 @@ void llama_syncfree_build(const llama_model & model, const llm_graph_params & pa
         auto * token = ggml_reshape_1d(ctx, target_sampled[i], 1);
         sampled = sampled ? ggml_concat(ctx, sampled, token, 0) : token;
     }
-    sf->packet_tensor = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, sf->packet.size());
+    p = ggml_reshape_3d(ctx, p, p->ne[0], k + 1, ns);
+    ids = ggml_reshape_3d(ctx, ids, ids->ne[0], k + 1, ns);
+    sampled = ggml_reshape_2d(ctx, sampled, k + 1, ns);
+    sf->packet_tensor = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 2 + 23*k, ns);
     ggml_set_input(sf->packet_tensor);
     ggml_tensor * args[] = { p, ids, sampled, sf->packet_tensor };
-    sf->accept = ggml_custom_4d(ctx, GGML_TYPE_I32, 4 + sf->k + sf->ubatch.n_pos*sf->k, 1, 1, 1,
+    sf->accept = ggml_custom_4d(ctx, GGML_TYPE_I32, 4 + k + sf->ubatch.n_pos*k, ns, 1, 1,
         args, 4, syncfree_accept_cpu, 1, nullptr);
     ggml_set_name(sf->accept, "syncfree_accept");
     ggml_backend_sched_set_tensor_backend(params.sched, sf->accept, ggml_backend_sched_get_backend(params.sched, 0));
     ggml_set_output(sf->accept);
     ggml_build_forward_expand(gf, sf->accept);
-    sf->token = ggml_view_1d(ctx, sf->accept, 1, sizeof(int32_t));
-    auto * h_idx = ggml_view_1d(ctx, sf->accept, 1, 0);
-    sf->hidden = ggml_get_rows(ctx, target_h, h_idx);
-    sf->positions = ggml_view_1d(ctx, sf->accept, sf->ubatch.n_pos*sf->k, (4 + sf->k)*sizeof(int32_t));
+    sf->token = ggml_cont_1d(ctx, ggml_view_2d(ctx, sf->accept, 1, ns, sf->accept->nb[1], sizeof(int32_t)), ns);
+    sf->hidden = nullptr;
+    for (int s = 0; s < ns; ++s) {
+        auto * h_idx = ggml_view_1d(ctx, sf->accept, 1, s*sf->accept->nb[1]);
+        auto * h_seq = ggml_view_2d(ctx, target_h, target_h->ne[0], k + 1, target_h->nb[1], s*(k + 1)*target_h->nb[1]);
+        auto * h = ggml_get_rows(ctx, h_seq, h_idx);
+        sf->hidden = sf->hidden ? ggml_concat(ctx, sf->hidden, h, 1) : h;
+    }
+    sf->positions = nullptr;
+    for (uint32_t axis = 0; axis < sf->ubatch.n_pos; ++axis) {
+        auto * pos = ggml_cont_1d(ctx, ggml_view_2d(ctx, sf->accept, k, ns, sf->accept->nb[1],
+            (4 + k + axis*k)*sizeof(int32_t)), k*ns);
+        sf->positions = sf->positions ? ggml_concat(ctx, sf->positions, pos, 0) : pos;
+    }
 
     auto wrapper = std::make_unique<llm_graph_input_syncfree>(sf);
     const size_t input_begin = res->inputs.size();
@@ -339,17 +438,19 @@ void llama_syncfree_build(const llama_model & model, const llm_graph_params & pa
 
 void llama_context::syncfree_readback() {
     auto & sf = syncfree;
+    const int ns = sf.active.size();
+    const int nt = ns*sf.k;
     auto * accepted = (int32_t *) ggml_backend_buffer_get_base(sf.host_buffer.get());
-    auto * draft = accepted + 4 + sf.k + sf.ubatch.n_pos*sf.k;
-    auto * probs = (float *) (draft + sf.k);
-    auto * logits = probs + sf.k*10;
-    auto * candidates = (int32_t *) (logits + sf.k*10);
+    auto * draft = accepted + ns*(4 + sf.k + sf.ubatch.n_pos*sf.k);
+    auto * probs = (float *) (draft + nt);
+    auto * logits = probs + nt*10;
+    auto * candidates = (int32_t *) (logits + nt*10);
     auto copy = [&](ggml_tensor * t, void * out) {
         auto * backend = ggml_backend_sched_get_tensor_backend(get_sched_graph(), t);
         tensor_get_async(backend, t, out, 0, ggml_nbytes(t));
     };
     copy(sf.accept, accepted);
-    for (int i = 0; i < sf.k; ++i) {
+    for (int i = 0; i < nt; ++i) {
         GGML_ASSERT(ggml_nelements(sf.probs[i]) == sf.n_candidates && ggml_nelements(sf.candidates[i]) == sf.n_candidates &&
             ggml_nelements(sf.logits[i]) == sf.n_candidates && ggml_nelements(sf.sampled[i]) == 1);
         copy(sf.sampled[i], &draft[i]);
@@ -359,49 +460,90 @@ void llama_context::syncfree_readback() {
     }
     sf.ready = true;
     sf.armed = false;
-    if (++sf.rounds == 1) {
-        LLAMA_LOG_INFO("syncfree: fused np=1 k=%d accept+draft queued before target sync\n", sf.k);
+    for (auto seq : sf.active) {
+        sf.seqs[seq].ready = true;
+        sf.seqs[seq].armed = false;
+    }
+    if (sf.completion_supported && ggml_backend_sched_get_n_copies(get_sched_graph()) == 1) {
+        for (size_t i = 0; i < sf.completion.size(); ++i) {
+            if (sf.completion[i]) {
+                ggml_backend_event_record(sf.completion[i].get(), backends[i].get());
+            }
+        }
+        sf.completion_pending = true;
+    }
+    if (sf.logged_np != (uint32_t) ns) {
+        sf.logged_np = ns;
+        LLAMA_LOG_INFO("syncfree: fused np=%d k=%d accept+draft queued before target sync, output=%s\n",
+            ns, sf.k, sf.completion_pending ? "events" : "backend");
     }
 }
 
-bool llama_syncfree_accept(llama_context * ctx, std::vector<llama_token> & accepted) {
-    auto & sf = ctx->syncfree;
-    if (!sf.ready) {
+bool llama_context::syncfree_synchronize() {
+    auto & sf = syncfree;
+    if (!sf.completion_pending) {
         return false;
     }
-    auto * words = (int32_t *) ggml_backend_buffer_get_base(sf.host_buffer.get());
-    const int n_accept = 4 + sf.k + sf.ubatch.n_pos*sf.k;
-    sf.accepted.assign(words, words + n_accept);
-    sf.draft.assign(words + n_accept, words + n_accept + sf.k);
-    auto * probs = (float *) (words + n_accept + sf.k);
-    auto * logits = probs + sf.k*10;
-    auto * candidates = (int32_t *) (logits + sf.k*10);
-    const int a = sf.accepted[0];
-    GGML_ASSERT(a >= 0 && a <= sf.k);
-    accepted.assign(sf.accepted.begin() + 3, sf.accepted.begin() + 4 + a);
-    sf.q.assign(sf.k, {});
-    for (int i = 0; i < sf.k; ++i) {
-        for (int j = 0; j < sf.n_candidates; ++j) {
-            sf.q[i].push_back({candidates[i*10 + j], logits[i*10 + j], probs[i*10 + j]});
+    ggml_round_trace_scope trace("syncfree_output_wait");
+    // The events follow every output copy. A later enqueue invalidates this completion point.
+    for (const auto & event : sf.completion) {
+        if (event) {
+            ggml_backend_event_synchronize(event.get());
         }
     }
-    sf.ctx_dft->get_memory()->seq_rm(0, (llama_pos) sf.packet[0] + sf.k + 1, -1);
-    sf.ready = false;
-    sf.cache = true;
     return true;
 }
 
-bool llama_syncfree_draft(llama_context * ctx, llama_pos pos, llama_token bonus,
+bool llama_syncfree_accept(llama_context * ctx, llama_seq_id seq, std::vector<llama_token> & accepted) {
+    auto & sf = ctx->syncfree;
+    if (!sf.ready || seq < 0 || (size_t) seq >= sf.seqs.size() || !sf.seqs[seq].ready) {
+        return false;
+    }
+    auto & state = sf.seqs[seq];
+    const auto it = std::find(sf.active.begin(), sf.active.end(), seq);
+    GGML_ASSERT(it != sf.active.end());
+    const int s = it - sf.active.begin();
+    const int ns = sf.active.size();
+    const int nt = ns*sf.k;
+    auto * words = (int32_t *) ggml_backend_buffer_get_base(sf.host_buffer.get());
+    const int n_accept = 4 + sf.k + sf.ubatch.n_pos*sf.k;
+    state.accepted.assign(words + s*n_accept, words + (s + 1)*n_accept);
+    auto * draft = words + ns*n_accept;
+    state.draft.assign(draft + s*sf.k, draft + (s + 1)*sf.k);
+    auto * probs = (float *) (draft + nt);
+    auto * logits = probs + nt*10;
+    auto * candidates = (int32_t *) (logits + nt*10);
+    const int a = state.accepted[0];
+    GGML_ASSERT(a >= 0 && a <= sf.k);
+    accepted.assign(state.accepted.begin() + 3, state.accepted.begin() + 4 + a);
+    state.q.assign(sf.k, {});
+    for (int i = 0; i < sf.k; ++i) {
+        for (int j = 0; j < sf.n_candidates; ++j) {
+            const int row = (s*sf.k + i)*10 + j;
+            state.q[i].push_back({candidates[row], logits[row], probs[row]});
+        }
+    }
+    sf.ctx_dft->get_memory()->seq_rm(seq, (llama_pos) state.packet[0] + sf.k + 1, -1);
+    state.ready = false;
+    state.cache = true;
+    return true;
+}
+
+bool llama_syncfree_draft(llama_context * ctx, llama_seq_id seq, llama_pos pos, llama_token bonus,
         std::vector<llama_token> & draft, std::vector<std::vector<llama_token_data>> * q) {
     auto & sf = ctx->syncfree;
-    const bool valid = sf.cache && pos == sf.accepted[2] && bonus == sf.accepted[1];
-    sf.cache = false;
+    if (seq < 0 || (size_t) seq >= sf.seqs.size()) {
+        return false;
+    }
+    auto & state = sf.seqs[seq];
+    const bool valid = state.cache && pos == state.accepted[2] && bonus == state.accepted[1];
+    state.cache = false;
     if (!valid) {
         return false;
     }
-    draft = sf.draft;
+    draft = state.draft;
     if (q) {
-        *q = sf.q;
+        *q = state.q;
     }
     return true;
 }

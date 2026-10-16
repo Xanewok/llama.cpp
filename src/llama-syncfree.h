@@ -8,20 +8,29 @@
 struct llama_context;
 struct llama_model;
 
-struct llama_syncfree_state {
+struct llama_syncfree_seq {
     bool armed = false;
     bool ready = false;
     bool cache = false;
     bool greedy = false;
     int32_t k = 0;
-    int32_t n_candidates = 0;
     uint32_t seed = 0;
-    uint64_t rounds = 0;
     std::mt19937 rng;
     std::vector<float> packet;
     std::vector<int32_t> accepted;
     std::vector<llama_token> draft;
     std::vector<std::vector<llama_token_data>> q;
+};
+
+struct llama_syncfree_state {
+    bool armed = false;
+    bool ready = false;
+    int32_t k = 0;
+    int32_t n_candidates = 0;
+    uint32_t logged_np = 0;
+    std::vector<llama_syncfree_seq> seqs;
+    std::vector<llama_seq_id> active;
+    std::vector<float> packet;
     llama_ubatch ubatch = {};
     llama_memory_context_ptr mctx;
     llama_context * ctx_dft = nullptr;
@@ -38,6 +47,10 @@ struct llama_syncfree_state {
     std::vector<ggml_tensor *> probs;
     std::vector<ggml_tensor *> logits;
     std::vector<ggml_tensor *> candidates;
+    std::vector<ggml_backend_event_ptr> completion;
+    bool completion_checked = false;
+    bool completion_supported = false;
+    bool completion_pending = false;
 };
 
 void llama_syncfree_build(const llama_model & model, const llm_graph_params & params);
