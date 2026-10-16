@@ -576,8 +576,21 @@ static __global__ void mul_mat_vec_q(
             for (int i = 0; i < rows_per_cuda_block; ++i) {
                 tmp[j][i] += vec_dot_q_cuda(
                     vx, &y[j*stride_col_y + kby], kbx_offset + i*stride_row_x + kbx, kqs);
-                if constexpr (has_fusion) {
+                if constexpr (has_fusion && ncols_dst == 1) {
                     if (use_gate) {
+                        tmp_gate[j][i] += vec_dot_q_cuda(
+                            vgate, &y[j*stride_col_y + kby], kbx_offset + i*stride_row_x + kbx, kqs);
+                    }
+                }
+            }
+        }
+        if constexpr (has_fusion && ncols_dst > 1) {
+            // Share gate-weight decoding across columns.
+            if (use_gate) {
+#pragma unroll
+                for (int j = 0; j < ncols_dst; ++j) {
+#pragma unroll
+                    for (int i = 0; i < rows_per_cuda_block; ++i) {
                         tmp_gate[j][i] += vec_dot_q_cuda(
                             vgate, &y[j*stride_col_y + kby], kbx_offset + i*stride_row_x + kbx, kqs);
                     }
