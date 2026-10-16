@@ -8,6 +8,7 @@
 #include "server-queue.h"
 #include "server-schema.h"
 #include "server-stream.h"
+#include "server-output.h"
 
 #include "build-info.h"
 #include "common.h"
@@ -408,6 +409,8 @@ struct server_slot {
 
     server_slot_stats stats;
 
+    int32_t n_output_pending = 0;
+
     // accepted tokens per draft position
     // not in server_slot_stats to avoid copying to every task result
     std::vector<uint64_t> n_accepted_per_pos;
@@ -447,6 +450,7 @@ struct server_slot {
 
         // note: callback_on_reset() must have run before this, see release()
         stats = {};
+        n_output_pending = 0;
         n_accepted_per_pos.clear();
 
         n_predict_max = -1;
@@ -530,7 +534,7 @@ struct server_slot {
 
     // returns -1 if the generation is limitless
     int32_t n_remaining() const {
-        return n_predict_max == -1 ? -1 : n_predict_max - (int32_t) stats.n_gen;
+        return server_output_remaining(n_predict_max, (int32_t) stats.n_gen, n_output_pending);
     }
 
     bool has_budget() const {
@@ -1097,6 +1101,8 @@ private:
     llama_context * ctx_tgt = nullptr;
 
     server_batch batch;
+    server_output_queue output_queue;
+    size_t output_overlap_logged_np = 0;
 
     llama_model   * model_dft = nullptr;
     llama_context * ctx_dft   = nullptr;
@@ -1151,6 +1157,8 @@ private:
     int64_t t_last_load_progress_ms = 0;
 
     void destroy() {
+        output_queue.take();
+        output_overlap_logged_np = 0;
         spec.reset();
         spec_init.reset();
 
@@ -2870,6 +2878,11 @@ private:
             return false;
         }
 
+        if (!is_yielding && task.type != SERVER_TASK_TYPE_NEXT_RESPONSE &&
+                task.type != SERVER_TASK_TYPE_METRICS && task.type != SERVER_TASK_TYPE_SLOT_GET) {
+            retire_outputs();
+        }
+
         switch (task.type) {
             case SERVER_TASK_TYPE_COMPLETION:
             case SERVER_TASK_TYPE_INFILL:
@@ -3252,7 +3265,98 @@ private:
         }
     }
 
+    bool can_overlap_outputs() const {
+        if (!llama_syncfree_enabled() || mctx) {
+            return false;
+        }
+        int64_t n_active = 0;
+        const int64_t n_round = spec ? int64_t(common_speculative_n_max(spec.get())) + 1 : 1;
+        for (const auto & slot : slots) {
+            if (!slot.is_processing()) {
+                continue;
+            }
+            if (slot.state != SLOT_STATE_GENERATING || slot.stats.n_gen == 0 ||
+                    !slot.task || slot.task->type != SERVER_TASK_TYPE_COMPLETION ||
+                    slot.task->is_parent() || slot.task->is_child() ||
+                    !slot.task->params.sampling.backend_sampling ||
+                    slot.task->params.sampling.n_probs != 0 ||
+                    !slot.task->params.sampling.grammar.empty() ||
+                    slot.task->params.sampling.reasoning_control ||
+                    slot.task->params.sampling.reasoning_budget_tokens >= 0 ||
+                    !slot.task->params.antiprompt.empty() || slot.task->params.n_indent > 0 ||
+                    slot.task->params.t_max_predict_ms > 0 ||
+                    !slot.lora.empty() || !slot.inp_embd.empty() || slot.spec_is_replay ||
+                    int64_t(slot.prompt.n_tokens()) + 2*n_round + 2 >= slot.n_ctx ||
+                    (slot.can_speculate() && (ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL ||
+                        ctx_dft_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_FULL ||
+                        (ctx_tgt_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS && n_round - 1 > llama_n_rs_seq(ctx_tgt)) ||
+                        (ctx_dft_seq_rm_type == COMMON_CONTEXT_SEQ_RM_TYPE_RS && n_round - 1 > llama_n_rs_seq(ctx_dft))))) {
+                return false;
+            }
+            ++n_active;
+        }
+        return n_active > 0 && n_round > 0 &&
+            n_active*n_round <= llama_n_batch(ctx_tgt) && n_active*n_round <= llama_n_ubatch(ctx_tgt);
+    }
+
+    void retire_outputs(bool lookahead = false) {
+        if (output_queue.empty()) {
+            return;
+        }
+        ggml_round_trace_scope trace("server_output_retire");
+        bool pending_compute = lookahead;
+        auto drain = [&]() {
+            if (pending_compute) {
+                queue_tasks.yield_to_queue([&]() { llama_synchronize(ctx_tgt); });
+                pending_compute = false;
+            }
+        };
+        for (const auto & record : output_queue.take()) {
+            if (record.id_slot < 0 || size_t(record.id_slot) >= slots.size()) {
+                continue;
+            }
+            auto & slot = slots[record.id_slot];
+            if (!slot.task || slot.task->id != record.id_task || slot.state != SLOT_STATE_GENERATING) {
+                continue;
+            }
+            GGML_ASSERT(slot.n_output_pending == int32_t(record.tokens.size()));
+            slot.n_output_pending = 0;
+            try {
+                for (const auto id : record.tokens) {
+                    completion_token_output result;
+                    result.tok = id;
+                    result.text_to_send = common_token_to_piece(slot.ctx_tgt, id, params_base.special ||
+                        slot.task->params.sampling.preserved_tokens.count(id));
+                    result.prob = 1.0f;
+                    ++slot.stats.n_gen;
+                    if (!process_token(result, slot)) {
+                        drain();
+                        // A host stop can invalidate the submitted round's recurrent state as well as its KV rows.
+                        if (lookahead) {
+                            slot.prompt_clear();
+                        }
+                        slot.print_timings();
+                        send_final_response(slot);
+                        slot.release();
+                        break;
+                    }
+                }
+                if (slot.is_processing()) {
+                    slot.print_timings_tg();
+                }
+            } catch (const std::exception & e) {
+                drain();
+                if (lookahead) {
+                    slot.prompt_clear();
+                }
+                send_error(slot, std::string("output retirement failed: ") + e.what(), ERROR_TYPE_SERVER);
+                slot.release();
+            }
+        }
+    }
+
     void abort_all_slots(const std::string & reason) {
+        retire_outputs();
         for (auto & slot : slots) {
             if (slot.is_processing()) {
                 send_error(slot, reason, ERROR_TYPE_SERVER);
@@ -3292,6 +3396,9 @@ private:
 #endif
 
     void update_slots() {
+        if (!output_queue.empty() && !can_overlap_outputs()) {
+            retire_outputs();
+        }
 #ifdef DEBUG_TIMINGS
         static int64_t t_prev = 0;
         int64_t t_start = ggml_time_us();
@@ -4339,14 +4446,37 @@ private:
         }
 
         int ret = 0;
-        queue_tasks.yield_to_queue([&]() {
+        auto submit = [&]() {
             ggml_round_trace_begin("V", batch.view.size());
             ret = llama_process(ctx_tgt, LLAMA_PROCESS_TYPE_DECODE, batch.view.get());
             ggml_round_trace_end(ret);
-            if (ret == 0 && has_output) {
-                llama_synchronize(ctx_tgt);
+        };
+        if (output_queue.empty()) {
+            queue_tasks.yield_to_queue([&]() {
+                submit();
+                if (ret == 0 && has_output) {
+                    llama_synchronize(ctx_tgt);
+                }
+            });
+        } else {
+            try {
+                queue_tasks.yield_to_queue(submit);
+            } catch (...) {
+                queue_tasks.yield_to_queue([&]() { llama_synchronize(ctx_tgt); });
+                throw;
             }
-        });
+            if (ret == 0 && output_overlap_logged_np != output_queue.size()) {
+                output_overlap_logged_np = output_queue.size();
+                SRV_INF("syncfree: output overlap np=%zu depth=1\n", output_overlap_logged_np);
+            }
+            // Retire owned tokens outside the queue yield: its worker can read slot metrics concurrently.
+            retire_outputs(ret == 0);
+            queue_tasks.yield_to_queue([&]() {
+                if (ret == 0 && has_output) {
+                    llama_synchronize(ctx_tgt);
+                }
+            });
+        }
 
         if (ret != 0) {
             {
@@ -4447,6 +4577,18 @@ private:
     }
 
     void post_decode(int32_t n_batch_tokens, int32_t off) {
+        const bool collect_output = can_overlap_outputs() && off == 0 && n_batch_tokens == batch.size();
+        bool defer_output = collect_output;
+        std::vector<server_output_record> output;
+        auto retain_output = [&](server_slot & slot, const llama_tokens & tokens) {
+            GGML_ASSERT(tokens.size() <= size_t(llama_n_batch(ctx_tgt)));
+            const bool terminal = std::any_of(tokens.begin(), tokens.end(), [&](llama_token id) {
+                return llama_vocab_is_eog(vocab, id);
+            });
+            defer_output = server_output_can_defer(defer_output, terminal, slot.n_remaining(), tokens.size());
+            slot.n_output_pending = int32_t(tokens.size());
+            output.push_back({slot.id, slot.task->id, tokens});
+        };
         // for checking if a given batch index is inside the current sub-batch
         auto is_inside_view = [&](int32_t idx) {
             return idx >= off && idx < off + n_batch_tokens;
@@ -4531,6 +4673,13 @@ private:
             slot.i_batch = -1;
 
             common_sampler_accept(slot.smpl.get(), id, true);
+
+            if (collect_output) {
+                slot.sampled = id;
+                slot.stats.update_gen_last();
+                retain_output(slot, {id});
+                return;
+            }
 
             // here we have synchronized the llama_context (due to the sampling above), so we can do time measurement
             const int64_t t_now = ggml_time_us();
@@ -4686,6 +4835,11 @@ private:
 
             slot.mem.seq_rm(slot.id, slot.prompt.tokens.pos_next(), -1);
 
+            if (collect_output) {
+                retain_output(slot, ids);
+                return;
+            }
+
             for (size_t i = 0; i < ids.size(); ++i) {
                 completion_token_output result;
 
@@ -4710,6 +4864,13 @@ private:
 
             SLT_DBG(slot, "accepted %d/%d draft tokens, new n_tokens = %d\n", (int) n_accepted, (int) n_draft, slot.prompt.n_tokens());
         });
+
+        if (!output.empty()) {
+            GGML_ASSERT(output_queue.submit(std::move(output)));
+            if (!defer_output) {
+                retire_outputs();
+            }
+        }
     }
 
     // context size of a single slot, capped by --kv-unified-per-slot and by the training context of the model
