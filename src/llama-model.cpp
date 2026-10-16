@@ -684,7 +684,7 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
 
             // the FFN is the same for Qwen 3 Next and Qwen 3.5:
             if (std::regex_match(tensor_name, pattern_ffn_gate_up_weight)) {
-                const int64_t n_ff_exp = hparams.n_ff_exp(il);
+                const int64_t n_ff_exp = tensor_name.find("_exps") == std::string::npos ? hparams.n_ff(il) : hparams.n_ff_exp(il);
                 GGML_ASSERT(tensor->ne[axis] == 2*n_ff_exp);
                 return {{n_ff_exp, 2}};
             }
@@ -712,7 +712,7 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
             return {{tensor->ne[axis], 1}};
         }
         if (std::regex_match(tensor_name, pattern_ffn_gate_up_weight)) {
-            const int64_t n_ff_exp = hparams.n_ff_exp(il);
+            const int64_t n_ff_exp = tensor_name.find("_exps") == std::string::npos ? hparams.n_ff(il) : hparams.n_ff_exp(il);
             GGML_ASSERT(tensor->ne[axis] == 2*n_ff_exp);
             return {{n_ff_exp, 2}};
         }
@@ -1947,7 +1947,11 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
         // a lazy context is mapped whatever the load mode, but the memory-fit pass maps nothing
         const bool is_lazy_mapped = ctx_key.lazy && !ml.no_alloc;
 
-        if ((ml.use_mmap || is_lazy_mapped) && use_mmap_buffer && buffer_from_host_ptr_supported && is_default_buft) {
+        bool has_concat = false;
+        for (ggml_tensor * t = ggml_get_first_tensor(ctx); t; t = ggml_get_next_tensor(ctx, t)) {
+            has_concat |= ml.tensor_sources.count(t->name) != 0;
+        }
+        if (!has_concat && (ml.use_mmap || is_lazy_mapped) && use_mmap_buffer && buffer_from_host_ptr_supported && is_default_buft) {
             GGML_ASSERT(!ml.no_alloc);
             for (uint32_t idx = 0; idx < ml.files.size(); idx++) {
                 // only the mmap region containing the tensors in the model is mapped to the backend buffer
@@ -2161,7 +2165,7 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
     return true;
 }
 
-ggml_tensor * llama_model_base::create_tensor(llama_model_loader & ml, const LLM_TN_IMPL & tn, const std::initializer_list<int64_t> & ne, int flags) {
+ggml_tensor * llama_model_base::create_tensor(llama_model_loader & ml, const LLM_TN_IMPL & tn, const std::initializer_list<int64_t> & ne, int flags, const std::vector<std::string> & sources) {
     const buft_list_t * buft_list_layer = nullptr;
     if (tn.bid != -1) {
         // blocks that are not model layers (e.g. the blocks of a head) go with the output
@@ -2173,7 +2177,7 @@ ggml_tensor * llama_model_base::create_tensor(llama_model_loader & ml, const LLM
     }
     return ml.create_tensor(
         hparams, &pimpl->cpu_buft_list, buft_list_input, pimpl->dev_output.buft_list, buft_list_layer,
-        tn, ne, flags);
+        tn, ne, flags, sources);
 }
 
 std::string llama_model::arch_name() const {
@@ -3638,6 +3642,41 @@ llama_model_base::llama_model_base(const struct llama_model_params & params) : l
 ggml_tensor * llama_model_base::create_tensor(const LLM_TN_IMPL & tn, const std::initializer_list<int64_t> & ne, int flags) {
     GGML_ASSERT(ml != nullptr);
     return create_tensor(*ml, tn, ne, flags);
+}
+
+bool llama_model_base::create_tensor_gate_up(llama_layer & layer, int bid, int64_t n_embd, int64_t n_ff, int flags) {
+    const char * env = std::getenv("LLAMA_FFN_GATE_UP_CAT");
+    if (!env || std::strcmp(env, "1") != 0 || params.split_mode == LLAMA_SPLIT_MODE_ROW) {
+        return false;
+    }
+    const auto gate_name = tn(LLM_TENSOR_FFN_GATE, "weight", bid);
+    const auto up_name = tn(LLM_TENSOR_FFN_UP, "weight", bid);
+    if (ml->tensor_buft_overrides) {
+        for (auto * override = ml->tensor_buft_overrides; override->pattern; ++override) {
+            const std::regex pattern(override->pattern);
+            if (std::regex_search(gate_name.str(), pattern) || std::regex_search(up_name.str(), pattern)) {
+                return false;
+            }
+        }
+    }
+    const auto * gate = ml->get_weight(gate_name.str().c_str());
+    const auto * up = ml->get_weight(up_name.str().c_str());
+    if (!(flags & TENSOR_SKIP) && gate && up &&
+            gate->tensor->type == up->tensor->type && ggml_are_same_shape(gate->tensor, up->tensor)) {
+        layer.ffn_gate_up = create_tensor(*ml, tn(LLM_TENSOR_FFN_GATE_UP, "weight", bid), {n_embd, 2*n_ff}, flags,
+                {gate_name.str(), up_name.str()});
+        for (auto & entry : ml->ctx_map) {
+            ggml_context * ctx = entry.second.get();
+            if (ggml_get_tensor(ctx, layer.ffn_gate_up->name) != layer.ffn_gate_up) {
+                continue;
+            }
+            layer.ffn_gate = ggml_get_tensor(ctx, gate_name.str().c_str());
+            layer.ffn_up   = ggml_get_tensor(ctx, up_name.str().c_str());
+            return true;
+        }
+        GGML_ABORT("missing concatenated weight context");
+    }
+    return false;
 }
 
 void llama_model_base::create_tensor_gate_up_exps(llama_layer & layer, int bid, int64_t n_embd_, int64_t n_ff_, int64_t n_expert_, int flags) {

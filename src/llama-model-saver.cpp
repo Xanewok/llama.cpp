@@ -506,7 +506,7 @@ void llama_model_saver::add_tensors_from_model() {
     for (const struct llama_layer & layer : model->layers) {
         for (size_t i = 0; i < sizeof(layer)/sizeof(struct ggml_tensor *); ++i) {
             const struct ggml_tensor * tensor = reinterpret_cast<const struct ggml_tensor * const *>(&layer)[i];
-            if (tensor == nullptr || !seen.insert(tensor).second) {
+            if (tensor == nullptr || tensor == layer.ffn_gate_up || !seen.insert(tensor).second) {
                 continue;
             }
             add_tensor(tensor);

@@ -1895,7 +1895,8 @@ ggml_tensor * llm_graph_context::build_ffn(
          ggml_tensor * act_scales,
      llm_ffn_op_type   type_op,
    llm_ffn_gate_type   type_gate,
-                 int   il) const {
+                 int   il,
+         ggml_tensor * gate_up) const {
     // NVFP4 support is currently restricted to
     // 1) LORA absence (*_s would be applied after LORA residual, which is incorrect)
     // 2) bias absense (*_s would be applied after bias addition, which is incorrect)
@@ -1919,8 +1920,22 @@ ggml_tensor * llm_graph_context::build_ffn(
     GGML_ASSERT(!gate_s || !gate || gate->type != GGML_TYPE_NVFP4 || !has_lora(gate));
     GGML_ASSERT(!down_s || !down || down->type != GGML_TYPE_NVFP4 || !has_lora(down));
 
-    ggml_tensor * tmp = up ? build_lora_mm(up, cur) : cur;
-    cb(tmp, "ffn_up", il);
+    const bool use_gate_up = gate_up && cur->ne[1] > 1 && type_gate == LLM_FFN_PAR && type_op == LLM_FFN_SILU &&
+        !up_b && !gate_b && !up_s && !gate_s && !has_lora(up) && !has_lora(gate) &&
+        (!prec_policy || (!prec_policy->prec_src1.count(up) && !prec_policy->prec_src1.count(gate) &&
+                          !prec_policy->prec_acc.count(up) && !prec_policy->prec_acc.count(gate))) &&
+        (il < 0 || hparams.swiglu_clamp_shexp[il] <= 1e-6f);
+    if (gate_up && !use_gate_up) {
+        // Keep both weight views before the matmuls so MMVQ fusion sees adjacent operations.
+        ggml_build_forward_expand(gf, up);
+        ggml_build_forward_expand(gf, gate);
+    }
+    ggml_tensor * tmp = use_gate_up ? build_lora_mm(gate_up, cur) : up ? build_lora_mm(up, cur) : cur;
+    if (use_gate_up) {
+        gate = nullptr;
+        type_op = LLM_FFN_SWIGLU;
+    }
+    cb(tmp, use_gate_up ? "ffn_gate_up" : "ffn_up", il);
 
     if (up_b) {
         tmp = ggml_add(ctx0, tmp, up_b);

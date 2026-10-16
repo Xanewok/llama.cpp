@@ -1115,7 +1115,8 @@ bool llama_model_loader::lazy_read::add(const std::string & name, const ggml_ten
 
 struct ggml_tensor * llama_model_loader::create_tensor(
         const llama_hparams & hparams, const buft_list_t * buft_list_cpu, const buft_list_t * buft_list_input, const buft_list_t * buft_list_output,
-        const buft_list_t * buft_list_layer, const LLM_TN_IMPL & tn, const std::initializer_list<int64_t> & ne, int flags) {
+        const buft_list_t * buft_list_layer, const LLM_TN_IMPL & tn, const std::initializer_list<int64_t> & ne, int flags,
+        const std::vector<std::string> & sources) {
     // set below, before buft_for_tensor() runs
     bool is_lazy = false;
 
@@ -1127,6 +1128,7 @@ struct ggml_tensor * llama_model_loader::create_tensor(
             // one ggml context per buffer type
             int max_n_tensors = n_tensors;
             max_n_tensors += 1;                   // duplicated output tensor
+            max_n_tensors += hparams.n_layer_all; // concatenated FFN weight views
             max_n_tensors += hparams.n_layer()*2; // duplicated rope freq tensors
             if (files.empty()) {
                 max_n_tensors += hparams.n_layer()*256; // this should be well above what any model actually uses
@@ -1266,8 +1268,13 @@ struct ggml_tensor * llama_model_loader::create_tensor(
             }
         }
 
-        // avoid using a host buffer when using mmap
+        // Packed buffers must preserve the row encoding used by weight views.
         auto * buft_dev = ggml_backend_buft_get_device(buft);
+        if (!sources.empty() && buft_dev) {
+            buft = ggml_backend_dev_buffer_type(buft_dev);
+        }
+
+        // avoid using a host buffer when using mmap
         if (use_mmap && buft_dev && buft == ggml_backend_dev_host_buffer_type(buft_dev)) {
             auto * cpu_dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
             if (!cpu_dev) {
@@ -1334,7 +1341,28 @@ struct ggml_tensor * llama_model_loader::create_tensor(
     }
 
     LLAMA_LOG_DEBUG("%s: loading tensor %s\n", __func__, tn.str().c_str());
-    const struct ggml_tensor * cur = check_tensor_dims(tn.str(), ne, !(flags & TENSOR_NOT_REQUIRED), flags & TENSOR_ALLOW_RESHAPE);
+    const struct ggml_tensor * cur;
+    ggml_tensor concat_meta;
+    if (sources.empty()) {
+        cur = check_tensor_dims(tn.str(), ne, !(flags & TENSOR_NOT_REQUIRED), flags & TENSOR_ALLOW_RESHAPE);
+    } else {
+        // Concatenate complete rows without requantization.
+        if (ne.size() != 2 || sources.size() != 2 || ne.begin()[1] <= 0 || ne.begin()[1] % 2) {
+            throw std::runtime_error("invalid concatenated tensor shape");
+        }
+        const std::vector<int64_t> shape = {ne.begin()[0], ne.begin()[1]/2};
+        const auto * first = check_tensor_dims(sources[0], shape, true, false);
+        const auto * second = check_tensor_dims(sources[1], shape, true, false);
+        if (first->type != second->type || ggml_nbytes(first) > SIZE_MAX/2) {
+            throw std::runtime_error("incompatible concatenated tensors");
+        }
+        concat_meta = *first;
+        concat_meta.ne[1] *= 2;
+        concat_meta.nb[2] *= 2;
+        concat_meta.nb[3] *= 2;
+        ggml_set_name(&concat_meta, tn.str().c_str());
+        cur = &concat_meta;
+    }
     if (cur == NULL) {
         return NULL;
     }
@@ -1383,7 +1411,14 @@ struct ggml_tensor * llama_model_loader::create_tensor(
     if (duplicated) {
         size_data += ggml_nbytes(&t_meta);
     } else {
-        n_created++;
+        n_created += sources.empty() ? 1 : 2;
+    }
+    if (!sources.empty()) {
+        tensor_sources[tn.str()] = sources;
+        for (size_t i = 0; i < sources.size(); ++i) {
+            auto * view = ggml_view_2d(ctx, tensor, tensor->ne[0], tensor->ne[1]/2, tensor->nb[1], i*ggml_nbytes(tensor)/2);
+            ggml_set_name(view, sources[i].c_str());
+        }
     }
 
     return tensor;
@@ -1454,7 +1489,8 @@ void llama_model_loader::get_mapping_range(size_t * first, size_t * last, void *
     *last  = 0;
     *addr = mapping->addr();
     for (ggml_tensor * tensor = ggml_get_first_tensor(ctx); tensor; tensor = ggml_get_next_tensor(ctx, tensor)) {
-        const auto * weight = get_weight(ggml_get_name(tensor));
+        const bool concat_view = tensor->view_src && tensor_sources.count(tensor->view_src->name);
+        const auto * weight = concat_view ? nullptr : get_weight(ggml_get_name(tensor));
         if (!weight || weight->idx != idx) {
             continue;
         }
@@ -1622,6 +1658,27 @@ bool llama_model_loader::load_all_data(
     }
 
     for (struct ggml_tensor * cur : tensors) {
+        if (cur->view_src && tensor_sources.count(cur->view_src->name)) {
+            continue;
+        }
+        const auto source_it = tensor_sources.find(cur->name);
+        if (source_it != tensor_sources.end()) {
+            for (const auto & name : source_it->second) {
+                const auto & source = require_weight(name.c_str());
+                ggml_tensor * dst = ggml_get_tensor(ctx, name.c_str());
+                GGML_ASSERT(dst && dst->view_src == cur);
+                if (progress_callback && !progress_callback((float) size_done / size_data, progress_callback_user_data)) {
+                    return false;
+                }
+                const size_t size = ggml_nbytes(source.tensor);
+                std::vector<uint8_t> staging(use_mmap ? 0 : size);
+                const void * data = load_data_range(source, 0, size, staging.data());
+                // A row-split view accepts a complete source matrix; its device slices share the merged allocation.
+                ggml_backend_tensor_set(dst, data, 0, size);
+                size_done += size;
+            }
+            continue;
+        }
         const auto * weight = get_weight(ggml_get_name(cur));
         if (weight == nullptr) {
             // this can happen with split experts models

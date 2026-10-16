@@ -1,6 +1,6 @@
-purpose: stack11-fa + s2-nok (87/88/91/90, K7/K10 dropped)
-base: 8eda87ffb7787c660fd6789e4f89d52483897833
+purpose: T-9 concatenated gate||up FFN matmul (probe3 per-call amortization)
+base: 9dd7d8c9bc5cd5e61931ba5c41aa28706bba340b
 repo: /home/xanewok/repos/llama.cpp
-branch: topic/stack11-fa-s2
-created: 2026-10-15T00:50:21+02:00
+branch: topic/t9-gateup-cat
+created: 2026-10-16T14:32:11+02:00
 creator: xanewok
