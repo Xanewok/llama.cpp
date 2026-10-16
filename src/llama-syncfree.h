@@ -8,6 +8,13 @@
 struct llama_context;
 struct llama_model;
 
+inline ggml_tensor * llama_syncfree_step_idxs(ggml_context * ctx, ggml_tensor * idxs,
+        int64_t n_chain, int64_t n_seq, int64_t step) {
+    // SET_ROWS accepts strided indices; keep the I64 packet as a view.
+    return n_seq == 1 ? ggml_view_1d(ctx, idxs, 1, step*idxs->nb[0]) :
+        ggml_transpose(ctx, ggml_view_2d(ctx, idxs, 1, n_seq, n_chain*idxs->nb[0], step*idxs->nb[0]));
+}
+
 struct llama_syncfree_seq {
     bool armed = false;
     bool ready = false;

@@ -3,6 +3,7 @@
 #include "ggml-cpp.h"
 #include "../ggml/src/ggml-impl.h"
 #include "ggml.h"
+#include "../src/llama-syncfree.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -1259,6 +1260,65 @@ static void test_meta_host_view(ggml_op op, bool split) {
     ggml_backend_graph_plan_free(backend.get(), plan);
 }
 
+static void test_meta_chain_idxs(int n_seq, int n_chain) {
+    ggml_backend_load_all();
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu);
+    ggml_backend_dev_t devs[2] = {cpu, cpu};
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, test_meta_split_state_rows, nullptr);
+    ggml_backend_ptr backend(ggml_backend_dev_init(meta, nullptr));
+    GGML_ASSERT(backend);
+
+    ggml_init_params params = {ggml_tensor_overhead()*(4*n_chain + 2) + ggml_graph_overhead(), nullptr, true};
+    ggml_context_ptr ctx(ggml_init(params));
+    const int n_cells = n_seq*(n_chain + 2);
+    ggml_tensor * cache = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, 8, n_cells);
+    ggml_set_name(cache, "cache");
+    ggml_tensor * idxs = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I64, n_seq*n_chain);
+    ggml_set_input(idxs);
+    std::vector<ggml_tensor *> rows;
+    ggml_tensor * out = cache;
+    for (int step = 0; step < n_chain; ++step) {
+        ggml_tensor * step_idxs = llama_syncfree_step_idxs(ctx.get(), idxs, n_chain, n_seq, step);
+        GGML_ASSERT(step_idxs->type == GGML_TYPE_I64 && step_idxs->view_src == idxs);
+        GGML_ASSERT(step_idxs->ne[0] == n_seq && step_idxs->ne[1] == 1);
+        GGML_ASSERT(step_idxs->nb[0] == idxs->nb[0]*(n_seq == 1 ? 1 : n_chain));
+        rows.push_back(ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, 8, n_seq));
+        ggml_set_name(rows.back(), "rows");
+        out = ggml_set_rows(ctx.get(), out, rows.back(), step_idxs);
+    }
+    ggml_cgraph * gf = ggml_new_graph(ctx.get());
+    ggml_build_forward_expand(gf, out);
+    gf->uid = ggml_graph_next_uid();
+    ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors(ctx.get(), backend.get()));
+    GGML_ASSERT(buffer);
+    ggml_backend_graph_plan_t plan = ggml_backend_graph_plan_create(backend.get(), gf);
+    GGML_ASSERT(plan);
+    for (int pass = 0; pass < 3; ++pass) {
+        std::vector<int64_t> indices(n_seq*n_chain);
+        std::vector<float> data(8*n_seq), expected(8*n_cells, 0.0f), result(8*n_cells);
+        ggml_backend_tensor_set(cache, expected.data(), 0, expected.size()*sizeof(float));
+        for (int step = 0; step < n_chain; ++step) {
+            for (int seq = 0; seq < n_seq; ++seq) {
+                const int cell = seq*(n_chain + 2) + 1 + (pass % 2 ? n_chain - 1 - step : step);
+                indices[seq*n_chain + step] = cell;
+                for (int i = 0; i < 8; ++i) {
+                    data[seq*8 + i] = float(1 + i + 8*(step + n_chain*(seq + n_seq*pass)));
+                    expected[cell*8 + i] = data[seq*8 + i];
+                }
+            }
+            ggml_backend_tensor_set(rows[step], data.data(), 0, data.size()*sizeof(float));
+        }
+        ggml_backend_tensor_set(idxs, indices.data(), 0, indices.size()*sizeof(int64_t));
+        const ggml_status status = pass == 0 ? ggml_backend_graph_compute(backend.get(), gf) :
+                ggml_backend_graph_plan_compute(backend.get(), plan);
+        GGML_ASSERT(status == GGML_STATUS_SUCCESS);
+        ggml_backend_tensor_get(cache, result.data(), 0, result.size()*sizeof(float));
+        GGML_ASSERT(memcmp(expected.data(), result.data(), result.size()*sizeof(float)) == 0);
+    }
+    ggml_backend_graph_plan_free(backend.get(), plan);
+}
+
 static void test_meta_split_state_rebuild(bool select_other) {
 #ifndef _WIN32
     const int n_chain = 512;
@@ -1804,6 +1864,10 @@ int main() {
     run("test_meta_host_cpy(split)", []() { test_meta_host_view(GGML_OP_CPY, true); });
     run("test_meta_host_set_rows(mirrored)", []() { test_meta_host_view(GGML_OP_SET_ROWS, false); });
     run("test_meta_host_set_rows(split)", []() { test_meta_host_view(GGML_OP_SET_ROWS, true); });
+    run("test_meta_chain_idxs(np1,k5)", []() { test_meta_chain_idxs(1, 5); });
+    run("test_meta_chain_idxs(np2,k5)", []() { test_meta_chain_idxs(2, 5); });
+    run("test_meta_chain_idxs(np2,k1)", []() { test_meta_chain_idxs(2, 1); });
+    run("test_meta_chain_idxs(np3,k7)", []() { test_meta_chain_idxs(3, 7); });
     run("test_meta_subgraph_reuse_two_splits", test_meta_subgraph_reuse_two_splits);
     run("test_meta_subgraph_reuse_ten_splits", test_meta_subgraph_reuse_ten_splits);
     run("test_meta_subgraph_reuse_same_graph", test_meta_subgraph_reuse_same_graph);

@@ -852,12 +852,8 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
             llm_graph_input_attn_kv attn(hparams, cparams, inp_attn->mctx);
             attn.self_k_rot = inp_attn->self_k_rot;
             attn.self_v_rot = inp_attn->self_v_rot;
-            auto step_idxs = [&](ggml_tensor * idxs) {
-                return n_chain_seq == 1 ? ggml_view_1d(ctx0, idxs, 1, s*idxs->nb[0]) :
-                    ggml_cont_1d(ctx0, ggml_view_2d(ctx0, idxs, 1, n_chain_seq, n_chain*idxs->nb[0], s*idxs->nb[0]), n_chain_seq);
-            };
-            attn.self_k_idxs = step_idxs(inp_attn->self_k_idxs);
-            attn.self_v_idxs = step_idxs(inp_attn->self_v_idxs);
+            attn.self_k_idxs = llama_syncfree_step_idxs(ctx0, inp_attn->self_k_idxs, n_chain, n_chain_seq, s);
+            attn.self_v_idxs = llama_syncfree_step_idxs(ctx0, inp_attn->self_v_idxs, n_chain, n_chain_seq, s);
             if (n_chain_seq == 1) {
                 attn.self_kq_mask_cnv = ggml_view_4d(ctx0, mask, mask->ne[0], 1, 1, 1, mask->nb[1], mask->nb[2], mask->nb[3], s*mask->nb[1]);
             } else if (mask->ne[3] == 1) {
