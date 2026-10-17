@@ -1,5 +1,20 @@
 llama_add_compile_flags()
 
+if (GGML_CUDA AND TARGET ggml-cuda AND NOT LLAMA_USE_SYSTEM_GGML)
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
+    find_package(Threads REQUIRED)
+    set_source_files_properties(test-ar-p2p.cpp PROPERTIES LANGUAGE CUDA)
+    add_executable(test-ar-p2p test-ar-p2p.cpp)
+    target_compile_options(test-ar-p2p PRIVATE "$<$<CUDA_COMPILER_ID:NVIDIA>:--x=cu>" "$<$<CUDA_COMPILER_ID:Clang>:SHELL:-x cuda>")
+    get_target_property(AR_P2P_ARCHITECTURES ggml-cuda CUDA_ARCHITECTURES)
+    set_target_properties(test-ar-p2p PROPERTIES CUDA_ARCHITECTURES "${AR_P2P_ARCHITECTURES}" CUDA_STANDARD 17)
+    target_include_directories(test-ar-p2p PRIVATE ../ggml/src)
+    target_link_directories(test-ar-p2p PRIVATE ${CUDAToolkit_LIBRARY_DIR})
+    target_link_libraries(test-ar-p2p PRIVATE ggml CUDA::cudart vendor::hash Threads::Threads)
+    add_dependencies(test-ar-p2p ggml-cuda)
+endif()
+
 function(llama_build source)
     set(TEST_SOURCES ${source} ${ARGN})
 
