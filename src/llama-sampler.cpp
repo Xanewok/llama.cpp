@@ -1661,8 +1661,10 @@ static void llama_sampler_top_p_backend_apply(
     ggml_set_name(softmax, "top_p_softmax");
 
     // If candidates are provided, sort them as well. Otherwise, set sorted indices as candidates.
+    // Flat in and out: an earlier sampler (top-k, top-p) may hand them over as [1, n]
     if (data->candidates) {
-        data->candidates = ggml_sort(data->candidates, sorted_idx);
+        struct ggml_tensor * candidates = ggml_reshape_1d(ctx, data->candidates, ggml_nelements(data->candidates));
+        data->candidates = ggml_reshape_1d(ctx, ggml_sort(candidates, sorted_idx), ggml_nelements(candidates));
     } else {
         data->candidates = sorted_idx;
     }
