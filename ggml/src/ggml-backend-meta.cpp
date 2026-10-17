@@ -1872,7 +1872,8 @@ struct ggml_backend_meta_context {
             ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(ggml_backend_get_device(simple_backends[0]));
             comm_start  = (ggml_backend_comm_allreduce_start_t)  ggml_backend_reg_get_proc_address(reg, "ggml_backend_comm_allreduce_start");
             comm_finish = (ggml_backend_comm_allreduce_finish_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_comm_allreduce_finish");
-            if (!comm_finish) {
+            const char * defer = getenv("GGML_META_AR_DEFER");
+            if (!comm_finish || (defer && atoi(defer) == 0)) {
                 comm_start = nullptr;
             }
         }

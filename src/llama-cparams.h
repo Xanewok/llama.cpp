@@ -50,6 +50,7 @@ struct llama_cparams {
     bool auto_fhc;
     bool no_perf;
     bool warmup;             // TODO: remove [TAG_LLAMA_GRAPH_NO_WARMUP]
+    bool ffn_tiles = false;
     bool op_offload;
     bool kv_unified;
     bool pipeline_parallel;

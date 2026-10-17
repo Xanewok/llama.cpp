@@ -187,12 +187,35 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
         // Save the tensor before post-attention norm for residual connection
         ggml_tensor * ffn_residual = cur;
 
-        // Post-attention norm
-        ggml_tensor * attn_post_norm = build_norm(cur, model.layers[il].attn_post_norm, nullptr, LLM_NORM_RMS, il);
-        cb(attn_post_norm, "attn_post_norm", il);
+        auto build_norm_ffn = [&](ggml_tensor * input) {
+            ggml_tensor * norm = build_norm(input, model.layers[il].attn_post_norm, nullptr, LLM_NORM_RMS, il);
+            cb(norm, "attn_post_norm", il);
+            return build_layer_ffn(norm, il);
+        };
 
-        // Dense FFN layer - without residual connection
-        cur = build_layer_ffn(attn_post_norm, il);
+        ggml_backend_dev_t dev = model.dev_layer(il);
+        const auto & layer = model.layers[il];
+        const bool tile_ffn = cparams.ffn_tiles && cur->ne[1] == 512 && cur->ne[2] == 1 && cur->ne[3] == 1 &&
+            ggml_is_contiguous(cur) && dev && ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_META &&
+            loras->empty() && (!cvec || !cvec->tensor_for(il)) && !layer.ffn_up_s && !layer.ffn_gate_s && !layer.ffn_down_s;
+        ggml_tensor * tiles[2] = {};
+        if (tile_ffn) {
+            for (int t = 0; t < 2; t++) {
+                tiles[t] = ggml_view_2d(ctx0, cur, cur->ne[0], 256, cur->nb[1], t * 256 * cur->nb[1]);
+            }
+        }
+        ggml_tensor * joined = tile_ffn ? ggml_concat(ctx0, tiles[0], tiles[1], 1) : nullptr;
+        if (joined && ggml_backend_dev_supports_op(dev, tiles[0]) && ggml_backend_dev_supports_op(dev, joined)) {
+            LLAMA_LOG_DEBUG("%s: FFN tiles layer=%d columns=256+256\n", __func__, il);
+            for (int t = 0; t < 2; t++) {
+                tiles[t] = build_norm_ffn(tiles[t]);
+                // Keep the down boundary before the independent tile's FFN.
+                ggml_build_forward_expand(gf, tiles[t]);
+            }
+            cur = ggml_concat(ctx0, tiles[0], tiles[1], 1);
+        } else {
+            cur = build_norm_ffn(cur);
+        }
         cb(cur, "ffn_out", il);
 
         // Residual connection for FFN - add to the tensor from before post_attention_layernorm
