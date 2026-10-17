@@ -617,6 +617,13 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
             }
             return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_1);
         }
+        if (tensor_name == LLAMA_TENSOR_NAME_OUTPUT_VOCAB_IDS) {
+            // must split exactly like the logits from output.weight: same axis length, rotation and granularity
+            if (is_dsv4) {
+                return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_MIRRORED);
+            }
+            return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_0);
+        }
         if (std::regex_match(tensor_name, pattern_output_bias)) {
             const ggml_tensor * output_weight = ud->model->get_tensor("output.weight");
             GGML_ASSERT(output_weight != nullptr);
@@ -2422,6 +2429,23 @@ uint32_t llama_model::n_gpu_layers() const {
 
 llama_split_mode llama_model::split_mode() const {
     return params.split_mode;
+}
+
+bool llama_model::logits_vocab_split() const {
+    if (params.split_mode != LLAMA_SPLIT_MODE_TENSOR || output == nullptr) {
+        return false;
+    }
+    auto ud = get_split_state_ud; // the callback takes a non-const pointer
+    if (llama_meta_device_get_split_state(output, &ud).axis != GGML_BACKEND_SPLIT_AXIS_1) {
+        return false;
+    }
+    // an MTP head of its own is replicated, and its context could not be told apart from the target's here
+    for (const auto & layer : layers) {
+        if (layer.nextn.shared_head_head != nullptr) {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::map<ggml_backend_buffer_type_t, size_t> llama_model::memory_breakdown() const {
