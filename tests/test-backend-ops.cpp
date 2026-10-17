@@ -8476,6 +8476,155 @@ struct test_flash_attn_ext_large_logits : public test_flash_attn_ext {
     }
 };
 
+struct test_flash_attn_oracle : public test_flash_attn_ext {
+    const std::string pattern;
+    const bool compare_rows;
+    const int64_t used_kv;
+
+    test_flash_attn_oracle(int64_t kv, int64_t nb, ggml_type type, std::string pattern = "causal",
+                                int64_t streams = 1, bool compare_rows = false, bool pad_kv = false, int64_t head_size = 128, int64_t gqa = 2)
+        : test_flash_attn_ext(head_size, head_size, 2, {gqa, streams}, pad_kv ? GGML_PAD(kv, 256) : kv, nb, true, false, 0, 0, GGML_PREC_F32, type, type, {0, 2, 1, 3}),
+          pattern(std::move(pattern)), compare_rows(compare_rows), used_kv(kv) {}
+
+    std::string vars() override {
+        return test_flash_attn_ext::vars() + ",oracle_verify=1,pattern=" + pattern +
+            ",compare_rows=" + std::to_string(compare_rows) + ",used_kv=" + std::to_string(used_kv);
+    }
+
+    std::string op_desc(ggml_tensor *) override { return "FLASH_ATTN_EXT"; }
+    bool run_whole_graph() override { return true; }
+
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        ggml_tensor * q0 = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, hsk, nh*nr23[0], nb, nr23[1]);
+        ggml_set_name(q0, "oracle_q");
+        ggml_tensor * q = ggml_permute(ctx, q0, 0, 2, 1, 3);
+        const int64_t capacity = GGML_PAD(kv + 256, 256);
+        auto cache = [&](ggml_type type, const char * name) {
+            ggml_tensor * base = ggml_new_tensor_4d(ctx, type, hsk, nh, capacity, nr23[1]);
+            ggml_set_name(base, name);
+            ggml_tensor * view = ggml_view_4d(ctx, base, hsk, nh, kv, nr23[1], base->nb[1], base->nb[2], base->nb[3], 0);
+            return ggml_permute(ctx, view, 0, 2, 1, 3);
+        };
+        ggml_tensor * k = cache(type_K, "oracle_k");
+        ggml_tensor * v = cache(type_V, "oracle_v");
+        ggml_tensor * m = ggml_new_tensor_4d(ctx, GGML_TYPE_F16, kv, nb, 1, nr23[1]);
+        ggml_set_name(m, "oracle_mask");
+        auto attention = [&](ggml_tensor * qi, ggml_tensor * ki, ggml_tensor * vi, ggml_tensor * mi) {
+            ggml_tensor * out = ggml_flash_attn_ext(ctx, qi, ki, vi, mi, 1.0f/sqrtf(hsk), 0, 0);
+            ggml_prec_set_acc(out, GGML_PREC_F32);
+            return out;
+        };
+        // Explicit destinations survive graph copying; cast self-references do not.
+        auto cast = [&](ggml_tensor * t, ggml_type type) {
+            return ggml_cpy(ctx, t, ggml_new_tensor(ctx, type, GGML_MAX_DIMS, t->ne));
+        };
+        // The oracle must use represented half operands with F32 accumulation, including V.
+        auto as_f16 = [&](ggml_tensor * t) {
+            return t->type == GGML_TYPE_F16 ? t : cast(cast(t, GGML_TYPE_F32), GGML_TYPE_F16);
+        };
+        ggml_tensor * k16 = as_f16(k);
+        ggml_tensor * v16 = as_f16(v);
+        ggml_tensor * ref = attention(q, cast(k16, GGML_TYPE_F32), cast(v16, GGML_TYPE_F32), m);
+        ggml_tensor * out = attention(q, k, v, m);
+        if (!compare_rows) {
+            return ggml_concat(ctx, out, ref, 3);
+        }
+
+        // Row slices must retain the same query and mask data as the batch.
+        ggml_tensor * rows = nullptr;
+        for (int64_t row = 0; row < nb; ++row) {
+            ggml_tensor * qr = ggml_view_4d(ctx, q, hsk, 1, nh*nr23[0], nr23[1], q->nb[1], q->nb[2], q->nb[3], row*q->nb[1]);
+            ggml_tensor * mr = ggml_view_4d(ctx, m, kv, 1, 1, nr23[1], m->nb[1], m->nb[2], m->nb[3], row*m->nb[1]);
+            ggml_tensor * r = attention(qr, k, v, mr);
+            rows = rows ? ggml_concat(ctx, rows, r, 2) : r;
+        }
+        ggml_tensor * f16 = attention(q, k16, v16, m);
+        return ggml_concat(ctx, ggml_concat(ctx, ggml_concat(ctx, out, rows, 3), f16, 3), ref, 3);
+    }
+
+    void initialize_tensors(ggml_context * ctx) override {
+        for (ggml_tensor * t = ggml_get_first_tensor(ctx); t; t = ggml_get_next_tensor(ctx, t)) {
+            if (t->view_src || t->op != GGML_OP_NONE) {
+                continue;
+            }
+            std::vector<float> data(ggml_nelements(t));
+            if (strcmp(t->name, "oracle_mask") == 0) {
+                std::fill(data.begin(), data.end(), -INFINITY);
+                for (int64_t s = 0; s < nr23[1]; ++s) {
+                    for (int64_t row = 0; row < nb; ++row) {
+                        const int64_t end = used_kv - nb + row;
+                        const int64_t begin = pattern == "late" ? used_kv - nb : 0;
+                        for (int64_t i = begin; i <= end; ++i) {
+                            data[(s*nb + row)*kv + i] = 0;
+                        }
+                    }
+                }
+            } else {
+                uint32_t salt = strcmp(t->name, "oracle_q") == 0 ? 17 : strcmp(t->name, "oracle_k") == 0 ? 31 : 47;
+                for (size_t i = 0; i < data.size(); ++i) {
+                    uint32_t x = uint32_t(i) + salt;
+                    x ^= x >> 16; x *= 0x7feb352d; x ^= x >> 15; x *= 0x846ca68b; x ^= x >> 16;
+                    data[i] = float(int(x % 2001) - 1000)/1000.0f;
+                }
+                if (pattern == "peak" && strcmp(t->name, "oracle_v") != 0) {
+                    for (size_t i = 0; i < data.size(); ++i) {
+                        const int64_t pos = (i/(hsk*nh)) % t->ne[2];
+                        data[i] = strcmp(t->name, "oracle_q") == 0 || pos >= used_kv - nb ? 1.0f : -1.0f;
+                    }
+                }
+                if (pattern == "constant" || pattern == "large") {
+                    const float value = pattern == "large" ? 1024.0f : 1.0f;
+                    std::fill(data.begin(), data.end(), strcmp(t->name, "oracle_v") == 0 ? value : 0.0f);
+                }
+            }
+            if (t->type == GGML_TYPE_F32) {
+                ggml_backend_tensor_set(t, data.data(), 0, ggml_nbytes(t));
+            } else {
+                std::vector<uint8_t> packed(ggml_nbytes(t));
+                ggml_quantize_chunk(t->type, data.data(), packed.data(), 0, ggml_nrows(t), t->ne[0], nullptr);
+                ggml_backend_tensor_set(t, packed.data(), 0, packed.size());
+            }
+        }
+    }
+
+    double err(const float * a, const float * b, size_t n) override {
+        const size_t head_size = hsv;
+        const size_t plane_size = head_size*nh*nr23[0]*nb*nr23[1];
+        const size_t nplanes = compare_rows ? 3 : 1;
+        if (n != plane_size*(nplanes + 1)) {
+            return INFINITY;
+        }
+        const float * ref = b + nplanes*plane_size;
+        for (size_t i = 0; i < plane_size; ++i) {
+            if (!std::isfinite(ref[i])) {
+                return INFINITY;
+            }
+        }
+        double worst = 0;
+        for (size_t plane = 0; plane < nplanes; ++plane) {
+            const float * actual = a + plane*plane_size;
+            for (size_t i = 0; i < plane_size; ++i) {
+                if (!std::isfinite(actual[i])) {
+                    return INFINITY;
+                }
+            }
+            for (size_t i = 0; i < plane_size; i += head_size) {
+                worst = std::max(worst, nmse(ref + i, actual + i, head_size));
+                if (plane > 0) {
+                    worst = std::max(worst, nmse(a + i, actual + i, head_size));
+                }
+            }
+            if (pattern == "constant" || pattern == "large") {
+                for (size_t i = 0; i < plane_size; ++i) {
+                    worst = std::max(worst, double((actual[i] - ref[0])*(actual[i] - ref[0])/(ref[0]*ref[0])));
+                }
+            }
+        }
+        printf(" oracle_max_head_nmse=%.9g", worst);
+        return worst;
+    }
+};
+
 // GGML_OP_CROSS_ENTROPY_LOSS
 struct test_cross_entropy_loss : public test_case {
     const ggml_type type;
@@ -9582,6 +9731,25 @@ static const ggml_type other_types[] = {
 // Test cases for evaluation: should try to cover edge cases while using small input sizes to keep the runtime low
 static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     std::vector<std::unique_ptr<test_case>> test_cases;
+    for (int64_t hs : {128, 256}) {
+        for (int64_t kv : {256, 257}) {
+            for (int64_t nb : {1, 5}) {
+                for (ggml_type type : {GGML_TYPE_Q8_0, GGML_TYPE_F16}) {
+                    test_cases.emplace_back(new test_flash_attn_oracle(kv, nb, type, "causal", 1, false, false, hs));
+                }
+            }
+        }
+        for (int64_t nb : {1, 5}) {
+            for (ggml_type type : {GGML_TYPE_Q8_0, GGML_TYPE_F16}) {
+                test_cases.emplace_back(new test_flash_attn_oracle(257, nb, type, "causal", 1, false, true, hs));
+            }
+        }
+        test_cases.emplace_back(new test_flash_attn_oracle(256, 5, GGML_TYPE_Q8_0, "causal", 1, true, false, hs));
+        for (const char * pattern : {"late", "peak", "constant"}) {
+            test_cases.emplace_back(new test_flash_attn_oracle(257, 5, GGML_TYPE_F16, pattern, 1, false, false, hs));
+        }
+    }
+
     std::default_random_engine rng(0);
 
     // unary ops
