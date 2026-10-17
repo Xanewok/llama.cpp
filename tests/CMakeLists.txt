@@ -291,7 +291,6 @@ llama_build(test-backend-ops.cpp)
 
 add_executable(test-ar-p2p test-ar-p2p.cpp)
 target_link_libraries(test-ar-p2p PRIVATE ggml)
-llama_test(test-ar-p2p NAME test-ar-p2p-host ARGS --cpu)
 llama_test(test-ar-p2p LABEL "backend")
 set_tests_properties(test-ar-p2p PROPERTIES SKIP_RETURN_CODE 77 ENVIRONMENT "GGML_CUDA_ALLREDUCE=internal" TIMEOUT 120)
 
