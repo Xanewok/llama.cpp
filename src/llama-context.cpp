@@ -273,6 +273,9 @@ llama_context::llama_context(
         }
     }
 
+    const char * ffn_tiles = getenv("LLAMA_FFN_TILES");
+    cparams.ffn_tiles = ffn_tiles && atoi(ffn_tiles) != 0 && model.split_mode() == LLAMA_SPLIT_MODE_TENSOR;
+
     cparams.op_offload     = params.op_offload;
     cparams.kv_unified     = params.kv_unified;
     cparams.moe_cache_size = params.moe_cache_size;
