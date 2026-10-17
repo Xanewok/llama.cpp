@@ -3650,7 +3650,7 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
 #ifdef GGML_CUDA_DEBUG
         const bool debug = true;
 #else
-        const bool debug = false;
+        static const bool debug = getenv("GGML_CUDA_DEBUG_SSM_CONV") != nullptr;
 #endif
         ggml_ssm_conv_state_fusion match;
         const char * reason = nullptr;
