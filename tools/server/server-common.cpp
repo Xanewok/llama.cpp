@@ -792,6 +792,77 @@ size_t server_tokens::get_common_prefix(const server_tokens & b) const {
     return max_idx; // all tokens are equal
 }
 
+// smallest {na, nb} such that a[ia, ia + na) and b[ib, ib + nb) spell the same bytes, or {0, 0}.
+// control/user-defined tokens never match: whether text is one special token or its spelling changes the prompt.
+// b is not validated yet, so ids are range-checked before the vocab is asked about them.
+static std::pair<size_t, size_t> find_same_text_span(
+        const llama_vocab * vocab, const llama_tokens & a, size_t ia, const llama_tokens & b, size_t ib) {
+    constexpr size_t max_span = 8;
+    constexpr int    attr_bad = LLAMA_TOKEN_ATTR_UNKNOWN | LLAMA_TOKEN_ATTR_UNUSED | LLAMA_TOKEN_ATTR_CONTROL | LLAMA_TOKEN_ATTR_USER_DEFINED;
+
+    std::string sa, sb;
+    size_t na = 0;
+    size_t nb = 0;
+    while (true) {
+        const bool step_a = sa.size() <= sb.size();
+        const auto & t = step_a ? a : b;
+        const size_t i = step_a ? ia + na : ib + nb;
+        if ((step_a ? na : nb) == max_span || i >= t.size() || t[i] < 0 || t[i] >= llama_vocab_n_tokens(vocab) ||
+                (llama_vocab_get_attr(vocab, t[i]) & attr_bad)) {
+            return {0, 0};
+        }
+        (step_a ? sa : sb) += common_token_to_piece(vocab, t[i], true);
+        (step_a ? na : nb)++;
+
+        const size_t n = std::min(sa.size(), sb.size());
+        if (sa.compare(0, n, sb, 0, n) != 0) {
+            return {0, 0};
+        }
+        if (sa.size() == sb.size() && na > 0 && nb > 0) {
+            return {na, nb};
+        }
+    }
+}
+
+std::pair<size_t, size_t> server_tokens::get_common_prefix_resync(
+        const server_tokens & b, const llama_vocab * vocab, server_tokens * b_out, std::vector<std::pair<size_t, int64_t>> * shifts) const {
+    size_t ia = get_common_prefix(b);
+    size_t ib = ia;
+    if (!vocab || !map_idx_to_media.empty() || !b.map_idx_to_media.empty()) {
+        return {ia, ib};
+    }
+
+    // invariant once resynced: rw is b with its spans replaced, up to index ia (which equals rw.size())
+    llama_tokens rw;
+    bool resynced = false;
+    while (ia < tokens.size() && ib < b.tokens.size()) {
+        const auto [na, nb] = find_same_text_span(vocab, tokens, ia, b.tokens, ib);
+        if (na == 0) {
+            break;
+        }
+        if (!resynced) {
+            rw.assign(tokens.begin(), tokens.begin() + ia); // equal to b up to here
+            resynced = true;
+        }
+        rw.insert(rw.end(), tokens.begin() + ia, tokens.begin() + ia + na);
+        ia += na;
+        ib += nb;
+        if (shifts) {
+            shifts->push_back({ib, int64_t(ia) - int64_t(ib)});
+        }
+        for (; ia < tokens.size() && ib < b.tokens.size() && tokens[ia] == b.tokens[ib]; ++ia, ++ib) {
+            rw.push_back(tokens[ia]);
+        }
+    }
+
+    if (resynced && b_out) {
+        rw.insert(rw.end(), b.tokens.begin() + ib, b.tokens.end());
+        *b_out = server_tokens(rw, b.has_mtmd);
+    }
+
+    return {ia, ib};
+}
+
 common_chat_msg_spans server_tokens::find_message_spans(const common_chat_msg_delimiters & delims) const {
     std::map<size_t, size_t> skips;
     for (const auto & it : map_idx_to_media) {
