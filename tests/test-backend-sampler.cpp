@@ -1971,6 +1971,68 @@ static void test_backend_multi_output_cpu_suffix(const test_params & params) {
     printf("backend multi-output CPU suffix test PASSED\n");
 }
 
+static void test_backend_top_k_greedy_sampling(const test_params & params) {
+    const int seq_id = 0;
+    const std::string prompt = "Hello";
+
+    const std::vector<float> raw = decode_raw_logits(params, prompt);
+    const llama_token expected = (llama_token) (std::max_element(raw.begin(), raw.end()) - raw.begin());
+
+    struct llama_sampler_chain_params backend_chain_params = llama_sampler_chain_default_params();
+    llama_sampler_ptr backend_sampler_chain(llama_sampler_chain_init(backend_chain_params));
+    llama_sampler_chain_add(backend_sampler_chain.get(), llama_sampler_init_top_k(8));
+    llama_sampler_chain_add(backend_sampler_chain.get(), llama_sampler_init_greedy());
+    std::vector<llama_sampler_seq_config> backend_sampler_configs = {{ seq_id, backend_sampler_chain.get() }};
+
+    test_context test_ctx(params, backend_sampler_configs);
+
+    if (!test_ctx.decode({{seq_id, prompt}})) {
+        GGML_ASSERT(false && "Failed to decode token");
+    }
+
+    const llama_token token = llama_get_sampled_token_ith(test_ctx.ctx.get(), test_ctx.idx_for_seq(seq_id));
+    printf("top_k + greedy sampled id:%d, expected id:%d\n", token, expected);
+    GGML_ASSERT(token == expected);
+
+    printf("backend top-k + greedy sampling test PASSED\n");
+}
+
+static void test_backend_top_p_on_top_k_candidates(const test_params & params) {
+    const int seq_id = 0;
+    const int32_t k = 8;
+
+    // top-p -> top-k leaves candidates for the second top-p, which sorts them as one row
+    struct llama_sampler_chain_params backend_chain_params = llama_sampler_chain_default_params();
+    llama_sampler_ptr backend_sampler_chain(llama_sampler_chain_init(backend_chain_params));
+    llama_sampler_chain_add(backend_sampler_chain.get(), llama_sampler_init_top_p(0.99f, 1));
+    llama_sampler_chain_add(backend_sampler_chain.get(), llama_sampler_init_top_k(k));
+    llama_sampler_chain_add(backend_sampler_chain.get(), llama_sampler_init_top_p(0.9f, 1));
+    std::vector<llama_sampler_seq_config> backend_sampler_configs = {{ seq_id, backend_sampler_chain.get() }};
+
+    test_context test_ctx(params, backend_sampler_configs);
+
+    if (!test_ctx.decode({{seq_id, "Hello"}})) {
+        GGML_ASSERT(false && "Failed to decode token");
+    }
+
+    const int32_t batch_idx = test_ctx.idx_for_seq(seq_id);
+
+    const llama_token * candidates = llama_get_sampled_candidates_ith(test_ctx.ctx.get(), batch_idx);
+    const uint32_t n_candidates = llama_get_sampled_candidates_count_ith(test_ctx.ctx.get(), batch_idx);
+    GGML_ASSERT(n_candidates >= 1 && n_candidates <= (uint32_t) k);
+    for (uint32_t i = 0; i < n_candidates; ++i) {
+        GGML_ASSERT(candidates[i] >= 0 && candidates[i] < test_ctx.n_vocab);
+    }
+
+    struct llama_sampler_chain_params chain_params = llama_sampler_chain_default_params();
+    llama_sampler_ptr chain(llama_sampler_chain_init(chain_params));
+    llama_sampler_chain_add(chain.get(), llama_sampler_init_dist(18));
+    const llama_token token = llama_sampler_sample(chain.get(), test_ctx.ctx.get(), batch_idx);
+    GGML_ASSERT(std::find(candidates, candidates + n_candidates, token) != candidates + n_candidates);
+
+    printf("backend top-p on top-k candidates test PASSED\n");
+}
+
 struct backend_test_case {
     std::string name;
     void (*fn)(const test_params &);
@@ -1997,6 +2059,8 @@ static const backend_test_case BACKEND_TESTS[] = {
     { "min_p",           test_backend_min_p_sampling,          true  },
     { "cpu_mixed",       test_backend_cpu_mixed_batch,         true  },
     { "top_p",           test_backend_top_p_sampling,          true  },
+    { "top_k_greedy",    test_backend_top_k_greedy_sampling,   true  },
+    { "top_p_on_top_k",  test_backend_top_p_on_top_k_candidates, true },
 };
 
 static test_args parse_cli(int argc, char ** argv) {
