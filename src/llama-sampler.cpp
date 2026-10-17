@@ -1538,6 +1538,17 @@ struct llama_sampler * llama_sampler_init_top_k(int32_t k) {
     );
 }
 
+// set the entries of a 0/1 mask selected by idx to 1
+static struct ggml_tensor * llama_sampler_backend_mask_keep(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * mask,
+        struct ggml_tensor  * idx) {
+    struct ggml_tensor * rows = ggml_reshape_2d(ctx, mask, 1, mask->ne[0]);
+    struct ggml_tensor * ones = ggml_scale_bias(ctx, ggml_get_rows(ctx, rows, idx), 0.0f, 1.0f);
+
+    return ggml_reshape_1d(ctx, ggml_set_rows(ctx, rows, ones, idx), mask->ne[0]);
+}
+
 // top-p
 
 struct llama_sampler_top_p : public llama_sampler_backend {
@@ -1695,6 +1706,12 @@ static void llama_sampler_top_p_backend_apply(
 
     mask_reshaped = ggml_set_rows(ctx, mask_reshaped, ones, ggml_cast(ctx, idxf, GGML_TYPE_I32));
     mask = ggml_reshape_1d(ctx, mask_reshaped, mask->ne[0]);
+
+    if (sctx->min_keep > 1) {
+        // the logits are sorted, so keep the first min_keep
+        const int64_t n_keep = std::min<size_t>(sctx->min_keep, mask->ne[0]);
+        mask = llama_sampler_backend_mask_keep(ctx, mask, ggml_cast(ctx, ggml_arange(ctx, 0.0f, n_keep, 1.0f), GGML_TYPE_I32));
+    }
 
     // Apply -INFINITY bias for masked-out tokens
     // log(1) = 0 (keep), log(0) = -INF (discard)
@@ -1858,6 +1875,11 @@ static void llama_sampler_min_p_backend_apply(
     // and others are 1 (keep). The step is strict, so use 1 - step(-x) to keep x == 0 (the max for p >= 1).
     struct ggml_tensor * mask = ggml_scale_bias(ctx, ggml_step(ctx, ggml_neg(ctx, sub)), -1.0f, 1.0f);
     ggml_set_name(mask, "min_p_mask");
+
+    if (sctx->min_keep > 1) {
+        const int64_t n_keep = std::min<size_t>(sctx->min_keep, mask->ne[0]);
+        mask = llama_sampler_backend_mask_keep(ctx, mask, ggml_top_k(ctx, logits, n_keep));
+    }
 
     // Apply -INFINITY bias for masked-out tokens
     // log(1) = 0 (keep), log(0) = -INF (discard)
