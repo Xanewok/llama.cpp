@@ -1835,6 +1835,9 @@ struct ggml_backend_meta_context {
 
     void *                               comm_ctx       = nullptr;
     ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;
+    ggml_backend_comm_allreduce_start_t  comm_start     = nullptr;
+    ggml_backend_comm_allreduce_finish_t comm_finish    = nullptr;
+    std::vector<size_t>                 finish_before;
 
     ggml_backend_meta_context(ggml_backend_dev_t meta_dev, const char * params) {
         const size_t n_devs = ggml_backend_meta_dev_n_devs(meta_dev);
@@ -1866,6 +1869,12 @@ struct ggml_backend_meta_context {
                 ggml_backend_reg_get_proc_address(ggml_backend_dev_backend_reg(
                     ggml_backend_get_device(simple_backends[0])), "ggml_backend_comm_allreduce_tensor");
             GGML_ASSERT(comm_allreduce != nullptr);
+            ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(ggml_backend_get_device(simple_backends[0]));
+            comm_start  = (ggml_backend_comm_allreduce_start_t)  ggml_backend_reg_get_proc_address(reg, "ggml_backend_comm_allreduce_start");
+            comm_finish = (ggml_backend_comm_allreduce_finish_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_comm_allreduce_finish");
+            if (!comm_finish) {
+                comm_start = nullptr;
+            }
         }
     }
 
@@ -1990,6 +1999,24 @@ static void ggml_backend_meta_synchronize(ggml_backend_t backend) {
     for (size_t i = 0; i < n_backends; i++) {
         ggml_backend_synchronize(ggml_backend_meta_simple_backend(backend, i));
     }
+}
+
+static bool ggml_backend_meta_overlaps(const ggml_tensor * result, const ggml_tensor * tensor) {
+    for (; tensor; tensor = tensor->view_src) {
+        if (tensor == result) {
+            return true;
+        }
+        if (result->data && tensor->data) {
+            const uintptr_t a = (uintptr_t) result->data;
+            const uintptr_t b = (uintptr_t) tensor->data;
+            // A backend can write allocation scratch beyond the logical tensor bytes.
+            const size_t size = tensor->buffer && !tensor->view_src ? ggml_backend_buffer_get_alloc_size(tensor->buffer, tensor) : ggml_nbytes(tensor);
+            if (a <= b ? b - a < ggml_nbytes(result) : a - b < size) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, struct ggml_cgraph * cgraph) {
@@ -2316,6 +2343,30 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
                 cgraph_ij->uid = ggml_graph_next_uid();
             }
         }
+
+        if (backend_ctx->comm_start) {
+            backend_ctx->finish_before.assign(n_subgraphs, n_subgraphs);
+            for (size_t i = 0; i + 1 < n_subgraphs; i++) {
+                for (size_t k = i + 1; k < backend_ctx->finish_before[i]; k++) {
+                    for (auto & bc : backend_ctx->backend_configs) {
+                        const ggml_cgraph * producer = bc.cgraphs[i].cgraph_main;
+                        const ggml_tensor * result = producer->nodes[producer->n_nodes - 1];
+                        const ggml_cgraph * consumer = bc.cgraphs[k].cgraph_main;
+                        for (int n = 0; n < consumer->n_nodes; n++) {
+                            const ggml_tensor * node = consumer->nodes[n];
+                            bool overlaps = ggml_backend_meta_overlaps(result, node);
+                            for (const ggml_tensor * src : node->src) {
+                                overlaps |= ggml_backend_meta_overlaps(result, src);
+                            }
+                            if (overlaps) {
+                                backend_ctx->finish_before[i] = k;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     size_t iga = 0; // i graph aux
@@ -2465,12 +2516,37 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
         return GGML_STATUS_SUCCESS;
     };
 
+    struct pending_reduction {
+        ggml_backend_meta_context * ctx;
+        void * handle = nullptr;
+        size_t finish_before = 0;
+        size_t starts = 0;
+        size_t finishes = 0;
+
+        void drain() {
+            if (handle) {
+                ctx->comm_finish(ctx->comm_ctx, handle);
+                handle = nullptr;
+                finishes++;
+            }
+        }
+
+        ~pending_reduction() {
+            drain();
+            GGML_LOG_DEBUG("%s: deferred starts=%zu finishes=%zu\n", __func__, starts, finishes);
+        }
+    } pending{backend_ctx};
 
     for (size_t i = 0; i < backend_ctx->n_subgraphs; i++) {
+        if (pending.handle && pending.finish_before <= i) {
+            pending.drain();
+        }
         for (size_t j = 0; j < n_backends; j++) {
             auto & bcj = backend_ctx->backend_configs[j];
             const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, bcj.cgraphs[i].cgraph_main);
             if (status != GGML_STATUS_SUCCESS) {
+                pending.drain();
+                ggml_backend_meta_synchronize(backend);
                 return status;
             }
         }
@@ -2485,12 +2561,27 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
                     ggml_cgraph * cgraph_ij = bcj.cgraphs[i].cgraph_main;
                     nodes.push_back(cgraph_ij->nodes[cgraph_ij->n_nodes-1]);
                 }
-                backend_allreduce_success = backend_ctx->comm_allreduce(backend_ctx->comm_ctx, nodes.data());
+                if (backend_ctx->comm_start && backend_ctx->finish_before[i] > i + 1) {
+                    pending.drain();
+                    void * handle = nullptr;
+                    backend_allreduce_success = backend_ctx->comm_start(backend_ctx->comm_ctx, nodes.data(), &handle);
+                    if (backend_allreduce_success && handle) {
+                        pending.handle = handle;
+                        pending.finish_before = backend_ctx->finish_before[i];
+                        pending.starts++;
+                    }
+                }
+                if (!backend_allreduce_success) {
+                    pending.drain();
+                    backend_allreduce_success = backend_ctx->comm_allreduce(backend_ctx->comm_ctx, nodes.data());
+                }
             }
 
             if (!backend_allreduce_success) {
+                pending.drain();
                 const ggml_status status = allreduce_fallback(i);
                 if (status != GGML_STATUS_SUCCESS) {
+                    ggml_backend_meta_synchronize(backend);
                     return status;
                 }
             }
