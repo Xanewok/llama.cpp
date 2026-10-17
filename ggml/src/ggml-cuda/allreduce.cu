@@ -639,8 +639,11 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
         }
     }
 
-    GGML_LOG_INFO("allreduce: %s staging%s\n", p->p2p ? "P2P" : "host",
-                  p->p2p ? " (peer device buffers)" : " (mapped pinned buffers)");
+    if (p->p2p) {
+        GGML_LOG_INFO("allreduce: P2P staging (peer device buffers)\n");
+    } else {
+        GGML_LOG_DEBUG("allreduce: host staging (mapped pinned buffers)\n");
+    }
     GGML_LOG_INFO("%s: initialized AllReduce pipeline: %zu GPUs, "
                   "%zu KB chunked kernel staging + %zu MB copy-engine staging per GPU\n",
                   __func__, n_devices, p->buf_bytes >> 10, p->copy_bytes >> 20);
