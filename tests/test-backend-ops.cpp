@@ -8595,6 +8595,13 @@ struct test_flash_attn_oracle : public test_flash_attn_ext {
             return INFINITY;
         }
         const float * ref = b + nplanes*plane_size;
+        std::vector<float> corrupted;
+        if (getenv("LLAMA_TEST_SWIFT_FA_CORRUPT")) {
+            corrupted.assign(a, a + n);
+            corrupted[0] += pattern == "large" ? 1024.0f : 1.0f;
+            a = corrupted.data();
+        }
+
         for (size_t i = 0; i < plane_size; ++i) {
             if (!std::isfinite(ref[i])) {
                 return INFINITY;
@@ -9729,8 +9736,50 @@ static const ggml_type other_types[] = {
 #endif
 
 // Test cases for evaluation: should try to cover edge cases while using small input sizes to keep the runtime low
+struct test_flash_attn_swift_verify : public test_flash_attn_oracle {
+    test_flash_attn_swift_verify(int64_t kv, int64_t nb, ggml_type type, std::string pattern = "causal",
+                                int64_t streams = 1, bool compare_rows = false, bool pad_kv = false)
+        : test_flash_attn_oracle(kv, nb, type, std::move(pattern), streams, compare_rows, pad_kv, 256, 6) {}
+
+    std::string vars() override {
+        return test_flash_attn_oracle::vars() + ",swift_verify=1";
+    }
+};
+
 static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     std::vector<std::unique_ptr<test_case>> test_cases;
+    if (getenv("LLAMA_TEST_SWIFT_FA")) {
+        for (int64_t kv : {4096, 4097, 32768, 32769, 65536, 65537, 102400, 102399}) {
+            for (int64_t nb = 1; nb <= 8; ++nb) {
+                for (ggml_type type : {GGML_TYPE_Q8_0, GGML_TYPE_F16}) {
+                    test_cases.emplace_back(new test_flash_attn_swift_verify(kv, nb, type));
+                }
+            }
+        }
+        for (int64_t kv : {4096, 65536, 102400, 102399}) {
+            for (int64_t nb : {3, 4, 5, 6, 8}) {
+                for (ggml_type type : {GGML_TYPE_Q8_0, GGML_TYPE_F16}) {
+                    for (const char * pattern : {"late", "constant", "large", "peak"}) {
+                        test_cases.emplace_back(new test_flash_attn_swift_verify(kv, nb, type, pattern));
+                    }
+                }
+            }
+            for (int64_t nb : {5, 6}) {
+                test_cases.emplace_back(new test_flash_attn_swift_verify(kv, nb, GGML_TYPE_Q8_0, "causal", 1, true));
+            }
+        }
+        for (int64_t used : {4097, 32769, 65537, 102399}) {
+            for (int64_t nb = 1; nb <= 8; ++nb) {
+                for (ggml_type type : {GGML_TYPE_Q8_0, GGML_TYPE_F16}) {
+                    test_cases.emplace_back(new test_flash_attn_swift_verify(used, nb, type, "causal", 1, false, true));
+                }
+            }
+        }
+        for (int64_t nb : {5, 6}) {
+            test_cases.emplace_back(new test_flash_attn_swift_verify(4096, nb, GGML_TYPE_Q8_0, "causal", 2));
+        }
+        return test_cases;
+    }
     for (int64_t hs : {128, 256}) {
         for (int64_t kv : {256, 257}) {
             for (int64_t nb : {1, 5}) {
@@ -13195,7 +13244,7 @@ int main(int argc, char ** argv) {
         ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
         auto ggml_backend_set_n_threads_fn = (ggml_backend_set_n_threads_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_set_n_threads");
         if (ggml_backend_set_n_threads_fn) {
-            ggml_backend_set_n_threads_fn(backend.get(), std::max<int>(1, N_THREADS/2));
+            ggml_backend_set_n_threads_fn(backend.get(), getenv("LLAMA_TEST_SWIFT_FA") ? 8 : std::max<int>(1, N_THREADS/2));
         }
 
         size_t free, total;  // NOLINT
