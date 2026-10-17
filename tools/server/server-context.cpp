@@ -289,6 +289,7 @@ struct server_slot {
     std::string  debug_generated_text;
     llama_tokens generated_tokens;
     size_t n_sent_text = 0; // number of sent text character (i.e. handle partial UTF-8 on streaming)
+    size_t n_sent_tokens = 0;
 
     std::vector<completion_token_output> generated_token_probs;
 
@@ -387,6 +388,7 @@ struct server_slot {
         stop           = STOP_TYPE_NONE;
         stopping_word  = "";
         n_sent_text    = 0;
+        n_sent_tokens  = 0;
 
         if (can_speculate()) {
             spec_draft.clear();
@@ -1979,9 +1981,11 @@ private:
         slot.sampled = result.tok;
 
         slot.generated.append(token_str, result.tok);
-        if (slot.task->params.return_tokens) {
+        if (slot.task->params.return_tokens || slot.task->params.stream) {
             slot.generated_tokens.push_back(result.tok);
         }
+        // Keep each token's bytes and probabilities before text buffering changes the delta.
+        slot.add_token(result);
         slot.has_next_token = true;
 
         // check if there is incomplete UTF-8 character at the end
@@ -2013,7 +2017,6 @@ private:
                 result.text_to_send = "";
             }
 
-            slot.add_token(result);
             if (slot.task->params.stream) {
                 send_partial_response(slot, result, false);
             }
@@ -2199,9 +2202,13 @@ private:
         }
         if (is_begin) {
             res->is_begin = true;
-        } else {
+        } else if (!is_progress) {
             res->content = slot.generated.substr(slot.n_sent_text - tkn.text_to_send.size(), tkn.text_to_send.size());
-            res->tokens.assign(1, tkn.tok);
+            res->tokens.assign(slot.generated_tokens.begin() + slot.n_sent_tokens, slot.generated_tokens.end());
+            if (slot.task->params.sampling.n_probs > 0 && !slot.generated_token_probs.back().probs.empty()) {
+                res->probs_output.assign(slot.generated_token_probs.begin() + slot.n_sent_tokens, slot.generated_token_probs.end());
+            }
+            slot.n_sent_tokens = slot.generated_tokens.size();
         }
 
         res->n_decoded             = slot.stats.n_gen;
@@ -2214,11 +2221,6 @@ private:
         res->oaicompat_model   = slot.task->params.oaicompat_model;
         res->oaicompat_cmpl_id = slot.task->params.oaicompat_cmpl_id;
 
-        // populate res.probs_output
-        if (slot.task->params.sampling.n_probs > 0) {
-            res->prob_output = tkn; // copy the token probs
-        }
-
         // populate timings if this is final response or timings_per_token is enabled
         if (slot.stop != STOP_TYPE_NONE || slot.task->params.timings_per_token) {
             res->stats = slot.stats;
@@ -2228,6 +2230,10 @@ private:
     }
 
     void send_final_response(server_slot & slot) {
+        if (slot.task->params.stream && slot.n_sent_tokens < slot.generated_tokens.size()) {
+            // A generation limit can stop inside a UTF-8 character.
+            send_partial_response(slot, {}, false);
+        }
         auto res = std::make_unique<server_task_result_cmpl_final>();
 
         res->id      = slot.task->id;

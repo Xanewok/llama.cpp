@@ -1056,8 +1056,8 @@ json server_task_result_cmpl_partial::to_json_non_oaicompat() {
     if (is_progress) {
         res["prompt_progress"] = progress.to_json();
     }
-    if (!prob_output.probs.empty()) {
-        res["completion_probabilities"] = completion_token_output::probs_vector_to_json({prob_output}, post_sampling_probs);
+    if (!probs_output.empty()) {
+        res["completion_probabilities"] = completion_token_output::probs_vector_to_json(probs_output, post_sampling_probs);
     }
     return res;
 }
@@ -1065,9 +1065,9 @@ json server_task_result_cmpl_partial::to_json_non_oaicompat() {
 json server_task_result_cmpl_partial::to_json_oaicompat() {
     std::time_t t = std::time(0);
     json logprobs = json(nullptr); // OAI default to null
-    if (prob_output.probs.size() > 0) {
+    if (!probs_output.empty()) {
         logprobs = json{
-            {"content", completion_token_output::probs_vector_to_json({prob_output}, post_sampling_probs)},
+            {"content", completion_token_output::probs_vector_to_json(probs_output, post_sampling_probs)},
         };
     }
     json res = json {
@@ -1138,9 +1138,9 @@ json server_task_result_cmpl_partial::to_json_oaicompat_chat() {
         auto & last_json = deltas[deltas.size() - 1];
         GGML_ASSERT(last_json.at("choices").size() >= 1);
 
-        if (prob_output.probs.size() > 0) {
+        if (!probs_output.empty()) {
             last_json.at("choices").at(0)["logprobs"] = json {
-                {"content", completion_token_output::probs_vector_to_json({prob_output}, post_sampling_probs)},
+                {"content", completion_token_output::probs_vector_to_json(probs_output, post_sampling_probs)},
             };
         }
 
