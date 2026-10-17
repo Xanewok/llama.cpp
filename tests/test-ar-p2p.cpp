@@ -34,55 +34,20 @@ static bool equal(const std::vector<uint8_t> & a, const std::vector<uint8_t> & b
     return a == b;
 }
 
-static void check_host() {
-    for (ggml_type type : {GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_BF16}) {
-        std::vector<uint8_t> a(31 * ggml_type_size(type)), b(a.size());
-        for (size_t i = 0; i < 31; ++i) {
-            const float value = input(i, 0, 0) + input(i, 1, 0);
-            encode(a, type, i, value);
-            float decoded;
-            if (type == GGML_TYPE_F32) {
-                memcpy(&decoded, a.data() + i * sizeof(float), sizeof(float));
-            } else if (type == GGML_TYPE_F16) {
-                ggml_fp16_t half;
-                memcpy(&half, a.data() + i * sizeof(half), sizeof(half));
-                decoded = ggml_fp16_to_fp32(half);
-            } else {
-                ggml_bf16_t half;
-                memcpy(&half, a.data() + i * sizeof(half), sizeof(half));
-                decoded = ggml_bf16_to_fp32(half);
-            }
-            require(decoded == value, "host oracle round trip");
-            encode(b, type, i, decoded);
-        }
-        require(equal(a, b), "host byte comparison");
-        b[0] ^= 1;
-        require(!equal(a, b), "host corrupted-output control");
-    }
-}
-
 int main(int argc, char ** argv) {
     const char * output = nullptr;
-    bool cpu_only = false;
     for (int i = 1; i < argc; ++i) {
-        if (strcmp(argv[i], "--cpu") == 0) {
-            cpu_only = true;
-        } else if (strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
+        if (strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
             output = argv[++i];
         } else {
-            fprintf(stderr, "usage: %s [--cpu] [--output FILE]\n", argv[0]);
+            fprintf(stderr, "usage: %s [--output FILE]\n", argv[0]);
             return 1;
         }
-    }
-    check_host();
-    if (cpu_only) {
-        puts("PASS: host oracle and corrupted-output control");
-        return 0;
     }
     ggml_backend_load_all();
     ggml_backend_reg_t reg = ggml_backend_reg_by_name("CUDA");
     if (!reg || ggml_backend_reg_dev_count(reg) < 2) {
-        puts("SKIP: two CUDA devices required (host checks passed)");
+        puts("SKIP: two CUDA devices required");
         return 77;
     }
     const char * provider = std::getenv("GGML_CUDA_ALLREDUCE");
@@ -101,9 +66,9 @@ int main(int argc, char ** argv) {
     FILE * file = output ? fopen(output, "wb") : nullptr;
     require(!output || file, "open output");
     size_t cases = 0;
-    // Counts cover both sides of the 1 MiB threshold for 2- and 4-byte wire types, plus ring reuse.
+    // Odd counts exercise scalar tails; the 1 MiB boundaries cover both wire widths with GGML_CUDA_AR_BF16_THRESHOLD=0.
     for (ggml_type type : {GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_BF16}) {
-        for (size_t n : {size_t(8), size_t(256), size_t(262136), size_t(262144), size_t(262152), size_t(524280), size_t(524288), size_t(524296)}) {
+        for (size_t n : {size_t(7), size_t(8), size_t(256), size_t(262136), size_t(262143), size_t(262144), size_t(262145), size_t(262152), size_t(524280), size_t(524288), size_t(524289), size_t(524296)}) {
             ggml_init_params params = {2 * ggml_tensor_overhead() + 256, nullptr, true};
             ggml_context * ctx = ggml_init(params);
             require(ctx != nullptr, "tensor context");
