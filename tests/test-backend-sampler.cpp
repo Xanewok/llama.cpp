@@ -1582,6 +1582,28 @@ static void test_set_sampler(const test_params & params) {
     printf("backend set sampler test PASSED\n");
 }
 
+static void test_backend_min_p_one_sampling(const test_params & params) {
+    const std::string prompt = "Hello";
+
+    const std::vector<float> raw = decode_raw_logits(params, prompt);
+
+    // p >= 1 keeps only the max logit (and its ties)
+    for (const float p : { 1.0f, 1.05f }) {
+        const auto add_samplers = [&](llama_sampler * chain) {
+            llama_sampler_chain_add(chain, llama_sampler_init_min_p(p, 0));
+        };
+        const sampler_comparison_output output = run_sampler_comparison(
+                params, prompt, raw, add_samplers, [](llama_sampler *) {});
+        GGML_ASSERT(output.expected.size() >= 1);
+
+        const sampler_comparison_stats stats = compare_sampler_outputs(
+                "min-p >= 1", map_logits(output.expected), output.actual);
+        GGML_ASSERT(stats.n_mismatch == 0);
+    }
+
+    printf("backend min-p >= 1 sampling test PASSED\n");
+}
+
 static void test_cpu_mixed(const test_params & params) {
     // Sequence 0 uses backend sampling
     struct llama_sampler_chain_params chain_params_0 = llama_sampler_chain_default_params();
@@ -2092,6 +2114,7 @@ static const backend_test_case BACKEND_TESTS[] = {
     { "test_multi_output_dist_transaction",       test_multi_output_dist_transaction,    true },
     { "test_multi_output_sampling_chain",         test_multi_output_sampling_chain,      true },
     { "test_multi_output_cpu_suffix",             test_multi_output_cpu_suffix,          true },
+    { "test_min_p_one", test_backend_min_p_one_sampling, true },
 };
 
 // TODO: add usage, examples
