@@ -1848,15 +1848,15 @@ static void llama_sampler_min_p_backend_apply(
     ggml_set_name(max_logit, "max_logit");
 
     // Calculate the threshold value.
-    struct ggml_tensor * threshold = ggml_scale_bias(ctx, max_logit, 1.0f, logf(sctx->p));
+    struct ggml_tensor * threshold = ggml_scale_bias(ctx, max_logit, 1.0f, logf(std::min(sctx->p, 1.0f)));
     ggml_set_name(threshold, "min_p_threshold");
 
     // Subtract the threshold from logits.
     struct ggml_tensor * sub = ggml_sub(ctx, logits, threshold);
 
     // Create a mask where logits below the threshold are 0 (discard),
-    // and others are 1 (keep).
-    struct ggml_tensor * mask = ggml_step(ctx, sub);
+    // and others are 1 (keep). The step is strict, so use 1 - step(-x) to keep x == 0 (the max for p >= 1).
+    struct ggml_tensor * mask = ggml_scale_bias(ctx, ggml_step(ctx, ggml_neg(ctx, sub)), -1.0f, 1.0f);
     ggml_set_name(mask, "min_p_mask");
 
     // Apply -INFINITY bias for masked-out tokens
