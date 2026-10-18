@@ -502,6 +502,38 @@ void ggml_backend_tensor_get(const struct ggml_tensor * tensor, void * data, siz
     buf->iface.get_tensor(buf, tensor, data, offset, size);
 }
 
+void ggml_backend_tensor_set_batch(const ggml_backend_tensor_transfer * transfers, size_t n_transfers) {
+    for (size_t i = 0; i < n_transfers;) {
+        if (transfers[i].size == 0) {
+            ++i;
+            continue;
+        }
+        ggml_tensor * tensor = transfers[i].tensor;
+        ggml_backend_buffer_t buffer = tensor->view_src ? tensor->view_src->buffer : tensor->buffer;
+        size_t end = i;
+        while (end < n_transfers) {
+            const auto & transfer = transfers[end];
+            ggml_tensor * t = transfer.tensor;
+            ggml_backend_buffer_t b = t->view_src ? t->view_src->buffer : t->buffer;
+            if (b != buffer || transfer.size == 0) {
+                break;
+            }
+            GGML_ASSERT(b && t->data);
+            GGML_ASSERT(transfer.offset <= ggml_nbytes(t) && transfer.size <= ggml_nbytes(t) - transfer.offset);
+            ++end;
+        }
+        if (buffer->iface.set_tensor_batch) {
+            buffer->iface.set_tensor_batch(buffer, transfers + i, end - i);
+        } else {
+            for (size_t j = i; j < end; ++j) {
+                const auto & transfer = transfers[j];
+                ggml_backend_tensor_set(transfer.tensor, transfer.data, transfer.offset, transfer.size);
+            }
+        }
+        i = end;
+    }
+}
+
 void ggml_backend_tensor_set_2d(struct ggml_tensor * tensor, const void * data, size_t offset, size_t size,
             size_t n_copies, size_t stride_tensor, size_t stride_data) {
     GGML_ASSERT(tensor);
@@ -853,6 +885,7 @@ static const struct ggml_backend_buffer_i ggml_backend_multi_buffer_i = {
     /* .cpy_tensor      = */ NULL,
     /* .clear           = */ ggml_backend_multi_buffer_clear,
     /* .reset           = */ NULL,
+    /* .set_tensor_batch = */ NULL,
 };
 
 ggml_backend_buffer_t ggml_backend_multi_buffer_alloc_buffer(ggml_backend_buffer_t * buffers, size_t n_buffers) {
@@ -1855,6 +1888,18 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
     struct ggml_backend_sched_split * splits = sched->splits;
 
     int prev_backend_id = -1;
+    std::vector<ggml_backend_tensor_transfer> input_transfers;
+
+    auto host_transfer = [sched](ggml_tensor * input) {
+        if (!ggml_backend_buffer_is_host(input->buffer)) {
+            return false;
+        }
+        if (input->flags & GGML_TENSOR_FLAG_INPUT) {
+            return true;
+        }
+        ggml_backend_t producer = ggml_backend_sched_get_tensor_backend(sched, input);
+        return ggml_backend_buffer_get_usage(input->buffer) == GGML_BACKEND_BUFFER_USAGE_COMPUTE && !producer->iface.synchronize;
+    };
 
     for (int split_id = 0; split_id < sched->n_splits; split_id++) {
         struct ggml_backend_sched_split * split = &splits[split_id];
@@ -1871,10 +1916,32 @@ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t s
             }
         }
 
+        input_transfers.clear();
+        for (int input_id = 0; input_id < split->n_inputs; ++input_id) {
+            ggml_tensor * input = split->inputs[input_id];
+            if (host_transfer(input)) {
+                ggml_tensor * input_cpy = tensor_copy(input, split_backend_id, sched->cur_copy);
+                GGML_ASSERT(ggml_are_same_layout(input, input_cpy));
+                if (ggml_nbytes(input) > 0) {
+                    input_transfers.push_back({ input_cpy, input->data, 0, ggml_nbytes(input) });
+                }
+            }
+        }
+        if (!input_transfers.empty() && (!split_backend->iface.set_tensor_batch_owned ||
+                !split_backend->iface.set_tensor_batch_owned(split_backend, input_transfers.data(), input_transfers.size()))) {
+            // Wait before overwriting a pipeline copy slot; sources may be reused as soon as compute returns.
+            if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
+                ggml_backend_event_synchronize(sched->events[split_backend_id][sched->cur_copy]);
+            } else {
+                ggml_backend_synchronize(split_backend);
+            }
+            ggml_backend_tensor_set_batch(input_transfers.data(), input_transfers.size());
+        }
+
         // copy the input tensors to the split backend
         // the weights in host memory are copied last, so that the copy callback can read the other inputs of the split
         for (int input_id = 0; input_id < split->n_inputs; input_id++) {
-            if (!ggml_backend_sched_is_host_weight(split->inputs[input_id])) {
+            if (!host_transfer(split->inputs[input_id]) && !ggml_backend_sched_is_host_weight(split->inputs[input_id])) {
                 ggml_backend_sched_copy_input(sched, split, split->inputs[input_id]);
             }
         }
@@ -2513,6 +2580,7 @@ static const struct ggml_backend_buffer_i ggml_backend_cpu_buffer_i = {
     /* .cpy_tensor      = */ ggml_backend_cpu_buffer_cpy_tensor,
     /* .clear           = */ ggml_backend_cpu_buffer_clear,
     /* .reset           = */ NULL,
+    /* .set_tensor_batch = */ NULL,
 };
 
 static const struct ggml_backend_buffer_i ggml_backend_cpu_buffer_from_ptr_i = {
@@ -2527,6 +2595,7 @@ static const struct ggml_backend_buffer_i ggml_backend_cpu_buffer_from_ptr_i = {
     /* .cpy_tensor      = */ ggml_backend_cpu_buffer_cpy_tensor,
     /* .clear           = */ ggml_backend_cpu_buffer_clear,
     /* .reset           = */ NULL,
+    /* .set_tensor_batch = */ NULL,
 };
 
 // CPU backend buffer type
