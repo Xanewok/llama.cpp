@@ -1,6 +1,6 @@
 #include "common.cuh"
 
-#define MMVQ_MAX_BATCH_SIZE 8 // Max. batch size for which to use MMVQ kernels.
+#include "mmvq-params.h"
 
 bool ggml_cuda_should_use_mmvq(enum ggml_type type, int cc, int64_t ne11);
 
