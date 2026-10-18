@@ -2086,6 +2086,61 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
                 ggml_nbytes(draft_output), ggml_type_name(draft_output->type));
     }
 
+    // the MTP draft chain feeds a drafted token back through these on the device
+    if (!draft_vocab_ids.empty()) {
+        const ggml_tensor * src = layers.back().nextn.embed_tokens ? layers.back().nextn.embed_tokens : tok_embd;
+        const auto * weight = src ? ml.get_weight(src->name) : nullptr;
+        const int64_t n_vocab = vocab.n_tokens();
+        if (!weight || src->ne[1] < n_vocab) {
+            LLAMA_LOG_WARN("%s: no token embedding rows to read: MTP draft chain unavailable\n", __func__);
+        } else {
+            ggml_context_ptr ctx { ggml_init({2*ggml_tensor_overhead(), nullptr, true}) };
+            if (!ctx) {
+                throw std::runtime_error("failed to allocate draft token embedding context");
+            }
+            draft_token_embd = ggml_new_tensor_2d(ctx.get(), src->type, src->ne[0], draft_vocab_ids.size());
+            ggml_set_name(draft_token_embd, LLAMA_TENSOR_NAME_DRAFT_TOKEN_EMBD);
+            draft_vocab_map = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I32, n_vocab);
+            ggml_set_name(draft_vocab_map, LLAMA_TENSOR_NAME_DRAFT_VOCAB_MAP);
+            if (params.split_mode == LLAMA_SPLIT_MODE_TENSOR) {
+                // a device reads the whole table for the token it just sampled
+                for (const ggml_tensor * t : { draft_token_embd, draft_vocab_map }) {
+                    GGML_ASSERT(llama_meta_device_get_split_state(t, &get_split_state_ud).axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED);
+                }
+            }
+            auto * buft = ggml_backend_dev_buffer_type(dev_output());
+            ggml_backend_buffer_ptr buf { ml.no_alloc ? ggml_backend_buft_alloc_buffer(buft, 0) :
+                    ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), buft) };
+            if (!buf) {
+                throw std::runtime_error("failed to allocate draft token embeddings");
+            }
+            if (ml.no_alloc) {
+                draft_token_embd->buffer = buf.get();
+                draft_vocab_map->buffer  = buf.get();
+            } else {
+                const size_t row_bytes = ggml_row_size(src->type, src->ne[0]);
+                std::vector<uint8_t> rows(ggml_nbytes(draft_token_embd));
+                std::vector<int32_t> map(n_vocab, -1);
+                for (size_t i = 0; i < draft_vocab_ids.size(); ++i) {
+                    void * dst = rows.data() + i * row_bytes;
+                    const void * row = ml.load_data_range(*weight, size_t(draft_vocab_ids[i]) * row_bytes, row_bytes, dst);
+                    if (row != dst) {
+                        std::memcpy(dst, row, row_bytes);
+                    }
+                    map[draft_vocab_ids[i]] = (int32_t) i;
+                }
+                ggml_backend_tensor_set(draft_token_embd, rows.data(), 0, rows.size());
+                ggml_backend_tensor_set(draft_vocab_map, map.data(), 0, ggml_nbytes(draft_vocab_map));
+            }
+            ggml_backend_buffer_set_usage(buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            std::vector<ggml_backend_buffer_ptr> bufs;
+            bufs.push_back(std::move(buf));
+            pimpl->ctxs_bufs.emplace_back(std::move(ctx), std::move(bufs));
+            LLAMA_LOG_INFO("%s: draft token embeddings: %zu tokens, %zu + %zu bytes per device (%s)\n", __func__,
+                    draft_vocab_ids.size(), ggml_nbytes(draft_token_embd), ggml_nbytes(draft_vocab_map), ggml_type_name(draft_token_embd->type));
+        }
+    }
+
     // print memory requirements per buffer type
     for (auto & [_, bufs] : pimpl->ctxs_bufs) {
         for (auto & buf: bufs) {
