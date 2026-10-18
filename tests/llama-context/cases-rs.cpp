@@ -10,8 +10,16 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
+
+static bool has_recurrent_snapshots(llama_model * model) {
+    char arch[64] = {};
+    llama_model_meta_val_str(model, "general.architecture", arch, sizeof(arch));
+    // DeepSeek4 keeps its snapshots in a separate cache.
+    return strcmp(arch, "deepseek4") != 0;
+}
 
 // roll back multiple sequences, then replay them in a single batch whose per-seq token count
 // exceeds n_ubatch: each seq's replay spans several ubatches while its rollback restore is
@@ -160,6 +168,55 @@ struct case_multi_seq_split_replay : ctx_test {
 
 // save a rolled-back single-seq state, restore it into a fresh and into a dirty context, and
 // verify exact logit matches on replay
+struct case_rollback_depth : ctx_test {
+    test_group group() const override { return TEST_GROUP_RS; }
+    const char * name() const override { return "rollback-depth"; }
+    const char * description() const override { return "refuse rollback beyond the last ubatch or a loaded state"; }
+
+    case_result run(model_run & mr) const override {
+        ctx_opts opts;
+        opts.n_ctx = 256;
+        opts.n_batch = 256;
+        opts.n_ubatch = 16;
+        opts.n_seq_max = 1;
+        opts.n_rs_seq = 8;
+        auto ctx = mr.ctx(opts);
+        CTX_REQUIRE(ctx, "context init failed");
+        if (llama_n_rs_seq(ctx.get()) < opts.n_rs_seq || !has_recurrent_snapshots(mr.model)) {
+            return case_result::skip("no recurrent snapshots");
+        }
+
+        const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(mr.model));
+        llama_memory_t mem = llama_get_memory(ctx.get());
+        struct test_case {
+            std::vector<uint32_t> chunks;
+            uint32_t rollback;
+            bool valid;
+        };
+        for (const auto & tc : std::vector<test_case>{
+                {{16, 3}, 2, true}, {{16, 3}, 3, false}, {{16, 3}, 4, false},
+                {{16, 1}, 1, false}, {{16, 6}, 5, true}, {{16, 6}, 6, false},
+                {{19}, 8, true}, {{19}, 9, false}}) {
+            llama_memory_clear(mem, true);
+            llama_pos pos = 0;
+            for (const auto n : tc.chunks) {
+                CTX_REQUIRE(decode_gen(ctx.get(), n_vocab, 0, pos, pos + n), "decode failed");
+                pos += n;
+            }
+            CTX_REQUIRE(llama_memory_seq_rm(mem, 0, pos - tc.rollback, -1) == tc.valid,
+                    "incorrect rollback depth decision: " + std::to_string(tc.rollback) +
+                    " after " + std::to_string(tc.chunks.back()) + " tokens");
+        }
+
+        llama_memory_clear(mem, true);
+        CTX_REQUIRE(decode_gen(ctx.get(), n_vocab, 0, 0, 16), "decode failed");
+        std::vector<uint8_t> state;
+        CTX_REQUIRE(get_seq_state(ctx.get(), 0, 0, state) && set_seq_state(ctx.get(), 0, 0, state), "state save/load failed");
+        CTX_REQUIRE(!llama_memory_seq_rm(mem, 0, 15, -1), "rollback after a state load was accepted");
+        return case_result::pass();
+    }
+};
+
 struct case_rollback : ctx_test {
     test_group group() const override { return TEST_GROUP_RS; }
 
@@ -253,18 +310,10 @@ struct case_rollback : ctx_test {
                     "replay logits mismatch at position " + std::to_string(pos) + ", nmse " + std::to_string(diff.nmse()));
         }
 
-        // TODO: this test is invalid because RS rollback is only correct once after a ubatch with more than n_rs_seq tokens
-        //       this is not the case here. add asserts and guardrails to prevent such attempts
-        //if (!llama_memory_seq_rm(llama_get_memory(ctx_src.get()), 0, rollback_pos, -1) ||
-        //    !llama_memory_seq_rm(llama_get_memory(ctx_dst.get()), 0, rollback_pos, -1)) {
-        //    TLOG_ERR("%s: partial rollback failed\n", __func__);
-        //    return case_result::fail();
-        //}
-
-        //constexpr llama_state_seq_flags partial_flags = LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY;
-        //common_prompt_checkpoint ckpt_partial;
-        //ckpt_partial.update_tgt(ctx_src.get(), 0, partial_flags);
-        //ckpt_partial.load_tgt(ctx_dst.get(), 0, partial_flags);
+        if (has_recurrent_snapshots(mr.model)) {
+            CTX_REQUIRE(!llama_memory_seq_rm(llama_get_memory(ctx_src.get()), 0, rollback_pos, -1),
+                    "rollback after single-token ubatches was accepted");
+        }
 
         // Repeat the load into a context that already has its own rollback state:
         // groups 1..n_rs_seq hold a different prompt's history, and rs_idx[0] is
@@ -396,6 +445,7 @@ struct case_shared_seq_reserve : ctx_test {
 std::vector<ctx_test_ptr> make_rs_cases() {
     std::vector<ctx_test_ptr> cases;
 
+    cases.push_back(std::make_unique<case_rollback_depth>());
     cases.push_back(std::make_unique<case_rollback>());
     cases.push_back(std::make_unique<case_multi_seq_split_replay>());
     cases.push_back(std::make_unique<case_shared_seq_reserve>());
