@@ -155,6 +155,7 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
     # these tests are disabled on Windows because they use internal functions not exported with LLAMA_API (when building with shared libraries)
     llama_build_and_test(test-unicode.cpp)
     llama_build_and_test(test-sampling.cpp)
+    llama_build(test-sampling-prefilter.cpp)
     llama_build_and_test(test-reasoning-budget.cpp)
     llama_build_and_test(test-grammar-parser.cpp)
     llama_build_and_test(test-grammar-integration.cpp)
@@ -163,6 +164,9 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
     llama_build_and_test(test-chat.cpp WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
     target_include_directories(test-chat PRIVATE ${PROJECT_SOURCE_DIR}/tools/server)
     target_link_libraries(test-chat PRIVATE server-context)
+    llama_build_and_test(test-server-tokens.cpp ARGS ${PROJECT_SOURCE_DIR}/models/ggml-vocab-qwen2.gguf)
+    target_include_directories(test-server-tokens PRIVATE ${PROJECT_SOURCE_DIR}/tools/server)
+    target_link_libraries(test-server-tokens PRIVATE server-context)
     llama_build_and_test(test-json-schema-to-grammar.cpp)
 
     if (NOT GGML_BACKEND_DL)
@@ -207,6 +211,14 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
         FIXTURES_SETUP generate-models
     )
 
+    # Test backend sampling under SPLIT_MODE_TENSOR on two CPU devices
+    llama_test(
+        test-llama-archs
+        NAME test-tp-backend-sampling
+        LABEL main
+        ARGS --tp-sampling -s 42
+    )
+
     # Test recurrent-state rollback across all architectures, using the generated dummy models
     llama_test(
         test-recurrent-state-rollback
@@ -239,6 +251,7 @@ llama_build_and_test(test-chat-template.cpp)
 # debug tool for chat template differential analysis (not registered as a test, run it manually)
 llama_build(test-chat-analysis.cpp)
 llama_build_and_test(test-log.cpp)
+llama_build_and_test(test-speculative.cpp)
 llama_build_and_test(
     test-peg-parser.cpp
     peg-parser/simple-tokenize.cpp
@@ -289,7 +302,13 @@ endif()
 # TODO: make this test (and others) not link `libllama` as it is not needed [TAG_TESTS_LLAMA_LINK]
 llama_build(test-backend-ops.cpp)
 
+add_executable(test-ar-p2p test-ar-p2p.cpp)
+target_link_libraries(test-ar-p2p PRIVATE ggml)
+llama_test(test-ar-p2p LABEL "backend")
+set_tests_properties(test-ar-p2p PROPERTIES SKIP_RETURN_CODE 77 ENVIRONMENT "GGML_CUDA_ALLREDUCE=internal" TIMEOUT 120)
+
 llama_build_and_test(test-tiled-mulmat.cpp)
+llama_build_and_test(test-host-mapped.cpp)
 llama_build_and_test(test-model-load-cancel.cpp LABEL "model")
 llama_build_and_test(test-autorelease.cpp       LABEL "model")
 llama_build_and_test(test-backend-sampler.cpp   LABEL "model")
@@ -354,6 +373,12 @@ if (NOT LLAMA_USE_SYSTEM_GGML)
 
     # Needs non-public ggml{,-backend}-impl.h
     llama_build_and_test(test-alloc.cpp)
+    if (NOT WIN32)
+        find_package(Threads REQUIRED)
+        target_link_libraries(test-alloc PRIVATE Threads::Threads)
+    endif()
+    llama_build_and_test(test-backend-sched-upload.cpp)
+    llama_build_and_test(test-meta-input-stage.cpp)
 endif()
 
 llama_build(test-export-graph-ops.cpp)
@@ -361,3 +386,5 @@ if (TARGET gguf-model-data)
     target_link_libraries(test-export-graph-ops PRIVATE gguf-model-data)
     target_compile_definitions(test-export-graph-ops PRIVATE LLAMA_HF_FETCH)
 endif()
+
+llama_build_and_test(test-kv-mask.cpp)
