@@ -15,9 +15,11 @@
 #include <cstdint>
 #include <climits>
 
-#define GGML_TOPK_SHARED __shared__
-#define GGML_TOPK_LAUNCH(kernel, grid, block, stream, ...) kernel<<<(grid), (block), 0, (stream)>>>(__VA_ARGS__)
+#ifndef GGML_TOPK_EMULATE
+#    define GGML_TOPK_SHARED __shared__
+#    define GGML_TOPK_LAUNCH(kernel, grid, block, stream, ...) kernel<<<(grid), (block), 0, (stream)>>>(__VA_ARGS__)
 typedef cudaStream_t topk_stream_t;
+#endif
 
 constexpr int TOPK_BLOCK                = 256;
 constexpr int TOPK_NBINS                = 256;  // one bin per thread: the histogram and the scans index by threadIdx.x
@@ -31,6 +33,15 @@ constexpr int TOPK_SCRATCH_BYTES_BUDGET = GGML_TOPK_SCRATCH_BYTES;
 
 static_assert(TOPK_BLOCK == TOPK_NBINS, "a thread owns one histogram bin");
 
+// local: negative controls, selected per launch by GGML_CUDA_TOPK_MUTANT (top-k.cu); 0 is the exact path.
+//  1 ties resolve to the highest column, 2 the equal-key scan restarts every tile, 3 no final sort,
+//  4 negative keys not flipped, 5 ties gathered as greater, 6 histograms ignore the decided prefix.
+#ifdef GGML_TOPK_EMULATE
+static int topk_mutant = 0;
+#else
+static __constant__ int topk_mutant = 0;
+#endif
+
 struct topk_row_state {
     uint32_t prefix;     // decided high bits of the k-th key
     uint32_t mask;
@@ -42,11 +53,11 @@ struct topk_row_state {
 
 static __device__ __forceinline__ uint32_t topk_key(float v) {
     const uint32_t b = __float_as_uint(v);
-    return b ^ ((b >> 31) ? 0xFFFFFFFFu : 0x80000000u);
+    return b ^ ((b >> 31) ? (topk_mutant == 4 ? 0x80000000u : 0xFFFFFFFFu) : 0x80000000u);
 }
 
 static __device__ __forceinline__ bool topk_before(uint32_t ka, int ia, uint32_t kb, int ib) {
-    return ka > kb || (ka == kb && ia < ib);
+    return ka > kb || (ka == kb && (topk_mutant == 1 ? ia > ib : ia < ib));
 }
 
 // Inclusive suffix sum of one count per thread over s[TOPK_NBINS]. Exactly one thread, the one owning the largest
@@ -84,7 +95,7 @@ static __device__ void topk_first_equal(const float * row, int ncols, uint32_t p
         if (eq && pos < rank) {
             out[pos] = col;
         }
-        taken += s[TOPK_BLOCK - 1];
+        taken += topk_mutant == 2 ? 0 : s[TOPK_BLOCK - 1];
         __syncthreads();
     }
 }
@@ -104,7 +115,7 @@ static __device__ void topk_sort_write(const float * row, int ncols, int * idx, 
         }
     }
     __syncthreads();
-    for (int size = 2; size <= p; size <<= 1) {
+    for (int size = 2; size <= (topk_mutant == 3 ? 1 : p); size <<= 1) {
         for (int stride = size >> 1; stride > 0; stride >>= 1) {
             for (int i = tid; i < p; i += TOPK_BLOCK) {
                 const int j = i ^ stride;
@@ -151,7 +162,7 @@ static __global__ void topk_small(const float * __restrict__ src, int * dst, int
         __syncthreads();
         for (int col = tid; col < ncols; col += TOPK_BLOCK) {
             const uint32_t key = topk_key(row[col]);
-            if ((key & mask) == prefix) {
+            if ((key & mask) == prefix || topk_mutant == 6) {
                 atomicAdd(&shist[(key >> shift) & (TOPK_NBINS - 1)], 1);
             }
         }
@@ -178,7 +189,7 @@ static __global__ void topk_small(const float * __restrict__ src, int * dst, int
     __syncthreads();
     for (int col = tid; col < ncols; col += TOPK_BLOCK) {
         const uint32_t key = topk_key(row[col]);
-        if (key > prefix) {
+        if (topk_mutant == 5 ? key >= prefix : key > prefix) {
             const int pos = atomicAdd(&scount[0], 1);
             if (pos < k) {
                 sidx[pos] = col;
@@ -218,7 +229,7 @@ static __global__ void topk_hist(
     __syncthreads();
     for (int col = rb * TOPK_BLOCK + tid; col < ncols; col += blocks_per_row * TOPK_BLOCK) {
         const uint32_t key = topk_key(rsrc[col]);
-        if ((key & mask) == prefix) {
+        if ((key & mask) == prefix || topk_mutant == 6) {
             atomicAdd(&h[(key >> shift) & (TOPK_NBINS - 1)], 1);
         }
     }
@@ -273,7 +284,7 @@ static __global__ void topk_gather(
 
     for (int col = rb * TOPK_BLOCK + tid; col < ncols; col += blocks_per_row * TOPK_BLOCK) {
         const uint32_t key = topk_key(rsrc[col]);
-        if (key > prefix) {
+        if (topk_mutant == 5 ? key >= prefix : key > prefix) {
             const int pos = atomicAdd(&st->n_greater, 1);
             if (pos < k) {
                 rdst[pos] = col;

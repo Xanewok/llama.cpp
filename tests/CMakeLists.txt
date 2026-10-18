@@ -177,6 +177,7 @@ set(LLAMA_CONTEXT_TEST_SRC
     llama-context/test-util.cpp
 )
 llama_build(${LLAMA_CONTEXT_TEST_SRC})
+llama_build_and_test(test-topk-batched.cpp)
 
 
 if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
