@@ -761,6 +761,7 @@ static bool check_mtp_chain_capacity() {
             params.n_parallel = slots;
             params.speculative.types = { COMMON_SPECULATIVE_TYPE_DRAFT_MTP };
             params.speculative.draft.probabilistic = true;
+            params.speculative.draft.mtp_chain = true;
             params.speculative.draft.backend_sampling = true;
             params.speculative.draft.p_min = 0.0f;
             params.speculative.draft.n_max = k;

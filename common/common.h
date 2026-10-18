@@ -338,6 +338,8 @@ struct common_params_speculative_draft {
 
     bool probabilistic = false; // sample the draft and verify by rejection, instead of argmax and match
 
+    bool mtp_chain = false; // draft-mtp: draft all steps of a round in one device-side graph, see llama_set_mtp_chain
+
     common_params_model mparams;
 
     llama_context * ctx_tgt = nullptr;

@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <map>
@@ -1476,8 +1478,26 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     };
     std::vector<mtp_chain_seq> mtp_chain_seqs;
 
+    // LLAMA_MTP_CHAIN_DUMP=path: one line per drafted token, "round step id cand_ids[10] probs[10]", chain or not
+    FILE * mtp_chain_dump = nullptr;
+    int    mtp_chain_round = 0;
+
+    void mtp_chain_dump_step(int step, llama_token id, const llama_token_data_array * cur_p) {
+        if (!mtp_chain_dump) {
+            return;
+        }
+        std::fprintf(mtp_chain_dump, "%d %d %d", mtp_chain_round, step, id);
+        for (size_t i = 0; i < 10; ++i) {
+            std::fprintf(mtp_chain_dump, " %d", i < cur_p->size ? cur_p->data[i].id : -1);
+        }
+        for (size_t i = 0; i < 10; ++i) {
+            std::fprintf(mtp_chain_dump, " %.9g", i < cur_p->size ? cur_p->data[i].p : 0.0f);
+        }
+        std::fprintf(mtp_chain_dump, "\n");
+        std::fflush(mtp_chain_dump);
+    }
     std::vector<float>         mtp_chain_zeros; // h of the rows past step 0, which the chain replaces
-    bool mtp_chain = true;
+    bool mtp_chain_announced = false;
 
     common_speculative_impl_draft_mtp(const common_params_speculative & params, uint32_t n_seq)
         : common_speculative_impl(COMMON_SPECULATIVE_TYPE_DRAFT_MTP, n_seq, params.draft.n_max)
@@ -1549,6 +1569,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         mtp_chain_seqs.resize(n_seq);
         mtp_chain_zeros.assign(n_embd, 0.0f);
+        if (const char * path = std::getenv("LLAMA_MTP_CHAIN_DUMP")) {
+            mtp_chain_dump = std::fopen(path, "w");
+        }
 
         i_last.assign(n_seq, -1);
         i_batch_beg.assign(n_seq, -1);
@@ -1573,6 +1596,9 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         for (auto & c : mtp_chain_seqs) {
             llama_sampler_free(c.smpl);
+        }
+        if (mtp_chain_dump) {
+            std::fclose(mtp_chain_dump);
         }
     }
 
@@ -1784,7 +1810,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         llama_seq_id seq_id = -1;
         // The chain graph requires one attached sampler; idle slots keep their samplers.
-        bool eligible = mtp_chain && n_seq == 1 && !chain_heads && !is_mem_shared && params.p_min <= 0.0f &&
+        bool eligible = params.mtp_chain && n_seq == 1 && !chain_heads && !is_mem_shared && params.p_min <= 0.0f &&
                 params.probabilistic && params.backend_sampling && k >= 2 && k <= LLAMA_MTP_CHAIN_MAX;
         for (llama_seq_id s = 0; eligible && s < (llama_seq_id) n_seq; ++s) {
             if (dparams[s].drafting) {
@@ -1796,7 +1822,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         if (eligible && !mtp_chain_attach(seq_id, dparams[seq_id].temp, dparams[seq_id].seed)) {
             SPC_WRN("%s", "the draft context does not take the MTP chain's sampler; drafting step by step\n");
-            mtp_chain = false;
+            params.mtp_chain = false;
             eligible = false;
         }
         for (llama_seq_id s = 0; s < (llama_seq_id) n_seq; ++s) {
@@ -1819,7 +1845,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         if (!llama_set_mtp_chain(ctx_dft, k)) {
             SPC_WRN("%s", "the draft context cannot run the MTP chain; drafting step by step\n");
-            mtp_chain = false;
+            params.mtp_chain = false;
             mtp_chain_release(seq_id);
             batch.clear();
             return false;
@@ -1839,6 +1865,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
             const auto * cur_p = common_sampler_get_candidates(smpl, true);
 
+            mtp_chain_dump_step(s, id, cur_p);
             common_sampler_accept(smpl, id, true);
             // commits the uniform behind this token, or the next round draws it again
             llama_sampler_accept(mtp_chain_seqs[seq_id].smpl, id);
@@ -1851,6 +1878,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     }
 
     void draft(common_speculative_draft_params_vec & dparams) override {
+        ++mtp_chain_round;
         if (draft_chain(dparams)) {
             return;
         }
@@ -1947,6 +1975,8 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
                 // add drafted token for each sequence
                 const llama_token id = dparams.at(seq_id).result_q ? id_sampled : cur_p->data[0].id;
+
+                mtp_chain_dump_step(i, id, cur_p);
 
                 // only collect very high-confidence draft tokens
                 if (cur_p->data[0].p < params.p_min) {
@@ -2779,7 +2809,7 @@ common_params common_base_params_to_speculative(const common_params & params) {
 
     // the MTP chain samples every step of a round in one decode
     if (std::find(params.speculative.types.begin(), params.speculative.types.end(), COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != params.speculative.types.end() &&
-            params.n_parallel == 1 && params_spec.probabilistic && params_spec.backend_sampling && params_spec.p_min <= 0.0f &&
+            params.n_parallel == 1 && params_spec.mtp_chain && params_spec.probabilistic && params_spec.backend_sampling && params_spec.p_min <= 0.0f &&
             params_spec.n_max >= 2 && params_spec.n_max <= LLAMA_MTP_CHAIN_MAX) {
         result.n_outputs_max = std::max(result.n_outputs_max, params_spec.n_max);
         result.n_outputs_max_per_seq = params_spec.n_max;
