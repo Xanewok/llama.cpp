@@ -179,6 +179,33 @@ static __global__ void rms_norm_f32(const float * x,
 }
 
 template <int block_size>
+static __global__ void add_rms_norm_f32(const float * x, const float * y, float * residual, float * dst,
+                                      const float * weight, const int ncols, const float eps) {
+    ggml_cuda_pdl_lc();
+    const int64_t offset = (int64_t) blockIdx.x * ncols;
+    x += offset;
+    y += offset;
+    residual += offset;
+    dst += offset;
+    const int tid = threadIdx.x;
+    float tmp = 0.0f;
+
+    ggml_cuda_pdl_sync();
+    for (int col = tid; col < ncols; col += block_size) {
+        const float xi = x[col] + y[col];
+        residual[col] = xi;
+        tmp += xi * xi;
+    }
+    extern __shared__ float s_sum[];
+    tmp = block_reduce<block_reduce_method::SUM, block_size>(tmp, s_sum);
+    const float mean = tmp / ncols;
+    const float scale = rsqrtf(mean + eps);
+    for (int col = tid; col < ncols; col += block_size) {
+        dst[col] = scale * residual[col] * weight[col];
+    }
+}
+
+template <int block_size>
 static __global__ void rms_norm_back_f32(
         const float * grad, const float * xf, float * dst, const int ncols, const float eps) {
     const int row = blockIdx.x*blockDim.y + threadIdx.y;
@@ -755,4 +782,20 @@ void ggml_cuda_op_l2_norm(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
     const int64_t s03 = nb03 / ts0;
 
     l2_norm_f32_cuda(src0_d, dst_d, ne00, ne01, ne02, ne03, s01, s02, s03, eps, stream);
+}
+
+void ggml_cuda_op_add_rms_norm(ggml_backend_cuda_context & ctx, ggml_tensor * add, ggml_tensor * norm, ggml_tensor * mul) {
+    const int ncols = add->ne[0];
+    const dim3 grid(add->ne[1], 1, 1);
+    const float eps = ggml_get_op_params_f32(norm, 0);
+    GGML_ASSERT(eps >= 0.0f);
+    const int block_size = ncols < 1024 ? 256 : 1024;
+    const ggml_cuda_kernel_launch_params params = {grid, dim3(block_size, 1, 1), 32 * sizeof(float), ctx.stream()};
+    if (block_size == 256) {
+        ggml_cuda_kernel_launch(add_rms_norm_f32<256>, params, (const float *) add->src[0]->data, (const float *) add->src[1]->data,
+                               (float *) add->data, (float *) mul->data, (const float *) mul->src[1]->data, ncols, eps);
+    } else {
+        ggml_cuda_kernel_launch(add_rms_norm_f32<1024>, params, (const float *) add->src[0]->data, (const float *) add->src[1]->data,
+                               (float *) add->data, (float *) mul->data, (const float *) mul->src[1]->data, ncols, eps);
+    }
 }
