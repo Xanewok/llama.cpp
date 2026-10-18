@@ -359,8 +359,6 @@ llama_kv_cache::llama_kv_cache(
     LLAMA_LOG_INFO("%s: n_rot_k = %u, n_embd_head_k_all = %d\n", __func__, n_rot_k, n_embd_head_k_all);
     LLAMA_LOG_INFO("%s: n_rot_v = %u, n_embd_head_k_all = %d\n", __func__, n_rot_v, n_embd_head_v_all);
 
-    // pre-compute the haramard matrices and keep them in host memory
-    // TODO: in the future, we can make copies in the backend buffers to avoid host -> device transfers
     if (n_rot_k || n_rot_v) {
         for (int64_t n = 64; n <= std::max(n_embd_head_k_all, n_embd_head_v_all); n *= 2) {
             attn_rot_hadamard[n] = std::vector<float>(n*n);
@@ -377,6 +375,37 @@ llama_kv_cache::llama_kv_cache(
             tmp->data = attn_rot_hadamard[n].data();
 
             ggml_gen_hadamard(tmp);
+        }
+    }
+
+    // A shared leaf stays on its owner backend. Mixed layer placements keep graph inputs.
+    if (!hparams.no_alloc && !attn_rot_hadamard.empty() && !layers.empty()) {
+        const auto buft = ggml_backend_buffer_get_type(layers.front().k->buffer);
+        const bool same_buft = std::all_of(layers.begin(), layers.end(), [&](const kv_layer & l) {
+            return ggml_backend_buffer_get_type(l.k->buffer) == buft &&
+                (!l.v || ggml_backend_buffer_get_type(l.v->buffer) == buft);
+        });
+        if (same_buft) {
+            ggml_init_params params = { attn_rot_hadamard.size()*ggml_tensor_overhead(), nullptr, true };
+            ctx_rot.reset(ggml_init(params));
+            if (ctx_rot) {
+                for (const auto & entry : attn_rot_hadamard) {
+                    const int64_t n = entry.first;
+                    auto * t = ggml_new_tensor_2d(ctx_rot.get(), GGML_TYPE_F32, n, n);
+                    ggml_format_name(t, "attn_rot_%d", (int) n);
+                    attn_rot_tensors.emplace(n, t);
+                }
+                buf_rot.reset(ggml_backend_alloc_ctx_tensors_from_buft(ctx_rot.get(), buft));
+                if (buf_rot) {
+                    for (const auto & entry : attn_rot_tensors) {
+                        ggml_backend_tensor_set(entry.second, attn_rot_hadamard.at(entry.first).data(), 0, ggml_nbytes(entry.second));
+                    }
+                } else {
+                    attn_rot_tensors.clear();
+                    ctx_rot.reset();
+                    LLAMA_LOG_WARN("%s: rotation allocation failed; using graph inputs\n", __func__);
+                }
+            }
         }
     }
 
@@ -420,15 +449,13 @@ bool llama_kv_cache::seq_rm(llama_seq_id seq_id, llama_pos p0, llama_pos p1) {
 
         uint32_t new_head = cells.size();
 
-        for (uint32_t i = 0; i < cells.size(); ++i) {
-            if (!cells.pos_in(i, p0, p1)) {
-                continue;
-            }
-
-            if (cells.seq_has(i, seq_id) && cells.seq_rm(i, seq_id)) {
-                if (new_head == cells.size()) {
-                    new_head = i;
-                }
+        const auto & positions = cells.seq_pos_get(seq_id);
+        auto it = positions.lower_bound({p0, 0});
+        while (it != positions.end() && it->first < p1) {
+            const uint32_t i = (it++)->second;
+            // seq_rm erases this entry; position order need not match cell order.
+            if (cells.seq_rm(i, seq_id)) {
+                new_head = std::min(new_head, i);
             }
         }
 
@@ -845,7 +872,7 @@ bool llama_kv_cache::update(llama_context * lctx, bool do_shift, const stream_co
     if (!sc_info.empty()) {
         assert(n_stream > 1 && "stream copy should never happen with a single stream");
 
-        llama_synchronize(lctx);
+        lctx->synchronize(true);
 
         const size_t n_copy = sc_info.ssrc.size();
 
@@ -1281,6 +1308,7 @@ uint32_t llama_kv_cache::get_n_kv(const slot_info & sinfo) const {
     uint32_t result = 0;
 
     // pad the n_kv value so that the graph remains constant across batches and can be reused
+    // (n_pad divides the cache size, see the constructor assert, so the padded value never exceeds it)
     // note: this also helps some backends with performance (f.ex https://github.com/ggml-org/llama.cpp/pull/16812#issuecomment-3455112220)
     const uint32_t n_pad_cur = std::max(n_pad, 256u);
 
@@ -1468,6 +1496,11 @@ ggml_tensor * llama_kv_cache::build_input_k_rot(ggml_context * ctx) const {
     ggml_tensor * res = nullptr;
 
     if (n_rot_k) {
+        const auto it = attn_rot_tensors.find(n_rot_k);
+        if (it != attn_rot_tensors.end()) {
+            return it->second;
+        }
+
         res = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n_rot_k, n_rot_k);
         ggml_set_input(res);
         ggml_set_name(res, "attn_inp_k_rot");
@@ -1480,6 +1513,11 @@ ggml_tensor * llama_kv_cache::build_input_v_rot(ggml_context * ctx) const {
     ggml_tensor * res = nullptr;
 
     if (n_rot_v) {
+        const auto it = attn_rot_tensors.find(n_rot_v);
+        if (it != attn_rot_tensors.end()) {
+            return it->second;
+        }
+
         res = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, n_rot_v, n_rot_v);
         ggml_set_input(res);
         ggml_set_name(res, "attn_inp_v_rot");
@@ -1826,6 +1864,11 @@ void llama_kv_cache::set_input_pos_bucket(ggml_tensor * dst, const llama_ubatch 
 }
 
 void llama_kv_cache::set_input_k_rot(ggml_tensor * dst) const {
+    const auto it = attn_rot_tensors.find(dst->ne[0]);
+    if (it != attn_rot_tensors.end() && dst == it->second) {
+        return;
+    }
+
     GGML_ASSERT(ggml_backend_buffer_is_host(dst->buffer));
 
     const auto n_rot = dst->ne[0];
@@ -1835,6 +1878,11 @@ void llama_kv_cache::set_input_k_rot(ggml_tensor * dst) const {
 }
 
 void llama_kv_cache::set_input_v_rot(ggml_tensor * dst) const {
+    const auto it = attn_rot_tensors.find(dst->ne[0]);
+    if (it != attn_rot_tensors.end() && dst == it->second) {
+        return;
+    }
+
     GGML_ASSERT(ggml_backend_buffer_is_host(dst->buffer));
 
     const auto n_rot = dst->ne[0];
