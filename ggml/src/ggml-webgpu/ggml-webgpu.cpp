@@ -3756,6 +3756,7 @@ static ggml_backend_i ggml_backend_webgpu_i = {
     /* .event_record            = */ ggml_backend_webgpu_event_record,
     /* .event_wait              = */ ggml_backend_webgpu_event_wait,
     /* .graph_optimize          = */ NULL,
+    /* .set_tensor_batch_owned = */ NULL,
 };
 
 /* End GGML Backend Interface */
@@ -4427,6 +4428,10 @@ static bool ggml_webgpu_supported_qtype(ggml_type type) {
 }
 
 static bool ggml_backend_webgpu_device_supports_op(ggml_backend_dev_t dev, const ggml_tensor * op) {
+    if (op->op == GGML_OP_GATED_DELTA_NET && op->src[6]) {
+        return false;
+    }
+
     ggml_backend_webgpu_device_context * ctx = static_cast<ggml_backend_webgpu_device_context *>(dev->context);
 
     ggml_tensor * src0 = op->src[0];

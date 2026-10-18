@@ -601,6 +601,8 @@ extern "C" {
 
         GGML_OP_GLU,
 
+        GGML_OP_SSM_CONV_RS,
+
         GGML_OP_COUNT,
     };
 
@@ -2526,6 +2528,28 @@ extern "C" {
             struct ggml_tensor  * sx,
             struct ggml_tensor  * c);
 
+    // Causal depthwise convolution over [state | x], as ggml_ssm_conv on their concatenation, where the state of
+    // sequence s is the row ids[s] of `states` and the rollback snapshots are written to `snap`.
+    //
+    //   x      F32 [n_t, d_inner, n_s]           new tokens, any strides
+    //   w      F32 [d_conv, d_inner]
+    //   states F32 [(d_conv - 1)*d_inner, rows]  recurrent cache; each row holds one (d_conv - 1)-column state per channel
+    //   ids    I32 [n_s]                         row of `states` each sequence starts from; may repeat
+    //   snap   F32 [(d_conv - 1)*d_inner, n_s, n_slots]
+    //                                            a view of `states`; snap[:, s, k] receives the (d_conv - 1) columns of
+    //                                            the concatenation that start at max(0, n_t - k)
+    //   result F32 [d_inner, n_t, n_s]           the convolution
+    //
+    // Every state is read before any snapshot is written, as if the states were gathered first, so a snapshot row
+    // may be the state row of another sequence. The snapshot rows must be pairwise distinct.
+    GGML_API struct ggml_tensor * ggml_ssm_conv_rs(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * x,
+            struct ggml_tensor  * w,
+            struct ggml_tensor  * states,
+            struct ggml_tensor  * ids,
+            struct ggml_tensor  * snap);
+
     GGML_API struct ggml_tensor * ggml_ssm_scan(
             struct ggml_context * ctx,
             struct ggml_tensor  * s,
@@ -2644,7 +2668,8 @@ extern "C" {
     //   v     : [S_v, H_v, n_tokens, n_seqs]
     //   g     : [1, H_v, n_tokens, n_seqs] (scalar gate) or [S_v, H_v, n_tokens, n_seqs] (KDA)
     //   beta  : [1, H_v, n_tokens, n_seqs]
-    //   state : [S_v, S_v, H_v, n_seqs] -- initial recurrent state s0
+    //   state : [S_v, S_v, H_v, n_state_rows] -- initial recurrent states
+    //   ids   : optional I32 [n_seqs], values in [0, n_state_rows); NULL requires n_state_rows == n_seqs
     //
     // the output packs the attention scores [S_v, H_v, n_tokens, n_seqs] followed by K state
     // snapshots, most-recent first (slot 0 = final state, slot s = state s tokens back). K == 1
@@ -2657,6 +2682,7 @@ extern "C" {
             struct ggml_tensor  * g,
             struct ggml_tensor  * beta,
             struct ggml_tensor  * state,
+            struct ggml_tensor  * ids,
             int64_t               K);
 
     // DSA lightning indexer

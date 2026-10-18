@@ -93,6 +93,87 @@ def test_completion_stream_vs_non_stream():
     assert content_stream == res_non_stream.body["content"]
 
 
+@pytest.mark.parametrize("return_tokens", [False, True])
+@pytest.mark.parametrize("text,stop,n_predict", [
+    ("\u2554A\u2554B", [], None),
+    ("hello there", ["hello!"], None),
+    ("hello there", ["hello"], None),
+    ("\u2554A", [], 1),
+])
+def test_completion_stream_buffered_tokens(text, stop, n_predict, return_tokens):
+    global server
+    server.start()
+    tokenized = server.make_request("POST", "/tokenize", data={"content": text})
+    assert tokenized.status_code == 200
+    expected_tokens = tokenized.body["tokens"]
+    if text.startswith("\u2554"):
+        assert len(expected_tokens) > len(text)
+
+    request = {
+        "prompt": "Repeat exactly: " + text,
+        "grammar": 'root ::= "' + text + '"',
+        "n_predict": n_predict or 32,
+        "temperature": 0.0,
+        "seed": 42,
+        "cache_prompt": False,
+        "return_tokens": True,
+        "n_probs": 5,
+        "stop": stop,
+    }
+    non_stream = server.make_request("POST", "/completion", data=request)
+    assert non_stream.status_code == 200
+    chunks = list(server.make_stream_request("POST", "/completion", data={
+        **request, "stream": True, "return_tokens": return_tokens,
+    }))
+    tokens = [tok for chunk in chunks for tok in chunk["tokens"]]
+    assert tokens == non_stream.body["tokens"]
+    assert len(tokens) == chunks[-1]["timings"]["predicted_n"]
+    assert len(tokens) == non_stream.body["timings"]["predicted_n"]
+
+    probs = [prob for chunk in chunks for prob in chunk.get("completion_probabilities", [])]
+    assert [prob["id"] for prob in probs] == tokens
+    if non_stream.body["stop_type"] != "word":
+        assert probs == non_stream.body["completion_probabilities"]
+    if n_predict is None:
+        assert "".join(chunk["content"] for chunk in chunks) == non_stream.body["content"]
+    if not stop and n_predict is None:
+        assert non_stream.body["content"] == text
+        assert any(len(chunk["tokens"]) > 1 for chunk in chunks)
+        assert bytes(b for prob in probs for b in prob["bytes"]).decode() == text
+
+
+@pytest.mark.parametrize("logprobs", [False, True])
+def test_completion_stream_buffered_tokens_chat(logprobs):
+    global server
+    server.start()
+    text = "\u2554A\u2554B"
+    request = {
+        "messages": [{"role": "user", "content": "Repeat exactly: " + text}],
+        "grammar": 'root ::= "' + text + '"',
+        "max_tokens": 32,
+        "temperature": 0.0,
+        "seed": 42,
+        "cache_prompt": False,
+        "logprobs": logprobs,
+    }
+    if logprobs:
+        request["top_logprobs"] = 5
+    non_stream = server.make_request("POST", "/v1/chat/completions", data=request)
+    assert non_stream.status_code == 200
+    chunks = list(server.make_stream_request("POST", "/v1/chat/completions", data={
+        **request, "stream": True,
+    }))
+    choices = [choice for chunk in chunks for choice in chunk["choices"]]
+    assert "".join(choice["delta"].get("content", "") or "" for choice in choices) == text
+    assert non_stream.body["choices"][0]["message"]["content"] == text
+    assert choices[-1]["finish_reason"] == "stop"
+    if logprobs:
+        probs = [prob for choice in choices for prob in (choice.get("logprobs") or {}).get("content", [])]
+        assert len(probs) == non_stream.body["usage"]["completion_tokens"] - 1
+        assert probs == non_stream.body["choices"][0]["logprobs"]["content"][:-1]
+        assert bytes(b for prob in probs for b in prob["bytes"]).decode() == text
+
+
 def test_completion_with_openai_library():
     global server
     server.start()
@@ -666,3 +747,69 @@ def test_completion_prompt_cache():
         assert "prompt_n" in timings and timings["prompt_n"] + timings["cache_n"] == n_prompt
         assert "predicted_n" in timings and timings["predicted_n"] == n_predict
         assert "tokens" in res.body and isinstance(res.body["tokens"], list)
+
+
+# a sampled non-canonical split is not reproduced by re-tokenizing the text, the cached prefix must still be reused
+def test_prompt_cache_noncanonical_split():
+    global server
+    server.n_slots = 1
+    server.n_ctx = 1024
+    server.n_batch = 512
+    server.start()
+
+    def tokenize(text: str) -> list[int]:
+        res = server.make_request("POST", "/tokenize", data={"content": text, "add_special": False})
+        assert res.status_code == 200
+        return res.body["tokens"]
+
+    def detokenize(tokens: list[int]) -> str:
+        res = server.make_request("POST", "/detokenize", data={"tokens": tokens})
+        assert res.status_code == 200
+        return res.body["content"]
+
+    def complete(prompt: list[int]) -> dict:
+        res = server.make_request("POST", "/completion", data={
+            "prompt": prompt, "n_predict": 1, "temperature": 0.0, "cache_prompt": True,
+        })
+        assert res.status_code == 200
+        return res.body["timings"]
+
+    head = tokenize("Once upon a time there was a girl. She had a")
+    tail = tokenize(". They went to the park and played all day long.")
+    more = tokenize(" Then they went home.")
+
+    # piece of every token, measured after `head` so that a leading space is kept
+    base = detokenize(head)
+    piece = {t: detokenize(head + [t])[len(base):] for t in range(3, 512)}
+    by_piece = {}
+    for t, p in piece.items():
+        by_piece.setdefault(p, t)
+
+    # a token whose piece is also spelled by two other tokens
+    split = None
+    for t, p in piece.items():
+        if by_piece[p] != t:
+            continue
+        for i in range(1, len(p)):
+            if p[:i] in by_piece and p[i:] in by_piece:
+                split = (t, [by_piece[p[:i]], by_piece[p[i:]]])
+                break
+        if split:
+            break
+    assert split is not None
+    whole, parts = split
+
+    cached = head + parts + tail
+    fresh  = head + [whole] + tail + more
+    assert detokenize(cached) == detokenize(head + [whole] + tail)
+
+    complete(cached)
+    timings = complete(fresh)
+    assert timings["cache_n"] == len(cached)
+    assert timings["prompt_n"] == len(more)
+
+    # negative control: a different text at the same place only reuses the head
+    other = [t for t in piece if piece[t].strip() and piece[t] not in (piece[whole], "".join(piece[x] for x in parts))][0]
+    complete(cached)
+    timings = complete(head + [other] + tail + more)
+    assert timings["cache_n"] <= len(head)
