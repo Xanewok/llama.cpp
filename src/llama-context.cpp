@@ -1442,6 +1442,13 @@ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
 
     LLAMA_LOG_DEBUG("%s: seq_id = %d, sampler = %p\n", __func__, (int) seq_id, (void *) sampler);
 
+    if (sampler && has_draft_vocab() && llama_sampler_chain_leading_top_k(sampler) > (int64_t) model.draft_vocab_ids.size()) {
+        LLAMA_LOG_WARN("%s: reduced draft vocabulary is smaller than top-k; using CPU\n", __func__);
+        sampling.samplers.erase(seq_id);
+        sched_need_reserve = true;
+        return false;
+    }
+
     if (sampler && has_draft_vocab() && !sampling_init_vocab_ids()) {
         return false;
     }
