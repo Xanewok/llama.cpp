@@ -1366,7 +1366,6 @@ static bool ggml_backend_meta_is_host_view(const struct ggml_tensor * tensor) {
 }
 
 static struct ggml_backend_meta_split_state ggml_backend_meta_get_split_state(const struct ggml_tensor * tensor, bool assume_sync) {
-    std::lock_guard<std::recursive_mutex> lock(meta_tensor_mutex);
     // [TAG_META_HOST_VIEWS]
     // TODO: technically, this check should not be needed if the backend scheduler correctly prevents assigning
     //       such host-buffer views to the meta backend. figure out how to update the scheduler logic to achieve that
@@ -1381,6 +1380,8 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_get_split_state(co
         GGML_ASSERT(tensor->buffer != nullptr && ggml_backend_buffer_is_host(tensor->buffer));
         return { GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1 };
     }
+
+    std::lock_guard<std::recursive_mutex> lock(meta_tensor_mutex);
     ggml_backend_meta_buffer_context * buf_ctx = (ggml_backend_meta_buffer_context *) tensor->buffer->context;
     return ggml_backend_meta_get_split_state(buf_ctx->get_simple_tensor_container(tensor), tensor, assume_sync);
 }
@@ -2241,6 +2242,7 @@ static bool ggml_backend_meta_input_stage_set_batch(ggml_backend_t backend, cons
 }
 
 static bool ggml_backend_meta_set_tensor_batch_owned(ggml_backend_t backend, const ggml_backend_tensor_transfer * transfers, size_t n_transfers) {
+    std::lock_guard<std::recursive_mutex> lock(meta_tensor_mutex);
     const size_t n_backends = ggml_backend_meta_n_backends(backend);
     for (size_t j = 0; j < n_backends; ++j) {
         ggml_backend_t simple = ggml_backend_meta_simple_backend(backend, j);
@@ -2363,49 +2365,51 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
 
     if (needs_rebuild) {
         std::lock_guard<std::recursive_mutex> lock(meta_tensor_mutex);
-        backend_ctx->containers.clear();
-        std::unordered_set<ggml_tensor *> tensors;
-        tensors.reserve(cgraph->n_nodes + cgraph->n_leafs);
-        std::function<void(ggml_tensor *)> visit = [&](ggml_tensor * t) {
-            if (!t || !tensors.insert(t).second) {
-                return;
-            }
-            visit(t->view_src);
-            for (auto * src : t->src) {
-                visit(src);
-            }
-        };
-        for (int i = 0; i < cgraph->n_nodes; ++i) { visit(cgraph->nodes[i]); }
-        for (int i = 0; i < cgraph->n_leafs; ++i) { visit(cgraph->leafs[i]); }
-        std::set<ggml_backend_buffer_t> used_buffers;
-        for (auto * t : tensors) {
-            if (!ggml_backend_buffer_is_meta(t->buffer)) {
-                continue;
-            }
-            used_buffers.insert(t->buffer);
-            auto * buf_ctx = (ggml_backend_meta_buffer_context *) t->buffer->context;
-            auto & container = buf_ctx->get_simple_tensor_container(t);
-            for (const auto & stc : buf_ctx->stc_compute) {
-                if (stc.get() == &container && std::find(backend_ctx->containers.begin(), backend_ctx->containers.end(), stc) == backend_ctx->containers.end()) {
-                    backend_ctx->containers.push_back(stc);
+        {
+            backend_ctx->containers.clear();
+            std::unordered_set<ggml_tensor *> tensors;
+            tensors.reserve(cgraph->n_nodes + cgraph->n_leafs);
+            std::function<void(ggml_tensor *)> visit = [&](ggml_tensor * t) {
+                if (!t || !tensors.insert(t).second) {
+                    return;
+                }
+                visit(t->view_src);
+                for (auto * src : t->src) {
+                    visit(src);
+                }
+            };
+            for (int i = 0; i < cgraph->n_nodes; ++i) { visit(cgraph->nodes[i]); }
+            for (int i = 0; i < cgraph->n_leafs; ++i) { visit(cgraph->leafs[i]); }
+            std::set<ggml_backend_buffer_t> used_buffers;
+            for (auto * t : tensors) {
+                if (!ggml_backend_buffer_is_meta(t->buffer)) {
+                    continue;
+                }
+                used_buffers.insert(t->buffer);
+                auto * buf_ctx = (ggml_backend_meta_buffer_context *) t->buffer->context;
+                auto & container = buf_ctx->get_simple_tensor_container(t);
+                for (const auto & stc : buf_ctx->stc_compute) {
+                    if (stc.get() == &container && std::find(backend_ctx->containers.begin(), backend_ctx->containers.end(), stc) == backend_ctx->containers.end()) {
+                        backend_ctx->containers.push_back(stc);
+                    }
                 }
             }
-        }
-        for (auto * buf : used_buffers) {
-            auto * buf_ctx = (ggml_backend_meta_buffer_context *) buf->context;
-            size_t next = 0;
-            while (next < buf_ctx->stc_compute.size() && buf_ctx->stc_compute[next].use_count() != 1) {
-                ++next;
+            for (auto * buf : used_buffers) {
+                auto * buf_ctx = (ggml_backend_meta_buffer_context *) buf->context;
+                size_t next = 0;
+                while (next < buf_ctx->stc_compute.size() && buf_ctx->stc_compute[next].use_count() != 1) {
+                    ++next;
+                }
+                if (next == buf_ctx->stc_compute.size()) {
+                    const auto & current = *buf_ctx->stc_compute[buf_ctx->stc_compute_index];
+                    const ggml_init_params params = { ggml_get_mem_size(current.ctxs[0].get()), nullptr, true };
+                    buf_ctx->stc_compute.push_back(std::make_shared<ggml_backend_meta_simple_tensor_container>(params, n_backends));
+                }
+                buf_ctx->stc_compute_index_next = next;
+                auto & stc = *buf_ctx->stc_compute[next];
+                for (auto & ctx : stc.ctxs) { ggml_reset(ctx.get()); }
+                stc.simple_tensors.clear();
             }
-            if (next == buf_ctx->stc_compute.size()) {
-                const auto & current = *buf_ctx->stc_compute[buf_ctx->stc_compute_index];
-                const ggml_init_params params = { ggml_get_mem_size(current.ctxs[0].get()), nullptr, true };
-                buf_ctx->stc_compute.push_back(std::make_shared<ggml_backend_meta_simple_tensor_container>(params, n_backends));
-            }
-            buf_ctx->stc_compute_index_next = next;
-            auto & stc = *buf_ctx->stc_compute[next];
-            for (auto & ctx : stc.ctxs) { ggml_reset(ctx.get()); }
-            stc.simple_tensors.clear();
         }
         size_t n_subgraphs  = 0;
         size_t max_tmp_size = 0;
