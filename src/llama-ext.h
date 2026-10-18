@@ -100,6 +100,29 @@ LLAMA_API void llama_set_embeddings_nextn(struct llama_context * ctx, bool value
 // chain multiple trained NextN heads. Default 0 (first head).
 LLAMA_API void llama_set_nextn_layer_offset(struct llama_context * ctx, int32_t offset);
 
+// MTP draft chain (single-head qwen35 MTP with a reduced draft vocabulary): a batch of n_chain rows of one sequence,
+// every row an output, runs as n_chain serial draft steps in one graph. Row 0 carries the token and hidden state
+// of the first step; step s > 0 takes the token the sampler picked at step s-1 and its hidden state from the device,
+// so the token and embedding of rows > 0 are ignored. The sequence needs a backend sampler chain (top-k first),
+// which picks every step and fills the per-row sampled token, candidates and probabilities as usual.
+// Returns false, leaving the chain off, if the context cannot run it. n_chain = 0 turns it off.
+#define LLAMA_MTP_CHAIN_MAX 16
+LLAMA_API bool llama_set_mtp_chain(struct llama_context * ctx, int32_t n_chain);
+
+// top-k whose backend candidates come out in descending logit order, as the host top-k leaves them, so that a dist
+// sampler after it picks the token the host chain would for the same uniform. Host behaviour is the same as llama_sampler_init_top_k.
+LLAMA_API struct llama_sampler * llama_sampler_init_top_k_sorted(int32_t k);
+// MTP fold: an armed llama_decode of ctx_tgt also stores ctx_dft's MTP K/V for the batch tokens, as the draft's
+// catch-up decode would: token i paired with ctx_tgt's (unmasked) nextn row i-1, the first token of sequence s with h_prev[s].
+// It folds only token batches whose row order fits one target and draft ubatch; llama_mtp_fold_n_last tells the caller whether the
+// catch-up decode for that batch is still needed.
+// init: false if the pair is unsupported (nothing is ever folded); ctx_dft == nullptr unlinks.
+LLAMA_API bool    llama_mtp_fold_init  (struct llama_context * ctx_tgt, struct llama_context * ctx_dft);
+// arms the next decode only; h_prev is [n_seq][n_embd], indexed by seq_id and read during that decode
+LLAMA_API void    llama_mtp_fold_arm   (struct llama_context * ctx_tgt, const float * h_prev, int32_t n_seq);
+// tokens folded by the last decode, 0 if it did not fold
+LLAMA_API int32_t llama_mtp_fold_n_last(const struct llama_context * ctx_tgt);
+
 // Marks the entries that a joint decision head (clef) reads, the default is 0
 // See https://github.com/ggml-org/llama.cpp/pull/29831 for details
 // A run of entries with the same value is one span, spans must be separated by entries with value 0
