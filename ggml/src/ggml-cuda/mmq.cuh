@@ -1464,6 +1464,9 @@ static mmq_stream_k_plan mmq_get_stream_k_plan(
     plan.ntiles = nty * ntx * args.nchannels_y * args.nsamples_y;
     // With one block per tile the stream-k kernel is plain tiling: worthwhile if the last wave is nearly full and the fixup kernel is skipped.
     plan.nparts = GGML_CUDA_CC_IS_NVIDIA(cc) && mmq_tiling_efficient(plan.ntiles, nsm) ? plan.ntiles : nsm;
+    if (getenv("GGML_CUDA_MMQ_SK_MUTANT") && plan.group > 1 && plan.nparts != plan.ntiles) {
+        plan.nparts = nsm + 1;
+    }
     return plan;
 }
 
@@ -1552,12 +1555,31 @@ static constexpr bool ggml_cuda_mmq_has_small_i(const ggml_type type) {
     return ggml_cuda_mmq_get_config_blackwell_small_i(type, 16, false, GGML_CUDA_CC_BLACKWELL).type != GGML_TYPE_COUNT;
 }
 
+// Local A/B switch: GGML_CUDA_MMQ_TILES = default (never SMALL_I) | auto-l1 (SMALL_I only on plain-tiling launches: the L1 policy) |
+// auto-drop (auto, but SMALL_I launches are skipped: negative control, outputs must fail) | auto or small (SMALL_I wherever a table
+// entry exists) | unset = auto. GGML_CUDA_MMQ_SK_MUTANT=1 shifts the SMALL_I stream-k partition off the default tile's: negative control,
+// outputs must stop matching the default tile bit for bit.
+enum { MMQ_TILES_AUTO, MMQ_TILES_DEFAULT_ONLY, MMQ_TILES_SMALL_ALWAYS, MMQ_TILES_AUTO_DROP, MMQ_TILES_PLAIN_ONLY };
+static int ggml_cuda_mmq_tiles_mode() {
+    static const int mode = [] {
+        const char * env = getenv("GGML_CUDA_MMQ_TILES");
+        if (env == nullptr || strcmp(env, "auto") == 0) { return (int) MMQ_TILES_AUTO; }
+        if (strcmp(env, "default") == 0)                { return (int) MMQ_TILES_DEFAULT_ONLY; }
+        if (strcmp(env, "small") == 0)                  { return (int) MMQ_TILES_SMALL_ALWAYS; }
+        if (strcmp(env, "auto-drop") == 0)              { return (int) MMQ_TILES_AUTO_DROP; }
+        if (strcmp(env, "auto-l1") == 0)                { return (int) MMQ_TILES_PLAIN_ONLY; }
+        GGML_ABORT("bad GGML_CUDA_MMQ_TILES");
+    }();
+    return mode;
+}
+
 // SMALL_I tiles take every launch they can partition like the default tile (aligned rows, smem fits): the partition, hence the output,
 // is the default tile's whether the launch is plain tiling or stream-k (see mmq_get_stream_k_plan).
 template <ggml_type type, bool fallback, ggml_prec prec_src1>
 static bool ggml_cuda_mmq_use_small_i(const mmq_args & args, const int J) {
     const int    id    = ggml_cuda_get_device();
     const int    cc    = ggml_cuda_info().devices[id].cc;
+    const int    nsm   = ggml_cuda_info().devices[id].nsm;
     const size_t smpbo = ggml_cuda_info().devices[id].smpbo;
 
     const ggml_cuda_mmq_config config = ggml_cuda_mmq_get_config(type, J, fallback, GGML_CUDA_MMQ_TILES_SMALL_I, cc, prec_src1);
@@ -1565,14 +1587,35 @@ static bool ggml_cuda_mmq_use_small_i(const mmq_args & args, const int J) {
         return false;
     }
 
+    const int mode = ggml_cuda_mmq_tiles_mode();
+    if (mode == MMQ_TILES_DEFAULT_ONLY) {
+        return false;
+    }
+
     const ggml_cuda_mmq_config config_default = ggml_cuda_mmq_get_config(type, J, fallback, GGML_CUDA_MMQ_TILES_DEFAULT, cc, prec_src1);
-    return args.nrows_x % config_default.I == 0;
+    if (args.nrows_x % config_default.I != 0) {
+        return false;
+    }
+    const mmq_stream_k_plan plan = mmq_get_stream_k_plan(args, config, config_default, cc, nsm);
+    const int  ntiles = plan.ntiles*plan.group;
+    const bool use = mode != MMQ_TILES_PLAIN_ONLY || plan.nparts == plan.ntiles;
+
+    static const bool log = getenv("GGML_CUDA_MMQ_TILES_LOG") != nullptr;
+    if (log) {
+        fprintf(stderr, "mmq_tiles: type=%s m=%lld cols=%lld z=%lld J=%d ntiles=%d nsm=%d small_i=%d units=%d parts=%d blocks=%d\n", ggml_type_name(type),
+                (long long) args.nrows_x, (long long) args.ncols_max, (long long) (args.nchannels_y*args.nsamples_y), J, ntiles, nsm, (int) use,
+                plan.ntiles, plan.nparts, plan.blocks());
+    }
+    return use;
 }
 
 template <ggml_type type, bool fallback, ggml_prec prec_src1>
 void mul_mat_q_switch_J(ggml_backend_cuda_context & ctx, const mmq_args & args, cudaStream_t stream) {
     if (ggml_cuda_mmq_use_small_i<type, fallback, prec_src1>(args, args.J_best)) {
         if constexpr (ggml_cuda_mmq_has_small_i(type)) {
+            if (ggml_cuda_mmq_tiles_mode() == MMQ_TILES_AUTO_DROP) {
+                return;
+            }
             switch (args.J_best) {
                 case 16:
                     launch_mul_mat_q<type, 16, fallback, GGML_CUDA_MMQ_TILES_SMALL_I, prec_src1>(ctx, args, stream);
