@@ -2286,6 +2286,55 @@ enum ggml_status ggml_backend_sched_graph_compute_async(ggml_backend_sched_t sch
     return ggml_backend_sched_compute_splits(sched);
 }
 
+bool ggml_backend_sched_can_stage_inputs(ggml_backend_sched_t sched, const ggml_cgraph * graph) {
+    if (!ggml_backend_sched_graph_is_alloc(sched, graph) || sched->n_copies != 1 || sched->callback_eval) {
+        return false;
+    }
+    for (int i = 0; i < sched->n_splits; ++i) {
+        auto & split = sched->splits[i];
+        ggml_backend_t backend = sched->backends[split.backend_id];
+        // Synchronous backends finish host reads before compute returns.
+        if (!backend->iface.synchronize) {
+            continue;
+        }
+        if (!backend->iface.set_tensor_batch_owned || !backend->iface.set_tensor_batch_owned(backend, nullptr, 0)) {
+            return false;
+        }
+        for (int j = 0; j < split.n_inputs; ++j) {
+            ggml_tensor * input = split.inputs[j];
+            if (!(input->flags & GGML_TENSOR_FLAG_INPUT) && ggml_backend_buffer_is_host(input->buffer) &&
+                    ggml_backend_buffer_get_usage(input->buffer) == GGML_BACKEND_BUFFER_USAGE_COMPUTE &&
+                    ggml_backend_sched_get_tensor_backend(sched, input)->iface.synchronize) {
+                return false;
+            }
+        }
+        // Direct access to another backend's host outputs bypasses owned transfers.
+        for (int j = 0; j < graph->n_nodes; ++j) {
+            ggml_tensor * node = graph->nodes[j];
+            if (node->buffer && ggml_backend_buffer_is_host(node->buffer) &&
+                    ggml_backend_buffer_get_usage(node->buffer) == GGML_BACKEND_BUFFER_USAGE_COMPUTE &&
+                    tensor_backend_id(node) != split.backend_id && ggml_backend_sched_buffer_supported(sched, node, split.backend_id)) {
+                return false;
+            }
+        }
+    }
+    for (int i = 0; i < graph->n_leafs; ++i) {
+        ggml_tensor * leaf = graph->leafs[i];
+        if (!(leaf->flags & GGML_TENSOR_FLAG_INPUT)) {
+            continue;
+        }
+        if (!ggml_backend_buffer_is_host(leaf->buffer)) {
+            return false;
+        }
+        for (int j = 0; j < sched->n_splits; ++j) {
+            const int id = sched->splits[j].backend_id;
+            if (sched->backends[id]->iface.synchronize && ggml_backend_sched_buffer_supported(sched, leaf, id)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
 void ggml_backend_sched_synchronize(ggml_backend_sched_t sched) {
     GGML_ASSERT(sched);
     for (int i = 0; i < sched->n_backends; i++) {

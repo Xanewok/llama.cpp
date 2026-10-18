@@ -338,6 +338,8 @@ extern "C" {
     // An allocated but stale graph is rejected by compute_async; rebuild and upload inputs again.
     GGML_API bool                 ggml_backend_sched_graph_is_alloc(ggml_backend_sched_t sched, const struct ggml_cgraph * graph);
 
+    GGML_API bool                 ggml_backend_sched_can_stage_inputs(ggml_backend_sched_t sched, const struct ggml_cgraph * graph);
+
     // Initialize backend buffers from a measure graph
     GGML_API void                 ggml_backend_sched_reserve_size(ggml_backend_sched_t sched, struct ggml_cgraph * measure_graph, size_t * sizes);
     GGML_API bool                 ggml_backend_sched_reserve(ggml_backend_sched_t sched, struct ggml_cgraph * measure_graph); // returns success
