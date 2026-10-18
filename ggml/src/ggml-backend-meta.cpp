@@ -16,6 +16,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <unordered_set>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -2236,7 +2237,8 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
     if (needs_rebuild) {
         std::lock_guard<std::recursive_mutex> lock(meta_tensor_mutex);
         backend_ctx->containers.clear();
-        std::set<ggml_tensor *> tensors;
+        std::unordered_set<ggml_tensor *> tensors;
+        tensors.reserve(cgraph->n_nodes + cgraph->n_leafs);
         std::function<void(ggml_tensor *)> visit = [&](ggml_tensor * t) {
             if (!t || !tensors.insert(t).second) {
                 return;
