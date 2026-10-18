@@ -270,6 +270,8 @@ public:
 
 private:
     llm_graph_result * get_gf_res_prev();
+    void reset_graphs();
+    ggml_backend_sched_t get_sched_graph() const;
 
     llm_graph_params graph_params(
                         llm_graph_result * res,
@@ -380,8 +382,6 @@ private:
 
     std::vector<swap_info> output_swaps;
 
-    ggml_backend_sched_ptr sched;
-
     bool sched_need_reserve = true;
 
     // state of sched_copy_experts, reset before each graph compute
@@ -400,7 +400,9 @@ private:
     copy_experts_info copy_experts;
 
     ggml_backend_t backend_cpu = nullptr;
+    // Backends must outlive schedulers and their plans, including on construction failure.
     std::vector<ggml_backend_ptr> backends;
+    ggml_backend_sched_ptr sched;
 
     // training
     ggml_opt_context_t opt_ctx = nullptr;
@@ -422,6 +424,8 @@ private:
     std::array<llm_graph_result_ptr, 2> gf_res_prev;
     llm_graph_result_ptr gf_res_reserve;
 
+    ggml_backend_sched_ptr sched_output;
+    ggml_backend_sched_t sched_active = nullptr;
     llm_graph_result * gf_res_prev_active = nullptr;
 
     // host buffer for the model output (logits and embeddings)
