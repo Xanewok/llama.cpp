@@ -5193,6 +5193,21 @@ static bool graph_mul_mat_hi_prec_act(ggml_cgraph * gf, ggml_op op) {
 }
 
 // GGML_OP_MUL_MAT
+struct test_mmq_pdl_chain : public test_case {
+    ggml_type type;
+    explicit test_mmq_pdl_chain(ggml_type type) : type(type) {}
+    std::string vars() override { return VARS_TO_STR1(type); }
+    std::string op_desc(ggml_tensor *) override { return "MUL_MAT"; }
+    bool run_whole_graph() override { return true; }
+    ggml_tensor * build_graph(ggml_context * ctx) override {
+        auto * x = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 256, 64);
+        auto * w0 = ggml_new_tensor_2d(ctx, type, 256, 512);
+        auto * w1 = ggml_new_tensor_2d(ctx, type, 512, 256);
+        auto * y = ggml_rms_norm(ctx, ggml_mul_mat(ctx, w0, x), 1e-5f);
+        return ggml_mul_mat(ctx, w1, y);
+    }
+};
+
 struct test_mul_mat : public test_case {
     const ggml_type type_a;
     const ggml_type type_b;
@@ -9660,6 +9675,9 @@ static const ggml_type other_types[] = {
 // Test cases for evaluation: should try to cover edge cases while using small input sizes to keep the runtime low
 static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     std::vector<std::unique_ptr<test_case>> test_cases;
+    for (ggml_type type : {GGML_TYPE_Q4_K, GGML_TYPE_Q8_0}) {
+        test_cases.emplace_back(new test_mmq_pdl_chain(type));
+    }
     std::default_random_engine rng(0);
 
     // unary ops
