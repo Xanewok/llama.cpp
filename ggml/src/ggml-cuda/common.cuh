@@ -1443,10 +1443,29 @@ struct ggml_cuda_stream_context {
     }
 };
 
+struct ggml_cuda_q8_cache;
+
 struct ggml_backend_cuda_context {
+    ggml_cuda_q8_cache * q8_cache = nullptr;
     int device;
     std::string name;
     cudaEvent_t copy_event = nullptr;
+
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+    struct input_slot {
+        void * data = nullptr;
+        size_t capacity = 0;
+        cudaEvent_t uploaded = nullptr;
+        bool pending = false;
+    };
+    input_slot input_slots[2];
+    size_t input_next = 0;
+    cudaStream_t input_stream = nullptr;
+    cudaEvent_t input_compute_done = nullptr;
+    std::vector<void *> input_dsts;
+    std::vector<const void *> input_srcs;
+    std::vector<size_t> input_sizes;
+#endif
 
     cudaStream_t streams[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = { { nullptr } };
     cublasHandle_t cublas_handles[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = {nullptr};

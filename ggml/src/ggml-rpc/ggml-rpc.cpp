@@ -1235,6 +1235,7 @@ static ggml_backend_i ggml_backend_rpc_interface = {
     /* .event_record            = */ ggml_backend_rpc_event_record,
     /* .event_wait              = */ ggml_backend_rpc_event_wait,
     /* .graph_optimize          = */ NULL,
+    /* .set_tensor_batch_owned = */ NULL,
 };
 
 ggml_backend_buffer_type_t ggml_backend_rpc_buffer_type(const char * endpoint, uint32_t device) {
@@ -2780,9 +2781,8 @@ static ggml_backend_buffer_type_t ggml_backend_rpc_device_get_buffer_type(ggml_b
 
 static bool ggml_backend_rpc_device_supports_op(ggml_backend_dev_t dev, const struct ggml_tensor * op) {
     GGML_UNUSED(dev);
-    GGML_UNUSED(op);
     //TODO: call the remote backend and cache the results
-    return true;
+    return op->op != GGML_OP_GATED_DELTA_NET || !op->src[6];
 }
 
 static bool ggml_backend_rpc_device_supports_buft(ggml_backend_dev_t dev, ggml_backend_buffer_type_t buft) {
