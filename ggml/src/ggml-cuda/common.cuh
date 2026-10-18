@@ -27,6 +27,7 @@
 #include <cassert>
 #include <cfloat>
 #include <cstdio>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -1714,4 +1715,56 @@ static __inline__ void ggml_cuda_kernel_launch(Kernel kernel, const ggml_cuda_ke
 
     kernel<<<launch_params.block_nums, launch_params.block_dims, launch_params.shmem, launch_params.stream>>>(std::forward<Args>(args)... );
     CUDA_CHECK(cudaGetLastError());
+}
+
+// local: K9 controls. GGML_CUDA_MMQ_PDL=0 launches the MMQ chain without PDL; GGML_CUDA_MMQ_PDL_MUTANT is a bit mask:
+// 1 MMQ kernel skips its wait, 2 stream-k fixup skips its wait, 8 quantize sleeps before writing, 16 MMQ kernel sleeps at entry.
+static bool ggml_cuda_mmq_pdl_enabled() {
+    static const bool v = !getenv("GGML_CUDA_MMQ_PDL") || atoi(getenv("GGML_CUDA_MMQ_PDL")) != 0;
+    return v;
+}
+
+static int ggml_cuda_mmq_pdl_mutant() {
+    static const int v = getenv("GGML_CUDA_MMQ_PDL_MUTANT") ? atoi(getenv("GGML_CUDA_MMQ_PDL_MUTANT")) : 0;
+    return v;
+}
+
+// Mirrors the decision in ggml_cuda_kernel_launch.
+static bool ggml_cuda_mmq_pdl_active(const void * kernel) {
+#if defined(GGML_CUDA_USE_PDL)
+    static const bool env_pdl_enabled = []() {
+        const char * env = getenv("GGML_CUDA_PDL");
+        return env == nullptr || std::atoi(env) != 0;
+    }();
+    return ggml_cuda_mmq_pdl_enabled() && env_pdl_enabled && ggml_cuda_kernel_can_use_pdl(kernel);
+#else
+    GGML_UNUSED(kernel);
+    return false;
+#endif // defined(GGML_CUDA_USE_PDL)
+}
+
+template<typename Kernel, typename... Args>
+static __inline__ void ggml_cuda_mmq_kernel_launch(Kernel kernel, const ggml_cuda_kernel_launch_params & launch_params, Args&&... args) {
+    if (ggml_cuda_mmq_pdl_enabled()) {
+        ggml_cuda_kernel_launch(kernel, launch_params, std::forward<Args>(args)...);
+        return;
+    }
+    kernel<<<launch_params.block_nums, launch_params.block_dims, launch_params.shmem, launch_params.stream>>>(std::forward<Args>(args)... );
+    CUDA_CHECK(cudaGetLastError());
+}
+
+static void ggml_cuda_mmq_pdl_log(const void * kernel, const char * what, const char * type, int J, int stream_k, int fixup) {
+    static const bool on = getenv("GGML_CUDA_MMQ_PDL_LOG") != nullptr;
+    if (!on) {
+        return;
+    }
+    static std::mutex m;
+    static std::set<std::string> seen;
+    char line[256];
+    snprintf(line, sizeof(line), "mmq_pdl: kernel=%s type=%s J=%d stream_k=%d fixup=%d pdl=%d", what, type, J, stream_k, fixup,
+             ggml_cuda_mmq_pdl_active(kernel) ? 1 : 0);
+    std::lock_guard<std::mutex> lock(m);
+    if (seen.insert(line).second) {
+        fprintf(stderr, "%s\n", line);
+    }
 }

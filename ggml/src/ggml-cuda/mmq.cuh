@@ -959,12 +959,19 @@ static __global__ void mul_mat_q(
         const uint3 blocks_per_ne00, const int nrows_x, const int ncols_dst, const int stride_row_x, const int ncols_y, const int stride_col_dst,
         const uint3 channel_ratio, const uint3 nchannels_y, const int stride_channel_x, const int stride_channel_y, const int stride_channel_dst,
         const uint3 sample_ratio, const uint3 nsamples_y, const int stride_sample_x, const int stride_sample_y, const int stride_sample_dst,
-        const uint3 ntx) {
+        const uint3 ntx, const int pdl_mutant) {
 
     // Every block must reach the wait before any early return: a grid whose blocks all exit early
     // would otherwise complete, and release its own dependents, while the producer is still running.
     ggml_cuda_pdl_lc();
-    ggml_cuda_pdl_sync();
+    if (!(pdl_mutant & 1)) {
+        ggml_cuda_pdl_sync();
+    }
+    if (pdl_mutant & 16) {
+        for (int i = 0; i < 200; ++i) {
+            __nanosleep(1000);
+        }
+    }
 
     // Restrict only after the wait: a restrict pointer lets the compiler hoist loads above it.
     const char    * GGML_CUDA_RESTRICT x             = x_ptr;
@@ -1257,9 +1264,11 @@ static __global__ void mul_mat_q_stream_k_fixup(
         const int32_t * ids_dst_ptr, const int32_t * expert_bounds_ptr, float * dst_ptr,
         float * tmp_last_tile_ptr, const uint3 blocks_per_ne00, const int nrows_x, const int ncols_dst,
         const int stride_col_dst, const uint3 nchannels_y, const int stride_channel_dst, const uint3 nsamples_y,
-        const int stride_sample_dst, const uint3 ntx) {
+        const int stride_sample_dst, const uint3 ntx, const int pdl_mutant) {
     ggml_cuda_pdl_lc();
-    ggml_cuda_pdl_sync();
+    if (!(pdl_mutant & 2)) {
+        ggml_cuda_pdl_sync();
+    }
     const int32_t * GGML_CUDA_RESTRICT ids_dst       = ids_dst_ptr;
     const int32_t * GGML_CUDA_RESTRICT expert_bounds = expert_bounds_ptr;
     float         * GGML_CUDA_RESTRICT dst           = dst_ptr;
@@ -1446,14 +1455,16 @@ static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & a
     const uint3 channel_ratio_fd   = init_fastdiv_values(channel_ratio);
     const uint3 sample_ratio_fd    = init_fastdiv_values(sample_ratio);
 
+    ggml_cuda_mmq_pdl_log(reinterpret_cast<const void *>(mul_mat_q<type, J, fallback, prec_src1>), "mmq", ggml_type_name(type), J,
+        config.stream_k, 0);
     if (!config.stream_k) {
-        ggml_cuda_kernel_launch(mul_mat_q<type, J, fallback, prec_src1>,
+        ggml_cuda_mmq_kernel_launch(mul_mat_q<type, J, fallback, prec_src1>,
             ggml_cuda_kernel_launch_params(block_nums_xy_tiling, block_dims, nbytes_shared, stream),
             args.x, args.y, args.ids_dst, args.expert_bounds, args.dst, (float *) nullptr, args.y_scale,
             blocks_per_ne00_fd, args.nrows_x, args.ncols_dst, args.stride_row_x, args.ncols_y, args.nrows_dst,
             channel_ratio_fd, nchannels_y_fd, args.stride_channel_x, args.stride_channel_y, args.stride_channel_dst,
             sample_ratio_fd, nsamples_y_fd, args.stride_sample_x, args.stride_sample_y, args.stride_sample_dst,
-            ntx_fd);
+            ntx_fd, ggml_cuda_mmq_pdl_mutant());
         return;
     }
 
@@ -1477,24 +1488,26 @@ static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & a
     const dim3 block_nums_fixup(block_nums_stream_k.x, config.I/warp_size, 1);
     const dim3 block_dims_fixup(block_dims.x, block_dims.y/2, block_dims.z);
 
-    ggml_cuda_kernel_launch(mul_mat_q<type, J, fallback, prec_src1>,
+    ggml_cuda_mmq_kernel_launch(mul_mat_q<type, J, fallback, prec_src1>,
         ggml_cuda_kernel_launch_params(block_nums_stream_k, block_dims, nbytes_shared, stream),
         args.x, args.y, args.ids_dst, args.expert_bounds, args.dst, tmp_fixup.ptr, args.y_scale,
         blocks_per_ne00_fd, args.nrows_x, args.ncols_dst, args.stride_row_x, args.ncols_y, args.nrows_dst,
         channel_ratio_fd, nchannels_y_fd, args.stride_channel_x, args.stride_channel_y, args.stride_channel_dst,
         sample_ratio_fd, nsamples_y_fd, args.stride_sample_x, args.stride_sample_y, args.stride_sample_dst,
-        ntx_fd);
+        ntx_fd, ggml_cuda_mmq_pdl_mutant());
 
     if (!fixup_needed) {
         return;
     }
 
     CUDA_CHECK(cudaGetLastError());
-    ggml_cuda_kernel_launch(mul_mat_q_stream_k_fixup<type, J, fallback, prec_src1>,
+    ggml_cuda_mmq_pdl_log(reinterpret_cast<const void *>(mul_mat_q_stream_k_fixup<type, J, fallback, prec_src1>), "fixup",
+        ggml_type_name(type), J, 1, 1);
+    ggml_cuda_mmq_kernel_launch(mul_mat_q_stream_k_fixup<type, J, fallback, prec_src1>,
         ggml_cuda_kernel_launch_params(block_nums_fixup, block_dims_fixup, 0, stream),
         args.ids_dst, args.expert_bounds, args.dst, tmp_fixup.ptr, blocks_per_ne00_fd, args.nrows_x, args.ncols_dst,
         args.nrows_dst, nchannels_y_fd, args.stride_channel_dst, nsamples_y_fd, args.stride_sample_dst,
-        ntx_fd);
+        ntx_fd, ggml_cuda_mmq_pdl_mutant());
 }
 
 template <ggml_type type, bool fallback, ggml_prec prec_src1>
