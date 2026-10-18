@@ -15172,6 +15172,7 @@ static ggml_backend_i ggml_backend_vk_interface = {
     /* .event_record            = */ ggml_backend_vk_event_record,
     /* .event_wait              = */ ggml_backend_vk_event_wait,
     /* .graph_optimize          = */ ggml_vk_graph_optimize,
+    /* .set_tensor_batch_owned = */ NULL,
 };
 
 static ggml_guid_t ggml_backend_vk_guid() {
@@ -15350,6 +15351,10 @@ static ggml_backend_t ggml_backend_vk_device_init(ggml_backend_dev_t dev, const 
 }
 
 static bool ggml_backend_vk_device_supports_op(ggml_backend_dev_t dev, const ggml_tensor * op) {
+    if (op->op == GGML_OP_GATED_DELTA_NET && op->src[6]) {
+        return false;
+    }
+
     ggml_backend_vk_device_context * ctx = (ggml_backend_vk_device_context *)dev->context;
     const vk_device& device = ggml_vk_get_device(ctx->device);
 
