@@ -3485,11 +3485,7 @@ private:
                             slot.spec_ckpt.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
                         }
 
-                        // O(n_ctx) per slot per round: only the n-gram drafters read it
-                        const bool spec_uses_prompt = common_speculative_uses_prompt(spec.get());
-                        if (spec_uses_prompt) {
-                            slot.spec_prompt = slot.prompt.tokens.get_text_tokens();
-                        }
+                        slot.spec_prompt = slot.prompt.tokens.get_text_tokens();
 
                         const bool spec_reject = slot.use_spec_rejection();
 
@@ -3498,7 +3494,7 @@ private:
                             /* .n_max    = */ n_draft_max,
                             /* .pos0     = */ slot.prompt.tokens.pos_next(),
                             /* .id_last  = */ slot.sampled,
-                            /* .prompt   = */ spec_uses_prompt ? &slot.spec_prompt : nullptr,
+                            /* .prompt   = */ &slot.spec_prompt,
                             /* .result   = */ &slot.spec_draft,
                             /* .result_q = */ spec_reject ? &slot.spec_draft_q : nullptr,
                             /* .temp     = */ slot.task->params.sampling.temp,
