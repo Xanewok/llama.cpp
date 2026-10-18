@@ -1364,7 +1364,10 @@ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
 
         sampling.samplers[seq_id] = sampler;
 
-        sched_need_reserve = true;
+        // Sampler pointers can be recycled. Always rebuild their input bindings.
+        gf_res_prev_active = nullptr;
+        const uint32_t n_tokens = std::min(cparams.n_ctx, cparams.n_ubatch);
+        sched_need_reserve |= !gf_res_reserve || graph_max_nodes(n_tokens) > gf_res_reserve->get_max_nodes();
 
         return true;
     }
