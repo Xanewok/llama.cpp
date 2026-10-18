@@ -1099,9 +1099,11 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "OPT_STEP_SGD",
 
     "GLU",
+
+    "SSM_CONV_RS",
 };
 
-static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 101");
+static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "none",
@@ -1214,9 +1216,11 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "sgd(x)",
 
     "glu(x)",
+
+    "ssm_conv_rs(x, w, states, ids, snap)",
 };
 
-static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 101");
+static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -5692,6 +5696,47 @@ struct ggml_tensor * ggml_ssm_conv(
     return result;
 }
 
+// ggml_ssm_conv_rs
+
+struct ggml_tensor * ggml_ssm_conv_rs(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * x,
+        struct ggml_tensor  * w,
+        struct ggml_tensor  * states,
+        struct ggml_tensor  * ids,
+        struct ggml_tensor  * snap) {
+    GGML_ASSERT(ggml_is_3d(x));
+    GGML_ASSERT(ggml_is_matrix(w));
+
+    const int64_t d_conv  = w->ne[0];
+    const int64_t d_inner = w->ne[1];
+    const int64_t n_t     = x->ne[0];
+    const int64_t n_s     = x->ne[2];
+
+    GGML_ASSERT(x->type == GGML_TYPE_F32 && w->type == GGML_TYPE_F32);
+    GGML_ASSERT(states->type == GGML_TYPE_F32 && snap->type == GGML_TYPE_F32);
+    GGML_ASSERT(ids->type == GGML_TYPE_I32);
+    GGML_ASSERT(d_conv >= 2 && n_t >= 1);
+    GGML_ASSERT(x->ne[1] == d_inner);
+
+    const int64_t row = (d_conv - 1)*d_inner;
+    GGML_ASSERT(states->ne[0] == row && states->ne[2] == 1 && states->ne[3] == 1 && states->nb[0] == sizeof(float));
+    GGML_ASSERT(ggml_is_vector(ids) && ggml_is_contiguous(ids) && ids->ne[0] == n_s);
+    GGML_ASSERT(snap->ne[0] == row && snap->ne[1] == n_s && snap->ne[3] == 1 && snap->nb[0] == sizeof(float));
+    GGML_ASSERT(snap->nb[1] == states->nb[1] && snap->nb[2] >= (size_t) n_s*snap->nb[1]);
+
+    struct ggml_tensor * result = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, d_inner, n_t, n_s);
+
+    result->op     = GGML_OP_SSM_CONV_RS;
+    result->src[0] = x;
+    result->src[1] = w;
+    result->src[2] = states;
+    result->src[3] = ids;
+    result->src[4] = snap;
+
+    return result;
+}
+
 // ggml_ssm_scan
 
 struct ggml_tensor * ggml_ssm_scan(
@@ -6381,6 +6426,7 @@ struct ggml_tensor * ggml_gated_delta_net(
         struct ggml_tensor  * g,
         struct ggml_tensor  * beta,
         struct ggml_tensor  * state,
+        struct ggml_tensor  * ids,
         int64_t               K) {
     GGML_ASSERT(ggml_is_contiguous_rows(q));
     GGML_ASSERT(ggml_is_contiguous_rows(k));
@@ -6405,11 +6451,18 @@ struct ggml_tensor * ggml_gated_delta_net(
     GGML_ASSERT(g->ne[0] == 1 || g->ne[0] == S_v);
     GGML_ASSERT(beta->ne[0] == 1);
 
-    // state holds the initial state s0 only: [S_v, S_v, H, n_seqs]. K (snapshot slot count) is an op param.
+    // K (snapshot slot count) is an op param.
     GGML_ASSERT(state->ne[0] == S_v);
     GGML_ASSERT(state->ne[1] == S_v);
     GGML_ASSERT(state->ne[2] == H);
-    GGML_ASSERT(state->ne[3] == n_seqs);
+    if (ids) {
+        GGML_ASSERT(ids->type == GGML_TYPE_I32);
+        GGML_ASSERT(ggml_is_vector(ids) && ggml_is_contiguous(ids));
+        GGML_ASSERT(ids->ne[0] == n_seqs);
+        GGML_ASSERT(state->ne[3] > 0);
+    } else {
+        GGML_ASSERT(state->ne[3] == n_seqs);
+    }
     GGML_ASSERT(K >= 1);
     const int64_t state_rows = K * S_v * n_seqs;
     const int64_t ne[4] = { S_v * H, n_tokens * n_seqs + state_rows, 1, 1 };
@@ -6424,6 +6477,7 @@ struct ggml_tensor * ggml_gated_delta_net(
     result->src[3] = g;
     result->src[4] = beta;
     result->src[5] = state;
+    result->src[6] = ids;
 
     return result;
 }
