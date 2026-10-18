@@ -75,6 +75,7 @@ int main(int argc, char ** argv) {
     logits[allowed[0]] = -float(nv);
     for (bool lazy : {false, true}) {
         p.grammar_lazy = lazy;
+        p.grammar = {COMMON_GRAMMAR_TYPE_USER, lazy ? "root ::= \"!a\"" : "root ::= \"a\""};
         const auto trigger = common_tokenize(vocab, "!", false, true);
         GGML_ASSERT(trigger.size() == 1);
         p.grammar_triggers = {{COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN, "!", trigger[0]}};
