@@ -10745,6 +10745,15 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     }
 
     // in-place tests
+    for (int64_t columns : {512, 2560, 4096}) {
+        for (int64_t rows : {1, 6, 8, 12, 16, 17}) {
+            for (bool alias : {false, true}) {
+                test_cases.emplace_back(new test_rms_norm_mul_add(GGML_TYPE_F32, {columns, rows, 1, 1}, 1e-6f,
+                                                                 false, false, false, alias, true));
+            }
+        }
+    }
+
     test_cases.emplace_back(new test_rms_norm(GGML_TYPE_F32, {64, 5, 4, 3}, false, 1e-6f, true));
     // shapes below exceed the CUDA gridDim.y/gridDim.z limit of 65535 (#27901)
     test_cases.emplace_back(new test_norm        (GGML_TYPE_F32, {4, 1, 65536, 1}, false, 1e-6f));
@@ -13205,6 +13214,111 @@ static bool run_shared_activation_identity(ggml_backend_t backend, const char * 
     return true;
 }
 
+// ADD -> RMS_NORM -> MUL where the residual sum stays observable. The reference marks the normalized
+// intermediate as an output, which keeps it from being fused; both branches must agree to the byte.
+static bool run_add_rms_norm_identity(ggml_backend_t backend, const char * filter) {
+    if (filter && std::string(filter).find("ADD_RMS_NORM") == std::string::npos) {
+        return true;
+    }
+    int cases = 0;
+    bool control_done = false;
+    for (int64_t cols : { 1, 24, 512, 1000, 1024, 1025, 2560, 4096, 5120 }) {
+        for (int64_t rows : { 1, 2, 6, 8, 9, 12, 16, 17, 33 }) {
+            for (int layout = 0; layout < 4; ++layout) {
+                ggml_init_params params = { 48*ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true };
+                ggml_context_ptr ctx(ggml_init(params));
+                const float eps = 1e-6f;
+                ggml_tensor * x = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, cols, rows);
+                ggml_tensor * y = ggml_dup_tensor(ctx.get(), x);
+                ggml_tensor * x_ref = ggml_dup_tensor(ctx.get(), x);
+                ggml_tensor * y_ref = ggml_dup_tensor(ctx.get(), x);
+                ggml_tensor * weight = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, cols);
+                ggml_tensor * store = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_F32, ggml_nelements(x) + 4);
+                // Layout 1 adds in place, so the residual is the x buffer. Layout 2 chains every step in place.
+                // Layout 3 puts the result over x at an offset, a partial overlap the fused path must refuse.
+                const bool inplace_add = layout == 1 || layout == 2;
+                ggml_tensor * add = inplace_add ? ggml_add_inplace(ctx.get(), x, y) : ggml_add(ctx.get(), x, y);
+                ggml_tensor * norm = layout == 2 ? ggml_rms_norm_inplace(ctx.get(), add, eps) : ggml_rms_norm(ctx.get(), add, eps);
+                ggml_tensor * mul = layout == 2 ? ggml_mul_inplace(ctx.get(), norm, weight) : ggml_mul(ctx.get(), norm, weight);
+                ggml_tensor * add_ref = ggml_add(ctx.get(), x_ref, y_ref);
+                ggml_tensor * norm_ref = ggml_rms_norm(ctx.get(), add_ref, eps);
+                ggml_set_output(add_ref);
+                ggml_set_output(norm_ref);
+                ggml_tensor * mul_ref = ggml_mul(ctx.get(), norm_ref, weight);
+                ggml_set_output(mul_ref);
+                if (layout != 2) {
+                    ggml_set_output(add);
+                }
+                ggml_set_output(mul);
+                ggml_cgraph * graph = ggml_new_graph(ctx.get());
+                ggml_build_forward_expand(graph, mul);
+                ggml_build_forward_expand(graph, mul_ref);
+                for (int i = 0; i < ggml_graph_n_nodes(graph); ++i) {
+                    if (!ggml_backend_supports_op(backend, ggml_graph_node(graph, i))) {
+                        return true;
+                    }
+                }
+                ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors(ctx.get(), backend));
+                if (!buffer) {
+                    return false;
+                }
+                if (layout == 3) {
+                    x->data = store->data;
+                    mul->data = (char *) store->data + 4*sizeof(float);
+                }
+                std::vector<float> data_x(cols*rows), data_y(cols*rows), w(cols), a(cols*rows), b(cols*rows);
+                const auto compare = [&](const ggml_tensor * got, const ggml_tensor * want) {
+                    ggml_backend_tensor_get(got, a.data(), 0, ggml_nbytes(got));
+                    ggml_backend_tensor_get(want, b.data(), 0, ggml_nbytes(want));
+                    return memcmp(a.data(), b.data(), ggml_nbytes(got)) == 0;
+                };
+                for (int replay = 0; replay < 4; ++replay) {
+                    fill_identity_data(data_x, 3 + replay, 4.0f);
+                    fill_identity_data(data_y, 40 + replay, 4.0f);
+                    fill_identity_data(w, 80 + replay, 2.0f);
+                    // A zero row gives mean 0 (eps only); a tiny row underflows its squares.
+                    for (int64_t c = 0; c < cols; ++c) {
+                        data_x[c] = 0.0f;
+                        data_y[c] = 0.0f;
+                        if (rows > 1) {
+                            data_x[cols + c] *= 1e-30f;
+                            data_y[cols + c] *= 1e-30f;
+                        }
+                    }
+                    ggml_backend_tensor_set(x, data_x.data(), 0, ggml_nbytes(x));
+                    ggml_backend_tensor_set(x_ref, data_x.data(), 0, ggml_nbytes(x_ref));
+                    ggml_backend_tensor_set(y, data_y.data(), 0, ggml_nbytes(y));
+                    ggml_backend_tensor_set(y_ref, data_y.data(), 0, ggml_nbytes(y_ref));
+                    ggml_backend_tensor_set(weight, w.data(), 0, ggml_nbytes(weight));
+                    if (ggml_backend_graph_compute(backend, graph) != GGML_STATUS_SUCCESS) {
+                        return false;
+                    }
+                    if (!compare(mul, mul_ref) || (layout != 2 && !compare(add, add_ref))) {
+                        printf("  FAIL ADD_RMS_NORM byte identity: cols=%lld rows=%lld layout=%d replay=%d\n",
+                            (long long) cols, (long long) rows, layout, replay);
+                        return false;
+                    }
+                }
+                if (!control_done && layout == 0) {
+                    data_y.back() += 1.0f;
+                    ggml_backend_tensor_set(y_ref, data_y.data(), 0, ggml_nbytes(y_ref));
+                    if (ggml_backend_graph_compute(backend, graph) != GGML_STATUS_SUCCESS) {
+                        return false;
+                    }
+                    if (compare(add, add_ref)) {
+                        printf("  FAIL ADD_RMS_NORM comparison control did not detect a changed input\n");
+                        return false;
+                    }
+                    control_done = true;
+                }
+                ++cases;
+            }
+        }
+    }
+    printf("  ADD_RMS_NORM: same-backend byte identity and changing-input replay PASS cases=%d\n", cases);
+    return true;
+}
+
 // Covers padded rows, sinks, kvpad, multi-SIMDgroup reduction, quantized K/V, and MLA views.
 // The override is backend-global, so this runs after all parallel workers have joined.
 static bool run_fa_vec_slice(ggml_backend_t backend, ggml_backend_t backend_cpu, const char * op_names_filter) {
@@ -13410,6 +13524,10 @@ static bool test_backend(ggml_backend_t backend, ggml_backend_dev_t dev, test_mo
         }
 
         const bool slice_ok = run_fa_vec_slice(backend, backend_cpu.get(), op_names_filter);
+
+        if (!run_add_rms_norm_identity(backend, op_names_filter)) {
+            return false;
+        }
 
         const bool conv_ok = run_ssm_conv_rs_identity(backend, op_names_filter);
         return n_ok == tests_run && slice_ok && conv_ok;
