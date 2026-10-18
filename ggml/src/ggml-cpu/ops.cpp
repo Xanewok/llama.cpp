@@ -10074,6 +10074,96 @@ void ggml_compute_forward_ssm_conv(
     }
 }
 
+// ggml_compute_forward_ssm_conv_rs
+
+static void ggml_compute_forward_ssm_conv_rs_f32(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+    const ggml_tensor * x      = dst->src[0]; // {n_t, d_inner, n_s}
+    const ggml_tensor * w      = dst->src[1]; // {d_conv, d_inner}
+    const ggml_tensor * states = dst->src[2]; // {(d_conv - 1)*d_inner, rows}
+    const ggml_tensor * ids    = dst->src[3]; // {n_s}
+    const ggml_tensor * snap   = dst->src[4]; // {(d_conv - 1)*d_inner, n_s, n_slots}
+
+    const int ith = params->ith;
+    const int nth = params->nth;
+
+    const int nc  = w->ne[0];   // d_conv
+    const int nh  = nc - 1;     // state columns
+    const int nr  = w->ne[1];   // d_inner
+    const int n_t = x->ne[0];   // tokens per sequence
+    const int n_s = x->ne[2];   // number of sequences in the batch
+    const int n_k = snap->ne[2];
+
+    GGML_ASSERT(dst->ne[0] == nr && dst->ne[1] == n_t && dst->ne[2] == n_s);
+    GGML_ASSERT(dst->nb[0] == sizeof(float));
+    GGML_ASSERT(x->nb[0] % sizeof(float) == 0 && x->nb[1] % sizeof(float) == 0 && x->nb[2] % sizeof(float) == 0);
+    GGML_ASSERT(w->nb[0] == sizeof(float));
+
+    // Channels never share data: the segment of channel i of every state and snapshot row is private to the thread
+    // that owns i, so reading every state before writing any snapshot orders the whole batch.
+    const int dr  = (nr + nth - 1)/nth;
+    const int ir0 = dr*ith;
+    const int ir1 = MIN(ir0 + dr, nr);
+
+    const int per_thread = n_s*nh + nh + n_t + (int) CACHE_LINE_SIZE_F32;
+    float * hist = (float *) params->wdata + (size_t) per_thread*ith;
+    float * col  = hist + n_s*nh;
+
+    for (int i1 = ir0; i1 < ir1; ++i1) {
+        for (int s = 0; s < n_s; ++s) {
+            const int32_t id = ((const int32_t *) ids->data)[s];
+            const float * state = (const float *) ((const char *) states->data + id*states->nb[1]) + (size_t) i1*nh;
+            for (int j = 0; j < nh; ++j) {
+                hist[s*nh + j] = state[j];
+            }
+        }
+
+        const float * c = (const float *) ((const char *) w->data + i1*w->nb[1]);
+
+        for (int s = 0; s < n_s; ++s) {
+            for (int j = 0; j < nh; ++j) {
+                col[j] = hist[s*nh + j];
+            }
+            for (int t = 0; t < n_t; ++t) {
+                col[nh + t] = *(const float *) ((const char *) x->data + t*x->nb[0] + i1*x->nb[1] + s*x->nb[2]);
+            }
+
+            for (int t = 0; t < n_t; ++t) {
+                // NOTE: not using ggml_vec_dot_f32, because its sum is in double precision
+                float sumf = 0.0f;
+                for (int i0 = 0; i0 < nc; ++i0) {
+                    sumf += col[t + i0] * c[i0];
+                }
+                *(float *) ((char *) dst->data + i1*dst->nb[0] + t*dst->nb[1] + s*dst->nb[2]) = sumf;
+            }
+
+            for (int k = 0; k < n_k; ++k) {
+                const int start = n_t > k ? n_t - k : 0;
+                float * out = (float *) ((char *) snap->data + k*snap->nb[2] + s*snap->nb[1]) + (size_t) i1*nh;
+                for (int j = 0; j < nh; ++j) {
+                    out[j] = col[start + j];
+                }
+            }
+        }
+    }
+}
+
+void ggml_compute_forward_ssm_conv_rs(
+        const ggml_compute_params * params,
+        ggml_tensor * dst) {
+    switch (dst->src[0]->type) {
+        case GGML_TYPE_F32:
+            {
+                ggml_compute_forward_ssm_conv_rs_f32(params, dst);
+            } break;
+        default:
+            {
+                GGML_ABORT("fatal error");
+            }
+    }
+}
+
 // ggml_compute_forward_ssm_scan
 
 static void ggml_compute_forward_ssm_scan_f32(
