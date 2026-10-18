@@ -94,6 +94,8 @@ static void usage(char ** argv) {
     LOG("  -o, --out <dir>          Save generated test models to <dir> instead of running backend tests\n");
     LOG("  -v <N>                   Set log verbosity level\n");
     LOG("  -b, --backend <backend>  Run only on the given backend device\n");
+    LOG("  --tp-sampling-rebuild    Alternate two backend samplers (requires TP sampling support)\n");
+    LOG("  --tp-sampling-rebuild-single  Single-sampler control\n");
     LOG("  -h, --help               Show this help message\n\n");
     LOG("Examples:\n");
     LOG("  %s\n", argv[0]);
@@ -1115,6 +1117,51 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
     return all_ok ? 0 : 1;
 }
 
+// 64 layers expose the cold ancestor walk after alternating per-sequence sampler branches.
+static int test_tp_sampling_rebuild(bool single) {
+    ggml_backend_load_all();
+    auto gf = get_gguf_ctx(LLM_ARCH_QWEN35, false);
+    gguf_set_val_u32(gf.get(), "qwen35.block_count", 64);
+    gguf_set_val_u32(gf.get(), "qwen35.full_attention_interval", 4);
+    tensor_data_params td = {1, 0.01f};
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+    ggml_backend_dev_t devs[] = {cpu, cpu, nullptr};
+    auto mp = llama_model_default_params();
+    mp.devices = devs;
+    mp.split_mode = LLAMA_SPLIT_MODE_TENSOR;
+    mp.progress_callback = silent_model_load_progress;
+    llama_model_ptr model(llama_model_init_from_user(gf.get(), set_tensor_data, &td, mp));
+    GGML_ASSERT(model);
+    auto cp = llama_context_default_params();
+    cp.n_ctx = 256;
+    cp.n_batch = cp.n_ubatch = 16;
+    cp.n_seq_max = 2;
+    cp.n_threads = cp.n_threads_batch = 4;
+    llama_sampler_ptr chains[2];
+    llama_context_ptr ctx(llama_init_from_model(model.get(), cp));
+    GGML_ASSERT(ctx);
+    for (int seq = 0; seq < (single ? 1 : 2); seq++) {
+        chains[seq].reset(llama_sampler_chain_init(llama_sampler_chain_default_params()));
+        llama_sampler_chain_add(chains[seq].get(), llama_sampler_init_top_k(20));
+        llama_sampler_chain_add(chains[seq].get(), llama_sampler_init_dist(1234 + seq));
+        GGML_ASSERT(llama_set_sampler(ctx.get(), seq, chains[seq].get()));
+    }
+    common_batch batch(ctx.get());
+    for (int step = 0; step < 4; step++) {
+        const int seq = single ? 0 : step % 2;
+        batch.clear();
+        for (int i = 0; i < 4; i++) {
+            batch.add(1 + i, (single ? step : step / 2)*4 + i, seq, i == 3);
+        }
+        fprintf(stderr, "rebuild step %d seq %d\n", step, seq);
+        GGML_ASSERT(llama_process(ctx.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0);
+        const llama_token token = llama_get_sampled_token_ith(ctx.get(), 3);
+        GGML_ASSERT(token >= 0 && token < llama_vocab_n_tokens(llama_model_get_vocab(model.get())));
+    }
+    return 0;
+}
+
 int main(int argc, char ** argv) {
     // init the logger at max verbosity. filter with a custom callback respecting the user-configure verbosity
     common_log_set_verbosity_thold(LOG_LEVEL_DEBUG);
@@ -1128,6 +1175,8 @@ int main(int argc, char ** argv) {
     float stdev = 0.1f;
     std::string out;
     const char * target_backend = nullptr;
+    bool tp_rebuild = false;
+    bool tp_rebuild_single = false;
 
     int verbosity = LOG_LEVEL_ERROR;
 
@@ -1154,6 +1203,10 @@ int main(int argc, char ** argv) {
                 usage(argv);
                 return 1;
             }
+        } else if (strcmp(argv[i], "--tp-sampling-rebuild") == 0) {
+            tp_rebuild = true;
+        } else if (strcmp(argv[i], "--tp-sampling-rebuild-single") == 0) {
+            tp_rebuild = tp_rebuild_single = true;
         } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--seed") == 0) {
             if (i + 1 < argc) {
                 seed = std::stoull(argv[++i]);
@@ -1208,6 +1261,9 @@ int main(int argc, char ** argv) {
     LOG_INF("%s: using seed %zu, stdev %f\n", __func__, seed, stdev);
 
     try {
+        if (tp_rebuild) {
+            return test_tp_sampling_rebuild(tp_rebuild_single);
+        }
         if (!out.empty()) {
             return save_models(arch_filter, seed, stdev, verbosity, out);
         }
