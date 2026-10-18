@@ -907,6 +907,70 @@ static void test_logit_bias(const test_params & params) {
     printf("backend logit bias sampling test PASSED\n");
 }
 
+static void test_sampler_clone(const test_params & params) {
+    const int seq_id = 0;
+
+    std::vector<llama_sampler_seq_config> no_backend_samplers;
+    test_context test_ctx(params, no_backend_samplers);
+    GGML_ASSERT(test_ctx.decode({{seq_id, "Hello"}}));
+
+    auto run = [&](const char * name, common_params_sampling sp, bool shrinks) {
+        printf("clone/copy with %s\n", name);
+
+        common_sampler_ptr src(common_sampler_init(params.model.get(), sp));
+        common_sampler_ptr cpy(common_sampler_init(params.model.get(), sp));
+
+        common_sampler_sample(src.get(), test_ctx.ctx.get(), test_ctx.idx_for_seq(seq_id));
+
+        common_sampler_ptr dup(common_sampler_clone(src.get()));
+        common_sampler_copy(src.get(), cpy.get());
+
+        const auto * cand_src = common_sampler_get_candidates(src.get(), false);
+        const auto * cand_dup = common_sampler_get_candidates(dup.get(), false);
+        const auto * cand_cpy = common_sampler_get_candidates(cpy.get(), false);
+
+        // XTC drops candidates by advancing cur_p.data, so the clone must keep that offset
+        GGML_ASSERT(!shrinks || (cand_src->size > 0 && cand_src->size < (size_t) test_ctx.n_vocab));
+
+        const std::vector<llama_token_data> expected(cand_src->data, cand_src->data + cand_src->size);
+        const llama_token_data_array ref = { const_cast<llama_token_data *>(expected.data()), expected.size(), cand_src->selected, cand_src->sorted };
+
+        const auto same = [&](const llama_token_data_array * a) {
+            if (a->size != ref.size || a->selected != ref.selected || a->sorted != ref.sorted) {
+                return false;
+            }
+            for (size_t i = 0; i < a->size; ++i) {
+                if (a->data[i].id != ref.data[i].id || a->data[i].logit != ref.data[i].logit || a->data[i].p != ref.data[i].p) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        // the clone and the copy must own their candidates: read them after the source is gone
+        const auto * src_data = cand_src->data;
+        src.reset();
+
+        GGML_ASSERT(same(cand_dup));
+        GGML_ASSERT(same(cand_cpy));
+        GGML_ASSERT(cand_dup->data != src_data);
+        GGML_ASSERT(cand_cpy->data != src_data);
+    };
+
+    common_params_sampling sp;
+    sp.samplers = {COMMON_SAMPLER_TYPE_TOP_K};
+    sp.top_k    = 8;
+    run("top_k", sp, false);
+
+    sp.samplers        = {COMMON_SAMPLER_TYPE_XTC};
+    sp.xtc_probability = 1.0f;
+    sp.xtc_threshold   = 0.0f;
+    sp.min_keep        = 1;
+    run("xtc", sp, true);
+
+    printf("sampler clone test PASSED\n");
+}
+
 static void accept_prompt(llama_sampler * smpl, const llama_vocab * vocab, const std::string & prompt) {
     const llama_token bos = llama_vocab_bos(vocab);
     if (bos != LLAMA_TOKEN_NULL) {
@@ -2078,6 +2142,7 @@ static const backend_test_case BACKEND_TESTS[] = {
     { "test_top_p",                  test_top_p,                  true },
     { "test_min_p",                  test_min_p,                  true },
     { "test_logit_bias",             test_logit_bias,             true },
+    { "test_sampler_clone",          test_sampler_clone,          true },
     { "test_penalties",              test_penalties,              true },
     // multiple sequences
     { "test_multi_sequence",         test_multi_sequence,         true },
