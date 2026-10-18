@@ -285,6 +285,7 @@ public:
     // and shared across layers which use build_rs
     ggml_tensor * s_copy_main; // I32 [n_seqs]
     ggml_tensor * s_copy_tail; // I32 [n_rs - 1]
+    ggml_tensor * s_copy_none; // I32 [0]
 
     const llama_memory_recurrent_context * mctx;
 
@@ -367,6 +368,27 @@ public:
     const llama_cparams cparams;
 
     const llama_kv_cache_context * mctx;
+};
+
+// MTP fold (llama_mtp_fold_init): the target graph also stores the draft block's K/V for its rows.
+// Each sequence starts with its own h_prev; other rows take the preceding target nextn row.
+class llm_graph_input_mtp_fold : public llm_graph_input_i {
+public:
+    llm_graph_input_mtp_fold(std::unique_ptr<llm_graph_input_attn_kv> kv, const float * h_prev_src) :
+        kv(std::move(kv)), h_prev_src(h_prev_src) {}
+    virtual ~llm_graph_input_mtp_fold() = default;
+
+    void set_input(const llama_ubatch * ubatch) override;
+
+    bool can_reuse(const llm_graph_params & params) override;
+
+    ggml_tensor * h_prev = nullptr; // F32 [n_embd, n_seqs_unq]
+    ggml_tensor * h_idxs = nullptr; // I32 [n_tokens]
+
+    // over the draft cache; only the store indices are built, never a mask
+    std::unique_ptr<llm_graph_input_attn_kv> kv;
+
+    const float * h_prev_src; // read in set_input, re-bound on reuse
 };
 
 // V-less input for the KV cache
@@ -755,14 +777,15 @@ public:
 
 class llm_graph_input_sampling : public llm_graph_input_i {
 public:
-    llm_graph_input_sampling(std::map<llama_seq_id, llama_sampler *> samplers) :
-        samplers(std::move(samplers)) { }
+    llm_graph_input_sampling(std::map<llama_seq_id, llama_sampler *> samplers);
     virtual ~llm_graph_input_sampling() = default;
 
     void set_input(const llama_ubatch * ubatch) override;
     bool can_reuse(const llm_graph_params & params) override;
 
     std::map<llama_seq_id, llama_sampler *> samplers;
+    std::vector<std::function<void()>> bindings;
+    bool bindings_valid = true;
 };
 
 //
@@ -883,7 +906,8 @@ struct llm_graph_params {
         }
 
         // TODO: https://github.com/ggml-org/llama.cpp/pull/24340#discussion_r3448035248
-        if (cparams.nextn_layer_offset != other.cparams.nextn_layer_offset) {
+        if (cparams.nextn_layer_offset != other.cparams.nextn_layer_offset ||
+            cparams.mtp_chain          != other.cparams.mtp_chain) {
             return false;
         }
 
@@ -896,8 +920,20 @@ struct llm_graph_params {
             gtype == other.gtype &&
             cvec  == other.cvec  &&
             loras == other.loras &&
-            cross == other.cross;
+            cross == other.cross &&
+            sampling_vocab_ids == other.sampling_vocab_ids &&
+            sampling_n_shards  == other.sampling_n_shards &&
+            (mctx_fold != nullptr) == (other.mctx_fold != nullptr);
     }
+
+    // tensor split: the logits are split across sampling_n_shards devices by vocab, and backend samplers start
+    // from the per-device top-k candidates (see build_sampling); nullptr/0 otherwise
+    ggml_tensor * sampling_vocab_ids = nullptr;
+    uint32_t      sampling_n_shards  = 0;
+    // MTP fold (llama_mtp_fold_init): the draft context's memory for this ubatch, already applied, and the hidden row
+    // paired with its first token; nullptr = no fold nodes in the graph
+    const llama_memory_context_i * mctx_fold   = nullptr;
+    const float                  * fold_h_prev = nullptr;
 };
 
 struct llm_graph_fused_node {
@@ -1041,12 +1077,17 @@ struct llm_graph_context {
     const llama_adapter_cvec     * cvec;
     const llama_adapter_loras    * loras;
     const llama_memory_context_i * mctx;
+    const llama_memory_context_i * mctx_fold; // see llm_graph_params::mctx_fold
+    const float                  * fold_h_prev;
     const llama_cross            * cross;
     const llama_moe_cache        * moe_cache;
 
     const llama_prec_policy * prec_policy;
 
     std::map<llama_seq_id, llama_sampler *> samplers;
+
+    ggml_tensor * sampling_vocab_ids;
+    uint32_t      sampling_n_shards;
 
     const llm_graph_cb & cb_func;
 
@@ -1416,6 +1457,16 @@ struct llm_graph_context {
     //
 
     void build_sampling() const;
+
+    // Building blocks of build_sampling() for a model builder that samples inside its graph (e.g. a draft chain):
+    // begin(n_rows) sizes the res->t_sampled* rows, row() applies a sampler to one logits column and records the
+    // result in output row `row` (row < 0: built but not computed), end() adds the sampler inputs. The builder
+    // owns res->t_logits and the row order, and build_sampling() then leaves the graph alone.
+    void          build_sampling_begin(uint32_t n_rows) const;
+    ggml_tensor * build_sampling_cand(ggml_tensor * logits_t, int32_t k) const;
+    void          build_sampling_row(llama_seq_id seq_id, llama_sampler * sampler, ggml_tensor * logits_t,
+                                     ggml_tensor * cand, uint32_t col, int32_t row, ggml_tensor * anchor) const;
+    void          build_sampling_end() const;
 
     //
     // dense (out)

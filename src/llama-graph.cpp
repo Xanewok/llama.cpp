@@ -535,6 +535,34 @@ bool llm_graph_input_attn_kv::can_reuse(const llm_graph_params & params) {
     return res;
 }
 
+void llm_graph_input_mtp_fold::set_input(const llama_ubatch * ubatch) {
+    const size_t row_bytes = h_prev->nb[1];
+    for (uint32_t s = 0; s < ubatch->n_seqs_unq; ++s) {
+        ggml_backend_tensor_set(h_prev, h_prev_src + (size_t) ubatch->seq_id_unq[s] * h_prev->ne[0], s * row_bytes, row_bytes);
+    }
+
+    std::vector<int32_t> idxs(ubatch->n_tokens);
+    for (uint32_t i = 0; i < ubatch->n_tokens; ++i) {
+        const llama_seq_id seq = ubatch->seq_id[i][0];
+        idxs[i] = i == 0 || seq != ubatch->seq_id[i - 1][0]
+            ? ubatch->seq_idx[seq] : (int32_t) ubatch->n_seqs_unq + i - 1;
+    }
+    ggml_backend_tensor_set(h_idxs, idxs.data(), 0, ggml_nbytes(h_idxs));
+
+    kv->set_input(ubatch);
+}
+
+bool llm_graph_input_mtp_fold::can_reuse(const llm_graph_params & params) {
+    if (!params.mctx_fold || !params.fold_h_prev) {
+        return false;
+    }
+
+    kv->mctx   = static_cast<const llama_kv_cache_context *>(params.mctx_fold);
+    h_prev_src = params.fold_h_prev;
+
+    return kv->self_k_idxs->ne[0] == params.ubatch.n_tokens && h_prev->ne[1] == params.ubatch.n_seqs_unq;
+}
+
 void llm_graph_input_attn_k::set_input(const llama_ubatch * ubatch) {
     mctx->set_input_k_idxs(self_k_idxs, ubatch);
 
@@ -1298,7 +1326,21 @@ bool llm_graph_input_mem_hybrid_iswa::can_reuse(const llm_graph_params & params)
     return res;
 }
 
+llm_graph_input_sampling::llm_graph_input_sampling(std::map<llama_seq_id, llama_sampler *> samplers) : samplers(std::move(samplers)) {
+    for (const auto & entry : this->samplers) {
+        auto bind = llama_sampler_backend_bindings(entry.second);
+        bindings_valid &= bool(bind);
+        if (bind) {
+            bindings.push_back(std::move(bind));
+        }
+    }
+}
+
 void llm_graph_input_sampling::set_input(const llama_ubatch * ubatch) {
+    for (const auto & bind : bindings) {
+        bind();
+    }
+
     // set the inputs only for the active samplers in the current ubatch
     std::unordered_set<llama_seq_id> active_samplers;
     for (uint32_t i = 0; i < ubatch->n_tokens; i++) {
@@ -1322,7 +1364,7 @@ void llm_graph_input_sampling::set_input(const llama_ubatch * ubatch) {
 }
 
 bool llm_graph_input_sampling::can_reuse(const llm_graph_params & params) {
-    if (samplers.size() != params.samplers.size()) {
+    if (!bindings_valid || samplers.size() != params.samplers.size()) {
         return false;
     }
 
@@ -1519,10 +1561,14 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
     cvec             (params.cvec),
     loras            (params.loras),
     mctx             (params.mctx),
+    mctx_fold        (params.mctx_fold),
+    fold_h_prev      (params.fold_h_prev),
     cross            (params.cross),
     moe_cache        (params.moe_cache),
     prec_policy      (params.prec_policy),
     samplers         (params.samplers),
+    sampling_vocab_ids(params.sampling_vocab_ids),
+    sampling_n_shards(params.sampling_n_shards),
     cb_func          (params.cb),
     res              (params.res),
     ctx0             (res->get_ctx()),
@@ -3694,6 +3740,11 @@ ggml_tensor * llm_graph_context::build_rs(
 
     ggml_tensor * states_all = ggml_get_rows(ctx0, states, state_copy);
 
+    // A getter that snapshots into the cache must run after this gather reads the extra states.
+    if (get_state_rows && n_rs > (uint32_t) n_seqs) {
+        ggml_build_forward_expand(gf, states_all);
+    }
+
     ggml_tensor * output_states = get_state_rows ?
         get_state_rows(ctx0, states, state_copy_main) :
         ggml_view_2d(ctx0, states_all, state_size, n_seqs, states_all->nb[1], 0);
@@ -3725,6 +3776,7 @@ static std::unique_ptr<llm_graph_input_rs> build_rs_inp_impl(
 
     inp->s_copy_main = ggml_view_1d(ctx0, inp->s_copy, n_seqs, 0);
     inp->s_copy_tail = ggml_view_1d(ctx0, inp->s_copy, n_rs - 1, inp->s_copy->nb[0]);
+    inp->s_copy_none = ggml_view_1d(ctx0, inp->s_copy, 0, 0);
 
     inp->head = mctx_cur->get_head();
     inp->rs_z = mctx_cur->get_rs_z();
@@ -3749,8 +3801,12 @@ ggml_tensor * llm_graph_context::build_rs(
     const auto * kv_state = inp->mctx;
 
     // a custom getter reads the states of the ubatch straight from the cache, so the gather skips the first
-    // state: it still holds the n_rs - n_seqs extra states and copies no state of a single sequence ubatch
-    ggml_tensor * state_copy = get_state_rows ? inp->s_copy_tail : inp->s_copy;
+    // state: it still holds the n_rs - n_seqs extra states and copies no state of a single sequence ubatch.
+    // Without extra states it copies nothing; with them it stays n_rs - 1 long, which the worst-case reserve covers.
+    ggml_tensor * state_copy = inp->s_copy;
+    if (get_state_rows) {
+        state_copy = kv_state->get_n_rs() == (uint32_t) n_seqs ? inp->s_copy_none : inp->s_copy_tail;
+    }
 
     return build_rs(s, state_copy, inp->s_copy_main, state_size, n_seqs,
                     kv_state->get_n_rs(), kv_state->get_head(), kv_state->get_size(), kv_state->get_rs_z(),
@@ -3972,16 +4028,132 @@ void llm_graph_context::build_pooling(
     ggml_build_forward_expand(gf, cur);
 }
 
+void llm_graph_context::build_sampling_begin(uint32_t n_rows) const {
+    res->t_sampled.resize(n_rows, nullptr);
+    res->t_sampled_probs.resize(n_rows, nullptr);
+    res->t_sampled_logits.resize(n_rows, nullptr);
+    res->t_candidates.resize(n_rows, nullptr);
+
+    for (const auto & entry : samplers) {
+        if (entry.second->iface->backend_reset) {
+            entry.second->iface->backend_reset(entry.second);
+        }
+    }
+}
+
+void llm_graph_context::build_sampling_end() const {
+    res->add_input(std::make_unique<llm_graph_input_sampling>(samplers));
+}
+
+ggml_tensor * llm_graph_context::build_sampling_cand(ggml_tensor * logits_t, int32_t k) const {
+    if (sampling_n_shards == 0) {
+        return nullptr;
+    }
+
+    const int64_t n_vocab = logits_t->ne[0];
+    const int64_t n_cols  = logits_t->ne[1];
+    GGML_ASSERT(sampling_vocab_ids != nullptr && sampling_vocab_ids->ne[0] == n_vocab);
+
+    const int64_t n_cand = int64_t(k) * sampling_n_shards;
+
+    // slice-local indices, see the TOP_K/GET_ROWS rules in ggml-backend-meta
+    ggml_tensor * idx  = ggml_top_k(ctx0, logits_t, n_cand);
+    ggml_tensor * vals = ggml_get_rows(ctx0, ggml_reshape_3d(ctx0, logits_t, 1, n_vocab, n_cols), idx);
+    ggml_tensor * ids  = ggml_get_rows(ctx0,
+            ggml_repeat_4d(ctx0, ggml_reshape_3d(ctx0, sampling_vocab_ids, 1, n_vocab, 1), 1, n_vocab, n_cols, 1), idx);
+
+    vals = ggml_reshape_3d(ctx0, vals, n_cand, 1, n_cols);
+    ids  = ggml_reshape_3d(ctx0, ids,  n_cand, 1, n_cols);
+
+    ggml_tensor * cand = ggml_backend_meta_gather(ctx0, ggml_concat(ctx0, vals, ids, 1));
+    ggml_set_name(cand, "sampling_candidates");
+    return cand;
+}
+
+void llm_graph_context::build_sampling_row(
+        llama_seq_id   seq_id,
+        llama_sampler * sampler,
+        ggml_tensor  * logits_t,
+        ggml_tensor  * cand,
+        uint32_t       col,
+        int32_t        row,
+        ggml_tensor  * anchor) const {
+    // inactive samplers are built but not computed
+    const bool    active = row >= 0;
+    const int     i_out  = active ? 1 : 0;
+
+    ggml_tensor * logits_seq = nullptr;
+    ggml_tensor * cand_ids   = nullptr;
+    if (cand) {
+        const int64_t n_cand = cand->ne[0];
+        logits_seq = ggml_view_1d(ctx0, cand, n_cand, col * cand->nb[2]);
+        cand_ids   = ggml_cast(ctx0, ggml_view_1d(ctx0, cand, n_cand, col * cand->nb[2] + cand->nb[1]), GGML_TYPE_I32);
+    } else {
+        logits_seq = ggml_view_1d(ctx0, logits_t, logits_t->ne[0], col * logits_t->nb[1]);
+        if (sampling_vocab_ids) {
+            cand_ids = ggml_cast(ctx0, sampling_vocab_ids, GGML_TYPE_I32);
+        }
+    }
+    ggml_format_name(logits_seq, "logits_seq_%d_%u", seq_id, col);
+
+    struct llama_sampler_data data = {
+        /*.logits       =*/ logits_seq,
+        /*.probs        =*/ nullptr,
+        /*.sampled      =*/ nullptr,
+        /*.candidates   =*/ cand_ids,
+    };
+
+    assert(sampler->iface->backend_apply);
+    sampler->iface->backend_apply(sampler, ctx0, gf, &data);
+
+    std::array<ggml_tensor *, 2> outs;
+    outs[0] = anchor;
+
+    if (data.sampled != nullptr) {
+        if (active) {
+            res->t_sampled[row] = data.sampled;
+        }
+        outs[1] = data.sampled;
+        ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
+    }
+
+    if (data.probs != nullptr) {
+        if (active) {
+            res->t_sampled_probs[row] = data.probs;
+        }
+        outs[1] = data.probs;
+        ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
+    }
+
+    if (data.logits != nullptr) {
+        if (active) {
+            res->t_sampled_logits[row] = data.logits;
+        }
+        outs[1] = data.logits;
+        ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
+    }
+
+    if (data.candidates != nullptr) {
+        if (active) {
+            res->t_candidates[row] = data.candidates;
+        }
+        outs[1] = data.candidates;
+        ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
+    }
+}
 void llm_graph_context::build_sampling() const {
     if (samplers.empty() || !res->t_logits) {
         return;
     }
+    // a model builder that applied the samplers itself has recorded its rows
+    if (!res->t_sampled.empty()) {
+        return;
+    }
+    // no output rows: the meta backend has no split state for empty logits, so nothing can consume them
+    if (sampling_n_shards > 0 && ggml_nelements(res->t_logits) == 0) {
+        return;
+    }
 
-    std::array<ggml_tensor *, 2> outs;
-    outs[0] = res->t_logits;
-
-    auto inp_sampling = std::make_unique<llm_graph_input_sampling>(samplers);
-    res->add_input(std::move(inp_sampling));
 
     std::map<llama_seq_id, std::vector<uint32_t>> sampling_rows;
     uint32_t n_rows = 0;
@@ -3991,22 +4163,29 @@ void llm_graph_context::build_sampling() const {
         }
     }
 
-    res->t_sampled.resize(n_rows, nullptr);
-    res->t_sampled_probs.resize(n_rows, nullptr);
-    res->t_sampled_logits.resize(n_rows, nullptr);
-    res->t_candidates.resize(n_rows, nullptr);
-
     // res->t_logits will contain logits for all tokens that want the logits calculated (logits=1 or output=1)
     GGML_ASSERT(res->t_logits != nullptr && "missing t_logits tensor");
 
     // the padding row gives the chains without a row of the ubatch a valid input, even with no output at all
     ggml_tensor * logits_t = ggml_pad(ctx0, res->t_logits, 0, 1, 0, 0);
 
-    for (const auto & entry : samplers) {
-        if (entry.second->iface->backend_reset) {
-            entry.second->iface->backend_reset(entry.second);
+    // Tensor split: each device holds a vocab slice of the logits. Every chain starts with top-k (enforced in
+    // llama_context::set_sampler), so the union of the per-device top-k is a superset of the global top-k and the
+    // chain picks exactly as it would from the full row. One gather brings the candidates to every device.
+    // cand: [n_cand, 2, n_cols]: candidate logits, then their vocab ids as F32
+    ggml_tensor * cand = nullptr;
+    if (sampling_n_shards > 0) {
+        int32_t k = 0;
+        for (const auto & entry : samplers) {
+            const int32_t k_seq = llama_sampler_chain_leading_top_k(entry.second);
+            GGML_ASSERT(k_seq > 0);
+            k = std::max(k, k_seq);
         }
+
+        cand = build_sampling_cand(logits_t, k);
     }
+
+    build_sampling_begin(n_rows);
 
     static const std::vector<uint32_t> no_rows;
 
@@ -4017,56 +4196,12 @@ void llm_graph_context::build_sampling() const {
         const auto & rows = it != sampling_rows.end() ? it->second : no_rows;
 
         for (uint32_t i = 0; i < cparams.n_outputs_max_per_seq; ++i) {
-            const bool     active = i < rows.size();
-            const uint32_t row    = active ? rows[i] : 0;
-            const int      i_out  = active ? 1       : 0;
-
-            ggml_tensor * logits_seq = ggml_view_1d(ctx0, logits_t, logits_t->ne[0], row * logits_t->nb[1]);
-            ggml_format_name(logits_seq, "logits_seq_%d_%u", seq_id, i);
-
-            struct llama_sampler_data data = {
-                /*.logits       =*/ logits_seq,
-                /*.probs        =*/ nullptr,
-                /*.sampled      =*/ nullptr,
-                /*.candidates   =*/ nullptr,
-            };
-
-            assert(sampler->iface->backend_apply);
-            sampler->iface->backend_apply(sampler, ctx0, gf, &data);
-
-            if (data.sampled != nullptr) {
-                if (active) {
-                    res->t_sampled[row] = data.sampled;
-                }
-                outs[1] = data.sampled;
-                ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
-            }
-
-            if (data.probs != nullptr) {
-                if (active) {
-                    res->t_sampled_probs[row] = data.probs;
-                }
-                outs[1] = data.probs;
-                ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
-            }
-
-            if (data.logits != nullptr) {
-                if (active) {
-                    res->t_sampled_logits[row] = data.logits;
-                }
-                outs[1] = data.logits;
-                ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
-            }
-
-            if (data.candidates != nullptr) {
-                if (active) {
-                    res->t_candidates[row] = data.candidates;
-                }
-                outs[1] = data.candidates;
-                ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
-            }
+            const bool active = i < rows.size();
+            build_sampling_row(seq_id, sampler, logits_t, cand, active ? rows[i] : 0, active ? (int32_t) rows[i] : -1, res->t_logits);
         }
     }
+
+    build_sampling_end();
 
     // TODO: Call backend_accept after all samplers have been applied.
     /*
