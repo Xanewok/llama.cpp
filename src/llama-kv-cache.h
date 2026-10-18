@@ -233,11 +233,6 @@ public:
 
     void set_input_k_shift(ggml_tensor * dst) const;
 
-    // true when the KQ mask input has to be copied to the devices that hold this cache
-    bool get_kq_mask_copied() const { return kq_mask_copied; }
-
-    // number of leading mask columns [0, n) that are visible (+0) to every token of the ubatch,
-    // a multiple of the n_kv padding and less than n_kv; 0 when the cells do not certify it
     uint32_t get_kq_mask_prefix(const llama_ubatch & ubatch, uint32_t n_kv, bool causal_attn) const;
 
     void set_input_kq_mask   (ggml_tensor * dst, const llama_ubatch * ubatch, bool causal_attn, uint32_t prefix = 0) const;
@@ -280,8 +275,6 @@ private:
 
     // required padding
     const uint32_t n_pad = 1;
-
-    bool kq_mask_copied = true;
 
     // SWA
     const uint32_t n_swa = 0;
@@ -438,7 +431,6 @@ public:
     void set_input_v_idxs(ggml_tensor * dst, const llama_ubatch * ubatch) const;
 
     void set_input_k_shift   (ggml_tensor * dst) const;
-    bool     get_kq_mask_copied() const;
     uint32_t get_kq_mask_prefix(const llama_ubatch & ubatch, bool causal_attn) const;
 
     void set_input_kq_mask   (ggml_tensor * dst, const llama_ubatch * ubatch, bool causal_attn, uint32_t prefix = 0) const;

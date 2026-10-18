@@ -292,14 +292,7 @@ llama_kv_cache::llama_kv_cache(
 
         ggml_backend_buffer_clear(buf, 0);
         ctxs_bufs.emplace_back(std::move(ctx), buf);
-
-        // the scheduler copies a host input to every device that cannot read it in place
-        ggml_backend_dev_t dev = ggml_backend_buft_get_device(buft);
-        kq_mask_copied = kq_mask_copied && dev && !ggml_backend_dev_supports_buft(dev, ggml_backend_cpu_buffer_type());
-        // LOCAL: only the meta (tensor-split) configuration has been measured
-        kq_mask_copied = kq_mask_copied && ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_META;
     }
-    kq_mask_copied = kq_mask_copied && !ctxs_bufs.empty();
 
     {
         const size_t memory_size_k = size_k_bytes();
@@ -1591,10 +1584,8 @@ uint32_t llama_kv_cache::get_kq_mask_prefix(const llama_ubatch & ubatch, uint32_
             prefix = std::min(prefix, it->second);
         }
     }
-    // keep at least one host-set column; align like get_n_kv() so the prefix changes no more often than n_kv
-    const uint32_t n_pad_cur = std::max(n_pad, 256u);
-
-    return std::min(prefix, n_kv - 1)/n_pad_cur*n_pad_cur;
+    // Leave a suffix and align the prefix to the KV graph padding.
+    return std::min(prefix, n_kv - 1)/256*256;
 }
 
 struct args_set_input_kq_mask {
@@ -1695,9 +1686,6 @@ static void set_input_kq_mask_impl(const args_set_input_kq_mask & args, T * data
                 }
             }
 
-            // a nonzero offset is only valid when every row takes the dense path above
-            GGML_ASSERT(offset == 0);
-
             // for tokens of the same sequence, the mask is mostly the same, so we can reuse it
             // the only cells that could change are the ones that are with similar positions as the
             //   ones in the batch (i.e. due to causal masking, SWA, etc.)
@@ -1712,9 +1700,9 @@ static void set_input_kq_mask_impl(const args_set_input_kq_mask & args, T * data
                 if (seq_srct.find(seq_id) != seq_srct.end()) {
                     const uint32_t srct = seq_srct[seq_id];
 
-                    const uint64_t idst_prev = n_kv*srct;
+                    const uint64_t idst_prev = (n_kv - offset)*srct;
 
-                    std::copy(data + idst_prev, data + idst_prev + n_kv, data + idst);
+                    std::copy(data + idst_prev, data + idst_prev + n_kv - offset, data + idst);
 
                     prev = true;
                 } else {
@@ -1725,8 +1713,8 @@ static void set_input_kq_mask_impl(const args_set_input_kq_mask & args, T * data
                 }
             }
 
-            for (uint32_t jj = 0; jj < n_kv; ++jj) {
-                uint32_t j = jj;
+            for (uint32_t jj = 0; jj < n_kv - offset; ++jj) {
+                uint32_t j = offset + jj;
 
                 // we have an exiting mask for this sequence -> update just seq_idxs
                 if (!alibi) {
@@ -1787,14 +1775,14 @@ static void set_input_kq_mask_impl(const args_set_input_kq_mask & args, T * data
                 }
 
                 if (alibi) {
-                    data[idst + j] = llama_cast<T>(static_cast<float>(-std::abs(p0 - p1)));
+                    data[idst + j - offset] = llama_cast<T>(static_cast<float>(-std::abs(p0 - p1)));
                 } else {
-                    data[idst + j] = mask_keep;
+                    data[idst + j - offset] = mask_keep;
                 }
 
                 continue;
 skip:
-                data[idst + j] = mask_drop;
+                data[idst + j - offset] = mask_drop;
             }
         }
     }
@@ -1842,14 +1830,10 @@ static void set_input_kq_mask_impl(const args_set_input_kq_mask & args, T * data
 void llama_kv_cache::set_input_kq_mask(ggml_tensor * dst, const llama_ubatch * ubatch, bool causal_attn, uint32_t prefix) const {
     const uint32_t n_tokens = ubatch->n_tokens;
 
-    GGML_ASSERT(ggml_backend_buffer_is_host(dst->buffer));
-
-    // dst holds the columns [prefix, n_kv); the graph supplies the prefix as visible (+0)
-    const int64_t n_kv   = dst->ne[0] + prefix;
+    const int64_t n_kv = dst->ne[0] + prefix;
     const int64_t offset = prefix;
-
-    // a reused graph may carry a prefix that the cache no longer certifies
     GGML_ASSERT(prefix == 0 || get_kq_mask_prefix(*ubatch, n_kv, causal_attn) >= prefix);
+    GGML_ASSERT(ggml_backend_buffer_is_host(dst->buffer));
 
     const int64_t n_stream = dst->ne[3]; // num streams in the current ubatch
 
@@ -3023,10 +3007,6 @@ void llama_kv_cache_context::set_input_k_idxs(ggml_tensor * dst, const llama_uba
 
 void llama_kv_cache_context::set_input_v_idxs(ggml_tensor * dst, const llama_ubatch * ubatch) const {
     kv->set_input_v_idxs(dst, ubatch, sinfos[i_cur]);
-}
-
-bool llama_kv_cache_context::get_kq_mask_copied() const {
-    return kv->get_kq_mask_copied();
 }
 
 uint32_t llama_kv_cache_context::get_kq_mask_prefix(const llama_ubatch & ubatch, bool causal_attn) const {
