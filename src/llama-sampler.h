@@ -3,6 +3,7 @@
 #include "llama.h"
 
 #include <vector>
+#include <functional>
 
 struct llama_vocab;
 struct llama_grammar;
@@ -37,6 +38,13 @@ struct llama_sampler_chain {
 
 uint32_t llama_sampler_backend_n_nodes(const llama_sampler * sampler);
 void llama_sampler_backend_begin(llama_sampler * sampler);
+
+// Restore graph inputs without copying or advancing sampler state. Empty for unsupported bindings.
+std::function<void()> llama_sampler_backend_bindings(llama_sampler * sampler);
+
+// k of the chain's first non-empty sampler if that sampler is top-k, else -1.
+// When k > 0 the chain can only ever pick among the k highest logits, so it may start from any superset of them.
+int32_t llama_sampler_chain_leading_top_k(const llama_sampler * sampler);
 
 struct llama_sampler * llama_sampler_init_dry_testing(
         float   dry_multiplier,
