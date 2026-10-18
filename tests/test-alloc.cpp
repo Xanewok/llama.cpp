@@ -3,6 +3,7 @@
 #include "ggml-cpp.h"
 #include "../ggml/src/ggml-impl.h"
 #include "ggml.h"
+#include "../ggml/src/ggml-cuda/q8-cache.h"
 
 #include <algorithm>
 #include <memory>
@@ -1289,6 +1290,25 @@ static void test_meta_subgraph_realloc_size() {
 }
 
 
+static void test_q8_cache_capacity() {
+    ggml_init_params params = {ggml_tensor_overhead(), nullptr, true};
+    ggml_context_ptr ctx(ggml_init(params));
+    ggml_tensor * input = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, 256, 6);
+    ggml_cuda_q8_cache cache;
+    cache.add(input, 1, 128);
+    cache.add(input, 1, 128);
+    std::vector<char> storage(cache.reserve());
+    cache.data = storage.data();
+    bool hit = true;
+    GGML_ASSERT(cache.get(input, 1, 129, hit) == nullptr);
+    GGML_ASSERT(!hit && cache.hits == 0 && cache.misses == 0);
+    GGML_ASSERT(cache.get(input, 1, 128, hit) == storage.data());
+    GGML_ASSERT(!hit && cache.misses == 1);
+    GGML_ASSERT(cache.get(input, 1, 128, hit) == storage.data());
+    GGML_ASSERT(hit && cache.hits == 1);
+    printf("76 PASS oversized cache request rejected; exact-size request reused\n");
+}
+
 static void run(const char * name, void (*f)()) {
     printf("%s ", name);
     fflush(stdout);
@@ -1297,6 +1317,10 @@ static void run(const char * name, void (*f)()) {
 }
 
 int main(int argc, char ** argv) {
+    if (argc == 2 && strcmp(argv[1], "--q8-capacity") == 0) {
+        test_q8_cache_capacity();
+        return 0;
+    }
     if (argc == 2 && strcmp(argv[1], "--split-state-same") == 0) {
         test_meta_split_state_rebuild(false);
         return 0;
