@@ -447,14 +447,12 @@ ggml_tensor * llama_model_kimi_k3::graph::build_kda_layer(
     ggml_tensor * cur_3d = ggml_reshape_3d(ctx0, cur, cur->ne[0], n_seq_tokens, n_seqs);
 
     ggml_tensor * ssm_states_all = mctx_cur->get_s_l(il);
-    ggml_tensor * state = build_rs(inp_rs, ssm_states_all, hparams.n_embd_s(), n_seqs);
-    state = ggml_reshape_4d(ctx0, state, head_dim, head_dim, n_head_kda, n_seqs);
 
     const float eps_norm = hparams.f_norm_rms_eps;
     Qcur = build_gdn_l2_norm(ctx0, Qcur, eps_norm);
     Kcur = build_gdn_l2_norm(ctx0, Kcur, eps_norm);
 
-    ggml_tensor * output = build_recurrent_attn(inp_rs, ssm_states_all, Qcur, Kcur, Vcur, g1, beta, state, il);
+    ggml_tensor * output = build_recurrent_attn(inp_rs, ssm_states_all, Qcur, Kcur, Vcur, g1, beta, il);
     output = ggml_cont(ctx0, output);
     cb(output, "kda_scan_out", il);
 

@@ -87,7 +87,7 @@ struct llm_build_delta_net_base : public llm_graph_context {
             int                  il);
 
     // run delta-net attention and write the new recurrent state(s) back to ssm_states_all
-    // s: (head_v_dim, head_v_dim, num_v_heads, n_seqs); returns output: (head_v_dim, num_v_heads, n_seq_tokens, n_seqs)
+    // returns output: (head_v_dim, num_v_heads, n_seq_tokens, n_seqs)
     ggml_tensor * build_recurrent_attn(
             llm_graph_input_rs * inp,
             ggml_tensor *        ssm_states_all,
@@ -96,7 +96,6 @@ struct llm_build_delta_net_base : public llm_graph_context {
             ggml_tensor *        v,
             ggml_tensor *        g,
             ggml_tensor *        b,
-            ggml_tensor *        s,
             int                  il);
 };
 
