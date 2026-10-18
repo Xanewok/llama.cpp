@@ -8704,6 +8704,7 @@ static struct ggml_backend_i hexagon_backend_i = {
     /* .event_record            = */ ggml_backend_hexagon_event_record,
     /* .event_wait              = */ ggml_backend_hexagon_event_wait,
     /* .graph_optimize          = */ ggml_backend_hexagon_graph_optimize,
+    /* .set_tensor_batch_owned = */ NULL,
 };
 
 static ggml_guid_t ggml_backend_hexagon_guid() {
@@ -8859,6 +8860,10 @@ static bool ggml_hexagon_supported_roll(const struct ggml_hexagon_session * sess
 }
 
 static bool ggml_backend_hexagon_device_supports_op(ggml_backend_dev_t dev, const struct ggml_tensor * op) {
+    if (op->op == GGML_OP_GATED_DELTA_NET && op->src[6]) {
+        return false;
+    }
+
     auto dev_ctx = static_cast<ggml_backend_hexagon_device_context *>(dev->context);
     auto sess    = dev_ctx->session();
 
