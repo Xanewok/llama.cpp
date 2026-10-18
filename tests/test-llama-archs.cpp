@@ -1041,6 +1041,73 @@ static bool check_mtp_draft_np2(const llm_arch arch, const size_t seed, const fl
     return ok;
 }
 
+struct rotation_probe {
+    int count = 0;
+    bool ok = true;
+};
+
+static bool rotation_probe_cb(ggml_tensor * t, bool ask, void * data) {
+    int32_t hint;
+    memcpy(&hint, t->op_params + 1, sizeof(hint));
+    const bool rotation = t->op == GGML_OP_MUL_MAT && hint == GGML_HINT_SRC0_IS_HADAMARD;
+    if (ask) {
+        return rotation;
+    }
+    if (rotation) {
+        auto & probe = *(rotation_probe *) data;
+        const auto * matrix = t->src[0];
+        const int64_t n = matrix->ne[0];
+        probe.count++;
+        probe.ok &= !(matrix->flags & GGML_TENSOR_FLAG_INPUT);
+        std::vector<float> values(n*n);
+        ggml_backend_tensor_get(matrix, values.data(), 0, ggml_nbytes(matrix));
+        const float magnitude = 1.0f / sqrtf(n);
+        for (int64_t row = 0; row < n; row++) {
+            for (int64_t col = 0; col < n; col++) {
+                int parity = 0;
+                for (int64_t bits = row & col; bits; bits >>= 1) {
+                    parity ^= bits & 1;
+                }
+                const float expected = parity ? -magnitude : magnitude;
+                probe.ok &= memcmp(&values[row*n + col], &expected, sizeof(float)) == 0;
+            }
+        }
+    }
+    return true;
+}
+
+static bool check_retained_rotations(const size_t seed, const float stdev) {
+    auto gguf_ctx = get_gguf_ctx(LLM_ARCH_QWEN35, false);
+    auto mparams = llama_model_default_params();
+    mparams.progress_callback = silent_model_load_progress;
+    ggml_backend_dev_t devs[] = { ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU), nullptr };
+    mparams.devices = devs;
+    tensor_data_params tensor_params = { seed, stdev };
+    llama_model_ptr model(llama_model_init_from_user(gguf_ctx.get(), set_tensor_data, &tensor_params, mparams));
+    if (!model) { return false; }
+    rotation_probe probe;
+    auto params = llama_context_default_params();
+    params.n_ctx = 256;
+    params.n_batch = 32;
+    params.n_ubatch = 32;
+    params.n_threads = 4;
+    params.n_threads_batch = 4;
+    params.type_k = GGML_TYPE_Q8_0;
+    params.type_v = GGML_TYPE_Q8_0;
+    params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    params.cb_eval = rotation_probe_cb;
+    params.cb_eval_user_data = &probe;
+    llama_context_ptr ctx(llama_init_from_model(model.get(), params));
+    if (!ctx) { return false; }
+    const auto tokens = get_tokens(8, llama_vocab_n_tokens(llama_model_get_vocab(model.get())), seed);
+    get_logits(model.get(), ctx.get(), tokens);
+    llama_memory_clear(llama_get_memory(ctx.get()), true);
+    get_logits(model.get(), ctx.get(), tokens);
+    const bool ok = probe.ok && probe.count > 0;
+    LOG("retained attention rotations: %s (%d matrices)\n", ok ? "OK" : "FAIL", probe.count);
+    return ok;
+}
+
 static bool moe_mandatory(const llm_arch arch) {
     switch (arch) {
         case LLM_ARCH_LLAMA4:
@@ -1512,6 +1579,12 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
         const bool ok_np2 = check_mtp_draft_np2(LLM_ARCH_QWEN35, seed, stdev);
         n_failed += !ok_np2;
         all_ok   &= ok_np2;
+    }
+    if (arch_filter.empty() || arch_filter == "qwen35") {
+        n_tests++;
+        const bool ok = check_retained_rotations(seed, stdev);
+        n_failed += !ok;
+        all_ok &= ok;
     }
 
     if (n_tests == 0) {
