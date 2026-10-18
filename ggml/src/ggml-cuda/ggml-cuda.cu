@@ -1,5 +1,6 @@
 #include "ggml-cuda.h"
 #include "ggml-impl.h"
+#include "ggml-ssm-conv.h"
 #include "ggml-backend-impl.h"
 
 #include "ggml-cuda/allreduce.cuh"
@@ -3766,6 +3767,29 @@ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph 
                 return match.node_count - 1;
             }
         }
+    }
+
+    if (node->op == GGML_OP_CPY && node->src[0]->op == GGML_OP_VIEW &&
+            node->src[0]->view_src && node->src[0]->view_src->op == GGML_OP_CONCAT) {
+        ggml_ssm_conv_state_fusion match;
+        bool can_fuse = ggml_match_ssm_conv_state_fusion(cgraph, i, match);
+        if (can_fuse && match.out->ne[1] > 32) {
+            can_fuse = false;
+        }
+        if (can_fuse && match.out->ne[0] % 128 != 0) {
+            can_fuse = false;
+        }
+        if (can_fuse) {
+            const int64_t width = match.conv->src[1]->ne[0];
+            if (width != 3 && width != 4 && width != 5 && width != 9 && width != 15) {
+                can_fuse = false;
+                }
+        }
+        if (can_fuse) {
+            ggml_cuda_op_ssm_conv_state(*cuda_ctx, match);
+            return match.node_count - 1;
+        }
+
     }
 
     // gated_delta_net -> cpy: scatter recurrent-state snapshots into the cache

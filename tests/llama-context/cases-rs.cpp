@@ -393,9 +393,68 @@ struct case_shared_seq_reserve : ctx_test {
     }
 };
 
+struct case_conv_snapshots : ctx_test {
+    test_group group() const override { return TEST_GROUP_RS; }
+    const char * name() const override { return "conv-snapshots"; }
+    const char * description() const override { return "all six conv rollback snapshots preserve prefix logits and checkpoint replay"; }
+
+    case_result run(model_run & mr) const override {
+        const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(mr.model));
+        for (uint32_t n_seq : {1u, 2u}) {
+            ctx_opts opts;
+            opts.n_ctx = 256;
+            opts.n_batch = opts.n_ubatch = 32;
+            opts.n_seq_max = n_seq;
+            opts.n_rs_seq = 8;
+            for (int accepted = 1; accepted <= 6; ++accepted) {
+                auto actual = mr.ctx(opts);
+                auto ref = mr.ctx(opts);
+                CTX_REQUIRE(actual && ref, "context allocation failed");
+                CTX_REQUIRE(llama_n_rs_seq(actual.get()) >= 6, "six snapshots are required");
+                const auto decode = [&](llama_context * ctx, int begin, int end, bool perturb_tail = false) {
+                    common_batch batch(ctx);
+                    for (uint32_t seq = 0; seq < n_seq; ++seq) {
+                        for (int pos = begin; pos < end; ++pos) {
+                            const auto token_seq = perturb_tail && pos >= 16 + accepted ? seq + n_seq : seq;
+                            batch.add(gen_token(n_vocab, token_seq, pos), pos, seq, pos == end - 1);
+                        }
+                    }
+                    return llama_process(ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0;
+                };
+                CTX_REQUIRE(decode(actual.get(), 0, 16) && decode(ref.get(), 0, 16), "prefill failed");
+                // Equal widths keep quantized matmul dispatch identical; only the rejected suffix differs.
+                CTX_REQUIRE(decode(actual.get(), 16, 22) && decode(ref.get(), 16, 22, true), "verify failed");
+                for (uint32_t seq = 0; seq < n_seq; ++seq) {
+                    if (accepted < 6) {
+                        CTX_REQUIRE(llama_memory_seq_rm(llama_get_memory(actual.get()), seq, 16 + accepted, -1) &&
+                                    llama_memory_seq_rm(llama_get_memory(ref.get()), seq, 16 + accepted, -1), "rollback failed");
+                    }
+                }
+                // The next decode consumes the selected snapshot, rather than the speculative tail.
+                CTX_REQUIRE(decode(actual.get(), 16 + accepted, 17 + accepted) &&
+                            decode(ref.get(), 16 + accepted, 17 + accepted), "snapshot replay failed");
+                for (uint32_t seq = 0; seq < n_seq; ++seq) {
+                    const float * a = llama_get_logits_ith(actual.get(), seq);
+                    const float * b = llama_get_logits_ith(ref.get(), seq);
+                    CTX_REQUIRE(a && b, "missing snapshot logits");
+                    const double nmse = compare_logits(a, b, n_vocab).nmse();
+                    TLOG_TRC("conv-snapshots: n_seq=%u accepted=%d seq=%u nmse=%.9g\n", n_seq, accepted, seq, nmse);
+                    CTX_REQUIRE(nmse <= 1e-4, "snapshot prefix logits differ");
+                    std::vector<uint8_t> state, restored;
+                    CTX_REQUIRE(get_seq_state(actual.get(), seq, 0, state) &&
+                                set_seq_state(actual.get(), seq, 0, state) &&
+                                get_seq_state(actual.get(), seq, 0, restored) && blobs_equal(state, restored), "snapshot checkpoint differs");
+                }
+            }
+        }
+        return case_result::pass();
+    }
+};
+
 std::vector<ctx_test_ptr> make_rs_cases() {
     std::vector<ctx_test_ptr> cases;
 
+    cases.push_back(std::make_unique<case_conv_snapshots>());
     cases.push_back(std::make_unique<case_rollback>());
     cases.push_back(std::make_unique<case_multi_seq_split_replay>());
     cases.push_back(std::make_unique<case_shared_seq_reserve>());
