@@ -1564,7 +1564,7 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
     const bool capacity_ok = check_mtp_chain_capacity();
     n_failed += !capacity_ok;
     all_ok &= capacity_ok;
-    if (arch_filter.empty() || arch_filter == "qwen35") {
+    if (arch_matches(arch_filter, LLM_ARCH_QWEN35)) {
         n_tests++;
         const bool ok = check_gdn_getter_arch(seed, stdev);
         n_failed += !ok;

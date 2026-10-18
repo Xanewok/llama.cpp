@@ -39,5 +39,14 @@ for target in "${targets[@]}"; do
         rc=8
     fi
 done
+if [[ $rc == 0 ]]; then
+    if python3 -c 'import subprocess, sys; sys.exit(subprocess.run(sys.argv[1:], timeout=600).returncode)' "$BW_GATE" build-stack12b-cpu/bin/test-llama-archs -a qwen35 -b CPU -s 42 > "$out/archs-cpu.log" 2>&1; then
+        printf 'archs-cpu\t0\n' > "$out/runtime.tsv"
+    else
+        code=$?
+        printf 'archs-cpu\t%s\n' "$code" > "$out/runtime.tsv"
+        rc=8
+    fi
+fi
 cat "$out/targets.tsv"
 exit "$rc"
