@@ -944,8 +944,15 @@ void llama_context::logits_deferred_fetch() {
     GGML_ASSERT(logits.data && (logits_deferred.row0 + logits_deferred.n)*n_vocab <= (int64_t) logits.size);
     auto * backend = ggml_backend_sched_get_tensor_backend(get_sched_graph(), logits_deferred.t);
     GGML_ASSERT(backend != nullptr);
-    ggml_backend_tensor_get_async(backend, logits_deferred.t, logits.data + logits_deferred.row0*n_vocab,
-            0, logits_deferred.n*n_vocab*sizeof(float));
+    if (has_draft_vocab()) {
+        const size_t n_draft = model.draft_vocab_ids.size();
+        ggml_backend_tensor_get_async(backend, logits_deferred.t, draft_logits.data + logits_deferred.row0*n_draft,
+                0, logits_deferred.n*n_draft*sizeof(float));
+        std::fill_n(draft_logits_pending.data() + logits_deferred.row0, logits_deferred.n, true);
+    } else {
+        ggml_backend_tensor_get_async(backend, logits_deferred.t, logits.data + logits_deferred.row0*n_vocab,
+                0, logits_deferred.n*n_vocab*sizeof(float));
+    }
     synchronize();
     logits_deferred = {};
 }

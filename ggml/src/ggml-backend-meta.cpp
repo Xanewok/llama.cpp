@@ -1290,6 +1290,10 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_get_split_state(
                 if (src == nullptr || src == tensor) {
                     continue;
                 }
+                if (!ggml_backend_buffer_is_meta(src->buffer)) {
+                    cur.src_ss[cur.i_src] = ggml_backend_meta_get_split_state(src, view_src ? assume_sync : true);
+                    continue;
+                }
                 const ggml_backend_meta_split_state * cached = ggml_backend_meta_find_split_state(src, view_src ? assume_sync : true);
                 if (cached == nullptr) {
                     src_uncached = src;
