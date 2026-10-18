@@ -282,7 +282,7 @@ void ggml_cuda_op_ssm_conv_state(ggml_backend_cuda_context & ctx, const ggml_ssm
 template <bool apply_silu, int d_conv>
 static __global__ void ssm_conv_rs_f32(const char * x, const char * weights, const char * states, const int32_t * ids,
         char * snap, float * out, int64_t channels, int64_t n_t, int64_t n_s, int64_t n_slots,
-        size_t x0, size_t x1, size_t x2, size_t w1, size_t states_row, size_t snap_row, size_t snap_slot, int mutant) {
+        size_t x0, size_t x1, size_t x2, size_t w1, size_t states_row, size_t snap_row, size_t snap_slot) {
     ggml_cuda_pdl_lc();
     const int64_t channel = (int64_t) blockIdx.x * blockDim.x + threadIdx.x;
     const bool live = channel < channels;
@@ -313,13 +313,6 @@ static __global__ void ssm_conv_rs_f32(const char * x, const char * weights, con
         }
         char * snap_s = snap + (int64_t) s * snap_row + channel * (d_conv - 1) * sizeof(float);
         float win[d_conv];
-        if (mutant == 1) {
-            const char * row = states + (int64_t) ids[s] * states_row + channel * (d_conv - 1) * sizeof(float);
-#pragma unroll
-            for (int j = 0; j < d_conv - 1; ++j) {
-                hist[s][j] = *(const float *) (row + j * sizeof(float));
-            }
-        }
 #pragma unroll
         for (int j = 0; j < d_conv - 1; ++j) {
             win[j] = hist[s][j];
@@ -335,7 +328,7 @@ static __global__ void ssm_conv_rs_f32(const char * x, const char * weights, con
             out[(s * n_t + i) * channels + channel] = apply_silu ? ggml_cuda_op_silu_single(sum) : sum;
             // Slot k starts at token max(0, n_t - k); slots older than the batch hold the input state.
             for (int64_t k = 1; k < n_slots; ++k) {
-                if ((n_t > k ? n_t - k : 0) + (mutant == 2 && n_t > k ? 1 : 0) == i) {
+                if ((n_t > k ? n_t - k : 0) == i) {
 #pragma unroll
                     for (int j = 0; j < d_conv - 1; ++j) {
                         *(float *) (snap_s + k * snap_slot + j * sizeof(float)) = win[j];
@@ -377,14 +370,6 @@ void ggml_cuda_op_ssm_conv_rs(ggml_backend_cuda_context & ctx, ggml_tensor * dst
     GGML_ASSERT(ggml_cuda_ssm_conv_rs_supported(dst));
     GGML_ASSERT(ggml_is_contiguous(out) && out->type == GGML_TYPE_F32);
 
-    // local: 1 reads each state after the earlier sequences' snapshots, 2 shifts the older snapshots by one token
-    static const int mutant = getenv("GGML_SSM_CONV_RS_MUTANT") ? atoi(getenv("GGML_SSM_CONV_RS_MUTANT")) : 0;
-    static const bool log_engaged = getenv("GGML_SSM_CONV_RS_LOG") != nullptr;
-    if (log_engaged) {
-        GGML_LOG_INFO("%s: ssm_conv_rs engaged: d_conv=%d n_t=%d n_s=%d slots=%d silu=%d mutant=%d\n", __func__,
-            (int) w->ne[0], (int) x->ne[0], (int) x->ne[2], (int) snap->ne[2], silu_dst != nullptr, mutant);
-    }
-
     const int64_t channels = w->ne[1];
     const dim3 blocks((channels + 127) / 128);
     const auto params = ggml_cuda_kernel_launch_params(blocks, 128, 0, ctx.stream());
@@ -392,7 +377,7 @@ void ggml_cuda_op_ssm_conv_rs(ggml_backend_cuda_context & ctx, ggml_tensor * dst
         ggml_cuda_kernel_launch(ssm_conv_rs_f32<decltype(silu)::value, decltype(nc)::value>, params,
             (const char *) x->data, (const char *) w->data, (const char *) states->data, (const int32_t *) ids->data,
             (char *) snap->data, (float *) out->data, channels, x->ne[0], x->ne[2], snap->ne[2],
-            x->nb[0], x->nb[1], x->nb[2], w->nb[1], states->nb[1], snap->nb[1], snap->nb[2], mutant);
+            x->nb[0], x->nb[1], x->nb[2], w->nb[1], states->nb[1], snap->nb[1], snap->nb[2]);
     };
     auto launch_nc = [&](auto nc) {
         if (silu_dst) {

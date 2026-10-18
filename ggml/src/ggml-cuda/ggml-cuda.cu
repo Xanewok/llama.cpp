@@ -6609,7 +6609,7 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
             return op->src[0]->ne[1] % 128 == 0;
         }
         case GGML_OP_SSM_CONV_RS:
-            return !getenv("GGML_SSM_CONV_RS_OFF") && ggml_cuda_ssm_conv_rs_supported(op);
+            return ggml_cuda_ssm_conv_rs_supported(op);
         case GGML_OP_CONT:
             return true;
         case GGML_OP_DIAG_MASK_INF:

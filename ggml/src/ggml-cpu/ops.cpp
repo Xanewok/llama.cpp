@@ -10028,15 +10028,12 @@ static void ggml_compute_forward_ssm_conv_rs_f32(
     const int ir0 = dr*ith;
     const int ir1 = MIN(ir0 + dr, nr);
 
-    // local: 1 reads each state after the earlier sequences' snapshots, 2 shifts the older snapshots by one token
-    static const int mutant = getenv("GGML_SSM_CONV_RS_MUTANT") ? atoi(getenv("GGML_SSM_CONV_RS_MUTANT")) : 0;
-
     const int per_thread = n_s*nh + nh + n_t + (int) CACHE_LINE_SIZE_F32;
     float * hist = (float *) params->wdata + (size_t) per_thread*ith;
     float * col  = hist + n_s*nh;
 
     for (int i1 = ir0; i1 < ir1; ++i1) {
-        for (int s = 0; s < n_s && mutant != 1; ++s) {
+        for (int s = 0; s < n_s; ++s) {
             const int32_t id = ((const int32_t *) ids->data)[s];
             const float * state = (const float *) ((const char *) states->data + id*states->nb[1]) + (size_t) i1*nh;
             for (int j = 0; j < nh; ++j) {
@@ -10047,13 +10044,6 @@ static void ggml_compute_forward_ssm_conv_rs_f32(
         const float * c = (const float *) ((const char *) w->data + i1*w->nb[1]);
 
         for (int s = 0; s < n_s; ++s) {
-            if (mutant == 1) {
-                const int32_t id = ((const int32_t *) ids->data)[s];
-                const float * state = (const float *) ((const char *) states->data + id*states->nb[1]) + (size_t) i1*nh;
-                for (int j = 0; j < nh; ++j) {
-                    hist[s*nh + j] = state[j];
-                }
-            }
             for (int j = 0; j < nh; ++j) {
                 col[j] = hist[s*nh + j];
             }
@@ -10071,7 +10061,7 @@ static void ggml_compute_forward_ssm_conv_rs_f32(
             }
 
             for (int k = 0; k < n_k; ++k) {
-                const int start = (n_t > k ? n_t - k : 0) + (mutant == 2 && k > 0 && n_t > k ? 1 : 0);
+                const int start = n_t > k ? n_t - k : 0;
                 float * out = (float *) ((char *) snap->data + k*snap->nb[2] + s*snap->nb[1]) + (size_t) i1*nh;
                 for (int j = 0; j < nh; ++j) {
                     out[j] = col[start + j];
