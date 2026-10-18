@@ -22,6 +22,7 @@ else:
     print('skipped: RAM/shared builder busy after 10 minutes', flush=True)
     raise SystemExit(75)
 GATE
+snapshot=$(git rev-parse HEAD)
 shared="$HOME/qwen38-bw/s12b-drop-incremental"
 mkdir -p "$shared"
 mkdir "$shared/lock" || exit 75
@@ -30,6 +31,12 @@ mkdir -p "$shared/source"
 rsync -rc --delete --exclude '.git' --exclude 'build*' ./ "$shared/source/"
 printf '%s\n' "$PWD" > "$out/source-snapshot.txt"
 cd "$shared/source"
+cd "$(pwd -P)"
+if [[ -d .git ]]; then
+    git read-tree "$snapshot"
+    git update-ref HEAD "$snapshot"
+    git diff --quiet
+fi
 read -ra extra <<< "${BW_CPU_EXTRA:-}"
 "$BW_BUILDGATE" cmake -S . -B build-stack12b-cpu \
     -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_OPENMP=OFF \
