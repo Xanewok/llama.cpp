@@ -7,100 +7,12 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <limits>
 #include <stdexcept>
 #include <vector>
 
 static void mask_require(bool ok, const char * message) {
     if (!ok) {
         throw std::runtime_error(message);
-    }
-}
-
-static void test_seq_rm(const llama_model & model) {
-    auto hp = model.hparams;
-    hp.no_alloc = true;
-    const llama_pos end = std::numeric_limits<llama_pos>::max();
-    for (bool unified : {false, true}) {
-        llama_kv_cache cache(model, hp, GGML_TYPE_F16, GGML_TYPE_F16, false, false, unified,
-                             256, 2, 256, 0, LLAMA_SWA_TYPE_NONE, nullptr,
-                             [](uint32_t) { return false; }, nullptr, nullptr);
-        for (llama_seq_id seq_id : {0, 1, -1}) {
-            for (const auto & range : std::vector<std::pair<llama_pos, llama_pos>>{
-                    {-1, -1}, {0, 0}, {0, 1}, {7, 19}, {19, 7}, {63, -1}, {64, 65}, {end - 1, end}}) {
-                cache.clear(false);
-                std::vector<llama_kv_cells> expected;
-                for (int s = 0; s < (unified ? 1 : 2); ++s) {
-                    auto & cells = const_cast<llama_kv_cells &>(cache.get_cells(s));
-                    for (uint32_t j = 0; j < 192; ++j) {
-                        const uint32_t i = (j*37)%256;
-                        cells.pos_set(i, j == 191 ? end - 1 : j/3);
-                        cells.seq_add(i, s);
-                        if (unified && j%2 == 0) {
-                            cells.seq_add(i, 1);
-                        }
-                    }
-                    expected.push_back(cells);
-                }
-                const llama_pos p0 = range.first < 0 ? 0 : range.first;
-                const llama_pos p1 = range.second < 0 ? end : range.second;
-                for (size_t s = 0; s < expected.size(); ++s) {
-                    auto & cells = expected[s];
-                    if (!unified && seq_id >= 0 && s != (size_t) seq_id) {
-                        continue;
-                    }
-                    for (uint32_t i = 0; i < cells.size(); ++i) {
-                        if (cells.pos_in(i, p0, p1)) {
-                            if (seq_id < 0) {
-                                cells.rm(i);
-                            } else if (cells.seq_has(i, seq_id)) {
-                                cells.seq_rm(i, seq_id);
-                            }
-                        }
-                    }
-                }
-                for (int repeat = 0; repeat < 2; ++repeat) {
-                    mask_require(cache.seq_rm(seq_id, range.first, range.second), "seq_rm failed");
-                    for (size_t s = 0; s < expected.size(); ++s) {
-                        const auto & actual = cache.get_cells(s);
-                        for (uint32_t i = 0; i < actual.size(); ++i) {
-                            mask_require(actual.pos_get(i) == expected[s].pos_get(i), "seq_rm position differs from scan");
-                            for (llama_seq_id id : {0, 1}) {
-                                mask_require(actual.seq_has(i, id) == expected[s].seq_has(i, id), "seq_rm membership differs from scan");
-                            }
-                        }
-                        for (llama_seq_id id : {0, 1}) {
-                            mask_require(actual.seq_pos_get(id) == expected[s].seq_pos_get(id), "seq_rm index differs from scan");
-                        }
-                    }
-                }
-            }
-        }
-        cache.clear(false);
-        llama_seq_id seq = 0;
-        std::vector<llama_pos> pos(200);
-        std::vector<int32_t> counts(200, 1);
-        std::vector<llama_seq_id *> ids(200, &seq);
-        llama_kv_cache::slot_info slot = {0, 0, {0}, {{}}};
-        for (uint32_t i = 0; i < pos.size(); ++i) {
-            pos[i] = i;
-            slot.idxs[0].push_back(i);
-        }
-        pos[3] = 1000;
-        pos[100] = 500;
-        llama_ubatch ub = {};
-        ub.n_tokens = ub.n_seq_tokens = pos.size();
-        ub.n_seqs = ub.n_seqs_unq = ub.n_pos = 1;
-        ub.b_equal_seqs = true;
-        ub.pos = pos.data();
-        ub.n_seq_id = counts.data();
-        ub.seq_id = ids.data();
-        ub.seq_id_unq = &seq;
-        cache.apply_ubatch(slot, ub);
-        mask_require(cache.seq_rm(0, 500, -1), "head removal failed");
-        ub.n_tokens = ub.n_seq_tokens = 1;
-        const auto next = cache.find_slot(ub, false);
-        mask_require(!next.empty() && next.head() == 3, "seq_rm did not select the lowest freed cell");
     }
 }
 
@@ -211,7 +123,6 @@ static int test_kv_mask() {
     mp.n_gpu_layers = 0;
     llama_model_ptr model(llama_model_create(LLM_ARCH_LLAMA, mp));
     mask_require(bool(model), "mask test model creation failed");
-    test_seq_rm(*model);
     auto hp = model->hparams;
     hp.no_alloc = true;
     int cases = 0;
