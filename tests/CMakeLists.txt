@@ -151,6 +151,17 @@ endif ()
 llama_build(test-recurrent-state-rollback.cpp)
 llama_build(test-save-load-state.cpp)
 
+set(LLAMA_CONTEXT_TEST_SRC
+    test-llama-context.cpp
+    llama-context/cases-kv.cpp
+    llama-context/cases-rs.cpp
+    llama-context/test-case.cpp
+    llama-context/test-log.cpp
+    llama-context/test-runner.cpp
+    llama-context/test-util.cpp
+)
+llama_build(${LLAMA_CONTEXT_TEST_SRC})
+
 if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
     # these tests are disabled on Windows because they use internal functions not exported with LLAMA_API (when building with shared libraries)
     llama_build_and_test(test-unicode.cpp)
