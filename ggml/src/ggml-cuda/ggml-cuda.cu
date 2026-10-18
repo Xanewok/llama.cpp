@@ -5087,8 +5087,7 @@ static size_t ggml_cuda_q8_cache_prepare(ggml_cuda_q8_cache & cache, const ggml_
                 continue;
             }
             variant = 1 + mmq_get_q8_1_ds_layout(weight->type);
-            // Bound of ggml_cuda_mul_mat_q's src1_q8_1_padding: J <= 128 and a load chunk of nthreads*sizeof(int) <= 2048 bytes.
-            size += GGML_PAD(128 * sizeof(block_q8_1_mmq), 512 * sizeof(int));
+            size += ggml_cuda_mmq_get_J_max(weight->type, weight->ne[1] % 128 != 0, cc, input->ne[1]) * sizeof(block_q8_1_mmq);
         }
         cache.add(input, variant, size);
     }
