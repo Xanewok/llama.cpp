@@ -98,6 +98,8 @@ extern "C" {
     GGML_API void ggml_backend_tensor_memset(      struct ggml_tensor * tensor,     uint8_t value, size_t offset, size_t size);
 
     GGML_API void ggml_backend_synchronize(ggml_backend_t backend);
+    // local: 1 when ggml_backend_synchronize() would not wait, 0 when work is still queued, -1 when the backend cannot tell
+    GGML_API int  ggml_backend_query(ggml_backend_t backend);
 
     GGML_API ggml_backend_graph_plan_t ggml_backend_graph_plan_create(ggml_backend_t backend, struct ggml_cgraph * cgraph);
     GGML_API void                      ggml_backend_graph_plan_free  (ggml_backend_t backend, ggml_backend_graph_plan_t plan);
@@ -418,6 +420,15 @@ extern "C" {
     //       express this as a backend registry functionality instead
     GGML_API ggml_backend_dev_t ggml_backend_meta_device(
         ggml_backend_dev_t * devs, size_t n_devs, ggml_backend_meta_get_split_state_t get_split_state, void * get_split_state_ud);
+
+    // all-gather: on a meta backend a split tensor becomes MIRRORED, bit-exact (a sum of zero-padded slices);
+    // elsewhere an identity copy.
+    // Contract (meta backend): the result must be consumed by a later node, and only through views, reshapes or
+    // copies; the reduction that completes it runs where the next subgraph starts, so a gather that ends the graph
+    // is never reduced, and an arithmetic op on it (e.g. a MUL with a MIRRORED operand) moves the reduction onto that
+    // op, which then takes the lossy backend AllReduce. Reading the gather itself with ggml_backend_tensor_get() is
+    // not supported; read a consumer. -0.0f comes out as +0.0f.
+    GGML_API struct ggml_tensor * ggml_backend_meta_gather(struct ggml_context * ctx, struct ggml_tensor * a);
 
     //
     // Utils

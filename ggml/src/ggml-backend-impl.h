@@ -154,6 +154,9 @@ extern "C" {
 
         // (optional) sort/optimize the nodes in the graph
         void                      (*graph_optimize)    (ggml_backend_t backend, struct ggml_cgraph * cgraph, struct ggml_backend_graph_optimize_params * params);
+
+        // local: (optional) true when synchronize() would not wait: all work queued on its stream has completed. Must not block.
+        bool (*query)(ggml_backend_t backend);
     };
 
     struct ggml_backend {

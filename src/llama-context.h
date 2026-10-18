@@ -58,7 +58,11 @@ struct llama_context {
     //   - etc.
     void sched_reserve();
 
-    void synchronize();
+    // returns at once when no device work was enqueued since the last real sync; force always syncs the backends.
+    // Callers that then move data with ggml_backend_tensor_get/set/copy (another stream, ordered after this context's
+    // graphs only by this sync: state save/restore, KV stream copies) use force, so they do not depend on enqueue tracking.
+    // local: caller names the call site in the sync_elide debug log
+    void synchronize(bool force = false, const char * caller = __builtin_FUNCTION());
 
     const llama_model   & get_model()   const;
     const llama_cparams & get_cparams() const;
@@ -121,6 +125,7 @@ struct llama_context {
     void set_embeddings_nextn(bool value, bool masked);
     void set_embeddings_layer_inp(uint32_t lid, bool enable);
     void set_nextn_layer_offset(int32_t offset);
+    bool set_mtp_chain(int32_t n_chain);
     void set_causal_attn(bool value);
     void set_warmup(bool value);
 
@@ -147,6 +152,14 @@ struct llama_context {
 
     int encode(const llama_batch_ext & batch_inp);
     int decode(const llama_batch_ext & batch_inp);
+
+    // MTP fold, see llama_mtp_fold_init (target side)
+    bool    mtp_fold_init(llama_context * ctx_dft);
+    void    mtp_fold_arm(const float * h_prev, int32_t n_seq);
+    int32_t mtp_fold_n_last() const;
+
+    // draft side: the memory context this context's decode() would build for ubatch, or nullptr when it could differ
+    llama_memory_context_ptr mtp_fold_prepare(const llama_ubatch & ubatch);
 
     // compat version
     int encode(const llama_batch & batch_inp);
@@ -235,6 +248,8 @@ private:
     uint32_t output_reserve(int32_t n_outputs);
 
     void output_reorder();
+    void expand_draft_logits();
+    bool has_draft_vocab() const;
 
     // map the output row index `i` to batch index
     int64_t output_resolve_row(int32_t i) const;
@@ -261,6 +276,9 @@ public:
         uint32_t n_tokens, uint32_t n_seqs, uint32_t n_outputs, const llama_memory_context_i * mctx, bool split_only = false, size_t * sizes = nullptr);
 
     bool set_sampler(llama_seq_id seq_id, llama_sampler * sampler);
+
+    // tensor split: allocate sampling.vocab_ids once; false if that failed
+    bool sampling_init_vocab_ids();
 
 private:
     llm_graph_result * get_gf_res_prev();
@@ -303,8 +321,19 @@ private:
     llama_memory_ptr memory;
     llama_moe_cache_ptr moe_cache;
 
+    // MTP fold (target side)
+    llama_context * mtp_fold_dft     = nullptr;
+    const float   * mtp_fold_h       = nullptr; // armed: consumed by the next decode
+    int32_t         mtp_fold_n_seq   = 0;
+    int32_t         mtp_fold_n_tok   = 0;       // tokens folded by the last decode
+    // set only around process_ubatch of a folding decode
+    llama_memory_context_i * mctx_fold_cur = nullptr;
+    const float            * fold_h_cur    = nullptr;
+
     // decode output (2-dimensional array: [n_outputs][n_vocab])
     buffer_view<float> logits = {nullptr, 0};
+    buffer_view<float> draft_logits = {nullptr, 0};
+    std::vector<uint8_t> draft_logits_pending;
 
     // embeddings output (2-dimensional array: [n_outputs][n_embd])
     // populated only when pooling_type == LLAMA_POOLING_TYPE_NONE
@@ -335,9 +364,31 @@ private:
 
         // optimization
         std::vector<llama_token> token_ids_full_vocab;
+
+        // tensor split: vocab ids split like the logits, created with the first backend sampler
+        ggml_context_ptr        vocab_ids_ctx;
+        ggml_backend_buffer_ptr vocab_ids_buf;
+        ggml_tensor *           vocab_ids = nullptr;
     };
 
     sampling_info sampling;
+
+    // The last ubatch can keep fallback logits on the device until a reader or another compute needs them.
+    struct logits_deferred_info {
+        ggml_tensor * t = nullptr;
+        int64_t row0 = 0;
+        int64_t n = 0;
+    };
+    logits_deferred_info logits_deferred;
+    void logits_deferred_fetch();
+
+    // Every device-to-host copy and graph enqueue of this context goes through here or graph_compute(), which set the flag.
+    // Initially true so the first synchronize() is real.
+    bool backend_pending = true;
+    int64_t n_sync_elided = 0;
+    int64_t n_sync_missed = 0;
+    int64_t n_sync_idle_slow = 0;
+    void tensor_get_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size);
 
     // sequence embeddings output (map of [n_embd] vectors)
     // populated only when pooling_type != LLAMA_POOLING_TYPE_NONE

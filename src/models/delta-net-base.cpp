@@ -399,7 +399,7 @@ std::pair<ggml_tensor *, ggml_tensor *> llm_build_delta_net_base::build_delta_ne
     GGML_ASSERT(s->ne[0] == S_v && s->ne[1] == S_v && s->ne[2] == H_v      && s->ne[3] == n_seqs);
 
     // K=1: output carries the final state only. state s is 4D [S_v, S_v, H_v, n_seqs].
-    ggml_tensor * result = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, /*K=*/1);
+    ggml_tensor * result = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, nullptr, /*K=*/1);
     if (n_tokens == 1) {
         res->add_fused_node({LLM_FUSED_OP_GDN_AR, result, il});
     } else {
@@ -524,6 +524,54 @@ ggml_tensor * llm_build_delta_net_base::build_conv_state(
     return conv_input;
 }
 
+ggml_tensor * llm_build_delta_net_base::build_conv(
+        llm_graph_input_rs * inp,
+        ggml_tensor *        conv_states_all,
+        ggml_tensor *        qkv_mixed,
+        ggml_tensor *        conv_kernel,
+        int64_t              conv_channels,
+        int                  il) {
+    const auto * mctx_cur = inp->mctx;
+
+    const auto kv_head  = mctx_cur->get_head();
+    const auto mem_size = mctx_cur->get_size();
+
+    const int64_t n_seqs     = ubatch.n_seqs;
+    const int64_t row_count  = (conv_kernel->ne[0] - 1) * conv_channels;
+    const int64_t n_slots    = (int64_t) cparams.n_rs_seq + 1;
+    const size_t  row_stride = conv_states_all->nb[1];
+
+    // The op reads each sequence's state row by id and writes the rollback snapshots itself, so the gather and the
+    // concatenation the snapshots are cut from disappear. Where the backend cannot run it, the gather stays.
+    llm_graph_get_rows_fn get_state_rows;
+    if (cparams.offload_kqv && conv_states_all->type == GGML_TYPE_F32 &&
+        conv_kernel->type == GGML_TYPE_F32 && conv_states_all->ne[0] == row_count) {
+        auto get_conv_rows = [&](ggml_context * ctx, ggml_tensor * states, ggml_tensor * ids) {
+            ggml_tensor * snap = ggml_view_3d(ctx, conv_states_all, row_count, n_seqs, n_slots,
+                    row_stride, (size_t) mem_size * row_stride, (size_t) kv_head * row_stride);
+            return ggml_ssm_conv_rs(ctx, ggml_transpose(ctx, qkv_mixed), conv_kernel, states, ids, snap);
+        };
+        ggml_tensor * probe = get_conv_rows(ctx0, conv_states_all, inp->s_copy_main);
+        ggml_backend_buffer_type_t buft = ggml_backend_buffer_get_type(conv_states_all->buffer);
+        ggml_backend_dev_t dev = ggml_backend_buft_get_device(buft);
+        if (!dev && ggml_backend_buft_is_host(buft)) {
+            dev = ggml_backend_get_device(backend_cpu);
+        }
+        if (dev && ggml_backend_dev_supports_op(dev, probe)) {
+            get_state_rows = get_conv_rows;
+        }
+    }
+
+    if (get_state_rows) {
+        ggml_tensor * conv = build_rs(inp, conv_states_all, hparams.n_embd_r(), n_seqs, get_state_rows);
+        cb(conv, "conv_output_rs", il);
+        return conv;
+    }
+
+    ggml_tensor * conv_input = build_conv_state(inp, conv_states_all, qkv_mixed, conv_kernel->ne[0], conv_channels, il);
+    return ggml_ssm_conv(ctx0, conv_input, conv_kernel);
+}
+
 ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
         llm_graph_input_rs * inp,
         ggml_tensor *        ssm_states_all,
@@ -532,18 +580,45 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
         ggml_tensor *        v,
         ggml_tensor *        g,
         ggml_tensor *        b,
-        ggml_tensor *        s,
         int                  il) {
     const auto * mctx_cur   = inp->mctx;
     const auto   kv_head    = mctx_cur->get_head();
     const uint32_t mem_size = mctx_cur->get_size();
 
-    const int64_t S_v          = s->ne[0];
-    const int64_t H_v          = s->ne[2];
-    const int64_t n_seqs       = s->ne[3];
+    const int64_t S_v          = v->ne[0];
+    const int64_t H_v          = v->ne[1];
+    const int64_t n_seqs       = v->ne[3];
     const int64_t n_seq_tokens = q->ne[2];
 
     const bool keep = cparams.n_rs_seq > 0;
+
+    const int64_t K = cparams.n_rs_seq + 1;
+    // The getter reads states in place, so nothing else may write the cache rows it reads before it runs. The extra states
+    // (cells in the range but not in the ubatch) are copied by a gather that is ordered against the getter only by node
+    // order, and a fused snapshot write runs before that gather reads, so a ubatch with extra states keeps the gather.
+    llm_graph_get_rows_fn get_state_rows;
+    if (keep && cparams.offload_kqv && mctx_cur->get_n_rs() == (uint32_t) n_seqs) {
+        auto get_gdn_rows = [&](ggml_context * ctx, ggml_tensor * states, ggml_tensor * ids) {
+            states = ggml_reshape_4d(ctx, states, S_v, S_v, H_v, states->ne[1]);
+            return ggml_gated_delta_net(ctx, q, k, v, g, b, states, ids, K);
+        };
+        ggml_tensor * probe = get_gdn_rows(ctx0, ssm_states_all, inp->s_copy_main);
+        ggml_backend_buffer_type_t buft = ggml_backend_buffer_get_type(ssm_states_all->buffer);
+        ggml_backend_dev_t dev = ggml_backend_buft_get_device(buft);
+        if (!dev && ggml_backend_buft_is_host(buft)) {
+            dev = ggml_backend_get_device(backend_cpu);
+        }
+        if (dev && ggml_backend_dev_supports_op(dev, probe)) {
+            get_state_rows = get_gdn_rows;
+        }
+    }
+
+    ggml_tensor * state = build_rs(inp, ssm_states_all, hparams.n_embd_s(), n_seqs, get_state_rows);
+    ggml_tensor * s = nullptr;
+    if (!get_state_rows) {
+        s = ggml_reshape_4d(ctx0, state, S_v, S_v, H_v, n_seqs);
+        cb(s, "state_predelta", il);
+    }
 
     if (!keep) {
         auto attn_out = build_delta_net(q, k, v, g, b, s, il);
@@ -561,10 +636,7 @@ ggml_tensor * llm_build_delta_net_base::build_recurrent_attn(
     }
 
     const int64_t D = S_v * S_v * H_v;
-    const int64_t K = cparams.n_rs_seq + 1;
-
-    // state s is 4D [S_v, S_v, H_v, n_seqs]; K snapshot slots are written into the output.
-    ggml_tensor * gdn_out = ggml_gated_delta_net(ctx0, q, k, v, g, b, s, K);
+    ggml_tensor * gdn_out = get_state_rows ? state : ggml_gated_delta_net(ctx0, q, k, v, g, b, s, nullptr, K);
     if (n_seq_tokens > 1) {
         res->add_fused_node({LLM_FUSED_OP_GDN_CH, gdn_out, il});
     } else {

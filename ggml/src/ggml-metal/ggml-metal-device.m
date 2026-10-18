@@ -1536,6 +1536,10 @@ static bool ggml_metal_supports_mul_mat_op(
 }
 
 bool ggml_metal_device_supports_op(ggml_metal_device_t dev, const struct ggml_tensor * op) {
+    if (op->op == GGML_OP_GATED_DELTA_NET && op->src[6]) {
+        return false;
+    }
+
     const bool has_simdgroup_mm        = dev->props.has_simdgroup_mm;
     const bool has_simdgroup_reduction = dev->props.has_simdgroup_reduction;
     const bool has_bfloat              = dev->props.has_bfloat;
