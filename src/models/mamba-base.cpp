@@ -140,7 +140,7 @@ ggml_tensor * llm_build_mamba_base::build_mamba_layer(llm_graph_input_rs * inp,
         y = ggml_add(ctx0, y, ggml_mul(ctx0, cur, layer.ssm_d));
         y = ggml_swiglu_split(ctx0, ggml_cont(ctx0, z), y);
 
-        // {d_inner, n_embd} @ {d_inner, n_seq_tokens, n_seqs} => {n_embd, n_seq_tokens, n_seqs}
+        y = ggml_reshape_2d(ctx0, y, d_inner, n_seq_tokens * n_seqs);
         cur = build_lora_mm(layer.ssm_out, y, layer.ssm_out_s);
     }
 

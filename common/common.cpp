@@ -1357,7 +1357,7 @@ common_init_result::common_init_result(common_params & params, bool model_only) 
 
     for (int i = 0; i < (int) cparams.n_seq_max; ++i) {
         pimpl->samplers[i].reset(common_sampler_init(model, params.sampling));
-        pimpl->samplers_seq_config[i] = { i, common_sampler_get(pimpl->samplers[i].get()) };
+        pimpl->samplers_seq_config[i] = { i, common_sampler_get_backend(pimpl->samplers[i].get()) };
     }
 
     if (params.sampling.backend_sampling) {
@@ -1699,6 +1699,8 @@ struct llama_model_params common_model_params_to_llama(common_params & params) {
     mparams.progress_callback           = params.load_progress_callback;
     mparams.progress_callback_user_data = params.load_progress_callback_user_data;
     mparams.no_alloc                    = params.no_alloc;
+    mparams.draft_vocab_ids             = params.speculative.draft.vocab_ids.data();
+    mparams.n_draft_vocab               = params.speculative.has_dft() ? 0 : params.speculative.draft.vocab_ids.size();
     mparams.load_mtp                    = params.load_mtp || std::find(params.speculative.types.begin(), params.speculative.types.end(), COMMON_SPECULATIVE_TYPE_DRAFT_MTP) != params.speculative.types.end();
 
     return mparams;
@@ -1712,6 +1714,7 @@ struct llama_context_params common_context_params_to_llama(const common_params &
     cparams.n_rs_seq          = params.speculative.need_n_rs_seq();
     cparams.n_outputs_max     = std::max(params.n_outputs_max, 0);
     cparams.n_outputs_max_per_seq = std::max(params.n_outputs_max_per_seq, 0);
+    cparams.n_kv_pad          = std::max(params.n_kv_pad, 0);
     cparams.n_batch           = params.n_batch;
     cparams.n_ubatch          = params.n_ubatch;
     cparams.n_threads         = params.cpuparams.n_threads;

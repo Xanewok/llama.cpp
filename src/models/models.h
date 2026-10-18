@@ -86,8 +86,18 @@ struct llm_build_delta_net_base : public llm_graph_context {
             int64_t              conv_channels,
             int                  il);
 
+    // causal convolution of qkv_mixed over the cached conv state, which it updates (single slot or per-token snapshots)
+    // qkv_mixed: (qkv_dim, n_seq_tokens, n_seqs); returns the convolution, before the activation: (channels, n_seq_tokens, n_seqs)
+    ggml_tensor * build_conv(
+            llm_graph_input_rs * inp,
+            ggml_tensor *        conv_states_all,
+            ggml_tensor *        qkv_mixed,
+            ggml_tensor *        conv_kernel,
+            int64_t              conv_channels,
+            int                  il);
+
     // run delta-net attention and write the new recurrent state(s) back to ssm_states_all
-    // s: (head_v_dim, head_v_dim, num_v_heads, n_seqs); returns output: (head_v_dim, num_v_heads, n_seq_tokens, n_seqs)
+    // returns output: (head_v_dim, num_v_heads, n_seq_tokens, n_seqs)
     ggml_tensor * build_recurrent_attn(
             llm_graph_input_rs * inp,
             ggml_tensor *        ssm_states_all,
@@ -96,7 +106,6 @@ struct llm_build_delta_net_base : public llm_graph_context {
             ggml_tensor *        v,
             ggml_tensor *        g,
             ggml_tensor *        b,
-            ggml_tensor *        s,
             int                  il);
 };
 

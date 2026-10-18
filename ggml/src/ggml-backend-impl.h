@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-    #define GGML_BACKEND_API_VERSION 3
+    #define GGML_BACKEND_API_VERSION 4
 
     //
     // Backend buffer type
@@ -47,6 +47,26 @@ extern "C" {
     // Backend buffer
     //
 
+    struct ggml_backend_tensor_transfer {
+        struct ggml_tensor * tensor;
+        const void * data;
+        size_t offset;
+        size_t size;
+    };
+
+    // Host sources must remain valid until this call returns. Transfers complete in list order.
+    GGML_API void ggml_backend_tensor_set_batch(const struct ggml_backend_tensor_transfer * transfers, size_t n_transfers);
+
+    // (optional) reg proc addresses "ggml_backend_input_stage_{init,free,set_batch}": host staging shared by a group of
+    // backends of one kind, so the meta backend reads each mirrored host input once for all ranks.
+    // init returns NULL when the group cannot be served; the caller then keeps the per-backend set_tensor_batch_owned path.
+    typedef void * (*ggml_backend_input_stage_init_t)(ggml_backend_t * backends, size_t n_backends);
+    typedef void   (*ggml_backend_input_stage_free_t)(void * stage);
+    // transfers[r] targets backends[r]; transfers[r][i].data and .size equal transfers[0][i].data and .size.
+    // Same contract as set_tensor_batch_owned: host sources are consumed before return, false has no side effects.
+    typedef bool   (*ggml_backend_input_stage_set_batch_t)(void * stage, ggml_backend_t * backends, size_t n_backends,
+            const struct ggml_backend_tensor_transfer * const * transfers, size_t n_transfers);
+
     struct ggml_backend_buffer_i {
         // (optional) free the buffer
         void         (*free_buffer)  (ggml_backend_buffer_t buffer);
@@ -68,6 +88,8 @@ extern "C" {
         void         (*clear)        (ggml_backend_buffer_t buffer, uint8_t value);
         // (optional) reset any internal state due to tensor initialization, such as tensor extras
         void         (*reset)        (ggml_backend_buffer_t buffer);
+        // (optional) synchronous batch upload; must preserve overlapping writes
+        void         (*set_tensor_batch)(ggml_backend_buffer_t buffer, const struct ggml_backend_tensor_transfer * transfers, size_t n_transfers);
     };
 
     struct ggml_backend_buffer {
@@ -134,7 +156,7 @@ extern "C" {
         // (optional) complete all pending operations (required if the backend supports async operations)
         void (*synchronize)(ggml_backend_t backend);
 
-        // (optional) graph plans (not used currently)
+        // (optional) graph plans
         // compute graph with a plan
         ggml_backend_graph_plan_t (*graph_plan_create) (ggml_backend_t backend, const struct ggml_cgraph * cgraph);
         void                      (*graph_plan_free)   (ggml_backend_t backend, ggml_backend_graph_plan_t plan);
@@ -154,6 +176,13 @@ extern "C" {
 
         // (optional) sort/optimize the nodes in the graph
         void                      (*graph_optimize)    (ggml_backend_t backend, struct ggml_cgraph * cgraph, struct ggml_backend_graph_optimize_params * params);
+
+        // Copy host sources before return and order destination writes with compute. False must have no side effects.
+        // With no transfers, report capability only.
+        bool (*set_tensor_batch_owned)(ggml_backend_t backend, const struct ggml_backend_tensor_transfer * transfers, size_t n_transfers);
+
+        // local: (optional) true when synchronize() would not wait: all work queued on its stream has completed. Must not block.
+        bool (*query)(ggml_backend_t backend);
     };
 
     struct ggml_backend {
@@ -286,6 +315,8 @@ extern "C" {
 #    define GGML_BACKEND_DL_IMPL(reg_fn)
 #    define GGML_BACKEND_DL_SCORE_IMPL(score_fn)
 #endif
+
+GGML_API bool ggml_backend_buffer_reset_is_noop(ggml_backend_buffer_t buffer);
 
 #ifdef  __cplusplus
 }
