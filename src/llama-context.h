@@ -148,6 +148,14 @@ struct llama_context {
     int encode(const llama_batch_ext & batch_inp);
     int decode(const llama_batch_ext & batch_inp);
 
+    // MTP fold, see llama_mtp_fold_init (target side)
+    bool    mtp_fold_init(llama_context * ctx_dft);
+    void    mtp_fold_arm(const float * h_prev, int32_t n_seq);
+    int32_t mtp_fold_n_last() const;
+
+    // draft side: the memory context this context's decode() would build for ubatch, or nullptr when it could differ
+    llama_memory_context_ptr mtp_fold_prepare(const llama_ubatch & ubatch);
+
     // compat version
     int encode(const llama_batch & batch_inp);
     int decode(const llama_batch & batch_inp);
@@ -308,6 +316,15 @@ private:
 
     llama_memory_ptr memory;
     llama_moe_cache_ptr moe_cache;
+
+    // MTP fold (target side)
+    llama_context * mtp_fold_dft     = nullptr;
+    const float   * mtp_fold_h       = nullptr; // armed: consumed by the next decode
+    int32_t         mtp_fold_n_seq   = 0;
+    int32_t         mtp_fold_n_tok   = 0;       // tokens folded by the last decode
+    // set only around process_ubatch of a folding decode
+    llama_memory_context_i * mctx_fold_cur = nullptr;
+    const float            * fold_h_cur    = nullptr;
 
     // decode output (2-dimensional array: [n_outputs][n_vocab])
     buffer_view<float> logits = {nullptr, 0};

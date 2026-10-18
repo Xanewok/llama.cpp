@@ -108,7 +108,18 @@ LLAMA_API void llama_set_embeddings_nextn(struct llama_context * ctx, bool value
 // chain multiple trained NextN heads. Default 0 (first head).
 LLAMA_API void llama_set_nextn_layer_offset(struct llama_context * ctx, int32_t offset);
 
-// Marks the entries that a decision head (clef, vllm-decision2) reads, the default is 0
+// MTP fold: an armed llama_decode of ctx_tgt also stores ctx_dft's MTP K/V for the batch tokens, as the draft's
+// catch-up decode would: token i paired with ctx_tgt's (unmasked) nextn row i-1, the first token of sequence s with h_prev[s].
+// It folds only token batches whose row order fits one target and draft ubatch; llama_mtp_fold_n_last tells the caller whether the
+// catch-up decode for that batch is still needed.
+// init: false if the pair is unsupported (nothing is ever folded); ctx_dft == nullptr unlinks.
+LLAMA_API bool    llama_mtp_fold_init  (struct llama_context * ctx_tgt, struct llama_context * ctx_dft);
+// arms the next decode only; h_prev is [n_seq][n_embd], indexed by seq_id and read during that decode
+LLAMA_API void    llama_mtp_fold_arm   (struct llama_context * ctx_tgt, const float * h_prev, int32_t n_seq);
+// tokens folded by the last decode, 0 if it did not fold
+LLAMA_API int32_t llama_mtp_fold_n_last(const struct llama_context * ctx_tgt);
+
+// Marks the entries that a joint decision head (clef) reads, the default is 0
 // See https://github.com/ggml-org/llama.cpp/pull/29831 for details
 // A run of entries with the same value is one span, spans must be separated by entries with value 0
 // An option belongs to the last question before it
