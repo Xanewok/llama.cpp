@@ -455,9 +455,16 @@ static __global__ void quantize_mmq_mxfp4(const float * __restrict__ x,
 // scatter: grid over tokens, quantize once, write to all the token's compact rows
 template <mmq_q8_1_ds_layout ds_layout, bool scatter>
 static __global__ void quantize_mmq_q8_1(
-        const float * __restrict__ x, const int32_t * __restrict__ ids, void * __restrict__ vy,
+        const float * x_ptr, const int32_t * ids_ptr, void * vy_ptr,
         const int64_t ne00, const int64_t s01, const int64_t s02, const int64_t s03,
         const int64_t ne0, const int ne1, const int ne2, const int n_expert_used) {
+
+    // Waits before the early return so that every block is ordered after the producer.
+    ggml_cuda_pdl_lc();
+    ggml_cuda_pdl_sync();
+    const float   * GGML_CUDA_RESTRICT x   = x_ptr;
+    const int32_t * GGML_CUDA_RESTRICT ids = ids_ptr;
+    void          * GGML_CUDA_RESTRICT vy  = vy_ptr;
 
     constexpr int vals_per_scale = ds_layout == MMQ_Q8_1_DS_LAYOUT_D2S6 ? 64 : 32;
     constexpr int vals_per_sum   = ds_layout == MMQ_Q8_1_DS_LAYOUT_D2S6 ? 16 : 32;
@@ -469,7 +476,6 @@ static __global__ void quantize_mmq_q8_1(
     }
 
     const int64_t i00 = i0;
-    ggml_cuda_pdl_sync();
 
     int64_t base_idx;
     if constexpr (scatter) {
@@ -584,16 +590,19 @@ void quantize_mmq_q8_1_cuda(
     const dim3 block_size(CUDA_QUANTIZE_BLOCK_SIZE_MMQ, 1, 1);
     switch (mmq_get_q8_1_ds_layout(type_src0)) {
         case MMQ_Q8_1_DS_LAYOUT_D4:
-            quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D4, false>
-                <<<num_blocks, block_size, 0, stream>>>(x, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2, /*n_expert_used=*/0);
+            ggml_cuda_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D4, false>,
+                ggml_cuda_kernel_launch_params(num_blocks, block_size, 0, stream),
+                x, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2, /*n_expert_used=*/0);
             break;
         case MMQ_Q8_1_DS_LAYOUT_DS4:
-            quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_DS4, false>
-                <<<num_blocks, block_size, 0, stream>>>(x, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2, /*n_expert_used=*/0);
+            ggml_cuda_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_DS4, false>,
+                ggml_cuda_kernel_launch_params(num_blocks, block_size, 0, stream),
+                x, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2, /*n_expert_used=*/0);
             break;
         case MMQ_Q8_1_DS_LAYOUT_D2S6:
-            quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6, false>
-                <<<num_blocks, block_size, 0, stream>>>(x, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2, /*n_expert_used=*/0);
+            ggml_cuda_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6, false>,
+                ggml_cuda_kernel_launch_params(num_blocks, block_size, 0, stream),
+                x, ids, vy, ne00, s01, s02, s03, ne0, ne1, ne2, /*n_expert_used=*/0);
             break;
         default:
             GGML_ABORT("fatal error");
@@ -613,15 +622,18 @@ void quantize_scatter_mmq_q8_1_cuda(
     const dim3 block_size(CUDA_QUANTIZE_BLOCK_SIZE_MMQ, 1, 1);
     switch (mmq_get_q8_1_ds_layout(type_src0)) {
         case MMQ_Q8_1_DS_LAYOUT_D4:
-            quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D4, true><<<num_blocks, block_size, 0, stream>>>(
+            ggml_cuda_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D4, true>,
+                ggml_cuda_kernel_launch_params(num_blocks, block_size, 0, stream),
                 x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used);
             break;
         case MMQ_Q8_1_DS_LAYOUT_DS4:
-            quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_DS4, true><<<num_blocks, block_size, 0, stream>>>(
+            ggml_cuda_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_DS4, true>,
+                ggml_cuda_kernel_launch_params(num_blocks, block_size, 0, stream),
                 x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used);
             break;
         case MMQ_Q8_1_DS_LAYOUT_D2S6:
-            quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6, true><<<num_blocks, block_size, 0, stream>>>(
+            ggml_cuda_kernel_launch(quantize_mmq_q8_1<MMQ_Q8_1_DS_LAYOUT_D2S6, true>,
+                ggml_cuda_kernel_launch_params(num_blocks, block_size, 0, stream),
                 x, ids_src1_inv, vy, ne00, /*s01=*/0, /*s02=*/stride_token, /*s03=*/0, ne0, /*ne1=*/(int) nrows_dst, /*ne2=*/1, n_expert_used);
             break;
         default:
