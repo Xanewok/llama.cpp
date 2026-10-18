@@ -3829,6 +3829,11 @@ ggml_tensor * llm_graph_context::build_rs(
 
     ggml_tensor * states_all = ggml_get_rows(ctx0, states, state_copy);
 
+    // A getter that snapshots into the cache must run after this gather reads the extra states.
+    if (get_state_rows && n_rs > (uint32_t) n_seqs) {
+        ggml_build_forward_expand(gf, states_all);
+    }
+
     ggml_tensor * output_states = get_state_rows ?
         get_state_rows(ctx0, states, state_copy_main) :
         ggml_view_2d(ctx0, states_all, state_size, n_seqs, states_all->nb[1], 0);
