@@ -2041,10 +2041,6 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
             {
                 ggml_compute_forward_ssm_conv(params, tensor);
             } break;
-        case GGML_OP_SSM_CONV_RS:
-            {
-                ggml_compute_forward_ssm_conv_rs(params, tensor);
-            } break;
         case GGML_OP_SSM_SCAN:
             {
                 ggml_compute_forward_ssm_scan(params, tensor);
@@ -2432,7 +2428,6 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads) {
         case GGML_OP_FLASH_ATTN_EXT:
         case GGML_OP_FLASH_ATTN_BACK:
         case GGML_OP_SSM_CONV:
-        case GGML_OP_SSM_CONV_RS:
         case GGML_OP_SSM_SCAN:
         case GGML_OP_LIGHTNING_INDEXER:
             {
@@ -3026,13 +3021,6 @@ struct ggml_cplan ggml_graph_plan(
                 case GGML_OP_CROSS_ENTROPY_LOSS:
                     {
                         cur = ggml_type_size(node->type)*(n_tasks + node->src[0]->ne[0]*n_tasks);
-                    } break;
-                case GGML_OP_SSM_CONV_RS:
-                    {
-                        // per thread: the state of every sequence, then one sequence's state and tokens
-                        const int64_t nh = node->src[1]->ne[0] - 1;
-                        const int64_t per_thread = node->src[0]->ne[2]*nh + nh + node->src[0]->ne[0] + (int64_t) CACHE_LINE_SIZE_F32;
-                        cur = per_thread * sizeof(float) * n_tasks;
                     } break;
                 case GGML_OP_GATED_DELTA_NET:
                     {
