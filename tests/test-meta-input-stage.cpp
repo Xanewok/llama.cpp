@@ -135,7 +135,8 @@ static bool fake_stage_set(void * stage, ggml_backend_t * backends, size_t n_bac
             abort();
         }
         for (size_t i = 0; i < n_transfers; ++i) {
-            if (transfers[r][i].data != transfers[0][i].data || transfers[r][i].size != transfers[0][i].size) {
+            // Let the content check detect a corrupted rank-local source.
+            if (transfers[r][i].size != transfers[0][i].size) {
                 abort();
             }
             g_seen[r][i] = transfers[r][i].tensor;
@@ -228,11 +229,10 @@ static bool run_fake(const char * name, stage_mode mode, int rounds) {
             }
             CHECK(g_seen[0][0] && g_seen[1][0] && g_seen[0][0] != g_seen[1][0] && g_seen[0][1] != g_seen[1][1],
                     "%s: each rank gets its own tensors", name);
-            bool match = true;
             for (int r = 0; r < 2; ++r) {
-                match &= tensor_equals(g_seen[r][0], bt.expect_a) && tensor_equals(g_seen[r][1], bt.expect_b);
+                const bool match = tensor_equals(g_seen[r][0], bt.expect_a) && tensor_equals(g_seen[r][1], bt.expect_b);
+                CHECK(match == (mode != STAGE_MUTANT || r != 0), "%s: rank %d bytes %s", name, r, match ? "match" : "differ");
             }
-            CHECK(match == (mode != STAGE_MUTANT), "%s: ranks %s", name, match ? "match (the mutant must differ)" : "differ");
         }
 
         // Split inputs are not mirrored: declined before any staging or per-rank upload.
