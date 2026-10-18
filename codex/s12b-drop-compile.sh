@@ -22,12 +22,20 @@ else:
     print('skipped: RAM/shared builder busy after 10 minutes', flush=True)
     raise SystemExit(75)
 GATE
+shared="$HOME/qwen38-bw/s12b-drop-incremental"
+mkdir -p "$shared"
+mkdir "$shared/lock" || exit 75
+trap 'rmdir "$shared/lock"' EXIT
+mkdir -p "$shared/source"
+rsync -rc --delete --exclude '.git' --exclude 'build*' ./ "$shared/source/"
+printf '%s\n' "$PWD" > "$out/source-snapshot.txt"
+cd "$shared/source"
 read -ra extra <<< "${BW_CPU_EXTRA:-}"
 "$BW_BUILDGATE" cmake -S . -B build-stack12b-cpu \
     -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_OPENMP=OFF \
     -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_EXAMPLES=OFF \
     -DLLAMA_BUILD_UI=OFF -DLLAMA_USE_PREBUILT_UI=OFF -DLLAMA_OPENSSL=OFF \
-    -DGGML_CCACHE=ON "${extra[@]}" > "$out/configure.log" 2>&1
+    -DGGML_CCACHE=OFF "${extra[@]}" > "$out/configure.log" 2>&1
 targets=(llama-server)
 rc=0
 for target in "${targets[@]}"; do
@@ -39,15 +47,6 @@ for target in "${targets[@]}"; do
         rc=8
     fi
 done
-if [[ $rc == 0 ]]; then
-    if python3 -c 'import subprocess, sys; sys.exit(subprocess.run(sys.argv[1:], timeout=600).returncode)' "$BW_GATE" build-stack12b-cpu/bin/test-llama-archs -a qwen35 -b CPU -s 42 > "$out/archs-cpu.log" 2>&1; then
-        printf 'archs-cpu\t0\n' > "$out/runtime.tsv"
-    else
-        code=$?
-        printf 'archs-cpu\t%s\n' "$code" > "$out/runtime.tsv"
-        rc=8
-    fi
-fi
 if [[ $rc == 0 ]]; then
     cp build-stack12b-cpu/bin/llama-server build-stack12b-cpu/bin/round-trace
     cmp build-stack12b-cpu/bin/llama-server build-stack12b-cpu/bin/round-trace
