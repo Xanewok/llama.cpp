@@ -13141,6 +13141,15 @@ static bool run_ssm_conv_rs_identity(ggml_backend_t backend, const char * filter
 }
 
 
+static void fill_identity_data(std::vector<float> & v, uint32_t seed, float amplitude) {
+    uint32_t state = seed*2654435761u + 12345u;
+    for (float & f : v) {
+        state = state*1664525u + 1013904223u;
+        f = ((int32_t) (state >> 8) - (1 << 23))*(amplitude/(1 << 23));
+    }
+}
+
+
 static bool run_shared_activation_identity(ggml_backend_t backend, const char * filter) {
     if (filter && std::string(filter).find("MUL_MAT_SHARED") == std::string::npos) {
         return true;
