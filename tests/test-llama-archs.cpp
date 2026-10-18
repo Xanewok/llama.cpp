@@ -6,6 +6,7 @@
 #include "ggml-cpp.h"
 #include "llama.h"
 #include "llama-cpp.h"
+#include "sampling.h"
 
 // TODO: replace with #include "llama-ext.h" in the future
 #include "../src/llama-arch.h"
@@ -1342,7 +1343,7 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
 
 
     // [0, 16): one ubatch, no outputs; [16, 48): a ubatch without outputs, then one ending in n_rows output rows
-    auto decode = [&](llama_context * lctx) {
+    auto decode = [&](llama_context * lctx, bool split_outputs = false) {
         common_batch batch(lctx);
         for (uint32_t pos = 0; pos < 16; pos++) {
             batch.add(tokens[pos], pos, 0, false);
@@ -1350,7 +1351,8 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
         int rc = llama_process(lctx, LLAMA_PROCESS_TYPE_DECODE, batch.get());
         batch.clear();
         for (uint32_t pos = 16; pos < tokens.size() && rc == 0; pos++) {
-            batch.add(tokens[pos], pos, 0, pos + n_rows >= tokens.size());
+            const bool output = split_outputs ? pos == 30 || pos == 31 || pos == 46 || pos == 47 : pos + n_rows >= tokens.size();
+            batch.add(tokens[pos], pos, 0, output);
         }
         rc = rc == 0 ? llama_process(lctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) : rc;
         if (rc != 0) {
@@ -1385,6 +1387,72 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
     };
 
     const int32_t k = 20;
+
+    {
+        common_params_sampling params;
+        params.seed = seed;
+        params.top_k = k;
+        params.top_p = 0.95f;
+        params.min_p = 0.05f;
+        params.temp = 1.0f;
+        params.backend_sampling = true;
+        common_sampler_ptr backend(common_sampler_init(model.get(), params));
+        llama_context_ptr ctx = make_ctx(common_sampler_get_backend(backend.get()));
+        decode(ctx.get());
+        for (int32_t r = 0; r < n_rows; ++r) {
+            const uint32_t count = llama_get_sampled_candidates_count_ith(ctx.get(), i_row0 + r);
+            if (count != uint32_t(k + 1) || llama_get_sampled_token_ith(ctx.get(), i_row0 + r) != LLAMA_TOKEN_NULL) {
+                throw std::runtime_error("verify candidate chain did not return k+1 logits without a draw");
+            }
+            for (uint32_t s = 0; s < 64; ++s) {
+                params.seed = s;
+                common_sampler_ptr candidate(common_sampler_init(model.get(), params));
+                params.backend_sampling = false;
+                common_sampler_ptr host(common_sampler_init(model.get(), params));
+                params.backend_sampling = true;
+                common_sampler_row row;
+                row.n_vocab = n_vocab;
+                row.logits = [&]() { return ref[r].data(); };
+                const llama_token want = common_sampler_sample_row(host.get(), row);
+                const llama_token got = common_sampler_sample(candidate.get(), ctx.get(), i_row0 + r);
+                if (got != want) {
+                    fail("verify candidate seed identity", r, got, got, want);
+                }
+            }
+            const float * full = llama_get_logits_ith(ctx.get(), i_row0 + r);
+            if (std::memcmp(full, ref[r].data(), n_vocab*sizeof(float)) != 0) {
+                for (uint32_t t = 0; t < n_vocab; ++t) {
+                    if (full[t] != ref[r][t]) {
+                        LOG_ERR("deferred row %d id %u: got %.9g want %.9g\n", r, t, full[t], ref[r][t]);
+                        break;
+                    }
+                }
+                throw std::runtime_error("deferred TP logits differ from the full-row reference");
+            }
+        }
+        LOG("%s: verify candidates and deferred logits, 64 seeds x %d rows: %s\n", __func__, n_rows, ok ? "OK" : "FAIL");
+    }
+
+    {
+        const int32_t rows[] = { 14, 15, 30, 31 };
+        llama_context_ptr host = make_ctx(nullptr);
+        decode(host.get(), true);
+        common_params_sampling params;
+        params.seed = seed;
+        params.top_k = k;
+        params.backend_sampling = true;
+        common_sampler_ptr candidates(common_sampler_init(model.get(), params));
+        llama_context_ptr ctx = make_ctx(common_sampler_get_backend(candidates.get()));
+        decode(ctx.get(), true);
+        for (const auto row : rows) {
+            const float * want = llama_get_logits_ith(host.get(), row);
+            const float * got = llama_get_logits_ith(ctx.get(), row);
+            if (std::memcmp(got, want, n_vocab*sizeof(float)) != 0) {
+                throw std::runtime_error("fallback logits spanning two ubatches differ");
+            }
+        }
+        LOG("%s: fallback logits across two ubatches: OK\n", __func__);
+    }
 
     // the MTP draft chain: top-k on the backend, the host finishes from the candidates
     {
