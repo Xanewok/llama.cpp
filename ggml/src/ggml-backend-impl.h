@@ -57,6 +57,16 @@ extern "C" {
     // Host sources must remain valid until this call returns. Transfers complete in list order.
     GGML_API void ggml_backend_tensor_set_batch(const struct ggml_backend_tensor_transfer * transfers, size_t n_transfers);
 
+    // (optional) reg proc addresses "ggml_backend_input_stage_{init,free,set_batch}": host staging shared by a group of
+    // backends of one kind, so the meta backend reads each mirrored host input once for all ranks.
+    // init returns NULL when the group cannot be served; the caller then keeps the per-backend set_tensor_batch_owned path.
+    typedef void * (*ggml_backend_input_stage_init_t)(ggml_backend_t * backends, size_t n_backends);
+    typedef void   (*ggml_backend_input_stage_free_t)(void * stage);
+    // transfers[r] targets backends[r]; transfers[r][i].data and .size equal transfers[0][i].data and .size.
+    // Same contract as set_tensor_batch_owned: host sources are consumed before return, false has no side effects.
+    typedef bool   (*ggml_backend_input_stage_set_batch_t)(void * stage, ggml_backend_t * backends, size_t n_backends,
+            const struct ggml_backend_tensor_transfer * const * transfers, size_t n_transfers);
+
     struct ggml_backend_buffer_i {
         // (optional) free the buffer
         void         (*free_buffer)  (ggml_backend_buffer_t buffer);
