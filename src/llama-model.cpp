@@ -599,6 +599,12 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
         }
 
         // output
+        if (tensor_name == LLAMA_TENSOR_NAME_DRAFT_OUTPUT) {
+            return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_1);
+        }
+        if (tensor_name == LLAMA_TENSOR_NAME_DRAFT_VOCAB_IDS) {
+            return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_0);
+        }
         if (std::regex_match(tensor_name, pattern_output_weight)) {
             if (is_dsv4) {
                 return get_tensor_config_impl(GGML_BACKEND_SPLIT_AXIS_MIRRORED);
@@ -1310,6 +1316,12 @@ llama_model::llama_model(const llama_model_params & params) : params(params), pi
         pimpl->tensor_split_owned.assign(params.tensor_split, params.tensor_split + llama_max_devices());
         this->params.tensor_split = pimpl->tensor_split_owned.data();
     }
+    if (params.n_draft_vocab) {
+        if (!params.draft_vocab_ids) {
+            throw std::invalid_argument("missing draft vocabulary ids");
+        }
+        draft_vocab_ids.assign(params.draft_vocab_ids, params.draft_vocab_ids + params.n_draft_vocab);
+    }
     pimpl->has_tensor_overrides = params.tensor_buft_overrides && params.tensor_buft_overrides[0].pattern;
 }
 
@@ -1533,6 +1545,20 @@ void llama_model_base::load_vocab(llama_model_loader & ml) {
 }
 
 bool llama_model_base::load_tensors(llama_model_loader & ml) {
+    if (!draft_vocab_ids.empty()) {
+        if (arch != LLM_ARCH_QWEN35 || hparams.n_layer_nextn != 1 || !params.load_mtp) {
+            throw std::invalid_argument("reduced draft vocabulary requires a Qwen3.5 model with one loaded MTP layer");
+        }
+        if (ml.files.empty()) {
+            throw std::invalid_argument("reduced draft vocabulary requires GGUF weight data");
+        }
+        std::unordered_set<llama_token> unique;
+        for (llama_token id : draft_vocab_ids) {
+            if (id < 0 || id >= vocab.n_tokens() || !unique.insert(id).second) {
+                throw std::invalid_argument("invalid or duplicate draft vocabulary id");
+            }
+        }
+    }
     const auto & split_mode   = params.split_mode;
     const bool use_mlock      = params.load_mode == LLAMA_LOAD_MODE_MLOCK || params.load_mode == LLAMA_LOAD_MODE_MMAP_MLOCK;
     const auto & tensor_split = params.tensor_split;
@@ -1959,6 +1985,111 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
         LLAMA_LOG_INFO("%s: offloaded %d/%d layers to GPU\n", __func__, std::min(n_gpu_layers, max_offloadable_layers), max_backend_supported_layers);
     }
 
+    if (!draft_vocab_ids.empty()) {
+        const auto & layer = layers.back();
+        ggml_tensor * head = layer.nextn.shared_head_head ? layer.nextn.shared_head_head : output;
+        if (!head) {
+            throw std::invalid_argument("missing MTP output head");
+        }
+        ggml_context_ptr ctx { ggml_init({ggml_tensor_overhead(), nullptr, true}) };
+        if (!ctx) {
+            throw std::runtime_error("failed to allocate draft head context");
+        }
+        draft_output = ggml_new_tensor_2d(ctx.get(), head->type, head->ne[0], draft_vocab_ids.size());
+        ggml_set_name(draft_output, LLAMA_TENSOR_NAME_DRAFT_OUTPUT);
+        if (params.split_mode == LLAMA_SPLIT_MODE_TENSOR) {
+            const auto ss = llama_meta_device_get_split_state(draft_output, &get_split_state_ud);
+            for (size_t j = 0; j < get_split_state_ud.n_devices; ++j) {
+                if (ss.ne[j] == 0) {
+                    throw std::invalid_argument("reduced draft vocabulary leaves an empty tensor-parallel shard");
+                }
+            }
+        }
+        auto * buft = ggml_backend_dev_buffer_type(dev_output());
+        ggml_backend_buffer_ptr buf { ml.no_alloc ? ggml_backend_buft_alloc_buffer(buft, 0) :
+                ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), buft) };
+        if (!buf) {
+            throw std::runtime_error("failed to allocate reduced draft head");
+        }
+        if (ml.no_alloc) {
+            draft_output->buffer = buf.get();
+        } else {
+            // Read GGUF rows before backend repacking; preserve the quantized blocks exactly.
+            const auto & weight = ml.require_weight(head->name);
+            const size_t row_bytes = ggml_row_size(head->type, head->ne[0]);
+            std::vector<uint8_t> rows(ggml_nbytes(draft_output));
+            for (size_t i = 0; i < draft_vocab_ids.size(); ++i) {
+                void * dst = rows.data() + i * row_bytes;
+                const void * src = ml.load_data_range(weight, size_t(draft_vocab_ids[i]) * row_bytes, row_bytes, dst);
+                if (src != dst) {
+                    std::memcpy(dst, src, row_bytes);
+                }
+            }
+            ggml_backend_tensor_set(draft_output, rows.data(), 0, rows.size());
+        }
+        ggml_backend_buffer_set_usage(buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+        std::vector<ggml_backend_buffer_ptr> bufs;
+        bufs.push_back(std::move(buf));
+        pimpl->ctxs_bufs.emplace_back(std::move(ctx), std::move(bufs));
+        LLAMA_LOG_INFO("%s: reduced draft head: %zu tokens, %zu bytes (%s)\n", __func__, draft_vocab_ids.size(),
+                ggml_nbytes(draft_output), ggml_type_name(draft_output->type));
+    }
+
+    // the MTP draft chain feeds a drafted token back through these on the device
+    if (!draft_vocab_ids.empty()) {
+        const ggml_tensor * src = layers.back().nextn.embed_tokens ? layers.back().nextn.embed_tokens : tok_embd;
+        const auto * weight = src ? ml.get_weight(src->name) : nullptr;
+        const int64_t n_vocab = vocab.n_tokens();
+        if (!weight || src->ne[1] < n_vocab) {
+            LLAMA_LOG_WARN("%s: no token embedding rows to read: MTP draft chain unavailable\n", __func__);
+        } else {
+            ggml_context_ptr ctx { ggml_init({2*ggml_tensor_overhead(), nullptr, true}) };
+            if (!ctx) {
+                throw std::runtime_error("failed to allocate draft token embedding context");
+            }
+            draft_token_embd = ggml_new_tensor_2d(ctx.get(), src->type, src->ne[0], draft_vocab_ids.size());
+            ggml_set_name(draft_token_embd, LLAMA_TENSOR_NAME_DRAFT_TOKEN_EMBD);
+            draft_vocab_map = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I32, n_vocab);
+            ggml_set_name(draft_vocab_map, LLAMA_TENSOR_NAME_DRAFT_VOCAB_MAP);
+            if (params.split_mode == LLAMA_SPLIT_MODE_TENSOR) {
+                // a device reads the whole table for the token it just sampled
+                for (const ggml_tensor * t : { draft_token_embd, draft_vocab_map }) {
+                    GGML_ASSERT(llama_meta_device_get_split_state(t, &get_split_state_ud).axis == GGML_BACKEND_SPLIT_AXIS_MIRRORED);
+                }
+            }
+            auto * buft = ggml_backend_dev_buffer_type(dev_output());
+            ggml_backend_buffer_ptr buf { ml.no_alloc ? ggml_backend_buft_alloc_buffer(buft, 0) :
+                    ggml_backend_alloc_ctx_tensors_from_buft(ctx.get(), buft) };
+            if (!buf) {
+                throw std::runtime_error("failed to allocate draft token embeddings");
+            }
+            if (ml.no_alloc) {
+                draft_token_embd->buffer = buf.get();
+                draft_vocab_map->buffer  = buf.get();
+            } else {
+                const size_t row_bytes = ggml_row_size(src->type, src->ne[0]);
+                std::vector<uint8_t> rows(ggml_nbytes(draft_token_embd));
+                std::vector<int32_t> map(n_vocab, -1);
+                for (size_t i = 0; i < draft_vocab_ids.size(); ++i) {
+                    void * dst = rows.data() + i * row_bytes;
+                    const void * row = ml.load_data_range(*weight, size_t(draft_vocab_ids[i]) * row_bytes, row_bytes, dst);
+                    if (row != dst) {
+                        std::memcpy(dst, row, row_bytes);
+                    }
+                    map[draft_vocab_ids[i]] = (int32_t) i;
+                }
+                ggml_backend_tensor_set(draft_token_embd, rows.data(), 0, rows.size());
+                ggml_backend_tensor_set(draft_vocab_map, map.data(), 0, ggml_nbytes(draft_vocab_map));
+            }
+            ggml_backend_buffer_set_usage(buf.get(), GGML_BACKEND_BUFFER_USAGE_WEIGHTS);
+            std::vector<ggml_backend_buffer_ptr> bufs;
+            bufs.push_back(std::move(buf));
+            pimpl->ctxs_bufs.emplace_back(std::move(ctx), std::move(bufs));
+            LLAMA_LOG_INFO("%s: draft token embeddings: %zu tokens, %zu + %zu bytes per device (%s)\n", __func__,
+                    draft_vocab_ids.size(), ggml_nbytes(draft_token_embd), ggml_nbytes(draft_vocab_map), ggml_type_name(draft_token_embd->type));
+        }
+    }
+
     // print memory requirements per buffer type
     for (auto & [_, bufs] : pimpl->ctxs_bufs) {
         for (auto & buf: bufs) {
@@ -2047,29 +2178,30 @@ llama_split_mode llama_model::split_mode() const {
     return params.split_mode;
 }
 
-bool llama_model::logits_vocab_split() const {
-    if (params.split_mode != LLAMA_SPLIT_MODE_TENSOR || output == nullptr) {
+bool llama_model::logits_vocab_split(bool draft) const {
+    const ggml_tensor * head = draft && draft_output ? draft_output : output;
+    if (params.split_mode != LLAMA_SPLIT_MODE_TENSOR || head == nullptr) {
         return false;
     }
     auto ud = get_split_state_ud; // the callback takes a non-const pointer
-    if (llama_meta_device_get_split_state(output, &ud).axis != GGML_BACKEND_SPLIT_AXIS_1) {
+    if (llama_meta_device_get_split_state(head, &ud).axis != GGML_BACKEND_SPLIT_AXIS_1) {
         return false;
     }
     // an MTP head of its own is replicated, and its context could not be told apart from the target's here
     for (const auto & layer : layers) {
-        if (layer.nextn.shared_head_head != nullptr) {
+        if (!(draft && draft_output) && layer.nextn.shared_head_head != nullptr) {
             return false;
         }
     }
     return true;
 }
 
-int64_t llama_model::logits_vocab_shard_min() const {
-    if (!logits_vocab_split()) {
+int64_t llama_model::logits_vocab_shard_min(bool draft) const {
+    if (!logits_vocab_split(draft)) {
         return 0;
     }
     auto ud = get_split_state_ud;
-    const ggml_backend_meta_split_state ss = llama_meta_device_get_split_state(output, &ud);
+    const ggml_backend_meta_split_state ss = llama_meta_device_get_split_state(draft && draft_output ? draft_output : output, &ud);
     if (ss.n_segments != 1 || ss.nr[0] != 1) {
         return 0;
     }
@@ -3007,6 +3139,8 @@ llama_model_params llama_model_default_params() {
         /*.progress_callback           =*/ nullptr,
         /*.progress_callback_user_data =*/ nullptr,
         /*.kv_overrides                =*/ nullptr,
+        /*.draft_vocab_ids             =*/ nullptr,
+        /*.n_draft_vocab               =*/ 0,
         /*.vocab_only                  =*/ false,
         /*.check_tensors               =*/ false,
         /*.use_extra_bufts             =*/ true,

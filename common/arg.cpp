@@ -4230,6 +4230,29 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}).set_env("LLAMA_ARG_SPEC_DRAFT_BACKEND_SAMPLING"));
     add_opt(common_arg(
+        {"--spec-draft-vocab"}, "FILE",
+        "JSON array of token ids for a reduced Qwen3.5 MTP draft head (default: full vocabulary)",
+        [](common_params & params, const std::string & value) {
+            std::ifstream file(value);
+            if (!file) {
+                throw std::invalid_argument("cannot open draft vocabulary: " + value);
+            }
+            const auto ids = json::parse(std::string(std::istreambuf_iterator<char>(file), {}));
+            if (!ids.is_array() || ids.empty()) {
+                throw std::invalid_argument("draft vocabulary must be a nonempty JSON array");
+            }
+            std::set<llama_token> unique;
+            std::vector<llama_token> parsed;
+            for (const auto & id : ids) {
+                if (!id.is_number_integer() || id.get<double>() < 0 || id.get<double>() > INT32_MAX || !unique.insert(id.get<llama_token>()).second) {
+                    throw std::invalid_argument("draft vocabulary must contain unique nonnegative int32 token ids");
+                }
+                parsed.push_back(id.get<llama_token>());
+            }
+            params.speculative.draft.vocab_ids = std::move(parsed);
+        }
+    ).set_spec().set_examples({LLAMA_EXAMPLE_SPECULATIVE, LLAMA_EXAMPLE_SERVER, LLAMA_EXAMPLE_CLI}));
+    add_opt(common_arg(
         {"--spec-draft-sampling"}, "{greedy,probabilistic}",
         string_format("how the draft is sampled: greedy takes its argmax, probabilistic samples it and has "
                       "the target verify by rejection sampling (default: %s)",
