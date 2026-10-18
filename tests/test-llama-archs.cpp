@@ -1404,6 +1404,12 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
         llama_context_ptr ctx = make_ctx(common_sampler_get_backend(backend.get()));
         decode(ctx.get());
         const int n_reserves_before = n_reserves;
+        llama_set_sampler(ctx.get(), 0, nullptr);
+        llama_memory_clear(llama_get_memory(ctx.get()), true);
+        decode(ctx.get());
+        if (n_reserves != n_reserves_before || llama_get_sampled_candidates_count_ith(ctx.get(), -1) != 0) {
+            throw std::runtime_error("sampler detach rebuilt the scheduler or retained candidates");
+        }
         params.top_k = k - 3;
         common_sampler_ptr replacement(common_sampler_init(model.get(), params));
         if (!llama_set_sampler(ctx.get(), 0, common_sampler_get_backend(replacement.get()))) {
@@ -1413,9 +1419,9 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
         llama_memory_clear(llama_get_memory(ctx.get()), true);
         decode(ctx.get());
         if (n_reserves != n_reserves_before) {
-            throw std::runtime_error("same-budget sampler replacement rebuilt the scheduler");
+            throw std::runtime_error("sampler detach and replacement rebuilt the scheduler");
         }
-        LOG("%s: same-budget sampler replacement retains the scheduler: OK\n", __func__);
+        LOG("%s: sampler detach and replacement retains the scheduler: OK\n", __func__);
         for (int32_t r = 0; r < n_rows; ++r) {
             const uint32_t count = llama_get_sampled_candidates_count_ith(ctx.get(), i_row0 + r);
             if (count != uint32_t(params.top_k + 1) || llama_get_sampled_token_ith(ctx.get(), i_row0 + r) != LLAMA_TOKEN_NULL) {
