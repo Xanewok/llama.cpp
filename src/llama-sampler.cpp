@@ -1493,8 +1493,9 @@ static void llama_sampler_top_k_backend_apply(
     ggml_set_name(top_k, "top_k");
 
     if (data->candidates) {
-        struct ggml_tensor * candidates_rows = ggml_reshape_2d(ctx, data->candidates, 1, data->candidates->ne[0]);
-        data->candidates = ggml_get_rows(ctx, candidates_rows, top_k);
+        // flat, like top_k itself: later samplers (top-p) treat the candidates as one row
+        struct ggml_tensor * candidates_rows = ggml_reshape_2d(ctx, data->candidates, 1, ggml_nelements(data->candidates));
+        data->candidates = ggml_reshape_1d(ctx, ggml_get_rows(ctx, candidates_rows, top_k), sctx->k);
         ggml_set_name(data->candidates, "top_k_candidates");
     } else {
         data->candidates = top_k;
@@ -1660,8 +1661,10 @@ static void llama_sampler_top_p_backend_apply(
     ggml_set_name(softmax, "top_p_softmax");
 
     // If candidates are provided, sort them as well. Otherwise, set sorted indices as candidates.
+    // Flat in and out: an earlier sampler (top-k, top-p) may hand them over as [1, n]
     if (data->candidates) {
-        data->candidates = ggml_sort(data->candidates, sorted_idx);
+        struct ggml_tensor * candidates = ggml_reshape_1d(ctx, data->candidates, ggml_nelements(data->candidates));
+        data->candidates = ggml_reshape_1d(ctx, ggml_sort(candidates, sorted_idx), ggml_nelements(candidates));
     } else {
         data->candidates = sorted_idx;
     }
@@ -4388,4 +4391,65 @@ void llama_perf_sampler_reset(struct llama_sampler * chain) {
 
     ctx->t_sample_us = 0;
     ctx->n_sample    = 0;
+}
+
+int32_t llama_sampler_chain_leading_top_k(const llama_sampler * sampler) {
+    if (sampler == nullptr || sampler->iface != &llama_sampler_chain_i) {
+        return -1;
+    }
+
+    const auto * chain = (const llama_sampler_chain *) sampler->ctx;
+    for (const auto & entry : chain->samplers) {
+        if (entry.ptr->iface == &llama_sampler_empty_i) {
+            continue;
+        }
+        if (entry.ptr->iface != &llama_sampler_top_k_i) {
+            return -1;
+        }
+        return ((const llama_sampler_top_k *) entry.ptr->ctx)->k;
+    }
+
+    return -1;
+}
+
+std::function<void()> llama_sampler_backend_bindings(llama_sampler * sampler) {
+    if (sampler->iface == &llama_sampler_chain_i) {
+        auto * chain = (llama_sampler_chain *) sampler->ctx;
+        std::vector<std::function<void()>> bindings;
+        for (const auto & entry : chain->samplers) {
+            if (!entry.is_backend) {
+                continue;
+            }
+            auto bind = llama_sampler_backend_bindings(entry.ptr);
+            if (!bind) {
+                return {};
+            }
+            bindings.push_back(std::move(bind));
+        }
+        return [bindings = std::move(bindings)] { for (const auto & bind : bindings) { bind(); } };
+    }
+    if (sampler->iface == &llama_sampler_dist_i) {
+        auto * ctx = (llama_sampler_dist *) sampler->ctx;
+        return [ctx, inputs = ctx->inp_uniforms] { ctx->inp_uniforms = inputs; };
+    }
+    if (sampler->iface == &llama_sampler_penalties_i) {
+        auto * ctx = (llama_sampler_penalties *) sampler->ctx;
+        return [ctx, ids = ctx->inp_token_ids, counts = ctx->inp_counts, n = ctx->n_max, candidates = ctx->has_candidates] {
+            ctx->inp_token_ids = ids;
+            ctx->inp_counts = counts;
+            ctx->n_max = n;
+            ctx->has_candidates = candidates;
+        };
+    }
+    if (sampler->iface == &llama_sampler_logit_bias_i) {
+        auto * ctx = (llama_sampler_logit_bias *) sampler->ctx;
+        return [ctx, bias = ctx->inp_logit_bias, ids = ctx->inp_logit_idxs] {
+            ctx->inp_logit_bias = bias;
+            ctx->inp_logit_idxs = ids;
+        };
+    }
+    if (sampler->iface->backend_set_input && sampler->iface != &llama_sampler_empty_i) {
+        return {};
+    }
+    return [] {};
 }
