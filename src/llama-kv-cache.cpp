@@ -296,6 +296,8 @@ llama_kv_cache::llama_kv_cache(
         // the scheduler copies a host input to every device that cannot read it in place
         ggml_backend_dev_t dev = ggml_backend_buft_get_device(buft);
         kq_mask_copied = kq_mask_copied && dev && !ggml_backend_dev_supports_buft(dev, ggml_backend_cpu_buffer_type());
+        // LOCAL: only the meta (tensor-split) configuration has been measured
+        kq_mask_copied = kq_mask_copied && ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_META;
     }
     kq_mask_copied = kq_mask_copied && !ctxs_bufs.empty();
 
