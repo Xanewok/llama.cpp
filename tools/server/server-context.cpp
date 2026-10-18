@@ -1988,7 +1988,7 @@ private:
                 !task.is_parent() && !task.is_child()) {
             std::vector<server_resync_span> resynced;
             const size_t n_plain = slot.prompt.tokens.get_common_prefix(task.tokens);
-            const size_t n_sync  = slot.prompt.tokens.get_common_prefix_resync(task.tokens, vocab, &task.tokens, &resynced).first;
+            const size_t n_sync  = slot.prompt.tokens.get_common_prefix_resync_spans(task.tokens, vocab, &task.tokens, &resynced).first;
             if (!resynced.empty()) {
                 SLT_INF(slot, "prompt tokenization differs from the cache only in spelling, common prefix %zu -> %zu\n", n_plain, n_sync);
 
