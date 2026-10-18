@@ -8,6 +8,10 @@
 #include <memory>
 #include <vector>
 
+#ifndef _WIN32
+#include <pthread.h>
+#endif
+
 //
 // dummy backend with configurable max_buffer_size, tracks allocations
 
@@ -1099,6 +1103,192 @@ static void test_buft_get_alloc_size_n_does_not_allocate() {
     GGML_ASSERT(x[1]->data == nullptr);
 }
 
+// Rebuilding a different selected branch must not use stack proportional to its ancestor chain.
+static ggml_backend_meta_split_state test_meta_split_state_mirrored(const ggml_tensor * tensor, void * userdata) {
+    GGML_UNUSED(tensor);
+    GGML_UNUSED(userdata);
+    return {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
+}
+
+static void test_meta_split_state_rebuild_impl(bool select_other) {
+    const int n_chain = 512;
+
+    ggml_backend_load_all();
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+    ggml_backend_dev_t devs[2] = {cpu, cpu};
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, test_meta_split_state_mirrored, nullptr);
+    ggml_gallocr_t galloc = ggml_gallocr_new(ggml_backend_dev_buffer_type(meta));
+
+    // the same memory for both builds, so that the rebuilt graph reuses the tensor addresses
+    std::vector<uint8_t> mem(ggml_tensor_overhead()*(n_chain + 3) + ggml_graph_overhead_custom(n_chain + 3, false));
+
+    for (int build = 0; build < 2; build++) {
+        ggml_init_params params = {mem.size(), mem.data(), /*no_alloc =*/ true};
+        ggml_context * ctx = ggml_init(params);
+        ggml_tensor * cur = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 1);
+        ggml_set_input(cur);
+        for (int i = 0; i < n_chain; i++) {
+            cur = ggml_scale(ctx, cur, 1.0f);
+        }
+        ggml_tensor * branches[2] = {ggml_scale(ctx, cur, 1.0f), ggml_scale(ctx, cur, 1.0f)};
+        ggml_cgraph * gf = ggml_new_graph_custom(ctx, n_chain + 3, false);
+        ggml_tensor * out = ggml_build_forward_select(gf, branches, 2, select_other ? build : 0);
+        GGML_ASSERT(ggml_gallocr_alloc_graph(galloc, gf));
+
+        const float value = 3.0f;
+        float result = 0.0f;
+        ggml_backend_tensor_set(out, &value, 0, sizeof(value));
+        ggml_backend_tensor_get(out, &result, 0, sizeof(result));
+        GGML_ASSERT(result == value);
+        ggml_free(ctx);
+    }
+    ggml_gallocr_free(galloc);
+}
+
+static void test_meta_split_state_rebuild(bool select_other) {
+#ifndef _WIN32
+    pthread_attr_t attr;
+    GGML_ASSERT(pthread_attr_init(&attr) == 0);
+    // 512 uncached nodes exceed 1 MiB recursively; the iterative walk has constant stack use.
+    GGML_ASSERT(pthread_attr_setstacksize(&attr, 1024*1024) == 0);
+    pthread_t thread;
+    GGML_ASSERT(pthread_create(&thread, &attr, [](void * arg) -> void * {
+        test_meta_split_state_rebuild_impl(*static_cast<bool *>(arg));
+        return nullptr;
+    }, &select_other) == 0);
+    GGML_ASSERT(pthread_attr_destroy(&attr) == 0);
+    GGML_ASSERT(pthread_join(thread, nullptr) == 0);
+#else
+    test_meta_split_state_rebuild_impl(select_other);
+#endif
+}
+
+static ggml_backend_meta_split_state test_meta_split_state_rows(const ggml_tensor * tensor, void * userdata) {
+    if (strcmp(tensor->name, "cache") == 0 || strcmp(tensor->name, "rows") == 0) {
+        return {GGML_BACKEND_SPLIT_AXIS_0, {tensor->ne[0]/2, tensor->ne[0]/2}, {1}, 1};
+    }
+    return test_meta_split_state_mirrored(tensor, userdata);
+}
+
+static void test_meta_host_view(ggml_op op, bool split) {
+    ggml_backend_load_all();
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+    ggml_backend_dev_t devs[2] = {cpu, cpu};
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2,
+            split ? test_meta_split_state_rows : test_meta_split_state_mirrored, nullptr);
+    ggml_backend_ptr backend(ggml_backend_dev_init(meta, nullptr));
+    GGML_ASSERT(backend);
+
+    ggml_init_params params = {ggml_tensor_overhead()*8 + ggml_graph_overhead(), nullptr, true};
+    ggml_context_ptr ctx(ggml_init(params));
+    ggml_tensor * cache = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, 8, 4);
+    ggml_set_name(cache, "cache");
+    ggml_tensor * rows = ggml_new_tensor_2d(ctx.get(), GGML_TYPE_F32, 8, 2);
+    ggml_set_name(rows, "rows");
+    ggml_tensor * idxs = ggml_new_tensor_1d(ctx.get(), GGML_TYPE_I64, 2);
+    ggml_tensor * view = ggml_view_2d(ctx.get(), cache, 8, 2, cache->nb[1], 0);
+    ggml_tensor * out = view;
+    if (op == GGML_OP_CPY) {
+        out = ggml_cpy(ctx.get(), rows, view);
+    } else if (op == GGML_OP_SET_ROWS) {
+        out = ggml_set_rows(ctx.get(), cache, rows, idxs);
+    }
+    ggml_cgraph * gf = ggml_new_graph(ctx.get());
+    ggml_build_forward_expand(gf, out);
+    gf->uid = 1;
+    ggml_backend_buffer_ptr buffer(ggml_backend_alloc_ctx_tensors(ctx.get(), backend.get()));
+    GGML_ASSERT(buffer && ggml_backend_buffer_is_host(buffer.get()));
+
+    // CPU Meta buffers are host buffers, but their views and writes still belong to the Meta plan.
+    GGML_ASSERT(out->view_src == cache && cache->op == GGML_OP_NONE);
+    const int64_t indices[2] = {1, 3};
+    ggml_backend_tensor_set(idxs, indices, 0, sizeof(indices));
+    for (int pass = 0; pass < 3; ++pass) {
+        float data[16], expected[32] = {}, result[32];
+        for (int i = 0; i < 16; ++i) {
+            data[i] = float(i + 1 + pass*16);
+        }
+        ggml_backend_tensor_set(cache, expected, 0, sizeof(expected));
+        ggml_backend_tensor_set(rows, data, 0, sizeof(data));
+        if (op == GGML_OP_CPY) {
+            memcpy(expected, data, sizeof(data));
+        } else if (op == GGML_OP_SET_ROWS) {
+            memcpy(expected + 8, data, 8*sizeof(float));
+            memcpy(expected + 24, data + 8, 8*sizeof(float));
+        }
+        const ggml_status status = ggml_backend_graph_compute(backend.get(), gf);
+        GGML_ASSERT(status == GGML_STATUS_SUCCESS);
+        ggml_backend_tensor_get(cache, result, 0, sizeof(result));
+        GGML_ASSERT(memcmp(expected, result, sizeof(result)) == 0);
+    }
+}
+
+// Meta backend over two CPU devices; a mul_mat split along the reduced dimension is PARTIAL and ends a subgraph
+static ggml_backend_meta_split_state test_meta_split_state_partial(const ggml_tensor * tensor, void * /*userdata*/) {
+    if (tensor->name[0] == 'w' || tensor->name[0] == 'x') {
+        return {GGML_BACKEND_SPLIT_AXIS_0, {tensor->ne[0]/2, tensor->ne[0]/2}, {1}, 1};
+    }
+    return {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
+}
+
+struct test_meta_subgraph_step {
+    int n_partial; // PARTIAL products, each ends a subgraph
+    int n_pad;     // nodes that only make the graph larger
+};
+
+static void test_meta_subgraph_realloc(const std::vector<test_meta_subgraph_step> & steps) {
+    ggml_backend_load_all();
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+    ggml_backend_dev_t devs[2] = {cpu, cpu};
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, test_meta_split_state_partial, nullptr);
+    ggml_backend_ptr backend(ggml_backend_dev_init(meta, nullptr));
+    GGML_ASSERT(backend);
+
+    ggml_init_params params_w = {ggml_tensor_overhead()*3, nullptr, true};
+    ggml_context_ptr ctx_w(ggml_init(params_w));
+    ggml_tensor * x = ggml_new_tensor_2d(ctx_w.get(), GGML_TYPE_F32, 64, 2);
+    ggml_set_name(x, "x");
+    ggml_tensor * w = ggml_new_tensor_2d(ctx_w.get(), GGML_TYPE_F32, 64, 2);
+    ggml_set_name(w, "w");
+    ggml_tensor * m = ggml_new_tensor_1d(ctx_w.get(), GGML_TYPE_F32, 1);
+    ggml_backend_buffer_ptr buf_w(ggml_backend_alloc_ctx_tensors(ctx_w.get(), backend.get()));
+    GGML_ASSERT(buf_w);
+
+    ggml_gallocr_ptr galloc(ggml_gallocr_new(ggml_backend_dev_buffer_type(meta)));
+    for (const test_meta_subgraph_step & step : steps) {
+        const int n_nodes = step.n_pad + step.n_partial;
+        ggml_init_params params = {ggml_tensor_overhead()*n_nodes + ggml_graph_overhead_custom(n_nodes, false), nullptr, true};
+        ggml_context_ptr ctx(ggml_init(params));
+        ggml_cgraph * gf = ggml_new_graph_custom(ctx.get(), n_nodes, false);
+        ggml_tensor * cur = m;
+        for (int i = 0; i < step.n_pad; i++) {
+            cur = ggml_scale(ctx.get(), cur, 1.0f);
+        }
+        ggml_build_forward_expand(gf, cur);
+        for (int i = 0; i < step.n_partial; i++) {
+            ggml_tensor * out = ggml_mul_mat(ctx.get(), w, x);
+            ggml_set_output(out);
+            ggml_build_forward_expand(gf, out);
+        }
+        GGML_ASSERT(ggml_gallocr_alloc_graph(galloc.get(), gf));
+        GGML_ASSERT(ggml_backend_graph_compute(backend.get(), gf) == GGML_STATUS_SUCCESS);
+    }
+}
+
+// Check that a later graph does not use subgraphs freed by a reallocation (sized so the freed arena is unmapped)
+static void test_meta_subgraph_realloc_count() {
+    test_meta_subgraph_realloc({{3, 4000}, {1, 8000}, {3, 4000}});
+}
+
+// Check that subgraphs recreated for a smaller graph still fit a larger later graph
+static void test_meta_subgraph_realloc_size() {
+    test_meta_subgraph_realloc({{1, 8000}, {3, 2000}, {1, 8000}});
+}
+
+
 static void run(const char * name, void (*f)()) {
     printf("%s ", name);
     fflush(stdout);
@@ -1106,7 +1296,15 @@ static void run(const char * name, void (*f)()) {
     printf("PASSED\n");
 }
 
-int main() {
+int main(int argc, char ** argv) {
+    if (argc == 2 && strcmp(argv[1], "--split-state-same") == 0) {
+        test_meta_split_state_rebuild(false);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--split-state-other") == 0) {
+        test_meta_split_state_rebuild(true);
+        return 0;
+    }
     run("test_max_size_too_many_tensors", test_max_size_too_many_tensors);
     run("test_max_size_tensor_too_large", test_max_size_tensor_too_large);
     run("test_tensor_larger_than_max_size", test_tensor_larger_than_max_size);
@@ -1139,5 +1337,15 @@ int main() {
     run("test_buft_get_alloc_size_n_custom_override", test_buft_get_alloc_size_n_custom_override);
     run("test_buft_get_alloc_size_n_custom_override_ctx_size", test_buft_get_alloc_size_n_custom_override_ctx_size);
     run("test_buft_get_alloc_size_n_does_not_allocate", test_buft_get_alloc_size_n_does_not_allocate);
+    run("test_meta_split_state_rebuild(same)", []() { test_meta_split_state_rebuild(false); });
+    run("test_meta_split_state_rebuild(other)", []() { test_meta_split_state_rebuild(true); });
+    run("test_meta_host_view(mirrored)", []() { test_meta_host_view(GGML_OP_VIEW, false); });
+    run("test_meta_host_view(split)", []() { test_meta_host_view(GGML_OP_VIEW, true); });
+    run("test_meta_host_cpy(mirrored)", []() { test_meta_host_view(GGML_OP_CPY, false); });
+    run("test_meta_host_cpy(split)", []() { test_meta_host_view(GGML_OP_CPY, true); });
+    run("test_meta_host_set_rows(mirrored)", []() { test_meta_host_view(GGML_OP_SET_ROWS, false); });
+    run("test_meta_host_set_rows(split)", []() { test_meta_host_view(GGML_OP_SET_ROWS, true); });
+    run("test_meta_subgraph_realloc_count", test_meta_subgraph_realloc_count);
+    run("test_meta_subgraph_realloc_size", test_meta_subgraph_realloc_size);
     return 0;
 }
