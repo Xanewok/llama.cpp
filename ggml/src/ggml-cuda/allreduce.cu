@@ -524,7 +524,8 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
         p->devices[i] = devices[i];
     }
     const char * p2p_env = getenv("GGML_CUDA_P2P");
-    if (p2p_env != nullptr) {
+    const char * ar_p2p_env = getenv("GGML_CUDA_AR_P2P");
+    if (p2p_env != nullptr || (ar_p2p_env && strcmp(ar_p2p_env, "1") == 0)) {
         p->p2p = ggml_cuda_ar_enable_peer_access(devices);
         if (!p->p2p) {
             GGML_LOG_WARN("allreduce: P2P unavailable; using host staging\n");
