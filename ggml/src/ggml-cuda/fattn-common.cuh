@@ -50,6 +50,32 @@ struct ggml_cuda_flash_attn_ext_f16_extra_data {
     uintptr_t end;
 };
 
+// K/V over several KV streams (non-unified cache): each stream slice is dense, only the stream stride has a gap.
+// Then one contiguous conversion per stream gives the same values as the strided one (for q8_0 bit for bit; the
+// q4/q5 kernels may differ in the sign of a zero), and runs much faster.
+// Dense: dims 1 and 2 tile ne[1]*ne[2] packed rows in either order (FA gets heads and KV rows permuted), streams do
+// not overlap, and every stream starts 16-byte aligned (the contiguous kernels load through int/vector pointers).
+static inline bool ggml_cuda_fa_dense_per_stream(const ggml_tensor * t) {
+    if (t->ne[3] <= 1 || t->nb[0] != ggml_type_size(t->type)) {
+        return false;
+    }
+    int lo = 1, hi = 2;
+    if (t->nb[lo] > t->nb[hi]) {
+        std::swap(lo, hi);
+    }
+    size_t expect = ggml_row_size(t->type, t->ne[0]);
+    for (const int d : { lo, hi }) {
+        if (t->ne[d] == 1) {
+            continue;
+        }
+        if (t->nb[d] != expect) {
+            return false;
+        }
+        expect *= t->ne[d];
+    }
+    return t->nb[3] >= expect && t->nb[3] % 16 == 0 && (uintptr_t) t->data % 16 == 0;
+}
+
 static inline ggml_cuda_flash_attn_ext_f16_extra_data ggml_cuda_flash_attn_ext_get_f16_extra_data(
         const ggml_tensor * dst, const bool need_f16_K, const bool need_f16_V) {
     GGML_ASSERT(dst->op == GGML_OP_FLASH_ATTN_EXT);
@@ -1041,6 +1067,16 @@ void launch_fattn(
             nb11 = nb11*bs*sizeof(half)/ts;
             nb12 = nb12*bs*sizeof(half)/ts;
             nb13 = nb13*bs*sizeof(half)/ts;
+        } else if (ggml_cuda_fa_dense_per_stream(K)) {
+            to_fp16_cuda_t to_fp16 = ggml_get_to_fp16_cuda(K->type);
+            const int64_t ne_s = K->ne[0]*K->ne[1]*K->ne[2];
+            for (int64_t i3 = 0; i3 < K->ne[3]; ++i3) {
+                to_fp16(K_data + i3*nb13, K_f16 + i3*ne_s, ne_s, main_stream);
+            }
+
+            nb11 = nb11*bs*sizeof(half)/ts;
+            nb12 = nb12*bs*sizeof(half)/ts;
+            nb13 = ne_s*sizeof(half);
         } else {
             GGML_ASSERT(K->nb[0] == ts);
             to_fp16_nc_cuda_t to_fp16 = ggml_get_to_fp16_nc_cuda(K->type);
@@ -1076,6 +1112,16 @@ void launch_fattn(
                 nb21 = nb21*bs*sizeof(half)/ts;
                 nb22 = nb22*bs*sizeof(half)/ts;
                 nb23 = nb23*bs*sizeof(half)/ts;
+            } else if (ggml_cuda_fa_dense_per_stream(V)) {
+                to_fp16_cuda_t to_fp16 = ggml_get_to_fp16_cuda(V->type);
+                const int64_t ne_s = V->ne[0]*V->ne[1]*V->ne[2];
+                for (int64_t i3 = 0; i3 < V->ne[3]; ++i3) {
+                    to_fp16(V_data + i3*nb23, V_f16 + i3*ne_s, ne_s, main_stream);
+                }
+
+                nb21 = nb21*bs*sizeof(half)/ts;
+                nb22 = nb22*bs*sizeof(half)/ts;
+                nb23 = ne_s*sizeof(half);
             } else {
                 GGML_ASSERT(V->nb[0] == ts);
                 to_fp16_nc_cuda_t to_fp16 = ggml_get_to_fp16_nc_cuda(V->type);

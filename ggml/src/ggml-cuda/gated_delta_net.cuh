@@ -1,6 +1,9 @@
 #include "common.cuh"
 #include "ggml.h"
 
+// most sequences a fused indexed launch runs in one block per (head, column slice)
+#define GGML_CUDA_GDN_JOINT_MAX_SEQS 4
+
 // fused-kernel recurrent-state output; strides in elements (per-seq stride is always D, set in-kernel)
 struct ggml_cuda_gated_delta_net_fused_cache {
     float * data;        // rollback slot 0

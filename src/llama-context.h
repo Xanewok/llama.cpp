@@ -58,7 +58,11 @@ struct llama_context {
     //   - etc.
     void sched_reserve();
 
-    void synchronize();
+    // returns at once when no device work was enqueued since the last real sync; force always syncs the backends.
+    // Callers that then move data with ggml_backend_tensor_get/set/copy (another stream, ordered after this context's
+    // graphs only by this sync: state save/restore, KV stream copies) use force, so they do not depend on enqueue tracking.
+    // local: caller names the call site in the sync_elide debug log
+    void synchronize(bool force = false, const char * caller = __builtin_FUNCTION());
 
     const llama_model   & get_model()   const;
     const llama_cparams & get_cparams() const;
@@ -121,6 +125,7 @@ struct llama_context {
     void set_embeddings_nextn(bool value, bool masked);
     void set_embeddings_layer_inp(uint32_t lid, bool enable);
     void set_nextn_layer_offset(int32_t offset);
+    bool set_mtp_chain(int32_t n_chain);
     void set_causal_attn(bool value);
     void set_warmup(bool value);
 
@@ -235,6 +240,8 @@ private:
     uint32_t output_reserve(int32_t n_outputs);
 
     void output_reorder();
+    void expand_draft_logits();
+    bool has_draft_vocab() const;
 
     // map the output row index `i` to batch index
     int64_t output_resolve_row(int32_t i) const;
@@ -262,8 +269,13 @@ public:
 
     bool set_sampler(llama_seq_id seq_id, llama_sampler * sampler);
 
+    // tensor split: allocate sampling.vocab_ids once; false if that failed
+    bool sampling_init_vocab_ids();
+
 private:
     llm_graph_result * get_gf_res_prev();
+    void reset_graphs();
+    ggml_backend_sched_t get_sched_graph() const;
 
     llm_graph_params graph_params(
                         llm_graph_result * res,
@@ -305,6 +317,8 @@ private:
 
     // decode output (2-dimensional array: [n_outputs][n_vocab])
     buffer_view<float> logits = {nullptr, 0};
+    buffer_view<float> draft_logits = {nullptr, 0};
+    std::vector<uint8_t> draft_logits_pending;
 
     // embeddings output (2-dimensional array: [n_outputs][n_embd])
     // populated only when pooling_type == LLAMA_POOLING_TYPE_NONE
@@ -335,9 +349,31 @@ private:
 
         // optimization
         std::vector<llama_token> token_ids_full_vocab;
+
+        // tensor split: vocab ids split like the logits, created with the first backend sampler
+        ggml_context_ptr        vocab_ids_ctx;
+        ggml_backend_buffer_ptr vocab_ids_buf;
+        ggml_tensor *           vocab_ids = nullptr;
     };
 
     sampling_info sampling;
+
+    // The last ubatch can keep fallback logits on the device until a reader or another compute needs them.
+    struct logits_deferred_info {
+        ggml_tensor * t = nullptr;
+        int64_t row0 = 0;
+        int64_t n = 0;
+    };
+    logits_deferred_info logits_deferred;
+    void logits_deferred_fetch();
+
+    // Every device-to-host copy and graph enqueue of this context goes through here or graph_compute(), which set the flag.
+    // Initially true so the first synchronize() is real.
+    bool backend_pending = true;
+    int64_t n_sync_elided = 0;
+    int64_t n_sync_missed = 0;
+    int64_t n_sync_idle_slow = 0;
+    void tensor_get_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size);
 
     // sequence embeddings output (map of [n_embd] vectors)
     // populated only when pooling_type != LLAMA_POOLING_TYPE_NONE
@@ -358,8 +394,6 @@ private:
 
     std::vector<swap_info> output_swaps;
 
-    ggml_backend_sched_ptr sched;
-
     bool sched_need_reserve = true;
 
     // state of sched_copy_experts, reset before each graph compute
@@ -378,7 +412,9 @@ private:
     copy_experts_info copy_experts;
 
     ggml_backend_t backend_cpu = nullptr;
+    // Backends must outlive schedulers and their plans, including on construction failure.
     std::vector<ggml_backend_ptr> backends;
+    ggml_backend_sched_ptr sched;
 
     // training
     ggml_opt_context_t opt_ctx = nullptr;
@@ -400,6 +436,8 @@ private:
     std::array<llm_graph_result_ptr, 2> gf_res_prev;
     llm_graph_result_ptr gf_res_reserve;
 
+    ggml_backend_sched_ptr sched_output;
+    ggml_backend_sched_t sched_active = nullptr;
     llm_graph_result * gf_res_prev_active = nullptr;
 
     // host buffer for the model output (logits and embeddings)
@@ -412,6 +450,7 @@ private:
 
     // env: LLAMA_GRAPH_REUSE_DISABLE
     bool graph_reuse_disable = false;
+    bool graph_mtp_reuse = true;
 
     // perf
     mutable int64_t t_start_us  = 0;
