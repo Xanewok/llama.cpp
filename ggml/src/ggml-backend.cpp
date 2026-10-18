@@ -2113,6 +2113,8 @@ ggml_backend_sched_t ggml_backend_sched_new_shared(ggml_backend_sched_t parent) 
     sched->galloc = sched->alloc_state->galloc;
     sched->callback_eval           = parent->callback_eval;
     sched->callback_eval_user_data = parent->callback_eval_user_data;
+    sched->callback_copy           = parent->callback_copy;
+    sched->callback_copy_user_data = parent->callback_copy_user_data;
     return sched;
 }
 
