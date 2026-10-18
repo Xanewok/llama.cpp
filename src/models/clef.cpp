@@ -487,12 +487,12 @@ ggml_tensor * llama_model_clef::graph::build_layer_attn_linear(
     output = build_norm(output, layer.ssm_norm, nullptr, LLM_NORM_RMS, il);
     output = ggml_mul(ctx0, output, ggml_silu(ctx0, z_4d));
 
-    output = ggml_reshape_3d(ctx0, output, head_v_dim * num_v_heads, n_tokens, n_seqs);
+    output = ggml_reshape_2d(ctx0, output, head_v_dim * num_v_heads, n_tokens * n_seqs);
 
     cur = build_lora_mm(layer.ssm_out, output, layer.ssm_out_s);
     cb(cur, "linear_attn_out", il);
 
-    return ggml_reshape_2d(ctx0, cur, n_embd, n_tokens);
+    return cur;
 }
 
 ggml_tensor * llama_model_clef::graph::build_head_norm(ggml_tensor * cur, const norm & n) {

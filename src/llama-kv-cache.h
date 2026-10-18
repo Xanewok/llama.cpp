@@ -233,7 +233,9 @@ public:
 
     void set_input_k_shift(ggml_tensor * dst) const;
 
-    void set_input_kq_mask   (ggml_tensor * dst, const llama_ubatch * ubatch, bool causal_attn) const;
+    uint32_t get_kq_mask_prefix(const llama_ubatch & ubatch, uint32_t n_kv, bool causal_attn) const;
+
+    void set_input_kq_mask   (ggml_tensor * dst, const llama_ubatch * ubatch, bool causal_attn, uint32_t prefix = 0) const;
     void set_input_pos_bucket(ggml_tensor * dst, const llama_ubatch * ubatch) const;
 
     void set_input_k_rot(ggml_tensor * dst) const;
@@ -285,6 +287,10 @@ private:
     // otherwise the value is -1
     int32_t n_embd_head_k_all = 0;
     int32_t n_embd_head_v_all = 0;
+
+    ggml_context_ptr ctx_rot;
+    ggml_backend_buffer_ptr buf_rot;
+    std::unordered_map<int64_t, ggml_tensor *> attn_rot_tensors;
 
     // pre-computed hadamard martrices
     std::unordered_map<int64_t, std::vector<float>> attn_rot_hadamard;
@@ -429,7 +435,9 @@ public:
     void set_input_v_idxs(ggml_tensor * dst, const llama_ubatch * ubatch) const;
 
     void set_input_k_shift   (ggml_tensor * dst) const;
-    void set_input_kq_mask   (ggml_tensor * dst, const llama_ubatch * ubatch, bool causal_attn) const;
+    uint32_t get_kq_mask_prefix(const llama_ubatch & ubatch, bool causal_attn) const;
+
+    void set_input_kq_mask   (ggml_tensor * dst, const llama_ubatch * ubatch, bool causal_attn, uint32_t prefix = 0) const;
     void set_input_pos_bucket(ggml_tensor * dst, const llama_ubatch * ubatch) const;
 
     void set_input_k_rot(ggml_tensor * dst) const;
