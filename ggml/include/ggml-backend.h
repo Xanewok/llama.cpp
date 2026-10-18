@@ -98,6 +98,8 @@ extern "C" {
     GGML_API void ggml_backend_tensor_memset(      struct ggml_tensor * tensor,     uint8_t value, size_t offset, size_t size);
 
     GGML_API void ggml_backend_synchronize(ggml_backend_t backend);
+    // local: 1 when ggml_backend_synchronize() would not wait, 0 when work is still queued, -1 when the backend cannot tell
+    GGML_API int  ggml_backend_query(ggml_backend_t backend);
 
     GGML_API ggml_backend_graph_plan_t ggml_backend_graph_plan_create(ggml_backend_t backend, struct ggml_cgraph * cgraph);
     GGML_API void                      ggml_backend_graph_plan_free  (ggml_backend_t backend, ggml_backend_graph_plan_t plan);
