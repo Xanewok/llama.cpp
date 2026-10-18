@@ -2812,6 +2812,7 @@ struct ggml_backend_cuda_input_stage {
     size_t next = 0;
     std::vector<ggml_backend_cuda_context *> ctxs;
     std::vector<size_t> offsets;
+    bool mutant = false; // local: GGML_CUDA_INPUT_STAGE_MUTANT=1 stages half of every transfer
 };
 
 // Best of 5 pinned 4 MiB host-to-device copies, measured once per device and process; 0 if unmeasurable.
@@ -2894,10 +2895,26 @@ static void * ggml_backend_cuda_input_stage_init(ggml_backend_t * backends, size
     }
     std::vector<double> seconds;
     st->order = ggml_cuda_input_stage_order(st->devices, seconds);
+    // local: GGML_CUDA_INPUT_STAGE_ORDER=fwd|rev overrides the measured order, for A/B only.
+    if (const char * forced = getenv("GGML_CUDA_INPUT_STAGE_ORDER")) {
+        const bool rev = strcmp(forced, "rev") == 0;
+        if (rev || strcmp(forced, "fwd") == 0) {
+            for (size_t k = 0; k < n_backends; ++k) {
+                st->order[k] = rev ? n_backends - 1 - k : k;
+            }
+        }
+    }
+    st->mutant = getenv("GGML_CUDA_INPUT_STAGE_MUTANT") != nullptr;
     for (auto & slot : st->slots) {
         slot.uploaded.assign(n_backends, nullptr);
     }
     st->ctxs.resize(n_backends);
+    std::string order;
+    for (size_t k = 0; k < n_backends; ++k) {
+        const size_t r = st->order[k];
+        order += (k ? ", " : "") + std::string("CUDA") + std::to_string(st->devices[r]) + " (" + std::to_string((int) (seconds[r] * 1e6)) + " us per 4 MiB)";
+    }
+    GGML_LOG_INFO("%s: one pinned copy per input, uploads slowest host link first: %s\n", __func__, order.c_str());
     return st.release();
 }
 
@@ -3013,7 +3030,7 @@ static bool ggml_backend_cuda_input_stage_set_batch(void * stage, ggml_backend_t
         for (size_t i = 0; i < n_transfers; ++i) {
             st->offsets[i] = offset;
             if (transfers[0][i].size != 0) {
-                memcpy((char *) slot.data + offset, transfers[0][i].data, transfers[0][i].size);
+                memcpy((char *) slot.data + offset, transfers[0][i].data, st->mutant ? transfers[0][i].size / 2 : transfers[0][i].size);
             }
             offset += transfers[0][i].size;
         }

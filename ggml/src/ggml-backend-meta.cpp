@@ -1974,10 +1974,27 @@ static void ggml_backend_meta_set_tensor_async(ggml_backend_t backend, ggml_tens
 
 static void ggml_backend_meta_synchronize(ggml_backend_t backend);
 
+// local: A/B controls, read once. GGML_META_INPUT_STAGE=0 keeps the per-rank uploads, GGML_META_INPUT_RANK_ORDER=rev
+// walks the per-rank uploads from the last rank, GGML_META_INPUT_STAGE_MUTANT=1 corrupts the shared source of rank 1.
+static int ggml_backend_meta_input_env(const char * name, int fallback) {
+    const char * value = getenv(name);
+    return value ? atoi(value) : fallback;
+}
+
+static bool ggml_backend_meta_input_env_rev() {
+    const char * value = getenv("GGML_META_INPUT_RANK_ORDER");
+    return value && strcmp(value, "rev") == 0;
+}
+
 // One host read of the mirrored inputs for every rank. False has no side effects.
 static bool ggml_backend_meta_input_stage_set_batch(ggml_backend_t backend, const ggml_backend_tensor_transfer * transfers, size_t n_transfers) {
     auto * ctx = (ggml_backend_meta_context *) backend->context;
     const size_t n_backends = ctx->backend_configs.size();
+    static const bool stage_enabled = ggml_backend_meta_input_env("GGML_META_INPUT_STAGE", 1) != 0;
+    static const bool stage_mutant  = ggml_backend_meta_input_env("GGML_META_INPUT_STAGE_MUTANT", 0) != 0;
+    if (!stage_enabled) {
+        return false;
+    }
     if (!ctx->input_stage_probed) {
         ctx->input_stage_probed = true;
         std::vector<ggml_backend_t> simple(n_backends);
@@ -2002,6 +2019,7 @@ static bool ggml_backend_meta_input_stage_set_batch(ggml_backend_t backend, cons
     ctx->input_stage_transfers.resize(n_backends);
     std::vector<ggml_backend_t> simple(n_backends);
     std::vector<const ggml_backend_tensor_transfer *> per_rank(n_backends);
+    std::vector<uint8_t> mutant_source;
     for (size_t j = 0; j < n_backends; ++j) {
         simple[j] = ctx->backend_configs[j].backend;
         auto & rank = ctx->input_stage_transfers[j];
@@ -2009,6 +2027,12 @@ static bool ggml_backend_meta_input_stage_set_batch(ggml_backend_t backend, cons
         for (size_t i = 0; i < n_transfers; ++i) {
             rank[i] = transfers[i];
             rank[i].tensor = ggml_backend_meta_buffer_simple_tensor(transfers[i].tensor, j);
+        }
+        if (stage_mutant && j == 1 && n_transfers > 0 && rank[0].size > 0) {
+            mutant_source.resize(rank[0].size);
+            memcpy(mutant_source.data(), rank[0].data, rank[0].size);
+            mutant_source[0] ^= 1;
+            rank[0].data = mutant_source.data();
         }
         per_rank[j] = rank.data();
     }
@@ -2036,7 +2060,9 @@ static bool ggml_backend_meta_set_tensor_batch_owned(ggml_backend_t backend, con
         return true;
     }
     std::vector<ggml_backend_tensor_transfer> simple_transfers(n_transfers);
-    for (size_t j = 0; j < n_backends; ++j) {
+    static const bool rank_order_rev = ggml_backend_meta_input_env_rev();
+    for (size_t k = 0; k < n_backends; ++k) {
+        const size_t j = rank_order_rev ? n_backends - 1 - k : k;
         ggml_backend_t simple = ggml_backend_meta_simple_backend(backend, j);
         for (size_t i = 0; i < n_transfers; ++i) {
             simple_transfers[i] = transfers[i];
