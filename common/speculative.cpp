@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <iomanip>
 #include <map>
@@ -1409,10 +1410,13 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
     bool    is_mem_shared = false;   // gemma4
     bool    chain_heads   = false;   // derived in the ctor: n_mtp_layers > 1 && !is_mem_shared
 
+    // pending_h must not be reallocated while armed: the target reads it during its next decode.
+    bool    fold          = false;
+
     // Per-sequence cross-batch carryover: pair (h_p, x_{p+1}) at MTP pos p+1.
     // The last h-row of one process() call needs the first token of the NEXT
     // call to pair with, so it's stashed here until that next call fires.
-    std::vector<std::vector<float>> pending_h;   // [n_seq][n_embd]
+    std::vector<float> pending_h;   // [n_seq][n_embd]
 
     std::vector<int32_t> i_batch_beg;
     std::vector<int32_t> i_batch_end;
@@ -1504,7 +1508,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         }
         this->n_max = this->params.n_max;
 
-        pending_h.assign(n_seq, std::vector<float>(n_embd, 0.0f));
+        pending_h.assign((size_t) n_seq * n_embd, 0.0f);
 
         mtp_chain_seqs.resize(n_seq);
         mtp_chain_zeros.assign(n_embd, 0.0f);
@@ -1515,9 +1519,17 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         verify_h.assign(n_seq, {});
         verify_h_rows.assign(n_seq, 0);
+
+        if (!is_mem_shared && !chain_heads) {
+            fold = llama_mtp_fold_init(ctx_tgt, ctx_dft);
+        }
+
     }
 
     ~common_speculative_impl_draft_mtp() override {
+        if (fold) {
+            llama_mtp_fold_init(this->params.ctx_tgt, nullptr);
+        }
         auto * ctx_dft = this->params.ctx_dft;
         for (llama_seq_id seq_id = 0; seq_id < (llama_seq_id) backend_chains.size(); ++seq_id) {
             if (backend_chains[seq_id] == nullptr) {
@@ -1590,8 +1602,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         const size_t row_bytes = (size_t) n_embd * sizeof(float);
 
+        // a folding target decode already stored this batch's catch-up K/V
+        const bool folded = fold && llama_mtp_fold_n_last(ctx_tgt) == n_tokens;
+
         // if kv is shared with target (e.g Gemma4), then we can skip this catch-up decode
-        if (!is_mem_shared) {
+        if (!is_mem_shared && !folded) {
             batch.clear();
 
             // pair each token with the tgt embedding shifted right by one position, and
@@ -1614,11 +1629,11 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
                 if (k == i_batch_beg[seq_id] && llama_memory_seq_pos_max(llama_get_memory(ctx_dft), seq_id) < 0) {
                     // an empty draft memory means a new request: do not carry the previous request's last row
-                    std::fill(pending_h[seq_id].begin(), pending_h[seq_id].end(), 0.0f);
+                    std::fill(pending_h.begin() + (size_t) seq_id*n_embd, pending_h.begin() + (size_t) (seq_id + 1)*n_embd, 0.0f);
                 }
 
                 const float * h_row = k == i_batch_beg[seq_id]
-                    ? pending_h[seq_id].data()
+                    ? pending_h.data() + (size_t) seq_id * n_embd
                     : h_tgt + (size_t) (k - 1) * n_embd;
 
                 batch.set_embd_state(idx, { h_row, 1, (size_t) n_embd });
@@ -1669,8 +1684,13 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
             std::memcpy(verify_h[seq_id].data(), h_all + (size_t) i_batch_beg[seq_id] * n_embd, (size_t) n_rows * row_bytes);
 
-            std::memcpy(pending_h[seq_id].data(),
+            std::memcpy(pending_h.data() + (size_t) seq_id * n_embd,
                     verify_h[seq_id].data() + (size_t) (n_rows - 1) * n_embd, row_bytes);
+        }
+
+        // read at the next target decode, after accept() has updated pending_h in place
+        if (fold) {
+            llama_mtp_fold_arm(ctx_tgt, pending_h.data(), n_seq);
         }
 
         return true;
@@ -1851,12 +1871,12 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
             }
 
             const int32_t idx = batch.add(dp.id_last, dp.pos0, seq_id, true);
-            batch.set_embd_state(idx, { pending_h[seq_id].data(), 1, (size_t) n_embd });
+            batch.set_embd_state(idx, { pending_h.data() + (size_t) seq_id * n_embd, 1, (size_t) n_embd });
 
             i_last[seq_id] = idx;
 
             if (chain_heads) {
-                chain_h[seq_id].assign(pending_h[seq_id].begin(), pending_h[seq_id].end());
+                chain_h[seq_id].assign(pending_h.data() + (size_t) seq_id * n_embd, pending_h.data() + (size_t) (seq_id + 1) * n_embd);
             }
         }
 
@@ -1995,7 +2015,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
 
         const int32_t i_h = std::min<int32_t>(n_accepted, n_rows - 1);
         const size_t row_bytes = (size_t) n_embd * sizeof(float);
-        std::memcpy(pending_h[seq_id].data(), verify_h[seq_id].data() + (size_t) i_h * n_embd, row_bytes);
+        std::memcpy(pending_h.data() + (size_t) seq_id * n_embd, verify_h[seq_id].data() + (size_t) i_h * n_embd, row_bytes);
     }
 };
 

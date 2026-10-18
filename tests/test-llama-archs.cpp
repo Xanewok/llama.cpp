@@ -980,7 +980,9 @@ static bool check_mtp_draft_np2(const llm_arch arch, const size_t seed, const fl
             }
         }
         GGML_ASSERT(llama_process(mp.ctx_tgt.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0);
+        const int32_t folded = llama_mtp_fold_n_last(mp.ctx_tgt.get());
         GGML_ASSERT(common_speculative_process(mp.spec, batch));
+        return std::make_pair(folded, (int32_t) batch.size());
     };
     // draft logits per span, in sequence order; the drafted position is dropped as a verify batch would
     auto draft = [&](mtp_pair & mp, const std::vector<span> & spans) {
@@ -1026,15 +1028,15 @@ static bool check_mtp_draft_np2(const llm_arch arch, const size_t seed, const fl
     llama_memory_seq_rm(llama_get_memory(mix.ctx_dft.get()), 1, -1, -1);
 
     step(mix, { { 0, &t0, 0, 6 } });
-    step(mix, { { 0, &t0, 6, 8 }, { 1, &t1, 0, 2 } });
+    const auto f_b = step(mix, { { 0, &t0, 6, 8 }, { 1, &t1, 0, 2 } });
     const auto m_b = draft(mix, { { 0, &t0, 0, 8 } });
-    step(mix, { { 0, &t0, 8, 10 }, { 1, &t1, 2, 4 } });
+    const auto f_c = step(mix, { { 0, &t0, 8, 10 }, { 1, &t1, 2, 4 } });
     const auto m_c = draft(mix, { { 0, &t0, 0, 10 }, { 1, &t1, 0, 4 } });
 
     const double e_b = nmse(m_b[0], r_b[0]);
     const double e_c0 = nmse(m_c[0], r_c0[0]);
     const double e_c1 = nmse(m_c[1], r_c1[0]);
-    const bool ok = e_b < 1e-9 && e_c0 < 1e-9 && e_c1 < 1e-9;
+    const bool ok = e_b < 1e-9 && e_c0 < 1e-9 && e_c1 < 1e-9 && f_b.first == 0 && f_c.first == f_c.second;
     LOG("%s: MTP draft np2 carry: %s (nmse %.2e/%.2e/%.2e)\n", arch_name.c_str(), ok ? "OK" : "FAIL", e_b, e_c0, e_c1);
     return ok;
 }

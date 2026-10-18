@@ -555,6 +555,34 @@ bool llm_graph_input_attn_kv::can_reuse(const llm_graph_params & params) {
     return res;
 }
 
+void llm_graph_input_mtp_fold::set_input(const llama_ubatch * ubatch) {
+    const size_t row_bytes = h_prev->nb[1];
+    for (uint32_t s = 0; s < ubatch->n_seqs_unq; ++s) {
+        ggml_backend_tensor_set(h_prev, h_prev_src + (size_t) ubatch->seq_id_unq[s] * h_prev->ne[0], s * row_bytes, row_bytes);
+    }
+
+    std::vector<int32_t> idxs(ubatch->n_tokens);
+    for (uint32_t i = 0; i < ubatch->n_tokens; ++i) {
+        const llama_seq_id seq = ubatch->seq_id[i][0];
+        idxs[i] = i == 0 || seq != ubatch->seq_id[i - 1][0]
+            ? ubatch->seq_idx[seq] : (int32_t) ubatch->n_seqs_unq + i - 1;
+    }
+    ggml_backend_tensor_set(h_idxs, idxs.data(), 0, ggml_nbytes(h_idxs));
+
+    kv->set_input(ubatch);
+}
+
+bool llm_graph_input_mtp_fold::can_reuse(const llm_graph_params & params) {
+    if (!params.mctx_fold || !params.fold_h_prev) {
+        return false;
+    }
+
+    kv->mctx   = static_cast<const llama_kv_cache_context *>(params.mctx_fold);
+    h_prev_src = params.fold_h_prev;
+
+    return kv->self_k_idxs->ne[0] == params.ubatch.n_tokens && h_prev->ne[1] == params.ubatch.n_seqs_unq;
+}
+
 void llm_graph_input_attn_k::set_input(const llama_ubatch * ubatch) {
     mctx->set_input_k_idxs(self_k_idxs, ubatch);
 
@@ -1553,6 +1581,8 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
     cvec             (params.cvec),
     loras            (params.loras),
     mctx             (params.mctx),
+    mctx_fold        (params.mctx_fold),
+    fold_h_prev      (params.fold_h_prev),
     cross            (params.cross),
     moe_cache        (params.moe_cache),
     prec_policy      (params.prec_policy),
