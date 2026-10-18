@@ -3,10 +3,12 @@
 #include "common.cuh"
 #include "convert.cuh"
 #include "vecdotq.cuh"
+#include "fattn-kv-max-cache.h"
 
 #include <cstdint>
 
 #define FATTN_KQ_STRIDE       256
+static_assert(FATTN_KQ_STRIDE == GGML_CUDA_FATTN_KV_MAX_STRIDE, "the cache predicate must match the scan");
 #define HALF_MAX_HALF         __float2half(65504.0f/2) // Use neg. of this instead of -INFINITY to initialize KQ max vals to avoid NaN upon subtraction.
 #define SOFTMAX_FTZ_THRESHOLD -20.0f                   // Softmax exp. of values smaller than this are flushed to zero to avoid NaNs.
 
@@ -1114,7 +1116,8 @@ void launch_fattn(
     // Optional optimization where the mask is scanned to determine whether part of the calculation can be skipped.
     // Only worth the overhead if there is at lease one FATTN_KQ_STRIDE x FATTN_KQ_STRIDE square to be skipped or
     //     multiple sequences of possibly different lengths.
-    const bool scan_mask = !use_sparse && mask && K->ne[1] % FATTN_KQ_STRIDE == 0 && (Q->ne[1] >= 1024 || Q->ne[3] > 1);
+    const bool scan_mask = !use_sparse && ggml_cuda_fattn_kv_max_scan_wanted(Q, K, mask);
+    int * KV_max_data = KV_max.ptr;
     if (scan_mask) {
         const int64_t s31 = mask->nb[1] / sizeof(half2);
         const int64_t s33 = mask->nb[3] / sizeof(half2);
@@ -1125,11 +1128,19 @@ void launch_fattn(
         const int ne_KV_max = blocks_num_KV_max.x*blocks_num_KV_max.y;
         const int iter_k = K->ne[1] / FATTN_KQ_STRIDE;
 
-        KV_max.alloc(ne_KV_max);
-        ggml_cuda_kernel_launch_params launch_params = ggml_cuda_kernel_launch_params(blocks_num_KV_max, block_dim_KV_max, 0, main_stream);
-        ggml_cuda_kernel_launch(flash_attn_mask_to_KV_max<ncols1>, launch_params,
-            (const half2 *) mask->data, KV_max.ptr, iter_k, s31, s33);
-        CUDA_CHECK(cudaGetLastError());
+        // A slot shared by the attention ops of this evaluation that read the same mask, if one exists.
+        bool scan = true;
+        KV_max_data = ctx.fattn_kv_max_cache ? ctx.fattn_kv_max_cache->acquire(Q, K, mask, ncols1, scan) : nullptr;
+        if (!KV_max_data) {
+            KV_max_data = KV_max.alloc(ne_KV_max);
+            scan = true;
+        }
+        if (scan) {
+            ggml_cuda_kernel_launch_params launch_params = ggml_cuda_kernel_launch_params(blocks_num_KV_max, block_dim_KV_max, 0, main_stream);
+            ggml_cuda_kernel_launch(flash_attn_mask_to_KV_max<ncols1>, launch_params,
+                (const half2 *) mask->data, KV_max_data, iter_k, s31, s33);
+            CUDA_CHECK(cudaGetLastError());
+        }
     }
 
     const dim3 block_dim(warp_size, nwarps, 1);
@@ -1254,7 +1265,7 @@ void launch_fattn(
         V_data,
         mask ? ((const char *) mask->data) : nullptr,
         sinks ? ((const char *) sinks->data) : nullptr,
-        KV_max.ptr,
+        KV_max_data,
         !stream_k && parallel_blocks > 1 ? dst_tmp.ptr : (float *) KQV->data, dst_tmp_meta.ptr,
         scale, max_bias, m0, m1, n_head_log2, logit_softcap,
         Q->ne[0], ne01,     Q->ne[2], Q->ne[3], Q->nb[1], Q->nb[2], Q->nb[3],
