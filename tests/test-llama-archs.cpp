@@ -1580,7 +1580,7 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
         n_failed += !ok_np2;
         all_ok   &= ok_np2;
     }
-    if (arch_filter.empty() || arch_filter == "qwen35") {
+    if (arch_matches(arch_filter, LLM_ARCH_QWEN35)) {
         n_tests++;
         const bool ok = check_retained_rotations(seed, stdev);
         n_failed += !ok;
