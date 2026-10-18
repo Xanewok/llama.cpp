@@ -551,6 +551,10 @@ llama_model_bailingmoe3::graph_mtp::graph_mtp(const llama_model & model, const l
     res->t_h_nextn = cur;
 
     cur = ggml_get_rows(ctx0, cur, inp_out_ids);
+    if (cparams.embeddings_nextn_masked) {
+        // masked rows are output rows: get_embeddings_nextn_ith resolves a batch index to its output row
+        res->t_h_nextn = cur;
+    }
     cur = ggml_mul_mat(ctx0, model.output, cur);
     cb(cur, "result_output", -1);
     res->t_logits = cur;
