@@ -721,6 +721,15 @@ bool llama_memory_recurrent::find_slot(const llama_ubatch & ubatch) {
 
             if (i < min + (int32_t) n_seqs) {
                 cells[i].rs_depth = std::min(n_seq_tokens - 1, n_rs_seq);
+            } else {
+                // Extra cells receive only the current state, so moved or rolled-back cells lose their snapshot history.
+                bool keep = cells[i].src0 == i;
+                for (const llama_seq_id seq_id : cells[i].seq_id) {
+                    keep = keep && rs_idx[seq_id] == 0;
+                }
+                if (!keep) {
+                    cells[i].rs_depth = 0;
+                }
             }
 
             cells[i].src = i; // avoid moving or clearing twice

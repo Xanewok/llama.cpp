@@ -217,6 +217,53 @@ struct case_rollback_depth : ctx_test {
     }
 };
 
+struct case_rollback_moved : ctx_test {
+    test_group group() const override { return TEST_GROUP_RS; }
+    const char * name() const override { return "rollback-moved"; }
+    const char * description() const override { return "refuse rollback when another ubatch moved the snapshot cell"; }
+
+    std::string skip_reason(model_run & mr) const override {
+        if (arch_reserves_single_seq(mr.model)) {
+            return "the moved-cell batch is a multi-seq graph";
+        }
+        return ctx_test::skip_reason(mr);
+    }
+
+    case_result run(model_run & mr) const override {
+        ctx_opts opts;
+        opts.n_ctx = 256;
+        opts.n_batch = 256;
+        opts.n_ubatch = 16;
+        opts.n_seq_max = 3;
+        opts.n_rs_seq = 8;
+        const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(mr.model));
+        for (const bool moved : {false, true}) {
+            auto ctx = mr.ctx(opts);
+            CTX_REQUIRE(ctx, "context init failed");
+            if (llama_n_rs_seq(ctx.get()) < opts.n_rs_seq || !has_recurrent_snapshots(mr.model)) {
+                return case_result::skip("no recurrent snapshots");
+            }
+            // Order 0,2,1 puts seq 2's cell between the next ubatch's seqs 0 and 1.
+            for (const auto seq : moved ? std::vector<llama_seq_id>{0, 2, 1} : std::vector<llama_seq_id>{0, 1, 2}) {
+                CTX_REQUIRE(decode_gen(ctx.get(), n_vocab, seq, 0, 4), "prefill failed");
+            }
+            common_batch batch(ctx.get());
+            for (llama_pos pos = 4; pos < 8; ++pos) {
+                batch.add(gen_token(n_vocab, 2, pos), pos, 2, false);
+            }
+            for (const llama_seq_id seq : {0, 1}) {
+                for (llama_pos pos = 4; pos < 6; ++pos) {
+                    batch.add(gen_token(n_vocab, seq, pos), pos, seq, false);
+                }
+            }
+            CTX_REQUIRE(llama_process(ctx.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0, "decode failed");
+            CTX_REQUIRE(llama_memory_seq_rm(llama_get_memory(ctx.get()), 2, 6, -1) != moved,
+                    moved ? "rollback of a moved seq was accepted" : "rollback of a resident seq was refused");
+        }
+        return case_result::pass();
+    }
+};
+
 struct case_rollback : ctx_test {
     test_group group() const override { return TEST_GROUP_RS; }
 
@@ -446,6 +493,7 @@ std::vector<ctx_test_ptr> make_rs_cases() {
     std::vector<ctx_test_ptr> cases;
 
     cases.push_back(std::make_unique<case_rollback_depth>());
+    cases.push_back(std::make_unique<case_rollback_moved>());
     cases.push_back(std::make_unique<case_rollback>());
     cases.push_back(std::make_unique<case_multi_seq_split_replay>());
     cases.push_back(std::make_unique<case_shared_seq_reserve>());
