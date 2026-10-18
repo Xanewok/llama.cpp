@@ -1,0 +1,6 @@
+purpose: Remove package 74 test-only CUDA proc API
+base: 9d1878a4354e743529fbe09e7350a957f5e39e9a
+repo: /home/xanewok/repos/llama.cpp
+branch: topic/trim2-p74
+created: 2026-10-18T09:07:16+02:00
+creator: xanewok
