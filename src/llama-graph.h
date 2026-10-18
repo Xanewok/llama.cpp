@@ -1465,7 +1465,7 @@ struct llm_graph_context {
     void          build_sampling_begin(uint32_t n_rows) const;
     ggml_tensor * build_sampling_cand(ggml_tensor * logits_t, int32_t k) const;
     void          build_sampling_row(llama_seq_id seq_id, llama_sampler * sampler, ggml_tensor * logits_t,
-                                     ggml_tensor * cand, uint32_t col, int32_t row, ggml_tensor * anchor, uint32_t slot = 0) const;
+                                     ggml_tensor * cand, uint32_t col, int32_t row, ggml_tensor * anchor) const;
     void          build_sampling_end() const;
 
     //

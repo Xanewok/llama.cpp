@@ -4096,7 +4096,7 @@ void llm_graph_context::build_sampling_row(
         ggml_tensor  * cand,
         uint32_t       col,
         int32_t        row,
-        ggml_tensor  * anchor, uint32_t slot) const {
+        ggml_tensor  * anchor) const {
     // inactive samplers are built but not computed
     const bool    active = row >= 0;
     const int     i_out  = active ? 1 : 0;
@@ -4113,7 +4113,7 @@ void llm_graph_context::build_sampling_row(
             cand_ids = ggml_cast(ctx0, sampling_vocab_ids, GGML_TYPE_I32);
         }
     }
-    ggml_format_name(logits_seq, "logits_seq_%d_%u", seq_id, slot);
+    ggml_format_name(logits_seq, "logits_seq_%d_%u", seq_id, col);
 
     struct llama_sampler_data data = {
         /*.logits       =*/ logits_seq,
@@ -4216,8 +4216,7 @@ void llm_graph_context::build_sampling() const {
 
         for (uint32_t i = 0; i < cparams.n_outputs_max_per_seq; ++i) {
             const bool active = i < rows.size();
-            const uint32_t row = active ? rows[i] : 0;
-            build_sampling_row(seq_id, sampler, logits_t, cand, row, active ? (int32_t) row : -1, res->t_logits, i);
+            build_sampling_row(seq_id, sampler, logits_t, cand, active ? rows[i] : 0, active ? (int32_t) rows[i] : -1, res->t_logits);
         }
     }
 
