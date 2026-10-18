@@ -233,7 +233,14 @@ public:
 
     void set_input_k_shift(ggml_tensor * dst) const;
 
-    void set_input_kq_mask   (ggml_tensor * dst, const llama_ubatch * ubatch, bool causal_attn) const;
+    // true when the KQ mask input has to be copied to the devices that hold this cache
+    bool get_kq_mask_copied() const { return kq_mask_copied; }
+
+    // number of leading mask columns [0, n) that are visible (+0) to every token of the ubatch,
+    // a multiple of the n_kv padding and less than n_kv; 0 when the cells do not certify it
+    uint32_t get_kq_mask_prefix(const llama_ubatch & ubatch, uint32_t n_kv, bool causal_attn) const;
+
+    void set_input_kq_mask   (ggml_tensor * dst, const llama_ubatch * ubatch, bool causal_attn, uint32_t prefix = 0) const;
     void set_input_pos_bucket(ggml_tensor * dst, const llama_ubatch * ubatch) const;
 
     void set_input_k_rot(ggml_tensor * dst) const;
@@ -274,6 +281,8 @@ private:
     // required padding
     const uint32_t n_pad = 1;
 
+    bool kq_mask_copied = true;
+
     // SWA
     const uint32_t n_swa = 0;
 
@@ -285,6 +294,10 @@ private:
     // otherwise the value is -1
     int32_t n_embd_head_k_all = 0;
     int32_t n_embd_head_v_all = 0;
+
+    ggml_context_ptr ctx_rot;
+    ggml_backend_buffer_ptr buf_rot;
+    std::unordered_map<int64_t, ggml_tensor *> attn_rot_tensors;
 
     // pre-computed hadamard martrices
     std::unordered_map<int64_t, std::vector<float>> attn_rot_hadamard;
@@ -429,7 +442,10 @@ public:
     void set_input_v_idxs(ggml_tensor * dst, const llama_ubatch * ubatch) const;
 
     void set_input_k_shift   (ggml_tensor * dst) const;
-    void set_input_kq_mask   (ggml_tensor * dst, const llama_ubatch * ubatch, bool causal_attn) const;
+    bool     get_kq_mask_copied() const;
+    uint32_t get_kq_mask_prefix(const llama_ubatch & ubatch, bool causal_attn) const;
+
+    void set_input_kq_mask   (ggml_tensor * dst, const llama_ubatch * ubatch, bool causal_attn, uint32_t prefix = 0) const;
     void set_input_pos_bucket(ggml_tensor * dst, const llama_ubatch * ubatch) const;
 
     void set_input_k_rot(ggml_tensor * dst) const;
