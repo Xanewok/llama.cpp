@@ -6,6 +6,7 @@
 #include "ggml-cpp.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -425,6 +426,8 @@ struct ggml_backend_meta_buffer_context {
     ggml_backend_meta_simple_tensor_container stc_compute[2];
     int stc_compute_index      = 0;
     int stc_compute_index_next = 0;
+    // a new value, greater than that of any earlier allocation in any buffer, whenever stc_compute_index switches
+    uint64_t alloc_epoch;
     std::vector<ggml_backend_buffer_ptr> bufs;
 
     // FIXME
@@ -440,13 +443,19 @@ struct ggml_backend_meta_buffer_context {
             ggml_backend_meta_simple_tensor_container & stc_compute_0,
             ggml_backend_meta_simple_tensor_container & stc_compute_1,
             const std::vector<ggml_backend_buffer_t> & bufs)
-            : stc_static(std::move(stc_static)), stc_compute{std::move(stc_compute_0), std::move(stc_compute_1)} {
+            : stc_static(std::move(stc_static)), stc_compute{std::move(stc_compute_0), std::move(stc_compute_1)},
+              alloc_epoch(next_alloc_epoch()) {
         this->bufs.reserve(bufs.size());
         for (ggml_backend_buffer_t buf : bufs) {
             this->bufs.emplace_back(buf);
         }
         const char * GGML_META_DEBUG = getenv("GGML_META_DEBUG");
         debug = GGML_META_DEBUG ? atoi(GGML_META_DEBUG) : 0;
+    }
+
+    static uint64_t next_alloc_epoch() {
+        static std::atomic<uint64_t> counter{1};
+        return counter++;
     }
 
     ggml_backend_meta_simple_tensor_container & get_simple_tensor_container(const ggml_tensor * tensor) {
@@ -1337,7 +1346,10 @@ static enum ggml_status ggml_backend_meta_buffer_init_tensor_impl(ggml_backend_m
 static enum ggml_status ggml_backend_meta_buffer_init_tensor(ggml_backend_buffer_t buffer, ggml_tensor * tensor) {
     GGML_ASSERT(ggml_backend_buffer_is_meta(buffer));
     ggml_backend_meta_buffer_context * buf_ctx = (ggml_backend_meta_buffer_context *) buffer->context;
-    buf_ctx->stc_compute_index = buf_ctx->stc_compute_index_next;
+    if (buf_ctx->stc_compute_index != buf_ctx->stc_compute_index_next) {
+        buf_ctx->stc_compute_index = buf_ctx->stc_compute_index_next;
+        buf_ctx->alloc_epoch       = ggml_backend_meta_buffer_context::next_alloc_epoch();
+    }
     return ggml_backend_meta_buffer_init_tensor_impl(buf_ctx->get_simple_tensor_container(tensor), tensor);
 }
 
@@ -1821,17 +1833,33 @@ struct ggml_backend_meta_context {
             bufs.resize(n_reduce_steps);
         }
     };
+    // The per-device subgraphs of one graph uid. The scheduler gives every split its own uid, so with a single cached uid
+    // a graph with several splits on this backend rebuilds them on every compute, under new uids for the simple backends.
+    struct subgraph_plan {
+        uint64_t                   uid         = 0;
+        const ggml_tensor *        node0       = nullptr; // compared, never dereferenced: may be freed
+        size_t                     n_subgraphs = 0;
+        ggml_context_ptr           ctx;     // owns cgraphs
+        std::vector<ggml_cgraph *> cgraphs; // [j*n_subgraphs + i]: subgraph i of simple backend j
+    };
+
     std::string                 name;
     std::vector<backend_config> backend_configs;
-    ggml_context_ptr            ctx;
+    ggml_context_ptr            ctx; // aux graphs and nodes of the AllReduce fallback
     std::vector<ggml_cgraph *>  cgraphs_aux;
     std::vector<ggml_tensor *>  nodes_aux;
+    // The plans of the splits of the current allocation. Plans of earlier allocations are never hit again (uids are not
+    // reused) and may point to reset simple tensors. They are dropped when a rebuild sees a newer alloc_epoch in its meta
+    // buffers (new tensors), or when it starts at the same node (the same graph allocated again, no tensor initialized).
+    // The count is thus bounded by the splits of one allocation, not by a constant.
+    std::vector<subgraph_plan>  plans;
+    uint64_t                    plans_alloc_epoch = 0;
+    subgraph_plan               plan_uncached; // uid 0, or no meta buffer in the graph
     size_t                      n_reduce_steps;
     int                         max_nnodes    = 0;
     size_t                      max_tmp_size  = 0;
     size_t                      max_subgraphs = 0;
     size_t                      n_subgraphs   = 0;
-    uint64_t                    uid           = 0;
 
     void *                               comm_ctx       = nullptr;
     ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;
@@ -1997,10 +2025,18 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
     const size_t n_backends = ggml_backend_meta_n_backends(backend);
     ggml_backend_meta_context * backend_ctx = (ggml_backend_meta_context *) backend->context;
 
-    // If the previous cgraph had a defined UID it can be used to skip rebuilding the subgraphs per simple backend.
-    const bool needs_rebuild = (cgraph->uid == 0) || (cgraph->uid != backend_ctx->uid);
+    // A cgraph with a defined UID that was computed before reuses its subgraphs per simple backend.
+    ggml_backend_meta_context::subgraph_plan * plan = nullptr;
+    if (cgraph->uid != 0) {
+        for (auto & p : backend_ctx->plans) {
+            if (p.uid == cgraph->uid) {
+                plan = &p;
+                break;
+            }
+        }
+    }
+    const bool needs_rebuild = plan == nullptr;
 
-    bool max_nnodes_raised = false;
     if (cgraph->n_nodes > backend_ctx->max_nnodes) {
         for (size_t j = 0; j < n_backends; j++) {
             auto & bcj = backend_ctx->backend_configs[j];
@@ -2008,11 +2044,12 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
             bcj.cgraphs.resize(cgraph->n_nodes);
         }
         backend_ctx->max_nnodes = cgraph->n_nodes;
-        max_nnodes_raised = true;
         assert(needs_rebuild);
     }
 
     if (needs_rebuild) {
+        // Only the container that the next allocation fills is reset. The simple tensors of the current allocation, which
+        // the plans of its other uids point to, are in the current container and stay valid.
         std::set<ggml_backend_buffer_t> used_buffers;
         for (int i = 0; i < cgraph->n_leafs; i++) {
             if (ggml_backend_buffer_is_meta(cgraph->leafs[i]->buffer)) {
@@ -2024,8 +2061,10 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
                 used_buffers.emplace(cgraph->nodes[i]->buffer);
             }
         }
+        uint64_t alloc_epoch = 0;
         for (ggml_backend_buffer_t buf : used_buffers) {
             ggml_backend_meta_buffer_context * buf_ctx = (ggml_backend_meta_buffer_context *) buf->context;
+            alloc_epoch = std::max(alloc_epoch, buf_ctx->alloc_epoch);
             buf_ctx->stc_compute_index_next = buf_ctx->stc_compute_index ^ 1;
             ggml_backend_meta_simple_tensor_container & stc = buf_ctx->stc_compute[buf_ctx->stc_compute_index_next];
             for (ggml_context_ptr & ctx : stc.ctxs) {
@@ -2256,9 +2295,6 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
             GGML_ASSERT(i_start == cgraph->n_nodes);
         }
 
-        backend_ctx->uid         = cgraph->uid;
-        backend_ctx->n_subgraphs = n_subgraphs;
-
         if (max_tmp_size > backend_ctx->max_tmp_size) {
             for (size_t j = 0; j < n_backends; j++) {
                 auto & bcj = backend_ctx->backend_configs[j];
@@ -2269,25 +2305,18 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
             backend_ctx->max_tmp_size = max_tmp_size;
         }
 
-        if (max_nnodes_raised || n_subgraphs > backend_ctx->max_subgraphs) {
-            backend_ctx->max_subgraphs = std::max(backend_ctx->max_subgraphs, n_subgraphs);
+        if (n_subgraphs > backend_ctx->max_subgraphs) {
+            backend_ctx->max_subgraphs = n_subgraphs;
             const size_t n_nodes_per_device = 3 * backend_ctx->n_reduce_steps; // tmp + ADD (+zeroing) graph per step and device
             const size_t n_cgraphs_per_device = 2 * backend_ctx->n_reduce_steps; // ADD ( + zeroing) graph per step and device
-            const size_t mem_per_device_graphs_main = backend_ctx->max_subgraphs*ggml_graph_overhead_custom(backend_ctx->max_nnodes, cgraph->grads);
             const size_t mem_per_device_graphs_aux = n_cgraphs_per_device*backend_ctx->max_subgraphs*ggml_graph_overhead_custom(1, cgraph->grads);
             const size_t mem_per_device_nodes_aux = n_nodes_per_device*backend_ctx->max_subgraphs*ggml_tensor_overhead();
             const ggml_init_params params = {
-                /*.mem_size   =*/ n_backends * (mem_per_device_graphs_main + mem_per_device_graphs_aux + mem_per_device_nodes_aux),
+                /*.mem_size   =*/ n_backends * (mem_per_device_graphs_aux + mem_per_device_nodes_aux),
                 /*.mem_buffer =*/ nullptr,
                 /*.no_alloc   =*/ true,
             };
             backend_ctx->ctx.reset(ggml_init(params));
-            for (size_t j = 0; j < n_backends; j++) {
-                auto & bcj = backend_ctx->backend_configs[j];
-                for (size_t i = 0; i < backend_ctx->max_subgraphs; i++) {
-                    bcj.cgraphs[i].cgraph_main = ggml_new_graph_custom(backend_ctx->ctx.get(), backend_ctx->max_nnodes, /*grads =*/ false);
-                }
-            }
             backend_ctx->cgraphs_aux.resize(n_backends*n_cgraphs_per_device*backend_ctx->max_subgraphs);
             for (size_t k = 0; k < backend_ctx->cgraphs_aux.size(); k++) {
                 backend_ctx->cgraphs_aux[k] = ggml_new_graph_custom(backend_ctx->ctx.get(), 1, cgraph->grads);
@@ -2298,15 +2327,51 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
             }
         }
 
+        const ggml_tensor * node0 = cgraph->n_nodes > 0 ? cgraph->nodes[0] : nullptr;
+        if (cgraph->uid == 0 || alloc_epoch == 0) {
+            plan = &backend_ctx->plan_uncached;
+        } else {
+            auto & plans = backend_ctx->plans;
+            if (alloc_epoch > backend_ctx->plans_alloc_epoch) {
+                plans.clear();
+                backend_ctx->plans_alloc_epoch = alloc_epoch;
+            } else {
+                plans.erase(std::remove_if(plans.begin(), plans.end(),
+                    [node0](const ggml_backend_meta_context::subgraph_plan & p) { return node0 != nullptr && p.node0 == node0; }),
+                    plans.end());
+            }
+            plans.emplace_back();
+            plan = &plans.back();
+        }
+        plan->uid         = cgraph->uid;
+        plan->node0       = node0;
+        plan->n_subgraphs = n_subgraphs;
+
+        auto n_nodes_subgraph = [&](const size_t i_graph) -> size_t {
+            const size_t i_node_start = backend_ctx->backend_configs[0].cgraphs[i_graph].offset;
+            const size_t i_node_stop  = i_graph + 1 < n_subgraphs ? backend_ctx->backend_configs[0].cgraphs[i_graph + 1].offset : cgraph->n_nodes;
+            return i_node_stop - i_node_start;
+        };
+        size_t mem_graphs_main = 0;
+        for (size_t i_graph = 0; i_graph < n_subgraphs; i_graph++) {
+            mem_graphs_main += ggml_graph_overhead_custom(n_nodes_subgraph(i_graph), /*grads =*/ false);
+        }
+        const ggml_init_params params = {
+            /*.mem_size   =*/ n_backends * mem_graphs_main,
+            /*.mem_buffer =*/ nullptr,
+            /*.no_alloc   =*/ true,
+        };
+        plan->ctx.reset(ggml_init(params));
+        plan->cgraphs.resize(n_backends*n_subgraphs);
+
         for (size_t j = 0; j < n_backends; j++) {
             auto & bcj = backend_ctx->backend_configs[j];
             for (size_t i_graph = 0; i_graph < n_subgraphs; i_graph++) {
-                ggml_cgraph * cgraph_ij = bcj.cgraphs[i_graph].cgraph_main;
                 const size_t i_node_start = bcj.cgraphs[i_graph].offset;
-                const size_t i_node_stop = i_graph + 1 < n_subgraphs ? bcj.cgraphs[i_graph + 1].offset : cgraph->n_nodes;
-                cgraph_ij->n_nodes = i_node_stop - i_node_start;
-                ggml_hash_set_reset(&cgraph_ij->visited_hash_set);
-                for (size_t i_node = i_node_start; i_node < i_node_stop; i_node++) {
+                const size_t n_nodes_ij   = n_nodes_subgraph(i_graph);
+                ggml_cgraph * cgraph_ij = ggml_new_graph_custom(plan->ctx.get(), n_nodes_ij, /*grads =*/ false);
+                cgraph_ij->n_nodes = n_nodes_ij;
+                for (size_t i_node = i_node_start; i_node < i_node_start + n_nodes_ij; i_node++) {
                     ggml_tensor * node_ij = bcj.nodes[i_node];
                     cgraph_ij->nodes[i_node - i_node_start] = node_ij;
                     const size_t hash_pos_orig = ggml_hash_find(&cgraph->visited_hash_set, cgraph->nodes[i_node]);
@@ -2314,7 +2379,16 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
                     cgraph_ij->use_counts[hash_pos_ij] = cgraph->use_counts[hash_pos_orig];
                 }
                 cgraph_ij->uid = ggml_graph_next_uid();
+                plan->cgraphs[j*n_subgraphs + i_graph] = cgraph_ij;
             }
+        }
+    }
+
+    backend_ctx->n_subgraphs = plan->n_subgraphs;
+    for (size_t j = 0; j < n_backends; j++) {
+        auto & bcj = backend_ctx->backend_configs[j];
+        for (size_t i_graph = 0; i_graph < plan->n_subgraphs; i_graph++) {
+            bcj.cgraphs[i_graph].cgraph_main = plan->cgraphs[j*plan->n_subgraphs + i_graph];
         }
     }
 
