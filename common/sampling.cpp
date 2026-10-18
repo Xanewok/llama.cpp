@@ -132,7 +132,8 @@ struct common_sampler {
         llama_sampler_reset(chain);
     }
 
-    void set_logits(struct llama_context * ctx, int idx) {
+    // prefilter: the caller guarantees that nothing ahead of the chain reads the row (see common_sampler_sample)
+    void set_logits(struct llama_context * ctx, int idx, bool prefilter) {
         const float *       sampled_probs  = llama_get_sampled_probs_ith     (ctx, idx);
         const float *       sampled_logits = llama_get_sampled_logits_ith    (ctx, idx);
         const llama_token * sampled_ids    = llama_get_sampled_candidates_ith(ctx, idx);
@@ -154,7 +155,7 @@ struct common_sampler {
             for (uint32_t i = 0; i < sampled_logits_count; i++) {
                 cur[i] = llama_token_data{sampled_ids[i], sampled_logits[i], 0.0f};
             }
-        } else if (prefilter_k > 0 && prefilter_k < n_vocab) {
+        } else if (prefilter && prefilter_k > 0 && prefilter_k < n_vocab) {
             const auto * logits = llama_get_logits_ith(ctx, idx);
             GGML_ASSERT(logits != nullptr);
             top_k_select(logits, n_vocab);
@@ -177,9 +178,9 @@ struct common_sampler {
     mutable int64_t t_total_us = 0;
 
     // > 0: set_logits keeps only the top prefilter_k logits of the full vocab, in one pass. Valid only while every
-    // sampler ahead of top-k in the chain is a no-op or the logit bias (see common_sampler_prefilter_k): the chain
-    // then gets the candidate set its own top-k would keep (up to exact ties at the k-th logit), without filling
-    // and sorting an n_vocab-entry array.
+    // sampler ahead of top-k in the chain is a no-op or the logit bias (see common_sampler_prefilter_k), and the
+    // reasoning budget and grammar leave the row alone: the chain then gets the candidate set its own top-k would
+    // keep (up to exact ties at the k-th logit), without filling and sorting an n_vocab-entry array.
     int32_t prefilter_k = 0;
     std::vector<llama_logit_bias> prefilter_bias; // the chain's logit bias, by token
 
@@ -247,8 +248,8 @@ struct common_sampler {
 };
 
 // The top-k of the chain when it can be taken straight from the logits, else 0.
-static int32_t common_sampler_prefilter_k(const common_params_sampling & params, bool has_grmr, bool has_rbudget) {
-    if (has_grmr || has_rbudget || params.mirostat != 0 || params.top_k <= 0) {
+static int32_t common_sampler_prefilter_k(const common_params_sampling & params) {
+    if (params.mirostat != 0 || params.top_k <= 0) {
         return 0;
     }
     for (const auto type : params.samplers) {
@@ -566,7 +567,7 @@ struct common_sampler * common_sampler_init(
         /* .prefilter_k    = */ 0,
         /* .prefilter_bias = */ {},
     };
-    result->prefilter_k    = prefilter_dup_bias ? 0 : common_sampler_prefilter_k(params, grmr != nullptr, rbudget != nullptr);
+    result->prefilter_k    = prefilter_dup_bias ? 0 : common_sampler_prefilter_k(params);
     result->prefilter_bias = std::move(prefilter_bias);
 
     return result;
@@ -750,7 +751,13 @@ llama_token common_sampler_sample(struct common_sampler * gsmpl, struct llama_co
     auto & chain = gsmpl->chain;
     auto & cur_p = gsmpl->cur_p; // initialized by set_logits
 
-    gsmpl->set_logits(ctx, idx);
+    // The first draw needs the whole row only if something ahead of the chain reads it: the reasoning budget while
+    // it forces (a full-row mask), or a grammar applied before the chain. Otherwise the budget passes the row
+    // through, and a grammar applied after the chain (grammar_first == false) checks the one drawn token; a lazy
+    // grammar awaiting its trigger accepts every token. The resample below masks the whole row and reads all of it.
+    const bool forcing = common_reasoning_budget_get_state(rbudget) == REASONING_BUDGET_FORCING;
+
+    gsmpl->set_logits(ctx, idx, !forcing && !(grammar_first && grammar_should_apply(gsmpl)));
 
     // Check if a backend sampler has already sampled a token in which case we
     // return that token id directly.
@@ -804,7 +811,7 @@ llama_token common_sampler_sample(struct common_sampler * gsmpl, struct llama_co
 
     // resampling:
     // if the token is not valid, sample again, but first apply the grammar sampler and then the sampling chain
-    gsmpl->set_logits(ctx, idx);
+    gsmpl->set_logits(ctx, idx, false);
 
     llama_sampler_apply(rbudget,  &cur_p);
 
