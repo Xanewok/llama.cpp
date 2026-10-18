@@ -68,7 +68,7 @@ llama_kv_cache_iswa::llama_kv_cache_iswa(
 
     const uint32_t size_base = kv_size;
 
-    // note: the SWA cache is always padded to 256 for performance
+    // note: a windowed SWA cache is always padded to 256 for performance and takes no larger n_pad, its size is not a multiple of it
     //       https://github.com/ggml-org/llama.cpp/issues/17037
     uint32_t size_swa = GGML_PAD(std::min(size_base, hparams.n_swa*(unified ? n_seq_max : 1) + n_ubatch), 256);
 
@@ -101,7 +101,7 @@ llama_kv_cache_iswa::llama_kv_cache_iswa(
 
     kv_swa = std::make_unique<llama_kv_cache>(
             model, hparams, type_k, type_v,
-            v_trans, offload, unified, size_swa, n_seq_max, n_pad,
+            v_trans, offload, unified, size_swa, n_seq_max, swa_full ? n_pad : 1,
             hparams.n_swa, hparams.swa_type, mem_other_swa, filter_swa, reuse, share);
 }
 
