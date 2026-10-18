@@ -182,6 +182,7 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
     # these tests are disabled on Windows because they use internal functions not exported with LLAMA_API (when building with shared libraries)
     llama_build_and_test(test-unicode.cpp LINK llama)
     llama_build_and_test(test-sampling.cpp LINK llama)
+    llama_build(test-sampling-prefilter.cpp)
     llama_build_and_test(test-reasoning-budget.cpp)
     llama_build_and_test(test-grammar-parser.cpp LINK llama)
     llama_build_and_test(test-grammar-integration.cpp)
@@ -237,6 +238,14 @@ if (NOT WIN32 OR NOT BUILD_SHARED_LIBS)
     )
     set_tests_properties(test-generate-models PROPERTIES
         FIXTURES_SETUP generate-models
+    )
+
+    # Test backend sampling under SPLIT_MODE_TENSOR on two CPU devices
+    llama_test(
+        test-llama-archs
+        NAME test-tp-backend-sampling
+        LABEL main
+        ARGS --tp-sampling -s 42
     )
 
     # Test context state handling across all architectures, using the generated dummy models
@@ -371,6 +380,10 @@ if (NOT LLAMA_USE_SYSTEM_GGML)
 
     # Needs non-public ggml{,-backend}-impl.h
     llama_build_and_test(test-alloc.cpp LINK ggml)
+    if (NOT WIN32)
+        find_package(Threads REQUIRED)
+        target_link_libraries(test-alloc PRIVATE Threads::Threads)
+    endif()
 endif()
 
 llama_build(test-export-graph-ops.cpp)
