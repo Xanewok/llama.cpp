@@ -12,6 +12,7 @@
 #include <climits>
 #include <cmath>
 #include <cstring>
+#include <map>
 #include <random>
 #include <unordered_map>
 #include <vector>
@@ -131,34 +132,58 @@ struct common_sampler {
         llama_sampler_reset(chain);
     }
 
-    void set_logits(struct llama_context * ctx, int idx) {
-        const float *       sampled_probs  = llama_get_sampled_probs_ith     (ctx, idx);
-        const float *       sampled_logits = llama_get_sampled_logits_ith    (ctx, idx);
-        const llama_token * sampled_ids    = llama_get_sampled_candidates_ith(ctx, idx);
-
-        const llama_model * model = llama_get_model(ctx);
-        const llama_vocab * vocab = llama_model_get_vocab(model);
-
-        const int n_vocab = llama_vocab_n_tokens(vocab);
+    // prefilter: the caller guarantees that nothing ahead of the chain reads the row (see common_sampler_sample)
+    void set_logits(const common_sampler_row & row, bool prefilter, bool full = false) {
+        const float *       sampled_probs  = full ? nullptr : row.cand_probs;
+        const float *       sampled_logits = full ? nullptr : row.cand_logits;
+        const llama_token * sampled_ids    = full ? nullptr : row.cand_ids;
+        const int n_vocab = row.n_vocab;
 
         if (sampled_probs) {
-            const uint32_t sampled_probs_count = llama_get_sampled_probs_count_ith(ctx, idx);
+            const uint32_t sampled_probs_count = row.n_cand;
             cur.resize(sampled_probs_count);
             for (uint32_t i = 0; i < sampled_probs_count; ++i) {
                 cur[i] = llama_token_data{sampled_ids[i], sampled_logits[i], sampled_probs[i]};
             }
         } else if (sampled_logits) {
-            const uint32_t sampled_logits_count = llama_get_sampled_logits_count_ith(ctx, idx);
+            const uint32_t sampled_logits_count = row.n_cand;
             cur.resize(sampled_logits_count);
             for (uint32_t i = 0; i < sampled_logits_count; i++) {
                 cur[i] = llama_token_data{sampled_ids[i], sampled_logits[i], 0.0f};
             }
+            if (backend_candidates) {
+                // with a banning bias the backend took prefilter_bias.size() extra candidates (see common_sampler_init)
+                bool exact = true;
+                if (!prefilter_bias.empty()) {
+                    size_t n = 0;
+                    for (const auto & c : cur) {
+                        if (!banned(c.id)) {
+                            cur[n++] = c;
+                        } else {
+                            exact = exact && std::isfinite(c.logit); // the chain would turn +inf or NaN into NaN
+                        }
+                    }
+                    cur.resize(n);
+                }
+                std::sort(cur.begin(), cur.end(), [](const llama_token_data & a, const llama_token_data & b) { return a.logit > b.logit; });
+                exact = exact && cur.size() > (size_t) prefilter_k;
+                for (int32_t i = 0; exact && i <= prefilter_k; ++i) {
+                    exact = std::isfinite(cur[i].logit) && (i == 0 || cur[i - 1].logit > cur[i].logit);
+                }
+                if (!exact) {
+                    set_logits(row, prefilter, true);
+                    return;
+                }
+                cur.resize(prefilter_k);
+            }
         } else {
-            const auto * logits = llama_get_logits_ith(ctx, idx);
+            const auto * logits = row.logits();
             GGML_ASSERT(logits != nullptr);
-            cur.resize(n_vocab);
-            for (llama_token token_id = 0; token_id < n_vocab; token_id++) {
-                cur[token_id] = llama_token_data{token_id, logits[token_id], 0.0f};
+            if (!(prefilter && prefilter_k > 0 && prefilter_k < n_vocab && top_k_select(logits, n_vocab))) {
+                cur.resize(n_vocab);
+                for (llama_token token_id = 0; token_id < n_vocab; token_id++) {
+                    cur[token_id] = llama_token_data{token_id, logits[token_id], 0.0f};
+                }
             }
         }
 
@@ -170,7 +195,128 @@ struct common_sampler {
     }
 
     mutable int64_t t_total_us = 0;
+
+    // > 0: set_logits keeps only the top prefilter_k logits of the full vocab, in one pass. Valid only while every
+    // sampler ahead of top-k in the chain is a no-op or the logit bias (see common_sampler_prefilter_k), and the
+    // reasoning budget and grammar leave the row alone: the chain then gets the candidates its own top-k would keep,
+    // in the same order, without filling and sorting an n_vocab-entry array.
+    int32_t prefilter_k = 0;
+    std::vector<llama_logit_bias> prefilter_bias; // the chain's logit bias, by token
+
+    llama_sampler * backend_candidates = nullptr;
+
+    bool banned(llama_token id) const {
+        const auto it = std::lower_bound(prefilter_bias.begin(), prefilter_bias.end(), id,
+                [](const llama_logit_bias & lb, llama_token t) { return lb.token < t; });
+        return it != prefilter_bias.end() && it->token == id;
+    }
+
+    // raw logits go into cur, as the chain's logit bias adds the bias itself; selection is on the biased logit.
+    // Returns false, leaving cur to be refilled, when a tie among the k + 1 best could make the chain's own
+    // partial sort keep or order tied tokens differently: without ties the top k and their order are unique.
+    // Every logit left out is <= the (k + 1)-th kept, so a tie at the k-th place shows up among the k + 1.
+    bool top_k_select(const float * logits, const int n_vocab) {
+        const size_t k = (size_t) prefilter_k + 1;
+        cur.clear();
+        cur.reserve(k);
+
+        // a min-heap on the biased logit, held in .p while selecting
+        const auto greater = [](const llama_token_data & a, const llama_token_data & b) { return a.p > b.p; };
+        float thr = -INFINITY;
+        const auto push = [&](llama_token id, float raw, float v) {
+            if (cur.size() < k) {
+                cur.push_back({ id, raw, v });
+                std::push_heap(cur.begin(), cur.end(), greater);
+            } else if (v > thr) {
+                std::pop_heap(cur.begin(), cur.end(), greater);
+                cur.back() = { id, raw, v };
+                std::push_heap(cur.begin(), cur.end(), greater);
+            } else {
+                return;
+            }
+            thr = cur.size() < k ? -INFINITY : cur.front().p;
+        };
+
+        // once the heap is full, a block whose max is not above the k-th best cannot push: skip it on a vectorized max
+        const auto scan = [&](llama_token b, llama_token e) {
+            constexpr llama_token n_block = 64;
+            for (llama_token i0 = b; i0 < e; i0 += n_block) {
+                const llama_token i1 = std::min(e, i0 + n_block);
+                if (cur.size() == k) {
+                    float m = -INFINITY;
+                    for (llama_token i = i0; i < i1; ++i) {
+                        m = std::max(m, logits[i]);
+                    }
+                    if (!(m > thr)) {
+                        continue;
+                    }
+                }
+                for (llama_token i = i0; i < i1; ++i) {
+                    if (logits[i] > thr || cur.size() < k) {
+                        push(i, logits[i], logits[i]);
+                    }
+                }
+            }
+        };
+
+        size_t ib = 0;
+        for (llama_token i = 0; i < n_vocab; ) {
+            const llama_token end = ib < prefilter_bias.size() ? prefilter_bias[ib].token : n_vocab;
+            scan(i, end);
+            i = end;
+            if (i < n_vocab) {
+                push(i, logits[i], logits[i] + prefilter_bias[ib].bias);
+                ++i;
+                ++ib;
+            }
+        }
+
+        std::sort(cur.begin(), cur.end(), greater); // best first
+        for (size_t i = 1; i < cur.size(); ++i) {
+            if (!(cur[i - 1].p > cur[i].p)) {
+                return false;
+            }
+        }
+        cur.pop_back();
+
+        for (auto & c : cur) {
+            c.p = 0.0f;
+        }
+        return true;
+    }
 };
+
+// The top-k of the chain when it can be taken straight from the logits, else 0.
+static int32_t common_sampler_prefilter_k(const common_params_sampling & params) {
+    if (params.mirostat != 0 || params.top_k <= 0) {
+        return 0;
+    }
+    for (const auto type : params.samplers) {
+        switch (type) {
+            case COMMON_SAMPLER_TYPE_TOP_K:
+                return params.top_k;
+            case COMMON_SAMPLER_TYPE_PENALTIES:
+                if (params.penalty_last_n != 0 &&
+                        (params.penalty_repeat != 1.0f || params.penalty_freq != 0.0f || params.penalty_present != 0.0f)) {
+                    return 0;
+                }
+                break;
+            case COMMON_SAMPLER_TYPE_DRY:
+                if (params.dry_multiplier != 0.0f) {
+                    return 0;
+                }
+                break;
+            case COMMON_SAMPLER_TYPE_TOP_N_SIGMA:
+                if (params.top_n_sigma > 0.0f) {
+                    return 0;
+                }
+                break;
+            default:
+                return 0; // a sampler that reads the whole distribution
+        }
+    }
+    return 0;
+}
 
 std::string common_params_sampling::print() const {
     char result[1024];
@@ -212,6 +358,8 @@ struct common_sampler * common_sampler_init(
     llama_sampler * chain = llama_sampler_chain_init(lparams);
 
     std::vector<llama_sampler *> samplers;
+    std::vector<llama_logit_bias> prefilter_bias;
+    bool prefilter_dup_bias = false;
 
     const std::string & grammar_str = common_grammar_value(params.grammar);
     if (grammar_str.compare(0, 11, "%llguidance") == 0) {
@@ -339,6 +487,19 @@ struct common_sampler * common_sampler_init(
         if (!merged.empty()) {
             samplers.push_back(llama_sampler_init_logit_bias(llama_vocab_n_tokens(vocab), merged.size(), merged.data()));
         }
+
+        // the logit bias sampler adds only the first of duplicate entries on a candidate array that is not the
+        // whole vocab in id order, so with duplicates the prefilter could keep a different set: no prefilter then
+        const int32_t n_vocab = llama_vocab_n_tokens(vocab);
+        std::map<llama_token, float> by_token;
+        for (const auto & lb : merged) {
+            if (lb.token >= 0 && lb.token < n_vocab && !by_token.emplace(lb.token, lb.bias).second) {
+                prefilter_dup_bias = true;
+            }
+        }
+        for (const auto & [token, bias] : by_token) {
+            prefilter_bias.push_back({ token, bias });
+        }
     }
 
     if (params.mirostat == 0) {
@@ -419,13 +580,23 @@ struct common_sampler * common_sampler_init(
         llama_sampler_chain_add(chain, smpl);
     }
 
-    if (grmr && params.backend_sampling) {
+    // A bias of -inf only bans: the top k + 1 of the biased row are then the k + 1 best unbanned ids, and at most n_ban
+    // of the raw top k + 1 + n_ban are banned, so set_logits drops those and keeps its tie check on what is left. A
+    // finite bias can lift a token from anywhere in the row: the full row then. 256: the backend top-k limit.
+    const int32_t candidate_k = common_sampler_prefilter_k(params);
+    const bool    bias_bans   = !prefilter_dup_bias && std::all_of(prefilter_bias.begin(), prefilter_bias.end(),
+            [](const llama_logit_bias & lb) { return lb.bias == -INFINITY; });
+    const bool use_candidates = params.backend_sampling && candidate_k > 0 && candidate_k < 256 && bias_bans &&
+            prefilter_bias.size() < (size_t) (256 - candidate_k);
+    const int32_t n_ban = use_candidates ? (int32_t) prefilter_bias.size() : 0;
+
+    if (grmr && params.backend_sampling && !use_candidates) {
         LOG_WRN("%s: backend sampling is not compatible with grammar, disabling\n", __func__);
 
         params.backend_sampling = false;
     }
 
-    if (rbudget && params.backend_sampling) {
+    if (rbudget && params.backend_sampling && !use_candidates) {
         LOG_WRN("%s: backend sampling is not compatible with reasoning budget, disabling\n", __func__);
 
         params.backend_sampling = false;
@@ -441,7 +612,16 @@ struct common_sampler * common_sampler_init(
         /* .cur_p   = */ {},
         // mix it, the chain and the draft are seeded from this one too
         /* .rng     = */ std::mt19937(llama_sampler_get_seed(chain) ^ 0x9e3779b9u),
+        /* .t_total_us     = */ 0,
+        /* .prefilter_k    = */ 0,
+        /* .prefilter_bias = */ {},
     };
+    result->prefilter_k    = prefilter_dup_bias ? 0 : common_sampler_prefilter_k(params);
+    result->prefilter_bias = std::move(prefilter_bias);
+    if (use_candidates) {
+        result->backend_candidates = llama_sampler_chain_init(lparams);
+        llama_sampler_chain_add(result->backend_candidates, llama_sampler_init_top_k(candidate_k + 1 + n_ban));
+    }
 
     return result;
 }
@@ -454,6 +634,7 @@ void common_sampler_free(struct common_sampler * gsmpl) {
     llama_sampler_free(gsmpl->grmr);
     llama_sampler_free(gsmpl->rbudget);
     llama_sampler_free(gsmpl->chain);
+    llama_sampler_free(gsmpl->backend_candidates);
 
     delete gsmpl;
 }
@@ -516,7 +697,7 @@ void common_sampler_reset(struct common_sampler * gsmpl) {
 }
 
 struct common_sampler * common_sampler_clone(common_sampler * gsmpl) {
-    return new common_sampler {
+    auto * result = new common_sampler {
         /* .params  = */ gsmpl->params,
         /* .grmr    = */ llama_sampler_clone(gsmpl->grmr),
         /* .rbudget = */ llama_sampler_clone(gsmpl->rbudget),
@@ -525,7 +706,14 @@ struct common_sampler * common_sampler_clone(common_sampler * gsmpl) {
         /* .cur     = */ gsmpl->cur,
         /* .cur_p   = */ gsmpl->cur_p,
         /* .rng     = */ gsmpl->rng,
+        /* .t_total_us     = */ 0,
+        /* .prefilter_k    = */ gsmpl->prefilter_k,
+        /* .prefilter_bias = */ gsmpl->prefilter_bias,
     };
+
+    result->backend_candidates = llama_sampler_clone(gsmpl->backend_candidates);
+
+    return result;
 }
 
 void common_sampler_copy(const common_sampler * src, common_sampler * dst) {
@@ -547,6 +735,9 @@ void common_sampler_copy(const common_sampler * src, common_sampler * dst) {
     dst->cur_p.data = src->cur_p.data ? dst->cur.data() : nullptr; // re-point to dst's buffer
     dst->rng        = src->rng;
     dst->t_total_us = src->t_total_us;
+
+    dst->prefilter_k    = src->prefilter_k;
+    dst->prefilter_bias = src->prefilter_bias;
 }
 
 void common_perf_print(const struct llama_context * ctx, const struct common_sampler * gsmpl) {
@@ -602,8 +793,33 @@ struct llama_sampler * common_sampler_get(const struct common_sampler * gsmpl) {
     return gsmpl->chain;
 }
 
+struct llama_sampler * common_sampler_get_backend(const struct common_sampler * gsmpl) {
+    if (!gsmpl || !gsmpl->params.backend_sampling) {
+        return nullptr;
+    }
+    return gsmpl->backend_candidates ? gsmpl->backend_candidates : gsmpl->chain;
+}
+
+static common_sampler_row common_sampler_row_from_ctx(struct llama_context * ctx, int idx) {
+    common_sampler_row row;
+    row.n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(llama_get_model(ctx)));
+    row.sampled = llama_get_sampled_token_ith(ctx, idx);
+    row.cand_probs = llama_get_sampled_probs_ith(ctx, idx);
+    row.cand_logits = llama_get_sampled_logits_ith(ctx, idx);
+    if (row.cand_probs || row.cand_logits) {
+        row.cand_ids = llama_get_sampled_candidates_ith(ctx, idx);
+        row.n_cand = row.cand_probs ? llama_get_sampled_probs_count_ith(ctx, idx) : llama_get_sampled_logits_count_ith(ctx, idx);
+    }
+    row.logits = [ctx, idx]() { return llama_get_logits_ith(ctx, idx); };
+    return row;
+}
+
 llama_token common_sampler_sample(struct common_sampler * gsmpl, struct llama_context * ctx, int idx, bool grammar_first) {
     llama_synchronize(ctx);
+    return common_sampler_sample_row(gsmpl, common_sampler_row_from_ctx(ctx, idx), grammar_first);
+}
+
+llama_token common_sampler_sample_row(struct common_sampler * gsmpl, const common_sampler_row & row, bool grammar_first) {
 
     // start measuring sampling time after the llama_context synchronization in order to not measure any ongoing async operations
     const auto tm = gsmpl->tm();
@@ -615,12 +831,19 @@ llama_token common_sampler_sample(struct common_sampler * gsmpl, struct llama_co
     auto & chain = gsmpl->chain;
     auto & cur_p = gsmpl->cur_p; // initialized by set_logits
 
-    gsmpl->set_logits(ctx, idx);
+    // The first draw needs the whole row only if something ahead of the chain reads it: the reasoning budget while
+    // it forces (a full-row mask), or a grammar applied before the chain. Otherwise the budget passes the row
+    // through, and a grammar applied after the chain (grammar_first == false) checks the one drawn token; a lazy
+    // grammar awaiting its trigger accepts every token. The resample below masks the whole row and reads all of it.
+    const bool forcing = common_reasoning_budget_get_state(rbudget) == REASONING_BUDGET_FORCING;
+
+    const bool full = forcing || (grammar_first && grammar_should_apply(gsmpl));
+    gsmpl->set_logits(row, !full, full && gsmpl->backend_candidates);
 
     // Check if a backend sampler has already sampled a token in which case we
     // return that token id directly.
     {
-        id = llama_get_sampled_token_ith(ctx, idx);
+        id = row.sampled;
 
         if (id != LLAMA_TOKEN_NULL) {
             LOG_DBG("%s: Backend sampler selected token: '%d'. Will not run any CPU samplers\n", __func__, id);
@@ -669,7 +892,7 @@ llama_token common_sampler_sample(struct common_sampler * gsmpl, struct llama_co
 
     // resampling:
     // if the token is not valid, sample again, but first apply the grammar sampler and then the sampling chain
-    gsmpl->set_logits(ctx, idx);
+    gsmpl->set_logits(row, false, gsmpl->backend_candidates != nullptr);
 
     llama_sampler_apply(rbudget,  &cur_p);
 
@@ -734,10 +957,16 @@ static float prob_of(const llama_token_data * data, size_t n, llama_token id) {
 // draft samples instead of taking its argmax.
 std::vector<llama_token> common_sampler_sample_and_accept_n_rejection(struct common_sampler * gsmpl, struct llama_context * ctx, const std::vector<int> & idxs, const llama_tokens & draft, const std::vector<std::vector<llama_token_data>> & draft_q, bool grammar_first) {
     GGML_ASSERT(idxs.size()    == draft.size() + 1 && "idxs.size() must be draft.size() + 1");
+    llama_synchronize(ctx);
+    return common_sampler_sample_and_accept_n_rejection_rows(gsmpl,
+            [ctx, &idxs](size_t i) { return common_sampler_row_from_ctx(ctx, idxs[i]); }, draft, draft_q, grammar_first);
+}
+
+std::vector<llama_token> common_sampler_sample_and_accept_n_rejection_rows(struct common_sampler * gsmpl, const std::function<common_sampler_row(size_t)> & row_at, const llama_tokens & draft, const std::vector<std::vector<llama_token_data>> & draft_q, bool grammar_first) {
     GGML_ASSERT(draft_q.size() == draft.size() && "draft_q must have one entry per draft token");
 
     std::vector<llama_token> result;
-    result.reserve(idxs.size());
+    result.reserve(draft.size() + 1);
 
     // draws come from the sampler's own stream, so they stay independent of what was drafted
     std::uniform_real_distribution<float> uni(0.0f, 1.0f);
@@ -749,7 +978,7 @@ std::vector<llama_token> common_sampler_sample_and_accept_n_rejection(struct com
     size_t i = 0;
     for (; i < draft.size(); i++) {
         // leaves the target distribution in the candidate array
-        const llama_token id_tgt = common_sampler_sample(gsmpl, ctx, idxs[i], grammar_first);
+        const llama_token id_tgt = common_sampler_sample_row(gsmpl, row_at(i), grammar_first);
 
         const auto * cur_p = common_sampler_get_candidates(gsmpl, true);
         const auto & q     = draft_q[i];
@@ -828,7 +1057,7 @@ std::vector<llama_token> common_sampler_sample_and_accept_n_rejection(struct com
     }
 
     if (i == draft.size()) {
-        const llama_token id = common_sampler_sample(gsmpl, ctx, idxs[i], grammar_first);
+        const llama_token id = common_sampler_sample_row(gsmpl, row_at(i), grammar_first);
 
         common_sampler_accept(gsmpl, id, true);
 

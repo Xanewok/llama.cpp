@@ -330,6 +330,16 @@ extern "C" {
     GGML_API ggml_backend_sched_t ggml_backend_sched_new(ggml_backend_t * backends, ggml_backend_buffer_type_t * bufts, int n_backends, size_t graph_size, bool parallel, bool op_offload);
     GGML_API void                 ggml_backend_sched_free(ggml_backend_sched_t sched);
 
+    // Shares compute storage with parent, but owns its split state. Serialize all operations in the family.
+    // Returns NULL for pipeline parallelism. Backends must outlive every family member.
+    GGML_API ggml_backend_sched_t ggml_backend_sched_new_shared(ggml_backend_sched_t parent);
+
+    // False after reset, buffer replacement, or destructive backend reset. Input writes must follow previous compute.
+    // An allocated but stale graph is rejected by compute_async; rebuild and upload inputs again.
+    GGML_API bool                 ggml_backend_sched_graph_is_alloc(ggml_backend_sched_t sched, const struct ggml_cgraph * graph);
+
+    GGML_API bool                 ggml_backend_sched_can_stage_inputs(ggml_backend_sched_t sched, const struct ggml_cgraph * graph);
+
     // Initialize backend buffers from a measure graph
     GGML_API void                 ggml_backend_sched_reserve_size(ggml_backend_sched_t sched, struct ggml_cgraph * measure_graph, size_t * sizes);
     GGML_API bool                 ggml_backend_sched_reserve(ggml_backend_sched_t sched, struct ggml_cgraph * measure_graph); // returns success
@@ -418,6 +428,15 @@ extern "C" {
     //       express this as a backend registry functionality instead
     GGML_API ggml_backend_dev_t ggml_backend_meta_device(
         ggml_backend_dev_t * devs, size_t n_devs, ggml_backend_meta_get_split_state_t get_split_state, void * get_split_state_ud);
+
+    // all-gather: on a meta backend a split tensor becomes MIRRORED, bit-exact (a sum of zero-padded slices);
+    // elsewhere an identity copy.
+    // Contract (meta backend): the result must be consumed by a later node, and only through views, reshapes or
+    // copies; the reduction that completes it runs where the next subgraph starts, so a gather that ends the graph
+    // is never reduced, and an arithmetic op on it (e.g. a MUL with a MIRRORED operand) moves the reduction onto that
+    // op, which then takes the lossy backend AllReduce. Reading the gather itself with ggml_backend_tensor_get() is
+    // not supported; read a consumer. -0.0f comes out as +0.0f.
+    GGML_API struct ggml_tensor * ggml_backend_meta_gather(struct ggml_context * ctx, struct ggml_tensor * a);
 
     //
     // Utils
