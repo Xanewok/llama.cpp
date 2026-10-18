@@ -371,6 +371,10 @@ if (NOT LLAMA_USE_SYSTEM_GGML)
 
     # Needs non-public ggml{,-backend}-impl.h
     llama_build_and_test(test-alloc.cpp LINK ggml)
+    if (NOT WIN32)
+        find_package(Threads REQUIRED)
+        target_link_libraries(test-alloc PRIVATE Threads::Threads)
+    endif()
 endif()
 
 llama_build(test-export-graph-ops.cpp)
