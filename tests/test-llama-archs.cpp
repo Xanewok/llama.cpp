@@ -7,9 +7,11 @@
 #include "llama.h"
 #include "llama-cpp.h"
 #include "sampling.h"
+#include "speculative.h"
 
 // TODO: replace with #include "llama-ext.h" in the future
 #include "../src/llama-arch.h"
+#include "../src/llama-ext.h"
 #include "../src/llama-model-saver.h"
 
 #include <algorithm>
@@ -661,6 +663,27 @@ static bool check_causal_attn_toggle(
     return ok;
 }
 
+static bool check_mtp_chain_capacity() {
+    bool ok = true;
+    for (int slots : { 1, 2 }) {
+        for (int k : { 1, 2, LLAMA_MTP_CHAIN_MAX, LLAMA_MTP_CHAIN_MAX + 1 }) {
+            common_params params;
+            params.n_parallel = slots;
+            params.speculative.types = { COMMON_SPECULATIVE_TYPE_DRAFT_MTP };
+            params.speculative.draft.probabilistic = true;
+            params.speculative.draft.backend_sampling = true;
+            params.speculative.draft.p_min = 0.0f;
+            params.speculative.draft.n_max = k;
+            const auto draft = common_base_params_to_speculative(params);
+            const int expected = slots == 1 && k >= 2 && k <= LLAMA_MTP_CHAIN_MAX ? k : 1;
+            ok &= draft.n_outputs_max_per_seq == expected;
+            ok &= draft.n_outputs_max >= slots*expected;
+        }
+    }
+    LOG("MTP chain output capacity: %s\n", ok ? "OK" : "FAIL");
+    return ok;
+}
+
 static bool moe_mandatory(const llm_arch arch) {
     switch (arch) {
         case LLM_ARCH_LLAMA4:
@@ -1112,6 +1135,11 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
             }
         }
     }
+
+    n_tests++;
+    const bool capacity_ok = check_mtp_chain_capacity();
+    n_failed += !capacity_ok;
+    all_ok &= capacity_ok;
 
     if (n_tests == 0) {
         LOG("Summary: no tests executed\n");
