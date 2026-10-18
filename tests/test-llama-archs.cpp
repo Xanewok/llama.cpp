@@ -1230,6 +1230,64 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
 // gpu = false runs on two CPU devices, which exchange the candidates through the meta backend's exact generic
 // AllReduce. gpu = true runs on the first two GPUs, where the backend's own AllReduce is used; that is the only way
 // to cover a lossy exchange (the CUDA internal AllReduce rounds F32 through BF16).
+static bool test_banned_candidates(const llama_model * model) {
+    const int32_t n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
+    common_params_sampling params;
+    params.top_k = 4;
+    params.temp = 1.0f;
+    params.seed = 42;
+    params.logit_bias = {{0, -INFINITY}, {2, -INFINITY}};
+    params.backend_sampling = true;
+    common_sampler_ptr cand(common_sampler_init(model, params));
+    params.backend_sampling = false;
+    common_sampler_ptr host(common_sampler_init(model, params));
+    std::vector<float> logits(n_vocab);
+    for (int32_t i = 0; i < n_vocab; ++i) {
+        logits[i] = -float(i);
+    }
+    std::vector<llama_token_data> backend_row(n_vocab);
+    for (int32_t i = 0; i < n_vocab; ++i) {
+        backend_row[i] = {i, logits[i], 0.0f};
+    }
+    llama_token_data_array backend = {backend_row.data(), backend_row.size(), -1, false};
+    llama_sampler_apply(common_sampler_get_backend(cand.get()), &backend);
+    if (backend.size != 7) {
+        return false;
+    }
+    llama_token ids[] = {6, 5, 4, 3, 2, 1, 0};
+    float vals[] = {-6, -5, -4, -3, -2, -1, 0};
+    for (bool tied : {false, true}) {
+        // The fourth and fifth unbanned logits tie only in the fallback case.
+        logits[6] = vals[0] = tied ? -5.0f : -6.0f;
+        int full_reads = 0;
+        common_sampler_row row;
+        row.n_vocab = n_vocab;
+        row.cand_ids = ids;
+        row.cand_logits = vals;
+        row.n_cand = 7;
+        row.logits = [&]() { ++full_reads; return logits.data(); };
+        const llama_token got = common_sampler_sample_row(cand.get(), row);
+        if (full_reads != int(tied)) {
+            return false;
+        }
+        row.cand_ids = nullptr;
+        row.cand_logits = nullptr;
+        row.n_cand = 0;
+        const llama_token want = common_sampler_sample_row(host.get(), row);
+        const auto * a = common_sampler_get_candidates(cand.get(), false);
+        const auto * b = common_sampler_get_candidates(host.get(), false);
+        if (got != want || got == 0 || got == 2 || a->size != b->size || a->selected != b->selected) {
+            return false;
+        }
+        for (size_t i = 0; i < a->size; ++i) {
+            if (a->data[i].id != b->data[i].id || a->data[i].logit != b->data[i].logit || a->data[i].p != b->data[i].p) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu) {
     std::vector<ggml_backend_dev_t> devs;
     for (size_t i = 0; i < ggml_backend_dev_count() && devs.size() < 2; i++) {
@@ -1385,6 +1443,10 @@ static int test_tp_sampling(const size_t seed, const float stdev, const bool gpu
             }
         }
         LOG("%s: verify candidates and deferred logits, 64 seeds x %d rows: %s\n", __func__, n_rows, ok ? "OK" : "FAIL");
+    }
+
+    if (ok && !gpu) {
+        ok = test_banned_candidates(model.get());
     }
 
     {
