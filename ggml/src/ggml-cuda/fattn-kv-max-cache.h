@@ -2,6 +2,7 @@
 
 #include "ggml.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -21,6 +22,8 @@
 
 #define GGML_CUDA_FATTN_KV_MAX_STRIDE 256
 
+inline std::atomic<uint64_t> ggml_cuda_fattn_kv_max_scans{0};
+inline std::atomic<uint64_t> ggml_cuda_fattn_kv_max_reused{0};
 
 // Mirrors the dense scan condition in launch_fattn. The sparse path is decided by the kernel
 // selection and is not known here; its slots stay unused.
@@ -122,6 +125,7 @@ struct ggml_cuda_fattn_kv_max_cache {
             g.ncols1 = ncols1;
             scan = !g.valid;
             g.valid = true;
+            (scan ? ggml_cuda_fattn_kv_max_scans : ggml_cuda_fattn_kv_max_reused).fetch_add(1, std::memory_order_relaxed);
             return data + g.offset;
         }
         return nullptr;

@@ -4625,7 +4625,10 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
             }
 
             // Concurrent streams are excluded: the scan and its readers must be ordered on one stream.
-            if (stream_ctx.concurrent_events.empty()) {
+            static const bool kv_max_share = !getenv("GGML_CUDA_FATTN_KV_MAX_SHARE") || atoi(getenv("GGML_CUDA_FATTN_KV_MAX_SHARE")) != 0;
+            // 1: writes to the mask do not invalidate the scan. 2: a scan from an earlier evaluation is reused.
+            static const int kv_max_mutant = getenv("GGML_CUDA_FATTN_KV_MAX_MUTANT") ? atoi(getenv("GGML_CUDA_FATTN_KV_MAX_MUTANT")) : 0;
+            if (kv_max_share && stream_ctx.concurrent_events.empty()) {
                 for (int i = 0; i < cgraph->n_nodes; ++i) {
                     const ggml_tensor * node = cgraph->nodes[i];
                     if (node->op == GGML_OP_FLASH_ATTN_EXT && (node->flags & GGML_TENSOR_FLAG_COMPUTE)) {
@@ -4636,6 +4639,13 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                 if (n_ints > 0) {
                     fattn_kv_max.data = fattn_kv_max_scratch.alloc(n_ints);
                     cuda_ctx->fattn_kv_max_cache = &fattn_kv_max;
+                    if (kv_max_mutant == 2 && ggml_cuda_fattn_kv_max_scans.load() > 0) {
+                        for (auto & g : fattn_kv_max.groups) {
+                            g.valid = true;
+                        }
+                    }
+                    GGML_LOG_DEBUG("fattn_kv_max: device=%d graph=%" PRIu64 " groups=%zu ints=%zu\n",
+                                   cuda_ctx->device, cgraph->uid, fattn_kv_max.groups.size(), n_ints);
                 }
             }
 
@@ -4690,7 +4700,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                             nodes_to_skip + 1, ggml_op_name(node->op), node->name,
                             ggml_op_name(cgraph->nodes[last_fused]->op), cgraph->nodes[last_fused]->name);
 #endif
-                    if (cuda_ctx->fattn_kv_max_cache) {
+                    if (cuda_ctx->fattn_kv_max_cache && kv_max_mutant != 1) {
                         for (int j = i; j <= i + nodes_to_skip; ++j) {
                             if (!ggml_cuda_is_view_or_noop(cgraph->nodes[j])) {
                                 fattn_kv_max.invalidate(cgraph->nodes[j]);
@@ -4722,7 +4732,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                     GGML_LOG_ERROR("%s: op not supported %s (%s)\n", __func__, node->name, ggml_op_name(node->op));
                 }
                 GGML_ASSERT(ok);
-                if (cuda_ctx->fattn_kv_max_cache) {
+                if (cuda_ctx->fattn_kv_max_cache && kv_max_mutant != 1) {
                     fattn_kv_max.invalidate(node);
                 }
 
@@ -6148,6 +6158,11 @@ static ggml_backend_feature * ggml_backend_cuda_get_features(ggml_backend_reg_t 
     GGML_UNUSED(reg);
 }
 
+static void ggml_backend_cuda_fattn_kv_max_counts(uint64_t * scans, uint64_t * reused) {
+    *scans  = ggml_cuda_fattn_kv_max_scans.load(std::memory_order_relaxed);
+    *reused = ggml_cuda_fattn_kv_max_reused.load(std::memory_order_relaxed);
+}
+
 static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, const char * name) {
     GGML_UNUSED(reg);
     if (strcmp(name, "ggml_backend_comm_init") == 0) {
@@ -6167,6 +6182,9 @@ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, con
     }
     if (strcmp(name, "ggml_backend_get_features") == 0) {
         return (void *)ggml_backend_cuda_get_features;
+    }
+    if (strcmp(name, "ggml_backend_cuda_fattn_kv_max_counts") == 0) {
+        return (void *)ggml_backend_cuda_fattn_kv_max_counts;
     }
     return nullptr;
 }
