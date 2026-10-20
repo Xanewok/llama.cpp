@@ -30,6 +30,11 @@ static void ggml_backend_remoting_device_get_memory(ggml_backend_dev_t dev, size
 }
 
 static bool ggml_backend_remoting_device_supports_op(ggml_backend_dev_t dev, const ggml_tensor * op) {
+    // the host may not know the optional state ids (src[6]) and would read the state as a plain input
+    if (op->op == GGML_OP_GATED_DELTA_NET && op->src[6]) {
+        return false;
+    }
+
 #if USE_ALWAYS_TRUE_SUPPORTS_OP == 1
     /* ggml-rpc cheats it like this */
     /* with the current implementation of serialize_tensor, the src/view aren't properly passed */
