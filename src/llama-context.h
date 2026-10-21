@@ -58,7 +58,11 @@ struct llama_context {
     //   - etc.
     void sched_reserve();
 
-    void synchronize();
+    // returns at once when no device work was enqueued since the last real sync; force always syncs the backends.
+    // Callers that then move data with ggml_backend_tensor_get/set/copy (another stream, ordered after this context's
+    // graphs only by this sync: state save/restore, KV stream copies) use force, so they do not depend on enqueue tracking.
+    // local: caller names the call site in the sync_elide debug log
+    void synchronize(bool force = false, const char * caller = __builtin_FUNCTION());
 
     const llama_model   & get_model()   const;
     const llama_cparams & get_cparams() const;
@@ -385,6 +389,14 @@ private:
     };
     logits_deferred_info logits_deferred;
     void logits_deferred_fetch();
+
+    // Every device-to-host copy and graph enqueue of this context goes through here or graph_compute(), which set the flag.
+    // Initially true so the first synchronize() is real.
+    bool backend_pending = true;
+    int64_t n_sync_elided = 0;
+    int64_t n_sync_missed = 0;
+    int64_t n_sync_idle_slow = 0;
+    void tensor_get_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size);
 
     // sequence embeddings output (map of [n_embd] vectors)
     // populated only when pooling_type != LLAMA_POOLING_TYPE_NONE
