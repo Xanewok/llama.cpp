@@ -1445,7 +1445,10 @@ struct ggml_cuda_stream_context {
     }
 };
 
+struct ggml_cuda_q8_cache;
+
 struct ggml_backend_cuda_context {
+    ggml_cuda_q8_cache * q8_cache = nullptr;
     int device;
     std::string name;
     cudaEvent_t copy_event = nullptr;
