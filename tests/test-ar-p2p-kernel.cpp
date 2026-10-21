@@ -53,8 +53,18 @@ struct pair {
     int                   inactive;
 };
 
+static void set_env(const char * name, const char * value) {
+#if defined(_WIN32)
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 1);
+#endif
+}
+
 static void * init_comm(ggml_backend_comm_init_t init, ggml_backend_t * backends, const char * kernel) {
-    setenv("GGML_CUDA_AR_P2P_KERNEL", kernel, 1);
+    set_env("GGML_CUDA_AR_P2P_KERNEL", kernel);
+    // An inherited threshold could route every size below to the copy engine and pass with zero epoch launches.
+    set_env("GGML_CUDA_AR_COPY_THRESHOLD", "1048576");
     g_log.clear();
     void * comm = init(backends, 2);
     require(comm != nullptr, "internal comm init");
