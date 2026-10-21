@@ -2588,6 +2588,7 @@ llama_memory_context_ptr llama_context::mtp_fold_prepare(const llama_ubatch & ub
     }
 
     // what decode() does before placing a batch
+    logits_deferred = {};
     memory_update(false);
 
     // A sequence must occupy one block. Per-stream split_equal also requires equal counts and consecutive ids.
