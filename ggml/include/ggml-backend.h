@@ -212,6 +212,9 @@ extern "C" {
     typedef void * (*ggml_backend_comm_init_t)(ggml_backend_t * backends, size_t n_backends);
     typedef void   (*ggml_backend_comm_free_t)(void * comm_ctx);
     typedef bool   (*ggml_backend_comm_allreduce_tensor_t)(void * comm_ctx, struct ggml_tensor ** tensors);
+    // Optional, plan time: true if the backend runs the AllReduce of these per-rank tensors as a node of each rank's own
+    // graph (an in-graph AllReduce node, ggml-impl.h); the tensors' data must already be allocated.
+    typedef bool   (*ggml_backend_comm_allreduce_in_graph_t)(void * comm_ctx, struct ggml_tensor ** tensors);
 
     // Split buffer type for tensor parallelism (old)
     typedef ggml_backend_buffer_type_t   (*ggml_backend_split_buffer_type_t)(int main_device, const float * tensor_split);

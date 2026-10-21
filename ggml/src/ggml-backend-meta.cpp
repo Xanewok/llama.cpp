@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -65,6 +66,14 @@ struct ggml_tensor * ggml_backend_meta_gather(struct ggml_context * ctx, struct 
 
 static bool ggml_backend_meta_is_gather(const struct ggml_tensor * tensor) {
     return tensor->op == GGML_OP_PAD && ggml_get_op_params_i32(tensor, GGML_META_GATHER_PARAM) == GGML_META_GATHER_MAGIC;
+}
+
+// Only backends with ggml_backend_comm_allreduce_in_graph get in-graph AllReduce nodes, and they run them themselves.
+static void ggml_backend_meta_ar_node_unsupported(struct ggml_tensor * dst, int ith, int nth, void * userdata) {
+    GGML_UNUSED(ith);
+    GGML_UNUSED(nth);
+    GGML_UNUSED(userdata);
+    GGML_ABORT("in-graph AllReduce node %s run by a backend without in-graph AllReduce", dst->name);
 }
 
 //
@@ -2052,6 +2061,7 @@ struct ggml_backend_meta_graph_plan {
         ggml_backend_t backend;
 
         std::vector<cgraph_config>           cgraphs;
+        std::vector<cgraph_config>           cgraphs_ar; // in-graph AllReduce layout, see n_subgraphs_ar
         std::vector<ggml_tensor *>           nodes;
         std::vector<ggml_backend_buffer_ptr> bufs;
 
@@ -2069,6 +2079,15 @@ struct ggml_backend_meta_graph_plan {
     size_t                      n_subgraphs   = 0;
     uint64_t                    uid           = 0;
 
+    // GGML_META_AR_IN_GRAPH: the same plan with the qualifying AllReduces as nodes of the per-device graphs, so the
+    // subgraphs between them merge. 0 when no AllReduce qualifies. A plan's first compute runs the split layout:
+    // one-off graphs are never captured, and an in-graph AllReduce must only run from a captured graph.
+    size_t                      n_subgraphs_ar   = 0;
+    size_t                      max_subgraphs_ar = 0;
+    size_t                      max_ar_nodes     = 0;
+    std::vector<ggml_tensor *>  nodes_ar; // n_backends * max_ar_nodes, rewritten on every rebuild
+    uint64_t                    n_computes       = 0; // since the last rebuild
+
     ggml_cgraph graph = {};
     std::vector<std::shared_ptr<ggml_backend_meta_simple_tensor_container>> containers;
 };
@@ -2080,6 +2099,8 @@ struct ggml_backend_meta_context : ggml_backend_meta_graph_plan {
     bool plan_reuse;
     void *                               comm_ctx       = nullptr;
     ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;
+    ggml_backend_comm_allreduce_in_graph_t comm_allreduce_in_graph = nullptr; // set only with GGML_META_AR_IN_GRAPH=1
+    std::set<std::pair<size_t, size_t>>  ar_in_graph_logged[2]; // (split, in-graph) graph counts: planned, engaged
 
     // Probed on the first owned upload; stays NULL when the backends have no shared staging.
     bool                                 input_stage_probed = false;
@@ -2120,6 +2141,17 @@ struct ggml_backend_meta_context : ggml_backend_meta_graph_plan {
                 ggml_backend_reg_get_proc_address(ggml_backend_dev_backend_reg(
                     ggml_backend_get_device(simple_backends[0])), "ggml_backend_comm_allreduce_tensor");
             GGML_ASSERT(comm_allreduce != nullptr);
+        }
+        const char * ar_in_graph = getenv("GGML_META_AR_IN_GRAPH");
+        if (ar_in_graph && strcmp(ar_in_graph, "1") == 0) {
+            if (comm_ctx != nullptr) {
+                comm_allreduce_in_graph = (ggml_backend_comm_allreduce_in_graph_t)
+                    ggml_backend_reg_get_proc_address(ggml_backend_dev_backend_reg(
+                        ggml_backend_get_device(simple_backends[0])), "ggml_backend_comm_allreduce_in_graph");
+            }
+            if (comm_allreduce_in_graph == nullptr) {
+                GGML_LOG_WARN("%s: GGML_META_AR_IN_GRAPH ignored: the backends have no in-graph AllReduce\n", __func__);
+            }
         }
     }
 
@@ -2413,6 +2445,8 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
         }
         size_t n_subgraphs  = 0;
         size_t max_tmp_size = 0;
+        std::vector<int> ar_sites;        // in-graph layout: boundary nodes whose AllReduce becomes a node
+        std::vector<int> offsets_ar = {0}; // in-graph layout: first node of each graph
 
         for (size_t j = 0; j < n_backends; j++) {
             auto & bcj = backend_ctx->backend_configs[j];
@@ -2591,6 +2625,18 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
                 return i_delayed;
             };
 
+            // Same subject as the compute loop's AllReduce: the boundary node on every device; gathers stay exact.
+            auto allreduce_in_graph = [&](const int i_node) -> bool {
+                if (ggml_backend_meta_is_gather(backend_ctx->backend_configs[0].nodes[i_node])) {
+                    return false;
+                }
+                std::vector<ggml_tensor *> nodes(n_backends);
+                for (size_t j = 0; j < n_backends; j++) {
+                    nodes[j] = backend_ctx->backend_configs[j].nodes[i_node];
+                }
+                return owner->comm_allreduce_in_graph(owner->comm_ctx, nodes.data());
+            };
+
             int i_start = 0;
             for (int i = 0; i < cgraph->n_nodes; i++) {
                 ggml_tensor * node = cgraph->nodes[i];
@@ -2626,6 +2672,14 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
 
                 i = i_delayed;
 
+                if (owner->comm_allreduce_in_graph != nullptr && i + 1 < cgraph->n_nodes) {
+                    if (allreduce_in_graph(i)) {
+                        ar_sites.push_back(i);
+                    } else {
+                        offsets_ar.push_back(i + 1);
+                    }
+                }
+
                 for (size_t j = 0; j < n_backends; j++) {
                     auto & bcj = backend_ctx->backend_configs[j];
                     bcj.cgraphs[n_subgraphs].offset = i_start;
@@ -2638,6 +2692,10 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
 
         backend_ctx->uid         = cgraph->uid;
         backend_ctx->n_subgraphs = n_subgraphs;
+        const size_t n_ar_nodes  = ar_sites.size();
+        const size_t n_subgraphs_ar = n_ar_nodes > 0 ? offsets_ar.size() : 0;
+        backend_ctx->n_subgraphs_ar = n_subgraphs_ar;
+        backend_ctx->n_computes     = 0;
 
         if (max_tmp_size > backend_ctx->max_tmp_size) {
             for (size_t j = 0; j < n_backends; j++) {
@@ -2652,15 +2710,22 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
             backend_ctx->max_tmp_size = max_tmp_size;
         }
 
-        if (max_nnodes_raised || n_subgraphs > backend_ctx->max_subgraphs) {
+        const bool ar_raised = n_subgraphs_ar > backend_ctx->max_subgraphs_ar || n_ar_nodes > backend_ctx->max_ar_nodes;
+        if (max_nnodes_raised || n_subgraphs > backend_ctx->max_subgraphs || ar_raised) {
             backend_ctx->max_subgraphs = std::max(backend_ctx->max_subgraphs, n_subgraphs);
+            backend_ctx->max_subgraphs_ar = std::max(backend_ctx->max_subgraphs_ar, n_subgraphs_ar);
+            backend_ctx->max_ar_nodes     = std::max(backend_ctx->max_ar_nodes, n_ar_nodes);
+            const int max_nnodes_ar = backend_ctx->max_nnodes + (int) backend_ctx->max_ar_nodes;
             const size_t n_nodes_per_device = 3 * owner->n_reduce_steps; // tmp + ADD (+zeroing) graph per step and device
             const size_t n_cgraphs_per_device = 2 * owner->n_reduce_steps; // ADD ( + zeroing) graph per step and device
             const size_t mem_per_device_graphs_main = backend_ctx->max_subgraphs*ggml_graph_overhead_custom(backend_ctx->max_nnodes, cgraph->grads);
             const size_t mem_per_device_graphs_aux = n_cgraphs_per_device*backend_ctx->max_subgraphs*ggml_graph_overhead_custom(1, cgraph->grads);
             const size_t mem_per_device_nodes_aux = n_nodes_per_device*backend_ctx->max_subgraphs*ggml_tensor_overhead();
+            const size_t mem_per_device_ar = backend_ctx->max_subgraphs_ar*ggml_graph_overhead_custom(max_nnodes_ar, cgraph->grads) +
+                backend_ctx->max_ar_nodes*ggml_tensor_overhead();
             const ggml_init_params params = {
-                /*.mem_size   =*/ n_backends * (mem_per_device_graphs_main + mem_per_device_graphs_aux + mem_per_device_nodes_aux),
+                /*.mem_size   =*/ n_backends * (mem_per_device_graphs_main + mem_per_device_graphs_aux + mem_per_device_nodes_aux +
+                                                mem_per_device_ar),
                 /*.mem_buffer =*/ nullptr,
                 /*.no_alloc   =*/ true,
             };
@@ -2678,6 +2743,17 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
             backend_ctx->nodes_aux.resize(n_backends*n_nodes_per_device*backend_ctx->max_subgraphs);
             for (size_t k = 0; k < backend_ctx->nodes_aux.size(); k++) {
                 backend_ctx->nodes_aux[k] = ggml_new_tensor_1d(backend_ctx->ctx.get(), GGML_TYPE_F32, 1);
+            }
+            for (size_t j = 0; j < n_backends; j++) {
+                auto & bcj = backend_ctx->backend_configs[j];
+                bcj.cgraphs_ar.resize(backend_ctx->max_subgraphs_ar);
+                for (size_t i = 0; i < backend_ctx->max_subgraphs_ar; i++) {
+                    bcj.cgraphs_ar[i].cgraph_main = ggml_new_graph_custom(backend_ctx->ctx.get(), max_nnodes_ar, /*grads =*/ false);
+                }
+            }
+            backend_ctx->nodes_ar.resize(n_backends*backend_ctx->max_ar_nodes);
+            for (size_t k = 0; k < backend_ctx->nodes_ar.size(); k++) {
+                backend_ctx->nodes_ar[k] = ggml_new_tensor_1d(backend_ctx->ctx.get(), GGML_TYPE_F32, 1);
             }
         }
 
@@ -2699,11 +2775,90 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
                 cgraph_ij->uid = ggml_graph_next_uid();
             }
         }
+
+        // Rewritten with the same bytes for the same plan: CUDA graphs compare node contents.
+        static_assert(sizeof(ggml_custom_op_params) <= GGML_COMM_AR_NODE_PARAM*sizeof(int32_t), "AR node magic overlaps the params");
+        std::vector<size_t> ar_per_graph(n_subgraphs_ar, 0);
+        for (size_t j = 0; j < n_backends && n_subgraphs_ar > 0; j++) {
+            auto & bcj = backend_ctx->backend_configs[j];
+            size_t k = 0;
+            for (size_t i_graph = 0; i_graph < n_subgraphs_ar; i_graph++) {
+                ggml_cgraph * cgraph_ij = bcj.cgraphs_ar[i_graph].cgraph_main;
+                const int i_node_start = offsets_ar[i_graph];
+                const int i_node_stop  = i_graph + 1 < n_subgraphs_ar ? offsets_ar[i_graph + 1] : cgraph->n_nodes;
+                const size_t k_start = k;
+                bcj.cgraphs_ar[i_graph].offset = i_node_start;
+                cgraph_ij->n_nodes = 0;
+                ggml_hash_set_reset(&cgraph_ij->visited_hash_set);
+                for (int i_node = i_node_start; i_node < i_node_stop; i_node++) {
+                    ggml_tensor * node_ij = bcj.nodes[i_node];
+                    cgraph_ij->nodes[cgraph_ij->n_nodes++] = node_ij;
+                    const size_t hash_pos_orig = ggml_hash_find(&cgraph->visited_hash_set, cgraph->nodes[i_node]);
+                    const size_t hash_pos_ij = ggml_hash_insert(&cgraph_ij->visited_hash_set, node_ij);
+                    cgraph_ij->use_counts[hash_pos_ij] = cgraph->use_counts[hash_pos_orig];
+                    if (k == n_ar_nodes || ar_sites[k] != i_node) {
+                        continue;
+                    }
+                    // Directly after the boundary node, as the split's graph end was: no fusion may span it.
+                    ggml_tensor * ar = backend_ctx->nodes_ar[j*backend_ctx->max_ar_nodes + k];
+                    memset(ar, 0, sizeof(ggml_tensor));
+                    ar->op   = GGML_OP_CUSTOM;
+                    ar->type = node_ij->type;
+                    for (int d = 0; d < GGML_MAX_DIMS; d++) {
+                        ar->ne[d] = node_ij->ne[d];
+                        ar->nb[d] = node_ij->nb[d];
+                    }
+                    ar->view_src  = node_ij->view_src == nullptr ? node_ij : node_ij->view_src;
+                    ar->view_offs = node_ij->view_offs;
+                    ar->buffer    = node_ij->buffer;
+                    ar->data      = node_ij->data;
+                    ar->src[0]    = node_ij;
+                    // Never cleared: a backend skips nodes without it and the peer would wait; inactive shards are
+                    // the src's flag.
+                    ar->flags     = GGML_TENSOR_FLAG_COMPUTE;
+                    snprintf(ar->name, sizeof(ar->name), "allreduce_in_graph-%zu", k);
+                    const ggml_custom_op_params params = { ggml_backend_meta_ar_node_unsupported, 1, owner->comm_ctx };
+                    memcpy(ar->op_params, &params, sizeof(params));
+                    ggml_set_op_params_i32(ar, GGML_COMM_AR_NODE_PARAM, GGML_COMM_AR_NODE_MAGIC);
+                    cgraph_ij->nodes[cgraph_ij->n_nodes++] = ar;
+                    cgraph_ij->use_counts[ggml_hash_insert(&cgraph_ij->visited_hash_set, ar)] = 0;
+                    k++;
+                }
+                // Both devices must run the same AllReduce sequence, or their epochs desync.
+                if (j == 0) {
+                    ar_per_graph[i_graph] = k - k_start;
+                }
+                GGML_ASSERT(ar_per_graph[i_graph] == k - k_start);
+                cgraph_ij->uid = ggml_graph_next_uid();
+            }
+            GGML_ASSERT(k == n_ar_nodes);
+        }
+        if (n_subgraphs_ar > 0 && owner->ar_in_graph_logged[0].insert({n_subgraphs, n_subgraphs_ar}).second) {
+            GGML_LOG_INFO("%s: AllReduce in graph: %zu of %zu AllReduces, %zu -> %zu graphs per device\n", __func__,
+                          n_ar_nodes, n_subgraphs - 1, n_subgraphs, n_subgraphs_ar);
+        }
     }
 
     if (prepare_only) {
         return GGML_STATUS_SUCCESS;
     }
+
+    const bool ar_layout = backend_ctx->n_subgraphs_ar > 0 && backend_ctx->n_computes > 0;
+    backend_ctx->n_computes++;
+    const size_t n_graphs = ar_layout ? backend_ctx->n_subgraphs_ar : backend_ctx->n_subgraphs;
+    if (ar_layout && backend_ctx->n_computes == 2 &&
+            owner->ar_in_graph_logged[1].insert({backend_ctx->n_subgraphs, n_graphs}).second) {
+        GGML_LOG_INFO("%s: AllReduce in graph engaged: %zu graphs per device per forward (split: %zu)\n", __func__,
+                      n_graphs, backend_ctx->n_subgraphs);
+    }
+    auto graph_main = [&](size_t j, size_t i) -> ggml_cgraph * {
+        auto & bcj = backend_ctx->backend_configs[j];
+        return (ar_layout ? bcj.cgraphs_ar : bcj.cgraphs)[i].cgraph_main;
+    };
+    auto last_node = [&](size_t j, size_t i) -> ggml_tensor * {
+        ggml_cgraph * g = graph_main(j, i);
+        return g->nodes[g->n_nodes - 1];
+    };
 
     size_t iga = 0; // i graph aux
     size_t ina = 0; // i node aux
@@ -2741,7 +2896,7 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
         // Zero out nodes that were disabled due to having a zero-sized slice:
         for (size_t j = 0; j < n_backends; j++) {
             auto & bcj = backend_ctx->backend_configs[j];
-            ggml_tensor * node = bcj.cgraphs[i].cgraph_main->nodes[bcj.cgraphs[i].cgraph_main->n_nodes - 1];
+            ggml_tensor * node = last_node(j, i);
             if (node->flags & GGML_TENSOR_FLAG_COMPUTE) {
                 continue;
             }
@@ -2770,8 +2925,8 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
             auto & bcj_src = backend_ctx->backend_configs[j_src];
             auto & bcj_dst = backend_ctx->backend_configs[j_dst];
 
-            ggml_tensor * node_src = bcj_src.cgraphs[i].cgraph_main->nodes[bcj_src.cgraphs[i].cgraph_main->n_nodes - 1];
-            ggml_tensor * node_dst = bcj_dst.cgraphs[i].cgraph_main->nodes[bcj_dst.cgraphs[i].cgraph_main->n_nodes - 1];
+            ggml_tensor * node_src = last_node(j_src, i);
+            ggml_tensor * node_dst = last_node(j_dst, i);
             GGML_ASSERT(ggml_is_contiguous(node_src));
             GGML_ASSERT(ggml_is_contiguous(node_dst));
 
@@ -2844,8 +2999,8 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
             auto & bcj_src = backend_ctx->backend_configs[j - 2*offset_j_max];
             auto & bcj_dst = backend_ctx->backend_configs[j];
 
-            ggml_tensor * node_src = bcj_src.cgraphs[i].cgraph_main->nodes[bcj_src.cgraphs[i].cgraph_main->n_nodes - 1];
-            ggml_tensor * node_dst = bcj_dst.cgraphs[i].cgraph_main->nodes[bcj_dst.cgraphs[i].cgraph_main->n_nodes - 1];
+            ggml_tensor * node_src = last_node(j - 2*offset_j_max, i);
+            ggml_tensor * node_dst = last_node(j, i);
             ggml_backend_tensor_copy_async(bcj_src.backend, bcj_dst.backend, node_src, node_dst);
         }
 
@@ -2853,28 +3008,26 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
     };
 
 
-    for (size_t i = 0; i < backend_ctx->n_subgraphs; i++) {
+    for (size_t i = 0; i < n_graphs; i++) {
         for (size_t j = 0; j < n_backends; j++) {
             auto & bcj = backend_ctx->backend_configs[j];
-            const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, bcj.cgraphs[i].cgraph_main);
+            const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, graph_main(j, i));
             if (status != GGML_STATUS_SUCCESS) {
                 return status;
             }
         }
 
-        if (n_backends > 1 && i < backend_ctx->n_subgraphs - 1) {
+        if (n_backends > 1 && i < n_graphs - 1) {
             bool backend_allreduce_success = false;
             // A gather must be bit-exact (it may carry integers as F32), but a backend AllReduce may reduce in lower
             // precision (the CUDA one rounds F32 through BF16). The generic fallback adds in the tensor's own type.
-            const ggml_cgraph * cgraph_0 = backend_ctx->backend_configs[0].cgraphs[i].cgraph_main;
+            const ggml_cgraph * cgraph_0 = graph_main(0, i);
             const bool exact = ggml_backend_meta_is_gather(cgraph_0->nodes[cgraph_0->n_nodes - 1]);
             if (owner->comm_ctx && !exact) {
                 std::vector<ggml_tensor *> nodes;
                 nodes.reserve(n_backends);
                 for (size_t j = 0; j < n_backends; j++) {
-                    auto & bcj = backend_ctx->backend_configs[j];
-                    ggml_cgraph * cgraph_ij = bcj.cgraphs[i].cgraph_main;
-                    nodes.push_back(cgraph_ij->nodes[cgraph_ij->n_nodes-1]);
+                    nodes.push_back(last_node(j, i));
                 }
                 backend_allreduce_success = owner->comm_allreduce(owner->comm_ctx, nodes.data());
             }

@@ -206,6 +206,16 @@ struct ggml_custom_op_params {
     void           * userdata;
 };
 
+// In-graph AllReduce node (meta backend, GGML_META_AR_IN_GRAPH): a GGML_OP_CUSTOM node in a rank's own graph whose
+// userdata is the comm context of ggml_backend_comm_allreduce_in_graph_t and whose src[0] is the rank's shard, reduced
+// in place; the magic sits in op_params just after ggml_custom_op_params.
+#define GGML_COMM_AR_NODE_PARAM 6
+#define GGML_COMM_AR_NODE_MAGIC 0x4152474e // "ARGN"
+
+static inline bool ggml_is_comm_ar_node(const struct ggml_tensor * t) {
+    return t->op == GGML_OP_CUSTOM && ggml_get_op_params_i32(t, GGML_COMM_AR_NODE_PARAM) == GGML_COMM_AR_NODE_MAGIC;
+}
+
 // bitset
 
 typedef uint32_t ggml_bitset_t;
