@@ -2706,7 +2706,13 @@ private:
 
         cur.data_tgt = ckpt_bufs.take(llama_state_seq_get_size_ext(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY));
         cur.update_tgt(ctx_tgt, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
-        cur.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
+        // llama_kv_cache ignores PARTIAL_ONLY, so this would copy the whole draft KV of the sequence. A draft that
+        // can seq_rm partially needs no copy: rows before the restored position were computed from the same
+        // prefix and are kept, and the restore's slot.mem.seq_rm() drops the rest. Not with a sliding window: its
+        // cells may since hold newer rows, and only the copy brings the window of the restored position back
+        if (ctx_dft_seq_rm_type != COMMON_CONTEXT_SEQ_RM_TYPE_PART || llama_model_n_swa(llama_get_model(ctx_dft)) > 0) {
+            cur.update_dft(ctx_dft, slot.id, LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY);
+        }
         // stash the draft's speculative state with the checkpoint
         common_speculative_get_state(spec.get(), slot.id, cur.data_spec);
         ckpt_bufs.refill(cur.data_tgt.size());
