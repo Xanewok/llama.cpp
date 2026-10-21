@@ -387,6 +387,7 @@ if (NOT LLAMA_USE_SYSTEM_GGML)
         find_package(Threads REQUIRED)
         target_link_libraries(test-alloc PRIVATE Threads::Threads)
     endif()
+    llama_build_and_test(test-backend-sched-upload.cpp)
 endif()
 
 llama_build(test-export-graph-ops.cpp)
