@@ -503,6 +503,10 @@ llama_context::llama_context(
         }
         backends.emplace_back(backend_cpu);
 
+        for (auto & backend : backends) {
+            cparams.ffn_tiles = cparams.ffn_tiles || ggml_backend_meta_can_defer_allreduce(backend.get());
+        }
+
         // create a list of the set_n_threads functions in the backends
         for (auto & backend : backends) {
             ggml_backend_dev_t dev = ggml_backend_get_device(backend.get());

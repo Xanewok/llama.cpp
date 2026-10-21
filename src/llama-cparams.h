@@ -52,6 +52,7 @@ struct llama_cparams {
     bool auto_fhc;
     bool no_perf;
     bool warmup;             // TODO: remove [TAG_LLAMA_GRAPH_NO_WARMUP]
+    bool ffn_tiles = false;  // split large FFN batches in two so that the AllReduce of the first half overlaps the second half
     bool op_offload;
     bool kv_unified;
     bool pipeline_parallel;
