@@ -83,9 +83,9 @@ __device__ __forceinline__ tile_t load(const matrix<R, C> & m, int row, int col,
 #else
     const auto * packed = reinterpret_cast<const nv_bfloat162 *>(data);
     if constexpr (TRANS) {
-        load_ldmatrix_trans_swizzled<C / 2>(t, packed, col * (C / 2) + row / 2);
+        load_ldmatrix_trans_swizzled<C / 2>(t, packed, col, row / 2);
     } else {
-        load_ldmatrix_swizzled<C / 2>(t, packed, row * (C / 2) + col / 2);
+        load_ldmatrix_swizzled<C / 2>(t, packed, row, col / 2);
     }
 #endif // GGML_USE_HIP
     return t;
