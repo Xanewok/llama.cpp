@@ -419,6 +419,7 @@ struct ggml_cuda_ar_pipeline {
     ggml_cuda_ar_staging      host_buf[GGML_CUDA_MAX_DEVICES];   // pinned staging (chunked kernel)
     ggml_cuda_ar_staging      host_large[GGML_CUDA_MAX_DEVICES]; // pinned staging (copy-engine)
     char *                    dev_tmp[GGML_CUDA_MAX_DEVICES];    // device scratch for copy-engine path
+    char *                    bf16_tmp[GGML_CUDA_MAX_DEVICES] = {};
     cudaStream_t             streams[GGML_CUDA_MAX_DEVICES];   // non-blocking
     // Copy-engine stage-2 H2D stream: separate from streams[i] (stage-1 D2H) so the H2D of
     // peer chunk c overlaps the D2H of our remaining chunks.
@@ -760,6 +761,7 @@ void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline * p) {
             CUDA_CHECK(cudaFree(p->dev_tmp[i]));
         }
         ggml_cuda_set_device(p->devices[i]);
+        if (p->bf16_tmp[i]) { CUDA_CHECK(cudaFree(p->bf16_tmp[i])); }
         for (int s = 0; s < GGML_CUDA_AR_POOL_SIZE; ++s) {
             if (p->ev_pool[i][s].app) { CUDA_CHECK(cudaEventDestroy(p->ev_pool[i][s].app)); }
             for (int c = 0; c < GGML_CUDA_AR_COPY_MAX_CHUNKS; ++c) {
@@ -792,6 +794,53 @@ void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline * p) {
 // Dispatch
 // ---------------------------------------------------------------------------
 
+struct ggml_cuda_ar_pending {
+    ggml_cuda_ar_pipeline * pipeline;
+    ggml_backend_cuda_context * cuda_ctx[2];
+    void * dst[2];
+    int64_t ne;
+    int slot;
+    int last_copy;
+    void (*finish)(ggml_cuda_ar_pending *);
+};
+
+template <typename T_src, typename T_dst>
+static void ggml_cuda_ar_finish_copy_rank(ggml_cuda_ar_pending * pending, int i) {
+    auto * p = pending->pipeline;
+    const int slot = pending->slot;
+    CUDA_CHECK(cudaStreamWaitEvent(pending->cuda_ctx[i]->stream(), p->ev_pool[i][slot].h2d));
+    CUDA_CHECK(cudaStreamWaitEvent(pending->cuda_ctx[i]->stream(), p->ev_pool[i][slot].cpy[pending->last_copy]));
+
+    const int block_size = 256;
+    int n_blocks = (int) ((pending->ne + block_size - 1) / block_size);
+    if (n_blocks > 1024) {
+        n_blocks = 1024;
+    }
+    ggml_cuda_ar_add_kernel<T_dst, T_src><<<n_blocks, block_size, 0, pending->cuda_ctx[i]->stream()>>>(
+        static_cast<T_dst *>(pending->dst[i]),
+        reinterpret_cast<const T_src *>(p->dev_tmp[i]),
+        (int) pending->ne);
+    CUDA_CHECK(cudaGetLastError());
+
+    // Release scratch and the event generation only after the add.
+    CUDA_CHECK(cudaEventRecord(p->dev_tmp_kernel_done[i], pending->cuda_ctx[i]->stream()));
+    CUDA_CHECK(cudaEventRecord(p->ev_pool[i][slot].ker, pending->cuda_ctx[i]->stream()));
+}
+
+template <typename T_src, typename T_dst>
+static void ggml_cuda_ar_finish_copy(ggml_cuda_ar_pending * pending) {
+    for (int i = 0; i < 2; ++i) {
+        ggml_cuda_set_device(pending->pipeline->devices[i]);
+        ggml_cuda_ar_finish_copy_rank<T_src, T_dst>(pending, i);
+    }
+    pending->pipeline->dev_tmp_kernel_done_valid = true;
+}
+
+void ggml_cuda_ar_finish(ggml_cuda_ar_pending * pending) {
+    pending->finish(pending);
+    delete pending;
+}
+
 // Asymmetric copy_impl: data sent over PCIe in T_src precision (one element of
 // nbytes per ne element); accumulated locally into a T_dst buffer.  When
 // T_src == T_dst this is the original homogeneous reduction.  When they differ
@@ -806,7 +855,8 @@ static bool ggml_cuda_ar_allreduce_copy_impl(
         T_dst * const           dst_buf[GGML_CUDA_MAX_DEVICES],
         const bool              compute[GGML_CUDA_MAX_DEVICES],
         int64_t                 ne,
-        size_t                  nbytes) {
+        size_t                  nbytes,
+        ggml_cuda_ar_pending   * pending = nullptr) {
     GGML_ASSERT(p->n_devices == 2);
     GGML_ASSERT(nbytes <= p->copy_bytes);
     GGML_ASSERT(ne <= std::numeric_limits<int>::max());
@@ -814,9 +864,15 @@ static bool ggml_cuda_ar_allreduce_copy_impl(
     const size_t chunk_bytes = ggml_cuda_ar_chunk_bytes(p, nbytes);
     GGML_ASSERT(chunk_bytes > 0);
 
-    const int slot = ggml_cuda_ar_acquire_slot(p).slot;
+    const int slot = pending ? pending->slot : ggml_cuda_ar_acquire_slot(p).slot;
+    ggml_cuda_ar_pending completion{};
+    completion.pipeline = p;
+    completion.slot = slot;
+    completion.ne = ne;
+    completion.finish = ggml_cuda_ar_finish_copy<T_src, T_dst>;
     const size_t copy_chunks = (nbytes + chunk_bytes - 1) / chunk_bytes;
     GGML_ASSERT(copy_chunks <= GGML_CUDA_AR_COPY_MAX_CHUNKS);
+    completion.last_copy = (int) copy_chunks - 1;
 
     ggml_backend_cuda_context * cuda_ctx[2] = {};
 
@@ -825,6 +881,8 @@ static bool ggml_cuda_ar_allreduce_copy_impl(
         ggml_cuda_set_device(p->devices[i]);
         cuda_ctx[i] = static_cast<ggml_backend_cuda_context *>(backends[i]->context);
         GGML_ASSERT(cuda_ctx[i]->device == p->devices[i]);
+        completion.cuda_ctx[i] = cuda_ctx[i];
+        completion.dst[i] = dst_buf[i];
 
         ggml_cuda_ar_wait_for_compute(p, cuda_ctx[i], i, slot);
 
@@ -910,28 +968,16 @@ static bool ggml_cuda_ar_allreduce_copy_impl(
         // Hand off from the copy streams to the compute stream: compute stream
         // waits for all H2Ds (and our own D2H, see above), then runs the add_kernel.
         CUDA_CHECK(cudaEventRecord(p->ev_pool[i][slot].h2d, h2d_stream));
-        CUDA_CHECK(cudaStreamWaitEvent(cuda_ctx[i]->stream(), p->ev_pool[i][slot].h2d));
-        CUDA_CHECK(cudaStreamWaitEvent(cuda_ctx[i]->stream(), p->ev_pool[i][slot].cpy[copy_chunks - 1]));
-
-        const int block_size = 256;
-        int n_blocks = (int) ((ne + block_size - 1) / block_size);
-        if (n_blocks > 1024) {
-            n_blocks = 1024;
+        if (!pending) {
+            ggml_cuda_ar_finish_copy_rank<T_src, T_dst>(&completion, i);
         }
-        ggml_cuda_ar_add_kernel<T_dst, T_src><<<n_blocks, block_size, 0, cuda_ctx[i]->stream()>>>(
-            dst_buf[i],
-            reinterpret_cast<const T_src *>(p->dev_tmp[i]),
-            (int) ne);
-        CUDA_CHECK(cudaGetLastError());
-
-        // Record dev_tmp-released on the compute stream so the next copy_impl
-        // can wait for the kernel to finish before overwriting dev_tmp.  Also
-        // record AR-done as ev.ker for acquire_slot's pool-wraparound sync.
-        CUDA_CHECK(cudaEventRecord(p->dev_tmp_kernel_done[i], cuda_ctx[i]->stream()));
-        CUDA_CHECK(cudaEventRecord(p->ev_pool[i][slot].ker, cuda_ctx[i]->stream()));
     }
     p->host_large_read_done_valid = true;
-    p->dev_tmp_kernel_done_valid = true;
+    if (pending) {
+        *pending = completion;
+    } else {
+        p->dev_tmp_kernel_done_valid = true;
+    }
 
     return true;
 }
@@ -949,7 +995,8 @@ static bool ggml_cuda_ar_allreduce_copy_outer(
         T_src * const           src_buf[GGML_CUDA_MAX_DEVICES],
         T_dst * const           dst_buf[GGML_CUDA_MAX_DEVICES],
         const bool              compute[GGML_CUDA_MAX_DEVICES],
-        int64_t                 ne) {
+        int64_t                 ne,
+        ggml_cuda_ar_pending   * pending = nullptr) {
     const int64_t outer_max_elems = (int64_t) (p->copy_bytes / sizeof(T_src));
     GGML_ASSERT(outer_max_elems > 0);
 
@@ -965,7 +1012,7 @@ static bool ggml_cuda_ar_allreduce_copy_outer(
             dst[i] = dst_buf[i] + outer_start;
         }
         ok = ggml_cuda_ar_allreduce_copy_impl<T_src, T_dst>(
-            p, backends, src, dst, compute, outer_ne, outer_nbytes);
+            p, backends, src, dst, compute, outer_ne, outer_nbytes, pending);
     }
     return ok;
 }
@@ -988,10 +1035,11 @@ bool ggml_cuda_ar_in_graph_supported(ggml_cuda_ar_pipeline * p, ggml_tensor ** t
     return !ggml_cuda_ar_use_copy_engine(p, (size_t) ggml_nelements(tensors[0]) * ggml_type_size(kernel_type));
 }
 
-bool ggml_cuda_ar_allreduce(
+static bool ggml_cuda_ar_allreduce_impl(
         ggml_cuda_ar_pipeline * p,
         ggml_backend_t        * backends,
-        ggml_tensor           ** tensors) {
+        ggml_tensor           ** tensors,
+        ggml_cuda_ar_pending   * pending) {
     GGML_ASSERT(p != nullptr);
 
     const int n = p->n_devices;
@@ -1024,6 +1072,20 @@ bool ggml_cuda_ar_allreduce(
     // larger than copy_bytes into copy_bytes-sized pieces.
     const bool use_copy_engine = ggml_cuda_ar_use_copy_engine(p, nbytes);
 
+    if (pending) {
+        if (!use_copy_engine || nbytes > p->copy_bytes) {
+            return false;
+        }
+        pending->slot = ggml_cuda_ar_acquire_slot(p).slot;
+        for (int i = 0; i < n; ++i) {
+            if (use_bf16 && !p->bf16_tmp[i]) {
+                ggml_cuda_set_device(p->devices[i]);
+                // Conversion storage must survive independent compute-pool allocations.
+                CUDA_CHECK(cudaMalloc(reinterpret_cast<void **>(&p->bf16_tmp[i]), p->copy_bytes));
+            }
+        }
+    }
+
     // BF16 inactive-shard zeroing: when use_bf16 is on, the combined kernel
     // (chunked kernel path) and the combined add kernel (copy_engine path)
     // both accumulate into the F32 tensor data directly, so an inactive
@@ -1050,16 +1112,19 @@ bool ggml_cuda_ar_allreduce(
         for (int i = 0; i < n; ++i) {
             auto * cuda_ctx = static_cast<ggml_backend_cuda_context *>(backends[i]->context);
             GGML_ASSERT(cuda_ctx->device == p->devices[i]);
-            bf16_tmp[i].pool = &cuda_ctx->pool();
-            bf16_tmp[i].alloc(ne);
+            if (!pending) {
+                bf16_tmp[i].pool = &cuda_ctx->pool();
+                bf16_tmp[i].alloc(ne);
+            }
+            auto * converted = pending ? reinterpret_cast<nv_bfloat16 *>(p->bf16_tmp[i]) : bf16_tmp[i].get();
             ggml_cuda_set_device(p->devices[i]);
             if (compute_flag[i]) {
-                to_bf16(tensors[i]->data, bf16_tmp[i].get(), ne, cuda_ctx->stream());
+                to_bf16(tensors[i]->data, converted, ne, cuda_ctx->stream());
                 CUDA_CHECK(cudaGetLastError());
             } else {
-                CUDA_CHECK(cudaMemsetAsync(bf16_tmp[i].get(), 0, nbytes, cuda_ctx->stream()));
+                CUDA_CHECK(cudaMemsetAsync(converted, 0, nbytes, cuda_ctx->stream()));
             }
-            copy_src_ptr[i] = bf16_tmp[i].get();
+            copy_src_ptr[i] = converted;
         }
     }
 
@@ -1087,7 +1152,7 @@ bool ggml_cuda_ar_allreduce(
                 dst[i] = static_cast<float *>(tensors[i]->data);
             }
             ok = ggml_cuda_ar_allreduce_copy_outer<nv_bfloat16, float>(
-                p, backends, src, dst, inner_compute, ne);
+                p, backends, src, dst, inner_compute, ne, pending);
         } else {
             switch (kernel_type) {
                 case GGML_TYPE_F32: {
@@ -1096,7 +1161,7 @@ bool ggml_cuda_ar_allreduce(
                         buf[i] = static_cast<float *>(tensors[i]->data);
                     }
                     ok = ggml_cuda_ar_allreduce_copy_outer<float, float>(
-                        p, backends, buf, buf, inner_compute, ne);
+                        p, backends, buf, buf, inner_compute, ne, pending);
                     break;
                 }
                 case GGML_TYPE_BF16: {
@@ -1105,7 +1170,7 @@ bool ggml_cuda_ar_allreduce(
                         buf[i] = static_cast<nv_bfloat16 *>(tensors[i]->data);
                     }
                     ok = ggml_cuda_ar_allreduce_copy_outer<nv_bfloat16, nv_bfloat16>(
-                        p, backends, buf, buf, inner_compute, ne);
+                        p, backends, buf, buf, inner_compute, ne, pending);
                     break;
                 }
                 case GGML_TYPE_F16: {
@@ -1114,7 +1179,7 @@ bool ggml_cuda_ar_allreduce(
                         buf[i] = static_cast<half *>(tensors[i]->data);
                     }
                     ok = ggml_cuda_ar_allreduce_copy_outer<half, half>(
-                        p, backends, buf, buf, inner_compute, ne);
+                        p, backends, buf, buf, inner_compute, ne, pending);
                     break;
                 }
                 default:
@@ -1208,6 +1273,19 @@ bool ggml_cuda_ar_allreduce(
     return ok;
 }
 
+bool ggml_cuda_ar_allreduce(ggml_cuda_ar_pipeline * p, ggml_backend_t * backends, ggml_tensor ** tensors) {
+    return ggml_cuda_ar_allreduce_impl(p, backends, tensors, nullptr);
+}
+
+ggml_cuda_ar_pending * ggml_cuda_ar_start(ggml_cuda_ar_pipeline * p, ggml_backend_t * backends, ggml_tensor ** tensors) {
+    auto * pending = new ggml_cuda_ar_pending{};
+    if (!ggml_cuda_ar_allreduce_impl(p, backends, tensors, pending)) {
+        delete pending;
+        return nullptr;
+    }
+    return pending;
+}
+
 #else // defined(GGML_USE_MUSA)
 
 // MUSA lacks the host-mapped pinned-memory APIs (cudaHostAllocPortable
@@ -1223,6 +1301,12 @@ void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline *) {
 }
 bool ggml_cuda_ar_allreduce(ggml_cuda_ar_pipeline *, ggml_backend_t *, ggml_tensor **) {
     return false;
+}
+
+ggml_cuda_ar_pending * ggml_cuda_ar_start(ggml_cuda_ar_pipeline *, ggml_backend_t *, ggml_tensor **) {
+    return nullptr;
+}
+void ggml_cuda_ar_finish(ggml_cuda_ar_pending *) {
 }
 
 #endif // !defined(GGML_USE_MUSA)
