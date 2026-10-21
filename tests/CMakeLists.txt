@@ -240,6 +240,14 @@ set_tests_properties(test-generate-models PROPERTIES
     FIXTURES_SETUP generate-models
 )
 
+# Test backend sampling under SPLIT_MODE_TENSOR on two CPU devices
+llama_test(
+    test-llama-archs
+    NAME test-tp-backend-sampling
+    LABEL main
+    ARGS --tp-sampling -s 42
+)
+
 # Target model for test-speculative-rejection-sampling
 set(SPEC_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/test-speculative-models/target")
 file(MAKE_DIRECTORY "${SPEC_TARGET_DIR}")

@@ -4416,3 +4416,22 @@ void llama_perf_sampler_reset(struct llama_sampler * chain) {
     ctx->t_sample_us = 0;
     ctx->n_sample    = 0;
 }
+
+int32_t llama_sampler_chain_leading_top_k(const llama_sampler * sampler) {
+    if (sampler == nullptr || sampler->iface != &llama_sampler_chain_i) {
+        return -1;
+    }
+
+    const auto * chain = (const llama_sampler_chain *) sampler->ctx;
+    for (const auto & entry : chain->samplers) {
+        if (entry.ptr->iface == &llama_sampler_empty_i) {
+            continue;
+        }
+        if (entry.ptr->iface != &llama_sampler_top_k_i) {
+            return -1;
+        }
+        return ((const llama_sampler_top_k *) entry.ptr->ctx)->k;
+    }
+
+    return -1;
+}
