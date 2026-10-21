@@ -315,10 +315,13 @@ struct ggml_cuda_ar_pipeline {
     ggml_cuda_ar_host_mapping host_large[GGML_CUDA_MAX_DEVICES]; // pinned staging (copy-engine)
     char *                    dev_tmp[GGML_CUDA_MAX_DEVICES];    // device scratch for copy-engine path
     cudaStream_t             streams[GGML_CUDA_MAX_DEVICES];   // non-blocking
+    // Copy-engine stage-2 H2D stream: separate from streams[i] (stage-1 D2H) so the H2D of
+    // peer chunk c overlaps the D2H of our remaining chunks.
+    cudaStream_t             streams_h2d[GGML_CUDA_MAX_DEVICES];
     ggml_cuda_ar_event_slot  ev_pool[GGML_CUDA_MAX_DEVICES][GGML_CUDA_AR_POOL_SIZE];
 
     // Copy-engine: per-device "I finished reading my peer's host_large"
-    // event.  Indexed by RECORDER device.  Recorded same-device on streams[i]
+    // event.  Indexed by RECORDER device.  Recorded same-device on streams_h2d[i]
     // after stage 2's last H2D from host_large[peer].  Waited cross-device
     // by peer's stage-1 stream before the next AR overwrites host_large[peer].
     cudaEvent_t              host_large_read_done[GGML_CUDA_MAX_DEVICES];
@@ -450,6 +453,15 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
         }
         p->streams[i] = stream;
 
+        cudaStream_t stream_h2d = nullptr;
+        if (cudaStreamCreateWithFlags(&stream_h2d, cudaStreamNonBlocking) != cudaSuccess) {
+            GGML_LOG_ERROR("%s: cudaStreamCreateWithFlags (h2d) failed for device %d\n",
+                           __func__, p->devices[i]);
+            ggml_cuda_ar_pipeline_free(p);
+            return nullptr;
+        }
+        p->streams_h2d[i] = stream_h2d;
+
         for (int s = 0; s < GGML_CUDA_AR_POOL_SIZE; ++s) {
             bool ok =
                 cudaEventCreateWithFlags(&p->ev_pool[i][s].app, cudaEventDisableTiming) == cudaSuccess &&
@@ -549,6 +561,9 @@ void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline * p) {
         if (p->streams[i]) {
             ggml_cuda_set_device(p->devices[i]);
             CUDA_CHECK(cudaStreamSynchronize(p->streams[i]));
+            if (p->streams_h2d[i]) {
+                CUDA_CHECK(cudaStreamSynchronize(p->streams_h2d[i]));
+            }
         }
     }
 
@@ -575,6 +590,10 @@ void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline * p) {
         if (p->dev_tmp_kernel_done[i]) {
             ggml_cuda_set_device(p->devices[i]);
             CUDA_CHECK(cudaEventDestroy(p->dev_tmp_kernel_done[i]));
+        }
+        if (p->streams_h2d[i]) {
+            ggml_cuda_set_device(p->devices[i]);
+            CUDA_CHECK(cudaStreamDestroy(p->streams_h2d[i]));
         }
         if (p->streams[i]) {
             ggml_cuda_set_device(p->devices[i]);
@@ -652,20 +671,27 @@ static bool ggml_cuda_ar_allreduce_copy_impl(
 
     // Stage 2: each GPU waits for each peer D2H chunk, pulls that chunk back to
     // local device scratch (dev_tmp), then performs one device-local add over
-    // the assembled peer tensor.  The H2Ds run on the AR stream (copy engine)
-    // and the add_kernel runs on the caller's compute stream, so the AR stream
-    // stays pure-copy and avoids an in-stream copy->compute engine switch every
-    // AR.  dev_tmp is single-buffered: the AR stream waits cross-stream on the
+    // the assembled peer tensor.  The H2Ds run on streams_h2d[i] (copy engine)
+    // and the add_kernel runs on the caller's compute stream, so the copy
+    // streams stay pure-copy and avoid an in-stream copy->compute engine
+    // switch every AR.
+    // dev_tmp is single-buffered: the H2D stream waits cross-stream on the
     // prior AR's add_kernel-done event before overwriting it.
+    //
+    // Nothing on the H2D stream orders our own D2H before the add_kernel, so
+    // the compute stream also waits on our last D2H chunk event: src_buf may
+    // alias dst_buf (in-place add) or be pool memory that later compute-stream
+    // work reuses.
     for (int i = 0; i < 2; ++i) {
         const int peer = 1 - i;
         ggml_cuda_set_device(p->devices[i]);
+        const cudaStream_t h2d_stream = p->streams_h2d[i];
 
         // Wait for the previous AR's add_kernel (on the compute stream) to
         // finish reading dev_tmp before our H2D overwrites it.  No-op on the
         // first copy_impl call.
         if (p->dev_tmp_kernel_done_valid) {
-            CUDA_CHECK(cudaStreamWaitEvent(p->streams[i], p->dev_tmp_kernel_done[i]));
+            CUDA_CHECK(cudaStreamWaitEvent(h2d_stream, p->dev_tmp_kernel_done[i]));
         }
 
         for (size_t c = 0; c < copy_chunks; ++c) {
@@ -673,20 +699,21 @@ static bool ggml_cuda_ar_allreduce_copy_impl(
             const size_t this_bytes = (nbytes - offset) < chunk_bytes ?
                 (nbytes - offset) : chunk_bytes;
 
-            CUDA_CHECK(cudaStreamWaitEvent(p->streams[i], p->ev_pool[peer][slot].cpy[c]));
+            CUDA_CHECK(cudaStreamWaitEvent(h2d_stream, p->ev_pool[peer][slot].cpy[c]));
             CUDA_CHECK(cudaMemcpyAsync(
                 p->dev_tmp[i] + offset, p->host_large[peer].host + offset, this_bytes,
-                cudaMemcpyHostToDevice, p->streams[i]));
+                cudaMemcpyHostToDevice, h2d_stream));
         }
 
         // Mark our reads of host_large[peer] complete so peer's next AR can
         // safely overwrite it.
-        CUDA_CHECK(cudaEventRecord(p->host_large_read_done[i], p->streams[i]));
+        CUDA_CHECK(cudaEventRecord(p->host_large_read_done[i], h2d_stream));
 
-        // Hand off from AR stream (copy engine) to compute stream: compute
-        // stream waits for all H2Ds to finish, then runs the add_kernel.
-        CUDA_CHECK(cudaEventRecord(p->ev_pool[i][slot].h2d, p->streams[i]));
+        // Hand off from the copy streams to the compute stream: compute stream
+        // waits for all H2Ds (and our own D2H, see above), then runs the add_kernel.
+        CUDA_CHECK(cudaEventRecord(p->ev_pool[i][slot].h2d, h2d_stream));
         CUDA_CHECK(cudaStreamWaitEvent(cuda_ctx[i]->stream(), p->ev_pool[i][slot].h2d));
+        CUDA_CHECK(cudaStreamWaitEvent(cuda_ctx[i]->stream(), p->ev_pool[i][slot].cpy[copy_chunks - 1]));
 
         const int block_size = 256;
         int n_blocks = (int) ((ne + block_size - 1) / block_size);
