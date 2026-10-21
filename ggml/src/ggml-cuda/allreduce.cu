@@ -19,6 +19,8 @@
 // targets setups without NVLink/xGMI, where data is exchanged between the
 // GPUs by staging it through pinned host memory over PCIe.
 // GGML_CUDA_P2P opts in to peer device staging when both GPUs support it.
+// GGML_CUDA_AR_P2P_KERNEL=1 additionally moves the chunked path's slot and
+// token bookkeeping onto the devices, so the host never waits on an AR.
 //
 // Two reduction strategies are selected per call by tensor size:
 //
@@ -147,7 +149,15 @@ static constexpr int GGML_CUDA_AR_KERNEL_BLOCKS = 8;
 // blocks.  Tail elements (the leftover < ELEMS_PER_VEC at the end) are
 // handled only by block 0 to avoid cross-block writes to the same slots.
 // ---------------------------------------------------------------------------
-template <typename T_dst, typename T_wire, bool P2P = false>
+// EPOCH (P2P only): the token comes from a per-block device counter instead
+// of the host, and selects the slot itself, so the launch arguments are the
+// same on every call (CUDA-graph replay safe) and no host wait guards slot
+// reuse.  Reusing slot s at epoch e needs the peer to have finished reading s
+// at epoch e-2: this rank passed epoch e-1 only after the peer arrived at e-1,
+// and the peer starts e-1 only after its e-2 kernel has exited (plain stream
+// order; this kernel never triggers programmatic dependent launch early).
+// Both ranks start at 0 and launch once per chunk, so their counters agree.
+template <typename T_dst, typename T_wire, bool P2P = false, bool EPOCH = false>
 static __global__ void ggml_cuda_ar_kernel(
         const T_dst  *              sendbuf,
         T_dst        *              recvbuf,
@@ -156,7 +166,11 @@ static __global__ void ggml_cuda_ar_kernel(
         int                         count,
         int *                       arrival_mine,
         int *                       arrival_other,
-        int                         token) {
+        int                         token,
+        int *                       epoch,
+        size_t                      slot_elems,
+        size_t                      slot_arrival_ints) {
+    static_assert(!EPOCH || P2P, "device epochs need device-local peer buffers");
 
     // Vector unit for the wire type, sized to the arch's widest single-instruction
     // copy (16 B on Volta+).  Each phase-1 iter writes one vector to host memory;
@@ -171,6 +185,25 @@ static __global__ void ggml_cuda_ar_kernel(
     const int gnt       = gridDim.x * nt;
     const int count_vec = count / ELEMS_PER_VEC;
     const int tail      = count_vec * ELEMS_PER_VEC;
+
+    if constexpr (EPOCH) {
+        __shared__ int epoch_token;
+        if (tid == 0) {
+            epoch_token = (int) ((unsigned) epoch[bid] + 1u); // wraps; only equality and parity are used
+            epoch[bid]  = epoch_token;
+        }
+        __syncthreads();
+        token = epoch_token;
+        const size_t slot = (size_t) (token & 1); // GGML_CUDA_AR_POOL_SIZE == 2
+        host_mine     += slot * slot_elems;
+        host_other    += slot * slot_elems;
+        arrival_mine  += slot * slot_arrival_ints;
+        arrival_other += slot * slot_arrival_ints;
+    } else {
+        GGML_UNUSED(epoch);
+        GGML_UNUSED(slot_elems);
+        GGML_UNUSED(slot_arrival_ints);
+    }
 
     // Phase 1: cast sendbuf (T_dst) -> host_mine (T_wire) and store as vectors.
     {
@@ -279,6 +312,7 @@ static __global__ void ggml_cuda_ar_add_kernel(
 // cudaEventSynchronize on ev.ker for both devices makes that consumption
 // explicit before we overwrite host_buf[slot] for the new AR.
 static constexpr int GGML_CUDA_AR_POOL_SIZE = 2;
+static_assert(GGML_CUDA_AR_POOL_SIZE == 2, "the EPOCH kernel selects slots by token parity");
 
 // Maximum chunk size (bytes per GPU) handled by one chunked kernel launch.
 // Larger tensors are reduced by issuing multiple chunked launches.
@@ -361,6 +395,7 @@ struct ggml_cuda_ar_pipeline {
     size_t   bf16_threshold; // tensors >= this size (bytes) are reduced via FP32->BF16 round-trip; 0 disables
     uint64_t call_count;
     bool     p2p;
+    bool     p2p_kernel; // chunked path uses device epochs (EPOCH kernel); requires p2p
 
     // Per-device resources.
     ggml_cuda_ar_staging      host_buf[GGML_CUDA_MAX_DEVICES];   // pinned staging (chunked kernel)
@@ -390,6 +425,7 @@ struct ggml_cuda_ar_pipeline {
     // CPU never reads/writes -- only the kernel and cudaMemset.
     // Use ggml_cuda_ar_arrival_ptr() to index.
     ggml_cuda_ar_staging arrival[GGML_CUDA_MAX_DEVICES]; // shared host ring or one device-local ring per rank
+    ggml_cuda_ar_staging epoch[GGML_CUDA_MAX_DEVICES];   // p2p_kernel: per-block epoch counters, device-local
 };
 
 // Base pointer for the (slot, rank) per-block token block.  The kernel adds
@@ -534,6 +570,13 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
             GGML_LOG_WARN("allreduce: P2P unavailable; using host staging\n");
         }
     }
+    const char * ar_kernel_env = getenv("GGML_CUDA_AR_P2P_KERNEL");
+    if (ar_kernel_env && strcmp(ar_kernel_env, "1") == 0) {
+        p->p2p_kernel = p->p2p;
+        if (!p->p2p_kernel) {
+            GGML_LOG_WARN("allreduce: GGML_CUDA_AR_P2P_KERNEL ignored without peer access\n");
+        }
+    }
 
     // Per-device streams and event pools.
     for (size_t i = 0; i < n_devices; ++i) {
@@ -615,6 +658,18 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
         }
     }
 
+    for (size_t i = 0; p->p2p_kernel && i < n_devices; ++i) {
+        const size_t epoch_bytes = GGML_CUDA_AR_KERNEL_BLOCKS * sizeof(int);
+        ggml_cuda_set_device(p->devices[i]);
+        if (p->epoch[i].alloc(epoch_bytes, true) != cudaSuccess ||
+            cudaMemset(p->epoch[i].dev, 0, epoch_bytes) != cudaSuccess) {
+            GGML_LOG_ERROR("%s: alloc for AllReduce epochs failed\n", __func__);
+            ggml_cuda_ar_pipeline_free(p);
+            return nullptr;
+        }
+        CUDA_CHECK(cudaDeviceSynchronize());
+    }
+
     // Per-device staging buffers -- POOL_SIZE-deep ring so the chunked-
     // kernel can write the next slot's data while the peer is still reading
     // the previous slot's. Indexed by (slot * buf_bytes) at the call site.
@@ -654,6 +709,9 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int * devices, size_t n
 
     if (p->p2p) {
         GGML_LOG_INFO("allreduce: P2P staging (peer device buffers)\n");
+        if (p->p2p_kernel) {
+            GGML_LOG_INFO("allreduce: P2P kernel sync (device epochs, no host slot wait)\n");
+        }
     } else {
         GGML_LOG_DEBUG("allreduce: host staging (mapped pinned buffers)\n");
     }
@@ -685,6 +743,7 @@ void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline * p) {
         p->host_buf[i].free();
         p->host_large[i].free();
         p->arrival[i].free();
+        p->epoch[i].free();
         if (p->dev_tmp[i]) {
             ggml_cuda_set_device(p->devices[i]);
             CUDA_CHECK(cudaFree(p->dev_tmp[i]));
@@ -1051,13 +1110,14 @@ bool ggml_cuda_ar_allreduce(
         // cross-stream event handshake that the copy-engine path needs, and
         // skips the cross-stream scheduling overhead that was hurting the
         // small-tensor (tg) latency on the AR-stream variant.  Only ev.ker is
-        // still recorded at end-of-AR for acquire_slot's pool-wraparound check.
+        // still recorded at end-of-AR for acquire_slot's pool-wraparound check;
+        // p2p_kernel needs neither: its slots and tokens live on the devices.
         for (int64_t chunk_start = 0; chunk_start < ne; chunk_start += (int64_t) max_chunk_elems) {
             const size_t remaining_elems = (size_t) (ne - chunk_start);
             const size_t chunk_elems = remaining_elems < max_chunk_elems ? remaining_elems : max_chunk_elems;
             const size_t chunk_dst_bytes  = chunk_elems * input_type_size;
 
-            const auto [slot, token] = ggml_cuda_ar_acquire_slot(p);
+            const auto [slot, token] = p->p2p_kernel ? ggml_cuda_ar_slot_info{0, 0} : ggml_cuda_ar_acquire_slot(p);
             const bool last_chunk = chunk_start + (int64_t) chunk_elems == ne;
 
             for (int i = 0; i < n; ++i) {
@@ -1076,8 +1136,8 @@ bool ggml_cuda_ar_allreduce(
                     CUDA_CHECK(cudaMemsetAsync(data, 0, chunk_dst_bytes, stream));
                 }
 
-#define LAUNCH_AR_KERNEL_IMPL(T_dst, T_wire, P2P) \
-                ggml_cuda_ar_kernel<T_dst, T_wire, P2P><<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256), 0, stream>>>( \
+#define LAUNCH_AR_KERNEL_IMPL(T_dst, T_wire, P2P, EPOCH) \
+                ggml_cuda_ar_kernel<T_dst, T_wire, P2P, EPOCH><<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256), 0, stream>>>( \
                     reinterpret_cast<const T_dst *>(data), \
                     reinterpret_cast<T_dst *>(data), \
                     reinterpret_cast<T_wire *>(p->host_buf[P2P ? peer : i].dev + (size_t) slot * p->buf_bytes), \
@@ -1085,12 +1145,16 @@ bool ggml_cuda_ar_allreduce(
                     static_cast<int>(chunk_elems), \
                     ggml_cuda_ar_arrival_ptr(p, slot, P2P ? peer : i), \
                     ggml_cuda_ar_arrival_ptr(p, slot, P2P ? i : peer), \
-                    token)
+                    token, \
+                    reinterpret_cast<int *>(p->epoch[i].dev), \
+                    p->buf_bytes / sizeof(T_wire), \
+                    (size_t) p->n_devices * GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_STRIDE / sizeof(int))
 
 #define LAUNCH_AR_KERNEL(T_dst, T_wire) \
                 do { \
-                    if (p->p2p) { LAUNCH_AR_KERNEL_IMPL(T_dst, T_wire, true); } \
-                    else        { LAUNCH_AR_KERNEL_IMPL(T_dst, T_wire, false); } \
+                    if (p->p2p_kernel) { LAUNCH_AR_KERNEL_IMPL(T_dst, T_wire, true,  true);  } \
+                    else if (p->p2p)   { LAUNCH_AR_KERNEL_IMPL(T_dst, T_wire, true,  false); } \
+                    else               { LAUNCH_AR_KERNEL_IMPL(T_dst, T_wire, false, false); } \
                 } while (0)
 
                 if (use_bf16) {
@@ -1110,7 +1174,7 @@ bool ggml_cuda_ar_allreduce(
                 CUDA_CHECK(cudaGetLastError());
 
                 // P2P must record every chunk so a forced multi-chunk kernel path cannot reuse an unrecorded slot.
-                if (last_chunk || p->p2p) {
+                if (!p->p2p_kernel && (last_chunk || p->p2p)) {
                     CUDA_CHECK(cudaEventRecord(p->ev_pool[i][slot].ker, stream));
                 }
             }
