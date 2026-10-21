@@ -825,6 +825,19 @@ static std::pair<size_t, size_t> find_same_text_span(
 }
 
 std::pair<size_t, size_t> server_tokens::get_common_prefix_resync(
+        const server_tokens & b, const llama_vocab * vocab, server_tokens * b_out,
+        std::vector<std::pair<size_t, int64_t>> * shifts) const {
+    std::vector<server_resync_span> spans;
+    const auto result = get_common_prefix_resync_spans(b, vocab, b_out, shifts ? &spans : nullptr);
+    if (shifts) {
+        for (const auto & span : spans) {
+            shifts->push_back({span.end, span.shift});
+        }
+    }
+    return result;
+}
+
+std::pair<size_t, size_t> server_tokens::get_common_prefix_resync_spans(
         const server_tokens & b, const llama_vocab * vocab, server_tokens * b_out, std::vector<server_resync_span> * spans) const {
     size_t ia = get_common_prefix(b);
     size_t ib = ia;
