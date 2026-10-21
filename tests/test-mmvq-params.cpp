@@ -38,6 +38,11 @@ static void check_config(std::set<std::pair<int, int>> & unique, std::set<std::p
         mmvq_select_config<type, ncols, small_k, halve_iters>(table_id, [&](auto config) {
             using config_t = decltype(config);
             require(config_t::nwarps == nw && config_t::rows_per_block == nr);
+            if (table_id == MMVQ_PARAMETERS_BLACKWELL && ncols >= 5 && nr <= 4) {
+                require(config_t::min_blocks_per_sm * nw == 12);
+            } else {
+                require(config_t::min_blocks_per_sm == 1);
+            }
             require(nw >= 1 && nw <= 8 && nr >= 1 && nr <= 8);
             for (uint32_t nrows = 1; nrows <= 33; ++nrows) {
                 const uint32_t blocks = config_t::nblocks(nrows);
