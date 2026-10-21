@@ -1618,8 +1618,8 @@ static void set_input_kq_mask_impl(const args_set_input_kq_mask & args, T * data
 
             const uint64_t idst = n_kv*i;
 
-            if constexpr (!swa && !is_2d && !alibi) {
-                const auto & positions = cells.seq_get_pos(seq_id);
+            if constexpr (!swa && !alibi) {
+                const auto & positions = cells.seq_pos_get(seq_id);
                 const uint32_t n_used = cells.get_used();
 
                 // These indexes must certify a dense prefix visible to this sequence.
@@ -1630,6 +1630,15 @@ static void set_input_kq_mask_impl(const args_set_input_kq_mask & args, T * data
 
                     if constexpr (causal) {
                         auto it = positions.upper_bound({p1, std::numeric_limits<uint32_t>::max()});
+
+                        if constexpr (is_2d) {
+                            for (auto jt = positions.lower_bound({p1, 0}); jt != it; ++jt) {
+                                if (jt->second < n_kv && cells.ext_get(jt->second).is_2d_gt(p1_x, p1_y)) {
+                                    data[idst + jt->second] = mask_drop;
+                                }
+                            }
+                        }
+
                         for (; it != positions.end(); ++it) {
                             if (it->second < n_kv) {
                                 data[idst + it->second] = mask_drop;
