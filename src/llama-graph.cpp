@@ -1971,6 +1971,51 @@ ggml_tensor * llm_graph_context::build_ffn(
      llm_ffn_op_type   type_op,
    llm_ffn_gate_type   type_gate,
                  int   il) const {
+    // Below 256 tokens per tile the narrower matmuls cost more than the hidden AllReduce saves (measured at 2x256).
+    // MoE layers reduce the shared expert together with the routed experts in one AllReduce, which tiles would split.
+    const int64_t n_tokens = cur->ne[1];
+    if (!cparams.ffn_tiles || !down || hparams.n_expert > 0 || n_tokens < 512 || !ggml_is_matrix(cur) || !ggml_is_contiguous(cur)) {
+        return build_ffn_tile(cur, up, up_b, up_s, gate, gate_b, gate_s, down, down_b, down_s, act_scales, type_op, type_gate, il);
+    }
+
+    ggml_tensor * tiles[2];
+    for (int t = 0; t < 2; ++t) {
+        const int64_t n_tile = t == 0 ? n_tokens/2 : n_tokens - n_tokens/2;
+        ggml_tensor * x = ggml_view_2d(ctx0, cur, cur->ne[0], n_tile, cur->nb[1], t*(n_tokens/2)*cur->nb[1]);
+        // Each tile ends at the down matmul: a bias add right after it would wait for the tile's AllReduce.
+        tiles[t] = build_ffn_tile(x, up, up_b, up_s, gate, gate_b, gate_s, down, nullptr, nullptr, act_scales, type_op, type_gate, il);
+        // Tile 0 must be complete in the graph order before tile 1, which is the compute its AllReduce overlaps.
+        ggml_build_forward_expand(gf, tiles[t]);
+    }
+    cur = ggml_concat(ctx0, tiles[0], tiles[1], 1);
+
+    if (down_b) {
+        cur = ggml_add(ctx0, cur, down_b);
+    }
+
+    if (down_s) {
+        cur = ggml_mul(ctx0, cur, down_s);
+        cb(cur, "ffn_down_s", il);
+    }
+
+    return cur;
+}
+
+ggml_tensor * llm_graph_context::build_ffn_tile(
+         ggml_tensor * cur,
+         ggml_tensor * up,
+         ggml_tensor * up_b,
+         ggml_tensor * up_s,
+         ggml_tensor * gate,
+         ggml_tensor * gate_b,
+         ggml_tensor * gate_s,
+         ggml_tensor * down,
+         ggml_tensor * down_b,
+         ggml_tensor * down_s,
+         ggml_tensor * act_scales,
+     llm_ffn_op_type   type_op,
+   llm_ffn_gate_type   type_gate,
+                 int   il) const {
     // NVFP4 support is currently restricted to
     // 1) LORA absence (*_s would be applied after LORA residual, which is incorrect)
     // 2) bias absense (*_s would be applied after bias addition, which is incorrect)
