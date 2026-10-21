@@ -218,6 +218,12 @@ extern "C" {
     // True queues all work asynchronously; keep graphs, tensors, buffers and comm_ctx alive until all rank backends synchronize. False submits no work; use the normal split path.
     typedef bool   (*ggml_backend_comm_graph_compute_t)(void * comm_ctx, struct ggml_cgraph ** graphs, size_t n_graphs);
 
+    // Optional pair. Start returns false only if no work was submitted; true with NULL pending means completion is already ordered.
+    // Finish each handle once, in submission order, before reading or overwriting any input storage.
+    // Finish orders completion on every backend and releases the handle. Tensor storage must remain valid until then. Finish all handles before calling the legacy entry point.
+    typedef bool   (*ggml_backend_comm_allreduce_start_t)(void * comm_ctx, struct ggml_tensor ** tensors, void ** pending);
+    typedef void   (*ggml_backend_comm_allreduce_finish_t)(void * comm_ctx, void * pending);
+
     // Split buffer type for tensor parallelism (old)
     typedef ggml_backend_buffer_type_t   (*ggml_backend_split_buffer_type_t)(int main_device, const float * tensor_split);
     // Set the number of threads for the backend
