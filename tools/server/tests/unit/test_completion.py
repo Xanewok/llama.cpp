@@ -689,3 +689,69 @@ def test_completion_prompt_cache():
         assert "prompt_n" in timings and timings["prompt_n"] + timings["cache_n"] == n_prompt
         assert "predicted_n" in timings and timings["predicted_n"] == n_predict
         assert "tokens" in res.body and isinstance(res.body["tokens"], list)
+
+
+# a sampled non-canonical split is not reproduced by re-tokenizing the text, the cached prefix must still be reused
+def test_prompt_cache_noncanonical_split():
+    global server
+    server.n_slots = 1
+    server.n_ctx = 1024
+    server.n_batch = 512
+    server.start()
+
+    def tokenize(text: str) -> list[int]:
+        res = server.make_request("POST", "/tokenize", data={"content": text, "add_special": False})
+        assert res.status_code == 200
+        return res.body["tokens"]
+
+    def detokenize(tokens: list[int]) -> str:
+        res = server.make_request("POST", "/detokenize", data={"tokens": tokens})
+        assert res.status_code == 200
+        return res.body["content"]
+
+    def complete(prompt: list[int]) -> dict:
+        res = server.make_request("POST", "/completion", data={
+            "prompt": prompt, "n_predict": 1, "temperature": 0.0, "cache_prompt": True,
+        })
+        assert res.status_code == 200
+        return res.body["timings"]
+
+    head = tokenize("Once upon a time there was a girl. She had a")
+    tail = tokenize(". They went to the park and played all day long.")
+    more = tokenize(" Then they went home.")
+
+    # piece of every token, measured after `head` so that a leading space is kept
+    base = detokenize(head)
+    piece = {t: detokenize(head + [t])[len(base):] for t in range(3, 512)}
+    by_piece = {}
+    for t, p in piece.items():
+        by_piece.setdefault(p, t)
+
+    # a token whose piece is also spelled by two other tokens
+    split = None
+    for t, p in piece.items():
+        if by_piece[p] != t:
+            continue
+        for i in range(1, len(p)):
+            if p[:i] in by_piece and p[i:] in by_piece:
+                split = (t, [by_piece[p[:i]], by_piece[p[i:]]])
+                break
+        if split:
+            break
+    assert split is not None
+    whole, parts = split
+
+    cached = head + parts + tail
+    fresh  = head + [whole] + tail + more
+    assert detokenize(cached) == detokenize(head + [whole] + tail)
+
+    complete(cached)
+    timings = complete(fresh)
+    assert timings["cache_n"] == len(cached)
+    assert timings["prompt_n"] == len(more)
+
+    # negative control: a different text at the same place only reuses the head
+    other = [t for t in piece if piece[t].strip() and piece[t] not in (piece[whole], "".join(piece[x] for x in parts))][0]
+    complete(cached)
+    timings = complete(head + [other] + tail + more)
+    assert timings["cache_n"] <= len(head)
