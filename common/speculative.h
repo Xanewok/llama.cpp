@@ -68,6 +68,7 @@ struct common_speculative_draft_params {
     llama_token id_last;
 
     // TODO: remove in the future by keeping track of the prompt from the _begin() call and the consecutive accept calls
+    // may be null unless common_speculative_uses_prompt() is true
     const llama_tokens * prompt;
 
     // the generated draft from the last _draft() call
@@ -82,6 +83,10 @@ struct common_speculative_draft_params {
 };
 
 common_speculative_draft_params & common_speculative_get_draft_params(common_speculative * spec, llama_seq_id seq_id);
+
+// true if any implementation reads `common_speculative_draft_params::prompt` (n-gram drafters);
+// otherwise callers can leave it null and skip building the prompt copy
+bool common_speculative_uses_prompt(const common_speculative * spec);
 
 // optionally call once at the beginning of a new generation
 void common_speculative_begin(common_speculative * spec, llama_seq_id seq_id, const llama_tokens & prompt);
