@@ -27,3 +27,5 @@ bool ggml_cuda_ar_allreduce(
     ggml_backend_t        * backends,
     ggml_tensor           ** tensors);
 
+// True if ggml_cuda_ar_allreduce on these tensors only enqueues device work (device-epoch P2P kernels), so it can be captured.
+bool ggml_cuda_ar_in_graph_supported(ggml_cuda_ar_pipeline * pipeline, ggml_tensor ** tensors);
