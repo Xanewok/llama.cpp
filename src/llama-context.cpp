@@ -17,11 +17,52 @@
 
 #include <cinttypes>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+
+namespace {
+// local: LLAMA_SYNC_ELIDE=0 disables the elision, LLAMA_SYNC_ELIDE_DEBUG=1 queries the backends at every skipped sync (busy = a missed
+// enqueue), then syncs for real; a backend without a query falls back to timing that sync,
+// LLAMA_SYNC_ELIDE_MUTANT=1 stops graph_compute marking pending work, =2 stops device-to-host copies marking it, =3 clears the flag after every enqueue
+// (=1 and =3 also drop the n_queued_tokens guard), =4 is =3 with the state I/O syncs elidable as well (before they were forced). Negative controls.
+struct sync_elide_flags {
+    bool on     = true;
+    bool debug  = false;
+    int  debug_us = 20; // LLAMA_SYNC_ELIDE_DEBUG=N with N > 1 sets the threshold of the timing fallback and of the slow-idle log
+    int  mutant = 0;
+    sync_elide_flags() {
+        const char * e = getenv("LLAMA_SYNC_ELIDE");
+        const char * d = getenv("LLAMA_SYNC_ELIDE_DEBUG");
+        const char * m = getenv("LLAMA_SYNC_ELIDE_MUTANT");
+        on     = !e || atoi(e) != 0;
+        debug  = d && atoi(d) != 0;
+        if (d && atoi(d) > 1) { debug_us = atoi(d); }
+        mutant = m ? atoi(m) : 0;
+    }
+};
+const sync_elide_flags & sync_elide_env() {
+    static const sync_elide_flags flags;
+    return flags;
+}
+// 1 all backends drained, 0 one still has queued work, -1 one cannot tell
+int sync_elide_query(ggml_backend_sched_t sched) {
+    int res = 1;
+    for (int i = 0; i < ggml_backend_sched_get_n_backends(sched); ++i) {
+        const int q = ggml_backend_query(ggml_backend_sched_get_backend(sched, i));
+        if (q == 0) {
+            return 0;
+        }
+        if (q < 0) {
+            res = -1;
+        }
+    }
+    return res;
+}
+} // namespace
 
 // per-device candidates for backend sampling under tensor split are n_devices * k; keep the gather small
 #define LLAMA_TP_SAMPLING_TOP_K_MAX     256
@@ -590,8 +631,11 @@ llama_context::llama_context(
 }
 
 llama_context::~llama_context() {
+    if (sync_elide_env().debug) {
+        LLAMA_LOG_WARN("%s: sync_elide: elided=%lld missed=%lld idle_slow=%lld\n", __func__, (long long) n_sync_elided, (long long) n_sync_missed, (long long) n_sync_idle_slow);
+    }
     // wait for any pending asynchronous copies into the output buffers before they are freed
-    synchronize();
+    synchronize(true);
 
     // when training, ggml_opt allocates extra buffers through the scheduler, so the sizes no longer match the expectation
     if (!model.hparams.no_alloc && !opt_ctx) {
@@ -743,7 +787,7 @@ void llama_context::sched_reserve() {
 
     LLAMA_LOG_INFO("%s: reserving ...\n", __func__);
 
-    synchronize();
+    synchronize(true);
 
     const int64_t t_start_us = ggml_time_us();
 
@@ -890,12 +934,43 @@ void llama_context::sched_reserve() {
             __func__, (t_end_us - t_start_us)/1000.0, ggml_backend_sched_get_n_copies(sched.get()));
 }
 
-void llama_context::synchronize() {
+void llama_context::synchronize(bool force, const char * caller) {
     if (!sched) {
         return;
     }
 
+    // Contract: backend_pending is set before every enqueue of device work on this context's backends and cleared only here,
+    // after a real sync. A drained context has nothing to wait for. With several scheduler copies the sync also rewinds
+    // next_copy, so that case always syncs.
+    if (!force && !backend_pending && (n_queued_tokens == 0 || sync_elide_env().mutant == 1 || sync_elide_env().mutant >= 3) && ggml_backend_sched_get_n_copies(sched.get()) == 1 && sync_elide_env().on) {
+        if (!sync_elide_env().debug) {
+            n_sync_elided++;
+            return;
+        }
+        // local: the elision claims the streams are drained; the backend query decides. A sync on an idle stream can still take
+        // tens of us (host scheduling, tracer), so its time decides only for a backend without a query.
+        const int idle = sync_elide_query(sched.get());
+        const int64_t t0 = ggml_time_us();
+        ggml_backend_sched_synchronize(sched.get());
+        const int64_t waited = ggml_time_us() - t0;
+        if (n_sync_elided++ == 0) {
+            LLAMA_LOG_WARN("%s: sync_elide: debug check engaged (backend query %s)\n", __func__, idle < 0 ? "unavailable, timing fallback" : "exact");
+        }
+        if (idle == 0) {
+            n_sync_missed++;
+            LLAMA_LOG_ERROR("%s: sync_elide: missed: backend busy at a skipped sync (a device enqueue was not tracked), waited %lld us, caller %s\n", __func__, (long long) waited, caller);
+        } else if (idle < 0 && waited > sync_elide_env().debug_us) {
+            n_sync_missed++;
+            LLAMA_LOG_ERROR("%s: sync_elide: missed: skipped sync waited %lld us (> %d us, no backend query), caller %s\n", __func__, (long long) waited, sync_elide_env().debug_us, caller);
+        } else if (waited > sync_elide_env().debug_us) {
+            n_sync_idle_slow++;
+            LLAMA_LOG_INFO("%s: sync_elide: idle backends, sync took %lld us (latency, not a miss), caller %s\n", __func__, (long long) waited, caller);
+        }
+        return;
+    }
+
     ggml_backend_sched_synchronize(sched.get());
+    backend_pending = false;
 
     // FIXME: if multiple single tokens are evaluated without a synchronization,
     // the stats will be added to the prompt evaluation stats
@@ -1026,6 +1101,12 @@ enum llama_pooling_type llama_context::pooling_type() const {
     return cparams.pooling_type;
 }
 
+void llama_context::tensor_get_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
+    if (sync_elide_env().mutant != 2) { backend_pending = true; }
+    ggml_backend_tensor_get_async(backend, tensor, data, offset, size);
+    if (sync_elide_env().mutant >= 3) { backend_pending = false; }
+}
+
 void llama_context::logits_deferred_fetch() {
     if (!logits_deferred.t) {
         return;
@@ -1037,11 +1118,11 @@ void llama_context::logits_deferred_fetch() {
     GGML_ASSERT(backend != nullptr);
     if (has_draft_vocab()) {
         const size_t n_draft = model.draft_vocab_ids.size();
-        ggml_backend_tensor_get_async(backend, logits_deferred.t, draft_logits.data + logits_deferred.row0*n_draft,
+        tensor_get_async(backend, logits_deferred.t, draft_logits.data + logits_deferred.row0*n_draft,
                 0, logits_deferred.n*n_draft*sizeof(float));
         std::fill_n(draft_logits_pending.data() + logits_deferred.row0, logits_deferred.n, true);
     } else {
-        ggml_backend_tensor_get_async(backend, logits_deferred.t, logits.data + logits_deferred.row0*n_vocab,
+        tensor_get_async(backend, logits_deferred.t, logits.data + logits_deferred.row0*n_vocab,
                 0, logits_deferred.n*n_vocab*sizeof(float));
     }
     synchronize();
@@ -1828,7 +1909,7 @@ int llama_context::encode(const llama_batch_ext & batch_inp) {
         GGML_ASSERT(backend_res != nullptr);
         GGML_ASSERT(logits.data != nullptr);
 
-        ggml_backend_tensor_get_async(backend_res, t_logits, logits.data, 0, n_tokens*n_vocab*sizeof(float));
+        tensor_get_async(backend_res, t_logits, logits.data, 0, n_tokens*n_vocab*sizeof(float));
     }
 
     // extract embeddings
@@ -1844,7 +1925,7 @@ int llama_context::encode(const llama_batch_ext & batch_inp) {
                     const uint32_t n_embd_out = hparams.n_embd_out();
 
                     GGML_ASSERT(n_tokens*n_embd_out <= (int64_t) embd.size);
-                    ggml_backend_tensor_get_async(backend_embd, t_embd, embd.data, 0, n_tokens*n_embd_out*sizeof(float));
+                    tensor_get_async(backend_embd, t_embd, embd.data, 0, n_tokens*n_embd_out*sizeof(float));
                 } break;
             case LLAMA_POOLING_TYPE_MEAN:
             case LLAMA_POOLING_TYPE_CLS:
@@ -1861,7 +1942,7 @@ int llama_context::encode(const llama_batch_ext & batch_inp) {
                         // output dimension, which differs from input dimension for deepstack models (e.g. qwen3vl)
                         const uint32_t n_embd_out = hparams.n_embd_out();
                         embd_seq_out[seq_id].resize(n_embd_out);
-                        ggml_backend_tensor_get_async(backend_embd, t_embd, embd_seq_out[seq_id].data(), (n_embd_out*seq_idx)*sizeof(float), n_embd_out*sizeof(float));
+                        tensor_get_async(backend_embd, t_embd, embd_seq_out[seq_id].data(), (n_embd_out*seq_idx)*sizeof(float), n_embd_out*sizeof(float));
                     }
                 } break;
             case LLAMA_POOLING_TYPE_RANK:
@@ -1876,7 +1957,7 @@ int llama_context::encode(const llama_batch_ext & batch_inp) {
                         const int32_t      seq_idx = ubatch.seq_idx[seq_id];
 
                         embd_seq_out[seq_id].resize(n_cls_out);
-                        ggml_backend_tensor_get_async(backend_embd, t_embd, embd_seq_out[seq_id].data(), (n_cls_out*seq_idx)*sizeof(float), n_cls_out*sizeof(float));
+                        tensor_get_async(backend_embd, t_embd, embd_seq_out[seq_id].data(), (n_cls_out*seq_idx)*sizeof(float), n_cls_out*sizeof(float));
                     }
                 } break;
             case LLAMA_POOLING_TYPE_UNSPECIFIED:
@@ -1893,7 +1974,7 @@ int llama_context::encode(const llama_batch_ext & batch_inp) {
 
         const uint32_t n_embd = hparams.n_embd_out();
         GGML_ASSERT(n_tokens*n_embd <= (int64_t) embd_nextn.size);
-        ggml_backend_tensor_get_async(backend_h, t_h_nextn, embd_nextn.data, 0, n_tokens*n_embd*sizeof(float));
+        tensor_get_async(backend_h, t_h_nextn, embd_nextn.data, 0, n_tokens*n_embd*sizeof(float));
     }
 
     // TODO: hacky solution
@@ -1932,6 +2013,7 @@ static void copy_tensor_async_rows(
     size_t stride,
     uint32_t row_offset,
     ggml_backend_sched_t sched,
+    bool & backend_pending,
     std::vector<uint32_t> * counts = nullptr) {
     if (!dst.has_data()) {
         return;
@@ -1951,6 +2033,7 @@ static void copy_tensor_async_rows(
 
         ggml_backend_t backend = ggml_backend_sched_get_tensor_backend(sched, tensor);
         T * row_ptr = dst.data + (size_t) row * stride;
+        if (sync_elide_env().mutant != 2) { backend_pending = true; }
         ggml_backend_tensor_get_async(backend, tensor, row_ptr, 0, ggml_nbytes(tensor));
 
         if (counts) {
@@ -2252,11 +2335,11 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
                 GGML_ASSERT((n_outputs_prev + n_outputs)*n_vocab <= (int64_t) logits.size);
                 if (has_draft_vocab()) {
                     const size_t n_draft = model.draft_vocab_ids.size();
-                    ggml_backend_tensor_get_async(backend_res, t_logits, draft_logits.data + n_outputs_prev*n_draft,
+                    tensor_get_async(backend_res, t_logits, draft_logits.data + n_outputs_prev*n_draft,
                             0, n_outputs*n_draft*sizeof(float));
                     std::fill_n(draft_logits_pending.data() + n_outputs_prev, n_outputs, true);
                 } else {
-                    ggml_backend_tensor_get_async(backend_res, t_logits, logits_out, 0, n_outputs*n_vocab*sizeof(float));
+                    tensor_get_async(backend_res, t_logits, logits_out, 0, n_outputs*n_vocab*sizeof(float));
                 }
             }
         } else if (logits.data && t_logits && n_outputs > 0) {
@@ -2279,7 +2362,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
                         if (n_outputs) {
                             GGML_ASSERT( n_outputs_prev + n_outputs <= n_outputs_all);
                             GGML_ASSERT((n_outputs_prev + n_outputs)*n_embd_out <= (int64_t) embd.size);
-                            ggml_backend_tensor_get_async(backend_embd, t_embd, embd_out, 0, n_outputs*n_embd_out*sizeof(float));
+                            tensor_get_async(backend_embd, t_embd, embd_out, 0, n_outputs*n_embd_out*sizeof(float));
                         }
                     } break;
                 case LLAMA_POOLING_TYPE_MEAN:
@@ -2298,7 +2381,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
                             const int32_t      seq_idx = ubatch.seq_idx[seq_id];
 
                             embd_seq_out[seq_id].resize(n_embd_out);
-                            ggml_backend_tensor_get_async(backend_embd, t_embd, embd_seq_out[seq_id].data(), (n_embd_out*seq_idx)*sizeof(float), n_embd_out*sizeof(float));
+                            tensor_get_async(backend_embd, t_embd, embd_seq_out[seq_id].data(), (n_embd_out*seq_idx)*sizeof(float), n_embd_out*sizeof(float));
                         }
                     } break;
                 case LLAMA_POOLING_TYPE_RANK:
@@ -2313,7 +2396,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
                             const int32_t      seq_idx = ubatch.seq_idx[seq_id];
 
                             embd_seq_out[seq_id].resize(n_cls_out);
-                            ggml_backend_tensor_get_async(backend_embd, t_embd, embd_seq_out[seq_id].data(), (n_cls_out*seq_idx)*sizeof(float), n_cls_out*sizeof(float));
+                            tensor_get_async(backend_embd, t_embd, embd_seq_out[seq_id].data(), (n_cls_out*seq_idx)*sizeof(float), n_cls_out*sizeof(float));
                         }
                     } break;
                 case LLAMA_POOLING_TYPE_UNSPECIFIED:
@@ -2341,7 +2424,7 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
                 float * embd_nextn_out = embd_nextn.data + offset*n_embd;
 
                 GGML_ASSERT((offset + n_rows)*n_embd <= (int64_t) embd_nextn.size);
-                ggml_backend_tensor_get_async(backend_h, t_h_nextn, embd_nextn_out, 0, n_rows*n_embd*sizeof(float));
+                tensor_get_async(backend_h, t_h_nextn, embd_nextn_out, 0, n_rows*n_embd*sizeof(float));
                 extract_all_idxs = extract_all_idxs || !masked;
             }
         }
@@ -2357,10 +2440,10 @@ int llama_context::decode(const llama_batch_ext & batch_inp) {
             const auto stride = n_vocab;
 
             // async copy the sampling data from the backend to the host
-            copy_tensor_async_rows(res->t_sampled,        sampling.sampled,    1,      n_outputs_prev, get_sched_graph());
-            copy_tensor_async_rows(res->t_sampled_logits, sampling.logits,     stride, n_outputs_prev, get_sched_graph(), &sampling.logits_count);
-            copy_tensor_async_rows(res->t_sampled_probs,  sampling.probs,      stride, n_outputs_prev, get_sched_graph(), &sampling.probs_count);
-            copy_tensor_async_rows(res->t_candidates,     sampling.candidates, stride, n_outputs_prev, get_sched_graph(), &sampling.candidates_count);
+            copy_tensor_async_rows(res->t_sampled,        sampling.sampled,    1,      n_outputs_prev, get_sched_graph(), backend_pending);
+            copy_tensor_async_rows(res->t_sampled_logits, sampling.logits,     stride, n_outputs_prev, get_sched_graph(), backend_pending, &sampling.logits_count);
+            copy_tensor_async_rows(res->t_sampled_probs,  sampling.probs,      stride, n_outputs_prev, get_sched_graph(), backend_pending, &sampling.probs_count);
+            copy_tensor_async_rows(res->t_candidates,     sampling.candidates, stride, n_outputs_prev, get_sched_graph(), backend_pending, &sampling.candidates_count);
         }
 
         n_outputs_prev += n_outputs;
@@ -2602,7 +2685,7 @@ uint32_t llama_context::output_reserve(int32_t n_outputs) {
             // This doesn't happen often, but may be annoying in some cases (like the HellaSwag benchmark)
             LLAMA_LOG_DEBUG("%s: reallocating output buffer from size %.02f MiB to %.02f MiB\n", __func__, prev_size / 1024.0 / 1024.0, new_size / 1024.0 / 1024.0);
 #endif
-            synchronize();
+            synchronize(true);
 
             // TODO: not needed?
             buf_output = nullptr;
@@ -2729,7 +2812,7 @@ bool llama_context::extract_layer_inputs(const llm_graph_result * res, size_t to
         ggml_backend_t backend = ggml_backend_sched_get_tensor_backend(get_sched_graph(), t);
         GGML_ASSERT(backend != nullptr);
         // Tensor-split backends require a zero source offset.
-        ggml_backend_tensor_get_async(backend, t, embd_layer_inp[il].data + dst_offset, 0, nbytes);
+        tensor_get_async(backend, t, embd_layer_inp[il].data + dst_offset, 0, nbytes);
         extracted = true;
     }
     return extracted;
@@ -3089,7 +3172,9 @@ ggml_status llama_context::graph_compute(
 
     copy_experts.reset();
 
+    if (sync_elide_env().mutant != 1) { backend_pending = true; }
     auto status = ggml_backend_sched_graph_compute_async(get_sched_graph(), gf);
+    if (sync_elide_env().mutant >= 3) { backend_pending = false; }
     if (status != GGML_STATUS_SUCCESS) {
         LLAMA_LOG_ERROR("%s: ggml_backend_sched_graph_compute_async failed with error %d\n", __func__, status);
     }
@@ -4860,20 +4945,20 @@ size_t llama_state_get_size(llama_context * ctx) {
 }
 
 size_t llama_state_get_data(llama_context * ctx, uint8_t * dst, size_t size) {
-    ctx->synchronize();
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     return ctx->state_get_data(dst, size);
 }
 
 // Sets the state reading from the specified source address
 size_t llama_state_set_data(llama_context * ctx, const uint8_t * src, size_t size) {
-    ctx->synchronize();
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     return ctx->state_set_data(src, size);
 }
 
 bool llama_state_load_file(llama_context * ctx, const char * path_session, llama_token * tokens_out, size_t n_token_capacity, size_t * n_token_count_out) {
-    ctx->synchronize();
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     try {
         return ctx->state_load_file(path_session, tokens_out, n_token_capacity, n_token_count_out);
@@ -4884,7 +4969,7 @@ bool llama_state_load_file(llama_context * ctx, const char * path_session, llama
 }
 
 bool llama_state_save_file(llama_context * ctx, const char * path_session, const llama_token * tokens, size_t n_token_count) {
-    ctx->synchronize();
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     try {
         return ctx->state_save_file(path_session, tokens, n_token_count);
@@ -4911,18 +4996,18 @@ size_t llama_state_seq_get_size_ext(llama_context * ctx, llama_seq_id seq_id, ll
 }
 
 size_t llama_state_seq_get_data_ext(llama_context * ctx, uint8_t * dst, size_t size, llama_seq_id seq_id, llama_state_seq_flags flags) {
-    ctx->synchronize();
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     return ctx->state_seq_get_data(seq_id, dst, size, flags);
 }
 size_t llama_state_seq_set_data_ext(llama_context * ctx, const uint8_t * src, size_t size, llama_seq_id seq_id, llama_state_seq_flags flags) {
-    ctx->synchronize();
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     return ctx->state_seq_set_data(seq_id, src, size, flags);
 }
 
 size_t llama_state_seq_save_file(llama_context * ctx, const char * filepath, llama_seq_id seq_id, const llama_token * tokens, size_t n_token_count) {
-    ctx->synchronize();
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     try {
         return ctx->state_seq_save_file(seq_id, filepath, tokens, n_token_count);
@@ -4933,7 +5018,7 @@ size_t llama_state_seq_save_file(llama_context * ctx, const char * filepath, lla
 }
 
 size_t llama_state_seq_load_file(llama_context * ctx, const char * filepath, llama_seq_id dest_seq_id, llama_token * tokens_out, size_t n_token_capacity, size_t * n_token_count_out) {
-    ctx->synchronize();
+    ctx->synchronize(sync_elide_env().mutant != 4);
 
     try {
         return ctx->state_seq_load_file(dest_seq_id, filepath, tokens_out, n_token_capacity, n_token_count_out);

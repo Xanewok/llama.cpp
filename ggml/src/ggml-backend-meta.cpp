@@ -2322,6 +2322,17 @@ static void ggml_backend_meta_synchronize(ggml_backend_t backend) {
     }
 }
 
+// local: a simple backend that cannot tell counts as busy
+static bool ggml_backend_meta_query(ggml_backend_t backend) {
+    const size_t n_backends = ggml_backend_meta_n_backends(backend);
+    for (size_t i = 0; i < n_backends; i++) {
+        if (ggml_backend_query(ggml_backend_meta_simple_backend(backend, i)) != 1) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t backend, struct ggml_cgraph * cgraph, ggml_backend_meta_graph_plan * backend_ctx, bool prepare_only) {
     GGML_ASSERT(cgraph->grads == nullptr);
     const size_t n_backends = ggml_backend_meta_n_backends(backend);
@@ -2923,6 +2934,7 @@ static const ggml_backend_i ggml_backend_meta_i = {
     /* .event_wait              = */ nullptr,
     /* .graph_optimize          = */ nullptr,
     /* .set_tensor_batch_owned  = */ ggml_backend_meta_set_tensor_batch_owned,
+    /* .query                   = */ ggml_backend_meta_query,
 };
 
 bool ggml_backend_is_meta(ggml_backend_t backend) {
