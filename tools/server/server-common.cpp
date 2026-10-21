@@ -898,7 +898,7 @@ static std::pair<size_t, size_t> find_same_text_span(
 }
 
 std::pair<size_t, size_t> server_tokens::get_common_prefix_resync(
-        const server_tokens & b, const llama_vocab * vocab, server_tokens * b_out, std::vector<std::pair<size_t, int64_t>> * shifts) const {
+        const server_tokens & b, const llama_vocab * vocab, server_tokens * b_out, std::vector<server_resync_span> * spans) const {
     size_t ia = get_common_prefix(b);
     size_t ib = ia;
     if (!vocab || !map_idx_to_media.empty() || !b.map_idx_to_media.empty()) {
@@ -913,6 +913,7 @@ std::pair<size_t, size_t> server_tokens::get_common_prefix_resync(
         if (na == 0) {
             break;
         }
+        const size_t ib_beg = ib;
         if (!resynced) {
             rw.assign(tokens.begin(), tokens.begin() + ia); // equal to b up to here
             resynced = true;
@@ -920,8 +921,8 @@ std::pair<size_t, size_t> server_tokens::get_common_prefix_resync(
         rw.insert(rw.end(), tokens.begin() + ia, tokens.begin() + ia + na);
         ia += na;
         ib += nb;
-        if (shifts) {
-            shifts->push_back({ib, int64_t(ia) - int64_t(ib)});
+        if (spans) {
+            spans->push_back({ib_beg, ib, int64_t(ia) - int64_t(ib)});
         }
         for (; ia < tokens.size() && ib < b.tokens.size() && tokens[ia] == b.tokens[ib]; ++ia, ++ib) {
             rw.push_back(tokens[ia]);
@@ -934,6 +935,15 @@ std::pair<size_t, size_t> server_tokens::get_common_prefix_resync(
     }
 
     return {ia, ib};
+}
+
+size_t server_resync_remap_pos(const std::vector<server_resync_span> & spans, size_t pos) {
+    for (auto it = spans.rbegin(); it != spans.rend(); ++it) {
+        if (pos > it->beg) {
+            return std::max(pos, it->end) + it->shift;
+        }
+    }
+    return pos;
 }
 
 common_chat_msg_spans server_tokens::find_message_spans(const common_chat_msg_delimiters & delims) const {
