@@ -1842,7 +1842,7 @@ struct common_speculative_impl_draft_mtp : public common_speculative_impl {
         batch.clear();
         for (int32_t s = 0; s < k; ++s) {
             const int32_t idx = batch.add(dp.id_last, dp.pos0 + s, seq_id, true);
-            batch.set_embd_state(idx, { s == 0 ? pending_h[seq_id].data() : mtp_chain_zeros.data(), 1, (size_t) n_embd });
+            batch.set_embd_state(idx, { s == 0 ? pending_h.data() + (size_t) seq_id * n_embd : mtp_chain_zeros.data(), 1, (size_t) n_embd });
         }
 
         if (!llama_set_mtp_chain(ctx_dft, k)) {
