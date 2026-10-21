@@ -1,3 +1,4 @@
+#include "ggml-round-trace.h"
 #include "allreduce.cuh"
 
 #if !defined(GGML_USE_MUSA)
@@ -459,6 +460,7 @@ static ggml_cuda_ar_slot_info ggml_cuda_ar_acquire_slot(ggml_cuda_ar_pipeline * 
     if (pool_lapped) {
         for (int i = 0; i < p->n_devices; ++i) {
             ggml_cuda_set_device(p->devices[i]);
+            ggml_round_trace_scope trace_wait("ar_wait", p->devices[i]);
             CUDA_CHECK(cudaEventSynchronize(p->ev_pool[i][slot].ker));
         }
     }
@@ -905,6 +907,7 @@ bool ggml_cuda_ar_allreduce(
         ggml_backend_t        * backends,
         ggml_tensor           ** tensors) {
     GGML_ASSERT(p != nullptr);
+    ggml_round_trace_count("ar_call");
 
     const int n = p->n_devices;
     GGML_ASSERT(n == 2);

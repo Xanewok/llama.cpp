@@ -1,3 +1,4 @@
+#include "ggml-round-trace.h"
 #include "llama-context.h"
 
 #include "ggml.h"
@@ -1754,6 +1755,7 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
 
     const bool allocated = ggml_backend_sched_graph_is_alloc(sched_active, gf);
     if (!graph_reuse_disable && allocated && (graph_mtp_reuse || gf_res_prev_active == res) && res->can_reuse(gparams)) {
+        ggml_round_trace_count("graph_hit");
         //LLAMA_LOG_DEBUG("%s: reusing previous graph\n", __func__);
 
         // Alternating results share storage; input writes must follow the previous compute.
@@ -1768,7 +1770,8 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
 
         n_reused++;
     } else {
-
+        ggml_round_trace_count("graph_miss");
+        ggml_round_trace_scope trace_build("llama_build");
         gf_res_prev_active = nullptr;
         ggml_backend_sched_synchronize(get_sched_graph());
         ggml_backend_sched_reset(get_sched_graph());

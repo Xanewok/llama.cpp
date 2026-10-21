@@ -1,3 +1,4 @@
+#include "ggml-round-trace.h"
 #include "ggml.h"
 #include "ggml-impl.h"
 #include "ggml-backend.h"
@@ -2364,6 +2365,7 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
     }
 
     if (needs_rebuild) {
+        ggml_round_trace_scope trace_plan("meta_build");
         std::lock_guard<std::recursive_mutex> lock(meta_tensor_mutex);
         {
             backend_ctx->containers.clear();
