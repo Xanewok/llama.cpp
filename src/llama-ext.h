@@ -145,6 +145,16 @@ LLAMA_API bool llama_set_mtp_chain(struct llama_context * ctx, int32_t n_chain);
 // top-k whose backend candidates come out in descending logit order, as the host top-k leaves them, so that a dist
 // sampler after it picks the token the host chain would for the same uniform. Host behaviour is the same as llama_sampler_init_top_k.
 LLAMA_API struct llama_sampler * llama_sampler_init_top_k_sorted(int32_t k);
+// MTP fold: an armed llama_decode of ctx_tgt also stores ctx_dft's MTP K/V for the batch tokens, as the draft's
+// catch-up decode would: token i paired with ctx_tgt's (unmasked) nextn row i-1, the first token of sequence s with h_prev[s].
+// It folds only token batches whose row order fits one target and draft ubatch; llama_mtp_fold_n_last tells the caller whether the
+// catch-up decode for that batch is still needed.
+// init: false if the pair is unsupported (nothing is ever folded); ctx_dft == nullptr unlinks.
+LLAMA_API bool    llama_mtp_fold_init  (struct llama_context * ctx_tgt, struct llama_context * ctx_dft);
+// arms the next decode only; h_prev is [n_seq][n_embd], indexed by seq_id and read during that decode
+LLAMA_API void    llama_mtp_fold_arm   (struct llama_context * ctx_tgt, const float * h_prev, int32_t n_seq);
+// tokens folded by the last decode, 0 if it did not fold
+LLAMA_API int32_t llama_mtp_fold_n_last(const struct llama_context * ctx_tgt);
 
 // Marks the entries that a decision head (clef, vllm-decision2) reads, the default is 0
 // See https://github.com/ggml-org/llama.cpp/pull/29831 for details
