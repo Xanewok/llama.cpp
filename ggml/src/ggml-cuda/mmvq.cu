@@ -425,8 +425,8 @@ static constexpr __device__ int get_mmvq_mmid_max_batch_for_device() {
 #endif
 }
 
-template <ggml_type type, int ncols_dst, bool has_fusion, int nwarps, int rows_per_cuda_block, bool is_tail = false>
-__launch_bounds__(nwarps*ggml_cuda_get_physical_warp_size(), 1)
+template <ggml_type type, int ncols_dst, bool has_fusion, int nwarps, int rows_per_cuda_block, bool is_tail = false, int min_blocks_per_sm = 1>
+__launch_bounds__(nwarps*ggml_cuda_get_physical_warp_size(), min_blocks_per_sm)
 static __global__ void mul_mat_vec_q(
         const void * vx_ptr, const void * vy_ptr, const int32_t * ids_ptr, const ggml_cuda_mm_fusion_args_device fusion, float * dst_ptr,
         const uint32_t ncols_x, const uint3 nchannels_y, const uint32_t nrows_x, const uint32_t stride_row_x, const uint32_t stride_col_y,
@@ -856,7 +856,8 @@ static void mul_mat_vec_q_switch_fusion(
             if (nblocks > 0) {
                 const dim3 block_nums(nblocks, nchannels_dst, nsamples_dst);
                 const ggml_cuda_kernel_launch_params launch_params(block_nums, block_dims, 0, stream);
-                ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, c_has_fusion, config_t::nwarps, config_t::rows_per_block>, launch_params,
+                ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, c_has_fusion, config_t::nwarps, config_t::rows_per_block, false,
+                                                      config_t::min_blocks_per_sm>, launch_params,
                     vx, vy, ids, fusion, dst, ncols_x, nchannels_y, nrows_x, stride_row_x, stride_col_y, stride_col_dst,
                     channel_ratio, stride_channel_x, stride_channel_y, stride_channel_dst,
                     sample_ratio, stride_sample_x, stride_sample_y, stride_sample_dst, ids_stride, uint32_t(0));
