@@ -4213,20 +4213,132 @@ void llm_graph_context::build_logits() const {
     }
 }
 
+void llm_graph_context::build_sampling_begin(uint32_t n_rows) const {
+    res->t_sampled.resize(n_rows, nullptr);
+    res->t_sampled_probs.resize(n_rows, nullptr);
+    res->t_sampled_logits.resize(n_rows, nullptr);
+    res->t_candidates.resize(n_rows, nullptr);
+
+    for (const auto & entry : samplers) {
+        if (entry.second->iface->backend_reset) {
+            entry.second->iface->backend_reset(entry.second);
+        }
+    }
+}
+
+void llm_graph_context::build_sampling_end() const {
+    res->add_input(std::make_unique<llm_graph_input_sampling>(samplers));
+}
+
+ggml_tensor * llm_graph_context::build_sampling_cand(ggml_tensor * logits_t, int32_t k) const {
+    if (sampling_n_shards == 0) {
+        return nullptr;
+    }
+
+    const int64_t n_vocab = logits_t->ne[0];
+    const int64_t n_cols  = logits_t->ne[1];
+    GGML_ASSERT(sampling_vocab_ids != nullptr && sampling_vocab_ids->ne[0] == n_vocab);
+
+    const int64_t n_cand = int64_t(k) * sampling_n_shards;
+
+    // slice-local indices, see the TOP_K/GET_ROWS rules in ggml-backend-meta
+    ggml_tensor * idx  = ggml_top_k(ctx0, logits_t, n_cand);
+    ggml_tensor * vals = ggml_get_rows(ctx0, ggml_reshape_3d(ctx0, logits_t, 1, n_vocab, n_cols), idx);
+    ggml_tensor * ids  = ggml_get_rows(ctx0,
+            ggml_repeat_4d(ctx0, ggml_reshape_3d(ctx0, sampling_vocab_ids, 1, n_vocab, 1), 1, n_vocab, n_cols, 1), idx);
+
+    vals = ggml_reshape_3d(ctx0, vals, n_cand, 1, n_cols);
+    ids  = ggml_reshape_3d(ctx0, ids,  n_cand, 1, n_cols);
+
+    ggml_tensor * cand = ggml_backend_meta_gather(ctx0, ggml_concat(ctx0, vals, ids, 1));
+    ggml_set_name(cand, "sampling_candidates");
+    return cand;
+}
+
+void llm_graph_context::build_sampling_row(
+        llama_seq_id   seq_id,
+        llama_sampler * sampler,
+        ggml_tensor  * logits_t,
+        ggml_tensor  * cand,
+        uint32_t       col,
+        int32_t        row,
+        ggml_tensor  * anchor, uint32_t slot) const {
+    // inactive samplers are built but not computed
+    const bool    active = row >= 0;
+    const int     i_out  = active ? 1 : 0;
+
+    ggml_tensor * logits_seq = nullptr;
+    ggml_tensor * cand_ids   = nullptr;
+    if (cand) {
+        const int64_t n_cand = cand->ne[0];
+        logits_seq = ggml_view_1d(ctx0, cand, n_cand, col * cand->nb[2]);
+        cand_ids   = ggml_cast(ctx0, ggml_view_1d(ctx0, cand, n_cand, col * cand->nb[2] + cand->nb[1]), GGML_TYPE_I32);
+    } else {
+        logits_seq = ggml_view_1d(ctx0, logits_t, logits_t->ne[0], col * logits_t->nb[1]);
+        if (sampling_vocab_ids) {
+            cand_ids = ggml_cast(ctx0, sampling_vocab_ids, GGML_TYPE_I32);
+        }
+    }
+    ggml_format_name(logits_seq, "logits_seq_%d_%u", seq_id, slot);
+
+    struct llama_sampler_data data = {
+        /*.logits       =*/ logits_seq,
+        /*.probs        =*/ nullptr,
+        /*.sampled      =*/ nullptr,
+        /*.candidates   =*/ cand_ids,
+    };
+
+    assert(sampler->iface->backend_apply);
+    sampler->iface->backend_apply(sampler, ctx0, gf, &data);
+
+    std::array<ggml_tensor *, 2> outs;
+    outs[0] = anchor;
+
+    if (data.sampled != nullptr) {
+        if (active) {
+            res->t_sampled[row] = data.sampled;
+        }
+        outs[1] = data.sampled;
+        ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
+    }
+
+    if (data.probs != nullptr) {
+        if (active) {
+            res->t_sampled_probs[row] = data.probs;
+        }
+        outs[1] = data.probs;
+        ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
+    }
+
+    if (data.logits != nullptr) {
+        if (active) {
+            res->t_sampled_logits[row] = data.logits;
+        }
+        outs[1] = data.logits;
+        ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
+    }
+
+    if (data.candidates != nullptr) {
+        if (active) {
+            res->t_candidates[row] = data.candidates;
+        }
+        outs[1] = data.candidates;
+        ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
+    }
+}
+
 void llm_graph_context::build_sampling() const {
     if (samplers.empty() || !res->t_logits) {
+        return;
+    }
+    // a model builder that applied the samplers itself has recorded its rows
+    if (!res->t_sampled.empty()) {
         return;
     }
     // no output rows: the meta backend has no split state for empty logits, so nothing can consume them
     if (sampling_n_shards > 0 && ggml_nelements(res->t_logits) == 0) {
         return;
     }
-
-    std::array<ggml_tensor *, 2> outs;
-    outs[0] = res->t_logits;
-
-    auto inp_sampling = std::make_unique<llm_graph_input_sampling>(samplers);
-    res->add_input(std::move(inp_sampling));
 
     std::map<llama_seq_id, std::vector<uint32_t>> sampling_rows;
     uint32_t n_rows = 0;
@@ -4235,11 +4347,6 @@ void llm_graph_context::build_sampling() const {
             sampling_rows[ubatch.seq_id[i][0]].push_back(n_rows++);
         }
     }
-
-    res->t_sampled.resize(n_rows, nullptr);
-    res->t_sampled_probs.resize(n_rows, nullptr);
-    res->t_sampled_logits.resize(n_rows, nullptr);
-    res->t_candidates.resize(n_rows, nullptr);
 
     // res->t_logits will contain logits for all tokens that want the logits calculated (logits=1 or output=1)
     GGML_ASSERT(res->t_logits != nullptr && "missing t_logits tensor");
@@ -4250,8 +4357,8 @@ void llm_graph_context::build_sampling() const {
     // Tensor split: each device holds a vocab slice of the logits. Every chain starts with top-k (enforced in
     // llama_context::set_sampler), so the union of the per-device top-k is a superset of the global top-k and the
     // chain picks exactly as it would from the full row. One gather brings the candidates to every device.
-    ggml_tensor * cand   = nullptr; // [n_cand, 2, n_cols]: candidate logits, then their vocab ids as F32
-    int64_t       n_cand = 0;
+    // cand: [n_cand, 2, n_cols]: candidate logits, then their vocab ids as F32
+    ggml_tensor * cand = nullptr;
     if (sampling_n_shards > 0) {
         int32_t k = 0;
         for (const auto & entry : samplers) {
@@ -4260,30 +4367,10 @@ void llm_graph_context::build_sampling() const {
             k = std::max(k, k_seq);
         }
 
-        const int64_t n_vocab = logits_t->ne[0];
-        const int64_t n_cols  = logits_t->ne[1];
-        GGML_ASSERT(sampling_vocab_ids != nullptr && sampling_vocab_ids->ne[0] == n_vocab);
-
-        n_cand = int64_t(k) * sampling_n_shards;
-
-        // slice-local indices, see the TOP_K/GET_ROWS rules in ggml-backend-meta
-        ggml_tensor * idx  = ggml_top_k(ctx0, logits_t, n_cand);
-        ggml_tensor * vals = ggml_get_rows(ctx0, ggml_reshape_3d(ctx0, logits_t, 1, n_vocab, n_cols), idx);
-        ggml_tensor * ids  = ggml_get_rows(ctx0,
-                ggml_repeat_4d(ctx0, ggml_reshape_3d(ctx0, sampling_vocab_ids, 1, n_vocab, 1), 1, n_vocab, n_cols, 1), idx);
-
-        vals = ggml_reshape_3d(ctx0, vals, n_cand, 1, n_cols);
-        ids  = ggml_reshape_3d(ctx0, ids,  n_cand, 1, n_cols);
-
-        cand = ggml_backend_meta_gather(ctx0, ggml_concat(ctx0, vals, ids, 1));
-        ggml_set_name(cand, "sampling_candidates");
+        cand = build_sampling_cand(logits_t, k);
     }
 
-    for (const auto & entry : samplers) {
-        if (entry.second->iface->backend_reset) {
-            entry.second->iface->backend_reset(entry.second);
-        }
-    }
+    build_sampling_begin(n_rows);
 
     static const std::vector<uint32_t> no_rows;
 
@@ -4294,66 +4381,13 @@ void llm_graph_context::build_sampling() const {
         const auto & rows = it != sampling_rows.end() ? it->second : no_rows;
 
         for (uint32_t i = 0; i < cparams.n_outputs_max_per_seq; ++i) {
-            const bool     active = i < rows.size();
-            const uint32_t row    = active ? rows[i] : 0;
-            const int      i_out  = active ? 1       : 0;
-
-            ggml_tensor * logits_seq = nullptr;
-            ggml_tensor * cand_ids   = nullptr;
-            if (cand) {
-                logits_seq = ggml_view_1d(ctx0, cand, n_cand, row * cand->nb[2]);
-                cand_ids   = ggml_cast(ctx0, ggml_view_1d(ctx0, cand, n_cand, row * cand->nb[2] + cand->nb[1]), GGML_TYPE_I32);
-            } else {
-                logits_seq = ggml_view_1d(ctx0, logits_t, logits_t->ne[0], row * logits_t->nb[1]);
-                if (sampling_vocab_ids) {
-                    cand_ids = ggml_cast(ctx0, sampling_vocab_ids, GGML_TYPE_I32);
-                }
-            }
-            ggml_format_name(logits_seq, "logits_seq_%d_%u", seq_id, i);
-
-            struct llama_sampler_data data = {
-                /*.logits       =*/ logits_seq,
-                /*.probs        =*/ nullptr,
-                /*.sampled      =*/ nullptr,
-                /*.candidates   =*/ cand_ids,
-            };
-
-            assert(sampler->iface->backend_apply);
-            sampler->iface->backend_apply(sampler, ctx0, gf, &data);
-
-            if (data.sampled != nullptr) {
-                if (active) {
-                    res->t_sampled[row] = data.sampled;
-                }
-                outs[1] = data.sampled;
-                ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
-            }
-
-            if (data.probs != nullptr) {
-                if (active) {
-                    res->t_sampled_probs[row] = data.probs;
-                }
-                outs[1] = data.probs;
-                ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
-            }
-
-            if (data.logits != nullptr) {
-                if (active) {
-                    res->t_sampled_logits[row] = data.logits;
-                }
-                outs[1] = data.logits;
-                ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
-            }
-
-            if (data.candidates != nullptr) {
-                if (active) {
-                    res->t_candidates[row] = data.candidates;
-                }
-                outs[1] = data.candidates;
-                ggml_build_forward_select(gf, outs.data(), outs.size(), i_out);
-            }
+            const bool active = i < rows.size();
+            const uint32_t row = active ? rows[i] : 0;
+            build_sampling_row(seq_id, sampler, logits_t, cand, row, active ? (int32_t) row : -1, res->t_logits, i);
         }
     }
+
+    build_sampling_end();
 
     // TODO: Call backend_accept after all samplers have been applied.
     /*

@@ -1446,7 +1446,13 @@ void llama_sampler_backend_begin(llama_sampler * sampler) {
 
 struct llama_sampler_top_k : public llama_sampler_backend {
     const int32_t k;
+
+    // backend only: leave the candidates in descending logit order like the host top-k does. The device top-k order is
+    // unspecified (the CPU swaps its first two, CUB's is unsorted), and dist walks the cumulative sum in candidate order.
+    const bool sorted;
 };
+
+static struct llama_sampler * llama_sampler_top_k_make(int32_t k, bool sorted);
 
 static const char * llama_sampler_top_k_name(const struct llama_sampler * smpl) {
     auto * sctx = (llama_sampler_top_k *) smpl->ctx;
@@ -1460,7 +1466,7 @@ static void llama_sampler_top_k_apply(struct llama_sampler * smpl, llama_token_d
 
 static struct llama_sampler * llama_sampler_top_k_clone(const struct llama_sampler * smpl) {
     const auto * ctx = (const llama_sampler_top_k *) smpl->ctx;
-    return llama_sampler_init_top_k(ctx->k);
+    return llama_sampler_top_k_make(ctx->k, ctx->sorted);
 }
 
 static void llama_sampler_top_k_free(struct llama_sampler * smpl) {
@@ -1506,6 +1512,16 @@ static void llama_sampler_top_k_backend_apply(
     data->logits = ggml_get_rows(ctx, logits_rows, top_k);
     ggml_set_name(data->logits, "top_k_rows");
 
+    if (sctx->sorted) {
+        struct ggml_tensor * order = ggml_argsort(ctx, ggml_reshape_1d(ctx, data->logits, sctx->k), GGML_SORT_ORDER_DESC);
+        ggml_set_name(order, "top_k_order");
+
+        data->logits = ggml_get_rows(ctx, data->logits, order);
+
+        struct ggml_tensor * cand_rows = ggml_reshape_2d(ctx, data->candidates, 1, sctx->k);
+        data->candidates = ggml_reshape_1d(ctx, ggml_get_rows(ctx, cand_rows, order), sctx->k);
+    }
+
     GGML_UNUSED(gf);
 }
 
@@ -1524,7 +1540,7 @@ static struct llama_sampler_i llama_sampler_top_k_i = {
     /* .copy_state        = */ llama_sampler_backend_copy_state<llama_sampler_top_k>,
 };
 
-struct llama_sampler * llama_sampler_init_top_k(int32_t k) {
+static struct llama_sampler * llama_sampler_top_k_make(int32_t k, bool sorted) {
     const bool is_empty = (k <= 0);
 
     if (is_empty) {
@@ -1535,9 +1551,18 @@ struct llama_sampler * llama_sampler_init_top_k(int32_t k) {
         /* .iface = */ &llama_sampler_top_k_i,
         /* .ctx   = */ new llama_sampler_top_k {
             ("top-k"),
-            /* .k = */ k,
+            /* .k      = */ k,
+            /* .sorted = */ sorted,
         }
     );
+}
+
+struct llama_sampler * llama_sampler_init_top_k(int32_t k) {
+    return llama_sampler_top_k_make(k, false);
+}
+
+struct llama_sampler * llama_sampler_init_top_k_sorted(int32_t k) {
+    return llama_sampler_top_k_make(k, true);
 }
 
 // top-p

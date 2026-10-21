@@ -893,7 +893,8 @@ struct llm_graph_params {
         }
 
         // TODO: https://github.com/ggml-org/llama.cpp/pull/24340#discussion_r3448035248
-        if (cparams.nextn_layer_offset != other.cparams.nextn_layer_offset) {
+        if (cparams.nextn_layer_offset != other.cparams.nextn_layer_offset ||
+            cparams.mtp_chain          != other.cparams.mtp_chain) {
             return false;
         }
 
@@ -1480,6 +1481,16 @@ struct llm_graph_context {
     //
 
     void build_sampling() const;
+
+    // Building blocks of build_sampling() for a model builder that samples inside its graph (e.g. a draft chain):
+    // begin(n_rows) sizes the res->t_sampled* rows, row() applies a sampler to one logits column and records the
+    // result in output row `row` (row < 0: built but not computed), end() adds the sampler inputs. The builder
+    // owns res->t_logits and the row order, and build_sampling() then leaves the graph alone.
+    void          build_sampling_begin(uint32_t n_rows) const;
+    ggml_tensor * build_sampling_cand(ggml_tensor * logits_t, int32_t k) const;
+    void          build_sampling_row(llama_seq_id seq_id, llama_sampler * sampler, ggml_tensor * logits_t,
+                                     ggml_tensor * cand, uint32_t col, int32_t row, ggml_tensor * anchor, uint32_t slot = 0) const;
+    void          build_sampling_end() const;
 
     //
     // dense (out)
