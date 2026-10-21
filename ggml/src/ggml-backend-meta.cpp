@@ -2018,7 +2018,15 @@ static ggml_backend_buffer_t ggml_backend_meta_buffer_type_alloc_buffer_n(ggml_b
                 t->buffer = meta_buf_ctx->bufs[i].get();
             }
         }
-        GGML_ASSERT(meta_buf_ctx->bufs[i]);
+        if (!meta_buf_ctx->bufs[i]) {
+            for (int j = 0; j < n_tensors; ++j) {
+                tensors[j]->buffer = nullptr;
+                tensors[j]->data = nullptr;
+                tensors[j]->extra = nullptr;
+            }
+            ggml_backend_buffer_free(meta_buf);
+            return nullptr;
+        }
         meta_buf->size = std::max(meta_buf->size, ggml_backend_buffer_get_size(meta_buf_ctx->bufs[i].get()));
     }
     return meta_buf;
