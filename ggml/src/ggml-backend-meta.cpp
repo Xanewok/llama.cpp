@@ -1393,6 +1393,23 @@ static void * ggml_backend_meta_buffer_get_base(ggml_backend_buffer_t buffer) {
     return (void *) 0x1000000000000000; // FIXME
 }
 
+// A gather slice's op_params hold its own pad offsets, so a refresh must recompute them, not copy the node's.
+static void ggml_backend_meta_update_op_params(ggml_tensor * simple_tensor, const ggml_tensor * tensor, size_t index) {
+    memcpy(simple_tensor->op_params, tensor->op_params, sizeof(tensor->op_params));
+    if (ggml_backend_meta_is_gather(tensor)) {
+        const ggml_backend_meta_split_state ss_src = ggml_backend_meta_get_split_state(tensor->src[0], /*assume_sync =*/ true);
+        const int axis = ss_src.axis;
+        if (axis >= 0 && axis < GGML_MAX_DIMS) {
+            int64_t offset = 0;
+            for (size_t j = 0; j < index; j++) {
+                offset += ss_src.ne[j];
+            }
+            ggml_set_op_params_i32(simple_tensor, 2*axis + 0, int32_t(offset));
+            ggml_set_op_params_i32(simple_tensor, 2*axis + 1, int32_t(tensor->ne[axis] - offset - ss_src.ne[index]));
+        }
+    }
+}
+
 static enum ggml_status ggml_backend_meta_buffer_init_tensor_impl(ggml_backend_meta_simple_tensor_container & stc, ggml_tensor * tensor) {
     GGML_ASSERT(ggml_backend_buffer_is_meta(tensor->buffer));
     ggml_backend_meta_buffer_context * buf_ctx = (ggml_backend_meta_buffer_context *) tensor->buffer->context;
@@ -1436,19 +1453,7 @@ static enum ggml_status ggml_backend_meta_buffer_init_tensor_impl(ggml_backend_m
             t_ij->nb[i] = nb[i];
         }
         t_ij->flags = tensor->flags;
-        memcpy(t_ij->op_params, tensor->op_params, sizeof(tensor->op_params));
-        if (ggml_backend_meta_is_gather(tensor)) {
-            const ggml_backend_meta_split_state ss_src = ggml_backend_meta_get_split_state(tensor->src[0], /*assume_sync =*/ true);
-            const int axis = ss_src.axis;
-            if (axis >= 0 && axis < GGML_MAX_DIMS) {
-                int64_t offset = 0;
-                for (size_t jj = 0; jj < j; jj++) {
-                    offset += ss_src.ne[jj];
-                }
-                ggml_set_op_params_i32(t_ij, 2*axis + 0, int32_t(offset));
-                ggml_set_op_params_i32(t_ij, 2*axis + 1, int32_t(tensor->ne[axis] - offset - ss_src.ne[j]));
-            }
-        }
+        ggml_backend_meta_update_op_params(t_ij, tensor, j);
         ggml_set_name(t_ij, tensor->name);
         t_ij->buffer = simple_buf;
         t_ij->view_src = tensor->view_src;
@@ -2431,6 +2436,8 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
                 }
                 bcj.nodes[i] = ggml_backend_meta_buffer_simple_tensor(node, j);
                 GGML_ASSERT(bcj.nodes[i]);
+                // op_params may have changed since init_tensor created the slice
+                ggml_backend_meta_update_op_params(bcj.nodes[i], node, j);
             }
         }
 
