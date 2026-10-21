@@ -874,6 +874,181 @@ static bool check_mtp_chain_capacity() {
     return ok;
 }
 
+struct gdn_probe {
+    int     n_indexed       = 0;
+    int     n_plain         = 0;
+    int     n_indexed_multi = 0;
+    int     n_plain_single  = 0;
+    int64_t n_gathered      = 0;
+};
+
+static bool gdn_probe_cb(ggml_tensor * t, bool ask, void * user_data) {
+    if (!ask) {
+        return false;
+    }
+    auto * probe = (gdn_probe *) user_data;
+    if (t->op == GGML_OP_GATED_DELTA_NET) {
+        (t->src[6] ? probe->n_indexed : probe->n_plain)++;
+        if (t->src[6] && t->src[2]->ne[3] > 1) {
+            ++probe->n_indexed_multi;
+        }
+        if (!t->src[6] && t->src[2]->ne[3] == 1) {
+            ++probe->n_plain_single;
+        }
+    }
+    const ggml_tensor * src = t->op == GGML_OP_GET_ROWS ? t->src[0] : nullptr;
+    if (src && src->view_src) {
+        src = src->view_src;
+    }
+    if (src && strncmp(src->name, "cache_s_l", 9) == 0) {
+        probe->n_gathered += t->ne[1];
+    }
+    return false;
+}
+
+// Compare getter and gather builds on identical batches; single-sequence batches can use different arithmetic.
+static bool check_gdn_getter(llama_model * model) {
+    const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(model));
+
+    constexpr uint32_t n_ubatch = 16;
+
+    gdn_probe probe;
+    const auto make_ctx_gate = [&](uint32_t n_seq) {
+        auto cparams = llama_context_default_params();
+        cparams.n_threads = 4;
+        cparams.n_threads_batch = 4;
+        cparams.n_seq_max  = n_seq;
+        cparams.n_rs_seq   = 8;
+        cparams.n_ctx      = 256*n_seq;
+        cparams.n_batch    = 256;
+        cparams.n_ubatch   = n_ubatch;
+        cparams.kv_unified = false;
+        cparams.cb_eval           = gdn_probe_cb;
+        cparams.cb_eval_user_data = &probe;
+        return llama_context_ptr(llama_init_from_model(model, cparams));
+    };
+
+    const auto tok = [&](uint32_t seq, llama_pos pos) {
+        return (llama_token) ((11*(uint32_t) pos + 29*seq + 3) % (uint32_t) n_vocab);
+    };
+
+    enum class form { BY_ID, GATHERED };
+    // the streams share one batch in order, tokens from out_from on request logits
+    struct phase {
+        const char *          name;
+        std::vector<uint32_t> streams;
+        llama_pos             p0, p1, out_from;
+        form                  expect;
+    };
+    struct scenario {
+        const char *       name;
+        uint32_t           n_seq;
+        std::vector<phase> phases;
+    };
+    const std::vector<scenario> scenarios = {
+        { "two slots", 2, {
+            { "prefill seq 0",             { 0 },    0, 19, 18, form::BY_ID }, // two ubatches of one sequence
+            { "prefill seq 1",             { 1 },    0, 19, 18, form::BY_ID },
+            { "verify batch, both seqs",   { 0, 1 }, 19, 25, 19, form::BY_ID }, // n_seqs = n_rs = 2, several tokens each
+            { "decode, both seqs",         { 0, 1 }, 25, 26, 25, form::BY_ID }, // one token each
+            { "decode, both seqs again",   { 0, 1 }, 26, 27, 26, form::BY_ID },
+            { "seq 1 beside an idle slot", { 1 },    27, 28, 27, form::BY_ID },
+        } },
+        // seq 1 takes the first cell, so the joint batch swaps the cells: each sequence reads the cell the other writes
+        { "swapped cells", 2, {
+            { "prefill seq 1",             { 1 },    0, 19, 18, form::BY_ID },
+            { "prefill seq 0",             { 0 },    0, 19, 18, form::BY_ID },
+            { "verify batch, both seqs",   { 0, 1 }, 19, 25, 19, form::BY_ID },
+            { "decode, both seqs",         { 0, 1 }, 25, 26, 25, form::BY_ID },
+        } },
+        // both start from the shared zero state in one batch
+        { "joint start", 2, {
+            { "prefill both seqs",         { 0, 1 }, 0, 12, 11, form::BY_ID },
+            { "decode, both seqs",         { 0, 1 }, 12, 13, 12, form::BY_ID },
+        } },
+        // seq 2 takes the cell between seqs 0 and 1, so their joint batch holds its state as an extra state the gather
+        // must move (without a unified KV cache a ubatch joins only consecutive sequence ids)
+        { "extra state", 3, {
+            { "prefill seq 0",              { 0 },    0, 19, 18, form::BY_ID },
+            { "prefill seq 2",              { 2 },    0, 19, 18, form::BY_ID },
+            { "prefill seq 1",              { 1 },    0, 19, 18, form::BY_ID },
+            { "verify batch, seqs 0 and 1", { 0, 1 }, 19, 25, 19, form::GATHERED },
+            { "seq 2 after the move",       { 2 },    19, 25, 19, form::BY_ID },
+            { "decode, seqs 0 and 1",       { 0, 1 }, 25, 26, 25, form::BY_ID },
+        } },
+    };
+
+    int n_gdn = 0;
+    for (const auto & sc : scenarios) {
+        llama_context_ptr ctx_gate = make_ctx_gate(sc.n_seq);
+        if (!ctx_gate) {
+            LOG_ERR("%s: %s: failed to init context\n", __func__, sc.name);
+            return false;
+        }
+        if (llama_n_rs_seq(ctx_gate.get()) == 0) {
+            LOG_INF("%s: skipping because n_rs_seq is disabled\n", __func__);
+            return false;
+        }
+
+        for (const auto & ph : sc.phases) {
+            probe = {};
+            common_batch batch(ctx_gate.get());
+            for (uint32_t s : ph.streams) {
+                for (llama_pos pos = ph.p0; pos < ph.p1; ++pos) {
+                    batch.add(tok(s, pos), pos, (llama_seq_id) s, pos >= ph.out_from);
+                }
+            }
+            if (llama_process(ctx_gate.get(), LLAMA_PROCESS_TYPE_DECODE, batch.get()) != 0) {
+                LOG_ERR("%s: %s: %s: decode failed\n", __func__, sc.name, ph.name);
+                return false;
+            }
+            llama_synchronize(ctx_gate.get());
+            LOG_INF("%s: %s: %s: gdn nodes %d by id, %d gathered; state rows gathered %" PRId64 "\n", __func__,
+                    sc.name, ph.name, probe.n_indexed, probe.n_plain, probe.n_gathered);
+
+            for (size_t j = 0; j < ph.streams.size(); ++j) {
+                const uint32_t s = ph.streams[j];
+                const int32_t first = (int32_t) j*(ph.p1 - ph.p0) - ph.p0; // batch index of pos is first + pos
+                for (llama_pos pos = ph.out_from; pos < ph.p1; ++pos) {
+                    const float * l_gate = llama_get_logits_ith(ctx_gate.get(), first + pos);
+                    if (!l_gate || !std::all_of(l_gate, l_gate + n_vocab, [](float v) { return std::isfinite(v); })) {
+                        LOG_ERR("%s: %s: %s: seq %u pos %d missing or non-finite logits\n", __func__, sc.name, ph.name, s, (int) pos);
+                        return false;
+                    }
+                }
+            }
+
+            n_gdn += probe.n_indexed + probe.n_plain;
+            if (probe.n_indexed + probe.n_plain == 0) {
+                continue;
+            }
+            if (ph.expect == form::BY_ID && (probe.n_indexed == 0 || probe.n_plain != 0 || probe.n_gathered != 0)) {
+                LOG_ERR("%s: %s: %s: ubatches without extra states must read the state by id and gather none\n",
+                        __func__, sc.name, ph.name);
+                return false;
+            }
+            if (ph.expect == form::GATHERED && (probe.n_plain == 0 || probe.n_indexed != 0)) {
+                LOG_ERR("%s: %s: %s: ubatches with extra states must keep the gathered state\n", __func__, sc.name, ph.name);
+                return false;
+            }
+        }
+    }
+
+    if (n_gdn == 0) {
+        LOG_INF("%s: skipping because the model has no gated delta net\n", __func__);
+        return false;
+    }
+    LOG_INF("%s: all scenarios pass\n", __func__);
+    return true;
+}
+
+static bool check_gdn_getter_arch(const size_t seed, const float stdev) {
+    auto gguf_ctx = get_gguf_ctx(LLM_ARCH_QWEN35, false);
+    auto pair = get_model_and_ctx(gguf_ctx.get(), nullptr, seed, stdev,
+                                 { ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU) });
+    return check_gdn_getter(pair.first.get());
+}
+
 static bool moe_mandatory(const llm_arch arch) {
     switch (arch) {
         case LLM_ARCH_FLINT:
@@ -1351,6 +1526,13 @@ static int test_backends(const std::string & arch_filter, const size_t seed, con
     const bool capacity_ok = check_mtp_chain_capacity();
     n_failed += !capacity_ok;
     all_ok &= capacity_ok;
+
+    if (arch_matches(arch_filter, LLM_ARCH_QWEN35)) {
+        n_tests++;
+        const bool ok = check_gdn_getter_arch(seed, stdev);
+        n_failed += !ok;
+        all_ok &= ok;
+    }
 
     if (n_tests == 0) {
         LOG("Summary: no tests executed\n");

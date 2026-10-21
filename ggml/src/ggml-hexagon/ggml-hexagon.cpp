@@ -2979,6 +2979,10 @@ static ggml_backend_buffer_type_t ggml_backend_hexagon_device_get_host_buffer_ty
 // Never check buffer usage, buffer properties, or repacking state (is_tiled) here.
 // Support must depend only on static tensor properties (shape, type, strides).
 static bool ggml_backend_hexagon_device_supports_op(ggml_backend_dev_t dev, const struct ggml_tensor * op) {
+    if (op->op == GGML_OP_GATED_DELTA_NET && op->src[6]) {
+        return false;
+    }
+
     auto dev_ctx = static_cast<ggml_backend_hexagon_device_context *>(dev->context);
     auto sess    = dev_ctx->session();
 
