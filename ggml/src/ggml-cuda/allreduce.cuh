@@ -27,3 +27,14 @@ bool ggml_cuda_ar_allreduce(
     ggml_backend_t        * backends,
     ggml_tensor           ** tensors);
 
+
+// In-graph AllReduce: each rank enqueues its part on its own stream as a node of its own graph, and the two ranks meet
+// inside the kernel.  Supported for the chunked-kernel sizes with GGML_CUDA_AR_P2P_KERNEL (device epochs), whose launch
+// arguments are the same on every call.  Both ranks must enqueue the same sequence of in-graph and host-driven chunked
+// AllReduces, or the epochs desync and the kernels trap (GGML_CUDA_AR_SPIN_TIMEOUT_NS).
+
+// Plan time: true if the AllReduce of tensors[0..n_devices-1] (already accepted by the comm dispatcher) can run in graph.
+bool ggml_cuda_ar_in_graph_supported(ggml_cuda_ar_pipeline * pipeline, ggml_tensor ** tensors);
+
+// Stream work only (no host sync, event or allocation), so it can be captured into a CUDA graph.
+void ggml_cuda_ar_allreduce_in_graph(ggml_cuda_ar_pipeline * pipeline, int rank, ggml_tensor * tensor, cudaStream_t stream);
