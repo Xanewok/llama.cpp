@@ -20,6 +20,19 @@ enum mmvq_parameter_table_id {
 
 static constexpr int calc_nwarps(ggml_type type, int ncols_dst, mmvq_parameter_table_id table_id, bool small_k = false, bool halve_iters = false) {
     if (table_id == MMVQ_PARAMETERS_BLACKWELL) {
+        if (ncols_dst >= 5 && ncols_dst <= MMVQ_MAX_BATCH_SIZE) {
+            switch (type) {
+                case GGML_TYPE_Q4_K:
+                case GGML_TYPE_IQ4_XS:
+                    return 1;
+                case GGML_TYPE_Q5_K:
+                    return ncols_dst == 5 ? 2 : 1;
+                case GGML_TYPE_Q6_K:
+                    return ncols_dst == 7 ? 1 : 2;
+                default:
+                    break;
+            }
+        }
         return calc_nwarps(type, ncols_dst, MMVQ_PARAMETERS_GENERIC, small_k, halve_iters);
     }
     if (table_id == MMVQ_PARAMETERS_GENERIC) {
@@ -165,9 +178,8 @@ static constexpr bool mmvq_two_rows_ncols1(ggml_type type) {
 }
 
 static constexpr int calc_rows_per_block(ggml_type type, int ncols_dst, int table_id, bool small_k = false, int nwarps = 1) {
-    // Blackwell: at 5-8 columns two warps over four rows keep more loads in flight than two rows (Q4_K-Q6_K/IQ4_XS +12-17 % at 6 columns, Q8_0 equal).
     if (table_id == MMVQ_PARAMETERS_BLACKWELL && ncols_dst >= 5 && ncols_dst <= MMVQ_MAX_BATCH_SIZE) {
-        return 4;
+        return type == GGML_TYPE_Q6_K && ncols_dst == 8 ? 6 : 4;
     }
     if (table_id == MMVQ_PARAMETERS_GENERIC || table_id == MMVQ_PARAMETERS_GCN || table_id == MMVQ_PARAMETERS_TURING || table_id == MMVQ_PARAMETERS_GB10 || table_id == MMVQ_PARAMETERS_BLACKWELL) {
         switch (ncols_dst) {
