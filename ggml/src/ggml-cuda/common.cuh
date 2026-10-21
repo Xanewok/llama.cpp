@@ -1287,6 +1287,9 @@ struct ggml_cuda_graph {
         size_t   node_src_nb[GGML_MAX_SRC][GGML_MAX_DIMS];
     };
     std::vector<node_properties> node_props;
+    std::vector<int> subgraph_sizes;
+    std::vector<uint64_t> subgraph_uids;
+    const void * subgraph_comm = nullptr; // the subgraph UIDs are valid only for this AllReduce pipeline
 
     bool is_enabled() const {
         static const bool disable_cuda_graphs_due_to_env = (getenv("GGML_CUDA_DISABLE_GRAPHS") != nullptr);
@@ -1453,6 +1456,16 @@ struct ggml_backend_cuda_context {
     int device;
     std::string name;
     cudaEvent_t copy_event = nullptr;
+    // Set by an AllReduce kernel whose peer wait timed out; the device copy makes later kernels return early.
+    int * ar_failed_host   = nullptr;
+    int * ar_failed_notify = nullptr; // device pointer to ar_failed_host
+    int * ar_failed_device = nullptr;
+
+    void check_ar_failed() const {
+        if (ar_failed_host != nullptr && *(const volatile int *) ar_failed_host != 0) {
+            GGML_ABORT("CUDA AllReduce peer wait timed out (device %d)", device);
+        }
+    }
 
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
     struct input_slot {

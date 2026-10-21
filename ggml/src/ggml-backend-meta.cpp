@@ -2086,6 +2086,7 @@ struct ggml_backend_meta_context : ggml_backend_meta_graph_plan {
     bool plan_reuse;
     void *                               comm_ctx       = nullptr;
     ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;
+    ggml_backend_comm_graph_compute_t    comm_graph_compute = nullptr;
 
     // Probed on the first owned upload; stays NULL when the backends have no shared staging.
     bool                                 input_stage_probed = false;
@@ -2126,6 +2127,8 @@ struct ggml_backend_meta_context : ggml_backend_meta_graph_plan {
                 ggml_backend_reg_get_proc_address(ggml_backend_dev_backend_reg(
                     ggml_backend_get_device(simple_backends[0])), "ggml_backend_comm_allreduce_tensor");
             GGML_ASSERT(comm_allreduce != nullptr);
+            comm_graph_compute = (ggml_backend_comm_graph_compute_t) ggml_backend_reg_get_proc_address(
+                ggml_backend_dev_backend_reg(ggml_backend_get_device(simple_backends[0])), "ggml_backend_comm_graph_compute");
         }
     }
 
@@ -2861,12 +2864,39 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
     };
 
 
+    size_t run_end = 0;
     for (size_t i = 0; i < backend_ctx->n_subgraphs; i++) {
-        for (size_t j = 0; j < n_backends; j++) {
-            auto & bcj = backend_ctx->backend_configs[j];
-            const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, bcj.cgraphs[i].cgraph_main);
-            if (status != GGML_STATUS_SUCCESS) {
-                return status;
+        bool computed = false;
+        if (i == run_end) {
+            run_end = i + 1;
+            // The last subgraph may end at a gather; its boundary stays on the exact split path below.
+            while (run_end < backend_ctx->n_subgraphs) {
+                const ggml_cgraph * graph = backend_ctx->backend_configs[0].cgraphs[run_end - 1].cgraph_main;
+                if (ggml_backend_meta_is_gather(graph->nodes[graph->n_nodes - 1])) {
+                    break;
+                }
+                ++run_end;
+            }
+            if (owner->comm_graph_compute != nullptr && run_end - i > 1) {
+                std::vector<ggml_cgraph *> graphs;
+                for (size_t g = i; g < run_end; ++g) {
+                    for (size_t j = 0; j < n_backends; ++j) {
+                        graphs.push_back(backend_ctx->backend_configs[j].cgraphs[g].cgraph_main);
+                    }
+                }
+                if (owner->comm_graph_compute(owner->comm_ctx, graphs.data(), run_end - i)) {
+                    i = run_end - 1;
+                    computed = true;
+                }
+            }
+        }
+        if (!computed) {
+            for (size_t j = 0; j < n_backends; j++) {
+                auto & bcj = backend_ctx->backend_configs[j];
+                const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, bcj.cgraphs[i].cgraph_main);
+                if (status != GGML_STATUS_SUCCESS) {
+                    return status;
+                }
             }
         }
 
