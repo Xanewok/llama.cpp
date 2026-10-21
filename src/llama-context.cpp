@@ -1454,7 +1454,7 @@ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
         if (reason) {
             LLAMA_LOG_WARN("%s: seq_id = %d: backend sampling with SPLIT_MODE_TENSOR needs %s; using CPU\n", __func__, (int) seq_id, reason);
             if (sampling.samplers.count(seq_id) > 0) {
-                sched_need_reserve = true;
+                gf_res_prev_active = nullptr;
             }
             sampling.samplers.erase(seq_id);
             return false;
@@ -1486,7 +1486,7 @@ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
         LLAMA_LOG_WARN("%s: sampler '%s' for seq_id = %d, cannot be offloaded to the backend\n", __func__, llama_sampler_name(sampler), seq_id);
 
         if (sampling.samplers.count(seq_id) > 0) {
-            sched_need_reserve = true;
+            gf_res_prev_active = nullptr;
         }
 
         sampling.samplers.erase(seq_id);
@@ -1496,7 +1496,7 @@ bool llama_context::set_sampler(llama_seq_id seq_id, llama_sampler * sampler) {
 
     sampling.samplers.erase(seq_id);
 
-    sched_need_reserve = true;
+    gf_res_prev_active = nullptr;
 
     return true;
 }
