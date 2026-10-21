@@ -3974,6 +3974,7 @@ static std::unique_ptr<llm_graph_input_rs> build_rs_inp_impl(
 
     inp->s_copy_main = ggml_view_1d(ctx0, inp->s_copy, n_seqs, 0);
     inp->s_copy_tail = ggml_view_1d(ctx0, inp->s_copy, n_rs - 1, inp->s_copy->nb[0]);
+    inp->s_copy_none = ggml_view_1d(ctx0, inp->s_copy, 0, 0);
 
     inp->head = mctx_cur->get_head();
     inp->rs_z = mctx_cur->get_rs_z();
@@ -3998,8 +3999,12 @@ ggml_tensor * llm_graph_context::build_rs(
     const auto * kv_state = inp->mctx;
 
     // a custom getter reads the states of the ubatch straight from the cache, so the gather skips the first
-    // state: it still holds the n_rs - n_seqs extra states and copies no state of a single sequence ubatch
-    ggml_tensor * state_copy = get_state_rows ? inp->s_copy_tail : inp->s_copy;
+    // state: it still holds the n_rs - n_seqs extra states and copies no state of a single sequence ubatch.
+    // Without extra states it copies nothing; with them it stays n_rs - 1 long, which the worst-case reserve covers.
+    ggml_tensor * state_copy = inp->s_copy;
+    if (get_state_rows) {
+        state_copy = kv_state->get_n_rs() == (uint32_t) n_seqs ? inp->s_copy_none : inp->s_copy_tail;
+    }
 
     return build_rs(s, state_copy, inp->s_copy_main, state_size, n_seqs,
                     kv_state->get_n_rs(), kv_state->get_head(), kv_state->get_size(), kv_state->get_rs_z(),

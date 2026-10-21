@@ -2,6 +2,8 @@
 
 List of GGML operations and backend support status.
 
+`GATED_DELTA_NET` accepts optional state-row ids on CPU and CUDA. Other backends reject indexed inputs; llama uses gather-then-plain GDN on those backends. CUDA disables snapshot cache fusion for indexed multi-sequence batches.
+
 ## How to add a backend to this table:
 
 1. Run `test-backend-ops support --output csv` with your backend name and redirect output to a csv file in `docs/ops/` (e.g., `docs/ops/CUDA.csv`)

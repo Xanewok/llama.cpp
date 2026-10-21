@@ -2662,7 +2662,8 @@ extern "C" {
     //   v     : [S_v, H_v, n_tokens, n_seqs]
     //   g     : [1, H_v, n_tokens, n_seqs] (scalar gate) or [S_v, H_v, n_tokens, n_seqs] (KDA)
     //   beta  : [1, H_v, n_tokens, n_seqs]
-    //   state : [S_v, S_v, H_v, n_seqs] -- initial recurrent state s0
+    //   state : [S_v, S_v, H_v, n_state_rows] -- initial recurrent states
+    //   ids   : optional I32 [n_seqs], values in [0, n_state_rows); NULL requires n_state_rows == n_seqs
     //
     // the output packs the attention scores [S_v, H_v, n_tokens, n_seqs] followed by K state
     // snapshots, most-recent first (slot 0 = final state, slot s = state s tokens back). K == 1
@@ -2676,6 +2677,7 @@ extern "C" {
             struct ggml_tensor  * g,
             struct ggml_tensor  * beta,
             struct ggml_tensor  * state,
+            struct ggml_tensor  * ids,
             int64_t               K);
 
     // DSA lightning indexer
