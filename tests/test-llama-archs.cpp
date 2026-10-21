@@ -12,6 +12,8 @@
 // TODO: replace with #include "llama-ext.h" in the future
 #include "../src/llama-arch.h"
 #include "../src/llama-ext.h"
+#include "../src/llama-kv-cache.h"
+#include "../src/llama-model.h"
 #include "../src/llama-model-saver.h"
 
 #include <algorithm>
@@ -22,6 +24,7 @@
 #include <cstring>
 #include <cstdint>
 #include <random>
+#include <limits>
 #include <regex>
 #include <stdexcept>
 #include <string>
@@ -2037,6 +2040,108 @@ static bool test_kq_mask_prefix(const size_t seed, const float stdev) {
     return ok;
 }
 
+static void seq_rm_require(bool ok, const char * message) {
+    if (!ok) {
+        throw std::runtime_error(message);
+    }
+}
+
+static int test_seq_rm() {
+    auto mp = llama_model_default_params();
+    mp.no_alloc = true;
+    mp.n_gpu_layers = 0;
+    auto gguf_ctx = get_gguf_ctx(LLM_ARCH_LLAMA, false);
+    tensor_data_params tensor_params = {42, 0.1f};
+    llama_model_ptr model_ptr(llama_model_init_from_user(gguf_ctx.get(), set_tensor_data, &tensor_params, mp));
+    GGML_ASSERT(model_ptr);
+    const auto & model = *model_ptr;
+    auto hp = model.hparams;
+    hp.no_alloc = true;
+    const llama_pos end = std::numeric_limits<llama_pos>::max();
+    for (bool unified : {false, true}) {
+        llama_kv_cache cache(model, hp, GGML_TYPE_F16, GGML_TYPE_F16, false, false, unified,
+                             256, 2, 256, 0, LLAMA_SWA_TYPE_NONE, nullptr,
+                             [](uint32_t) { return false; }, nullptr, nullptr);
+        for (llama_seq_id seq_id : {0, 1, -1}) {
+            for (const auto & range : std::vector<std::pair<llama_pos, llama_pos>>{
+                    {-1, -1}, {0, 0}, {0, 1}, {7, 19}, {19, 7}, {63, -1}, {64, 65}, {end - 1, end}}) {
+                cache.clear(false);
+                std::vector<llama_kv_cells> expected;
+                for (int s = 0; s < (unified ? 1 : 2); ++s) {
+                    auto & cells = const_cast<llama_kv_cells &>(cache.get_cells(s));
+                    for (uint32_t j = 0; j < 192; ++j) {
+                        const uint32_t i = (j*37)%256;
+                        cells.pos_set(i, j == 191 ? end - 1 : j/3);
+                        cells.seq_add(i, s);
+                        if (unified && j%2 == 0) {
+                            cells.seq_add(i, 1);
+                        }
+                    }
+                    expected.push_back(cells);
+                }
+                const llama_pos p0 = range.first < 0 ? 0 : range.first;
+                const llama_pos p1 = range.second < 0 ? end : range.second;
+                for (size_t s = 0; s < expected.size(); ++s) {
+                    auto & cells = expected[s];
+                    if (!unified && seq_id >= 0 && s != (size_t) seq_id) {
+                        continue;
+                    }
+                    for (uint32_t i = 0; i < cells.size(); ++i) {
+                        if (cells.pos_in(i, p0, p1)) {
+                            if (seq_id < 0) {
+                                cells.rm(i);
+                            } else if (cells.seq_has(i, seq_id)) {
+                                cells.seq_rm(i, seq_id);
+                            }
+                        }
+                    }
+                }
+                for (int repeat = 0; repeat < 2; ++repeat) {
+                    seq_rm_require(cache.seq_rm(seq_id, range.first, range.second), "seq_rm failed");
+                    for (size_t s = 0; s < expected.size(); ++s) {
+                        const auto & actual = cache.get_cells(s);
+                        for (uint32_t i = 0; i < actual.size(); ++i) {
+                            seq_rm_require(actual.pos_get(i) == expected[s].pos_get(i), "seq_rm position differs from scan");
+                            for (llama_seq_id id : {0, 1}) {
+                                seq_rm_require(actual.seq_has(i, id) == expected[s].seq_has(i, id), "seq_rm membership differs from scan");
+                            }
+                        }
+                        for (llama_seq_id id : {0, 1}) {
+                            seq_rm_require(actual.seq_pos_get(id) == expected[s].seq_pos_get(id), "seq_rm index differs from scan");
+                        }
+                    }
+                }
+            }
+        }
+        cache.clear(false);
+        llama_seq_id seq = 0;
+        std::vector<llama_pos> pos(200);
+        std::vector<int32_t> counts(200, 1);
+        std::vector<llama_seq_id *> ids(200, &seq);
+        llama_kv_cache::slot_info slot = {0, 0, {0}, {{}}};
+        for (uint32_t i = 0; i < pos.size(); ++i) {
+            pos[i] = i;
+            slot.idxs[0].push_back(i);
+        }
+        pos[3] = 1000;
+        pos[100] = 500;
+        llama_ubatch ub = {};
+        ub.n_tokens = ub.n_seq_tokens = pos.size();
+        ub.n_seqs = ub.n_seqs_unq = ub.n_pos = 1;
+        ub.b_equal_seqs = true;
+        ub.pos = pos.data();
+        ub.n_seq_id = counts.data();
+        ub.seq_id = ids.data();
+        ub.seq_id_unq = &seq;
+        cache.apply_ubatch(slot, ub);
+        seq_rm_require(cache.seq_rm(0, 500, -1), "head removal failed");
+        ub.n_tokens = ub.n_seq_tokens = 1;
+        const auto next = cache.find_slot(ub, false);
+        seq_rm_require(!next.empty() && next.head() == 3, "seq_rm did not select the lowest freed cell");
+    }
+    return 0;
+}
+
 int main(int argc, char ** argv) {
     // init the logger at max verbosity. filter with a custom callback respecting the user-configure verbosity
     common_log_set_verbosity_thold(LOG_LEVEL_DEBUG);
@@ -2045,6 +2150,7 @@ int main(int argc, char ** argv) {
 
     std::random_device rd;
 
+    bool seq_rm_only = false;
     std::string arch_filter;
     size_t seed = rd();
     float stdev = 0.1f;
@@ -2061,6 +2167,8 @@ int main(int argc, char ** argv) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             usage(argv);
             return 0;
+        } else if (strcmp(argv[i], "--seq-rm") == 0) {
+            seq_rm_only = true;
         } else if (strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "--arch") == 0) {
             if (i + 1 < argc) {
                 const std::string arch_name = argv[++i];
@@ -2148,6 +2256,9 @@ int main(int argc, char ** argv) {
         }
         if (tp_sampling) {
             return test_tp_sampling(seed, stdev, tp_sampling_gpu);
+        }
+        if (seq_rm_only) {
+            return test_seq_rm();
         }
         if (!out.empty()) {
             return save_models(arch_filter, seed, stdev, verbosity, out);
