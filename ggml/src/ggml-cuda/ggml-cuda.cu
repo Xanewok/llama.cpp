@@ -3299,6 +3299,21 @@ static void ggml_backend_cuda_synchronize(ggml_backend_t backend) {
     GGML_UNUSED(backend);
 }
 
+#if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+// local: the stream synchronize() waits on
+static bool ggml_backend_cuda_query(ggml_backend_t backend) {
+    ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *)backend->context;
+
+    const cudaError_t status = cudaStreamQuery(cuda_ctx->stream());
+    if (status == cudaErrorNotReady) {
+        (void) cudaGetLastError();
+        return false;
+    }
+    CUDA_CHECK(status);
+    return true;
+}
+#endif
+
 static bool ggml_cuda_is_view_or_noop(const ggml_tensor * t) {
     return ggml_is_empty(t) || t->op == GGML_OP_RESHAPE || t->op == GGML_OP_TRANSPOSE ||
            t->op == GGML_OP_VIEW || t->op == GGML_OP_PERMUTE || t->op == GGML_OP_NONE;
@@ -6028,8 +6043,10 @@ static const ggml_backend_i ggml_backend_cuda_interface = {
     /* .graph_optimize          = */ ggml_backend_cuda_graph_optimize,
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
     /* .set_tensor_batch_owned  = */ ggml_backend_cuda_set_tensor_batch_owned,
+    /* .query                   = */ ggml_backend_cuda_query,
 #else
     /* .set_tensor_batch_owned  = */ nullptr,
+    /* .query                   = */ nullptr,
 #endif
 };
 
