@@ -2019,6 +2019,7 @@ struct ggml_backend_meta_graph_plan {
 struct ggml_backend_meta_context : ggml_backend_meta_graph_plan {
     std::string name;
     size_t n_reduce_steps;
+    std::unique_ptr<ggml_backend_meta_graph_plan> spare_plan;
     void *                               comm_ctx       = nullptr;
     ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;
 
@@ -2760,20 +2761,32 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
 }
 
 static ggml_backend_graph_plan_t ggml_backend_meta_graph_plan_create(ggml_backend_t backend, const ggml_cgraph * cgraph) {
+    std::lock_guard<std::recursive_mutex> lock(meta_tensor_mutex);
     auto * owner = (ggml_backend_meta_context *) backend->context;
-    auto plan = std::make_unique<ggml_backend_meta_graph_plan>();
-    plan->graph = *cgraph;
-    for (const auto & bc : owner->backend_configs) {
-        plan->backend_configs.emplace_back(bc.backend, owner->n_reduce_steps);
+    auto plan = std::move(owner->spare_plan);
+    if (!plan) {
+        plan = std::make_unique<ggml_backend_meta_graph_plan>();
+        for (const auto & bc : owner->backend_configs) {
+            plan->backend_configs.emplace_back(bc.backend, owner->n_reduce_steps);
+        }
     }
+    plan->uid = 0;
+    plan->graph = *cgraph;
     if (ggml_backend_meta_graph_compute_impl(backend, &plan->graph, plan.get(), true) != GGML_STATUS_SUCCESS) {
         return nullptr;
     }
     return plan.release();
 }
 
-static void ggml_backend_meta_graph_plan_free(ggml_backend_t, ggml_backend_graph_plan_t plan) {
-    delete (ggml_backend_meta_graph_plan *) plan;
+static void ggml_backend_meta_graph_plan_free(ggml_backend_t backend, ggml_backend_graph_plan_t ptr) {
+    std::lock_guard<std::recursive_mutex> lock(meta_tensor_mutex);
+    auto * owner = (ggml_backend_meta_context *) backend->context;
+    std::unique_ptr<ggml_backend_meta_graph_plan> plan((ggml_backend_meta_graph_plan *) ptr);
+    // Keep one host arena, but release all tensor ownership before the next allocation.
+    plan->containers.clear();
+    if (!owner->spare_plan || plan->max_nnodes > owner->spare_plan->max_nnodes) {
+        owner->spare_plan = std::move(plan);
+    }
 }
 
 static enum ggml_status ggml_backend_meta_graph_plan_compute(ggml_backend_t backend, ggml_backend_graph_plan_t ptr) {
