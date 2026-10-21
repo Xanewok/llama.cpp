@@ -1617,6 +1617,29 @@ static void set_input_kq_mask_impl(const args_set_input_kq_mask & args, T * data
 
             const uint64_t idst = n_kv*i;
 
+            if constexpr (!swa && !is_2d && !alibi) {
+                const auto & positions = cells.seq_get_pos(seq_id);
+                const uint32_t n_used = cells.get_used();
+
+                // These indexes must certify a dense prefix visible to this sequence.
+                if (cells.used_max_p1() == n_used && positions.size() == n_used) {
+                    const int64_t n_keep = std::min<int64_t>(n_used, n_kv);
+                    std::fill(data + idst, data + idst + n_keep, mask_keep);
+                    std::fill(data + idst + n_keep, data + idst + n_kv, mask_drop);
+
+                    if constexpr (causal) {
+                        auto it = positions.upper_bound({p1, std::numeric_limits<uint32_t>::max()});
+                        for (; it != positions.end(); ++it) {
+                            if (it->second < n_kv) {
+                                data[idst + it->second] = mask_drop;
+                            }
+                        }
+                    }
+
+                    continue;
+                }
+            }
+
             // for tokens of the same sequence, the mask is mostly the same, so we can reuse it
             // the only cells that could change are the ones that are with similar positions as the
             //   ones in the batch (i.e. due to causal masking, SWA, etc.)
