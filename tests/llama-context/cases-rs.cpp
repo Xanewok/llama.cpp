@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -393,9 +394,135 @@ struct case_shared_seq_reserve : ctx_test {
     }
 };
 
+struct case_conv_snapshots : ctx_test {
+    test_group group() const override { return TEST_GROUP_RS; }
+    const char * name() const override { return "conv-snapshots"; }
+    const char * description() const override { return "all six conv rollback snapshots preserve prefix logits and checkpoint replay"; }
+
+    struct conv_rows {
+        bool enabled = false;
+        int accepted = 0;
+        std::map<int, std::vector<float>> layers;
+
+        static bool capture(ggml_tensor * tensor, bool ask, void * data) {
+            auto & rows = *static_cast<conv_rows *>(data);
+            const char * pattern = rows.accepted ? "conv_input-%d" : "conv_states-%d";
+            int layer = -1;
+            if (!rows.enabled || std::sscanf(tensor->name, pattern, &layer) != 1) {
+                return false;
+            }
+            if (ask) {
+                return true;
+            }
+            GGML_ASSERT(tensor->type == GGML_TYPE_F32 && ggml_is_contiguous(tensor));
+            std::vector<float> values(ggml_nelements(tensor));
+            ggml_backend_tensor_get(tensor, values.data(), 0, ggml_nbytes(tensor));
+            auto & out = rows.layers[layer];
+            out.clear();
+            if (rows.accepted) {
+                const int64_t history = tensor->ne[0] - 6;
+                GGML_ASSERT(history > 0);
+                for (int64_t row = 0; row < tensor->ne[1] * tensor->ne[2]; ++row) {
+                    const auto begin = values.begin() + row * tensor->ne[0] + rows.accepted;
+                    out.insert(out.end(), begin, begin + history);
+                }
+            } else {
+                out = std::move(values);
+            }
+            return true;
+        }
+    };
+
+    case_result run(model_run & mr) const override {
+        const int n_vocab = llama_vocab_n_tokens(llama_model_get_vocab(mr.model));
+        for (uint32_t n_seq : {1u, 2u}) {
+            ctx_opts opts;
+            opts.n_ctx = 256;
+            opts.n_batch = opts.n_ubatch = 32;
+            opts.n_seq_max = n_seq;
+            opts.n_rs_seq = 8;
+            for (int accepted = 1; accepted <= 6; ++accepted) {
+                conv_rows selected, prefix;
+                prefix.accepted = accepted;
+                auto params = common_context_params_to_llama(mr.params);
+                params.n_ctx = opts.n_ctx;
+                params.n_batch = opts.n_batch;
+                params.n_ubatch = opts.n_ubatch;
+                params.n_seq_max = opts.n_seq_max;
+                params.n_rs_seq = opts.n_rs_seq;
+                params.cb_eval = conv_rows::capture;
+                params.cb_eval_user_data = &selected;
+                auto actual = init_ctx(mr.model, params, mr.fill);
+                params.n_rs_seq = 0;
+                params.cb_eval_user_data = &prefix;
+                auto independent = init_ctx(mr.model, params, mr.fill);
+                auto ref = mr.ctx(opts);
+                CTX_REQUIRE(actual && ref && independent, "context allocation failed");
+                CTX_REQUIRE(llama_n_rs_seq(independent.get()) == 0, "reference must not use snapshots");
+                CTX_REQUIRE(llama_n_rs_seq(actual.get()) >= 6, "six snapshots are required");
+                const auto decode = [&](llama_context * ctx, int begin, int end, bool perturb_tail = false) {
+                    common_batch batch(ctx);
+                    for (uint32_t seq = 0; seq < n_seq; ++seq) {
+                        for (int pos = begin; pos < end; ++pos) {
+                            const auto token_seq = perturb_tail && pos >= 16 + accepted ? seq + n_seq : seq;
+                            batch.add(gen_token(n_vocab, token_seq, pos), pos, seq, pos == end - 1);
+                        }
+                    }
+                    return llama_process(ctx, LLAMA_PROCESS_TYPE_DECODE, batch.get()) == 0;
+                };
+                CTX_REQUIRE(decode(actual.get(), 0, 16) && decode(ref.get(), 0, 16), "prefill failed");
+                CTX_REQUIRE(decode(independent.get(), 0, 16), "reference prefill failed");
+                // The fresh sequence has the same widths but never selects a rollback slot.
+                prefix.enabled = true;
+                CTX_REQUIRE(decode(independent.get(), 16, 22), "reference verify failed");
+                prefix.enabled = false;
+                // Equal widths keep quantized matmul dispatch identical; only the rejected suffix differs.
+                CTX_REQUIRE(decode(actual.get(), 16, 22) && decode(ref.get(), 16, 22, true), "verify failed");
+                for (uint32_t seq = 0; seq < n_seq; ++seq) {
+                    if (accepted < 6) {
+                        CTX_REQUIRE(llama_memory_seq_rm(llama_get_memory(actual.get()), seq, 16 + accepted, -1) &&
+                                    llama_memory_seq_rm(llama_get_memory(ref.get()), seq, 16 + accepted, -1), "rollback failed");
+                    }
+                }
+                // Observe the selected state before the replay token changes it; the verify graph remains intact.
+                selected.enabled = true;
+                CTX_REQUIRE(decode(actual.get(), 16 + accepted, 17 + accepted) &&
+                            decode(ref.get(), 16 + accepted, 17 + accepted), "snapshot replay failed");
+                CTX_REQUIRE(!prefix.layers.empty() && selected.layers.size() == prefix.layers.size(), "missing conv reference layers");
+                for (const auto & entry : prefix.layers) {
+                    const auto found = selected.layers.find(entry.first);
+                    CTX_REQUIRE(found != selected.layers.end() && found->second.size() == entry.second.size(), "conv reference shape differs");
+                    // Upstream arithmetic may differ between fused and observed graphs; keep the existing NMSE limit.
+                    const size_t row_size = entry.second.size() / n_seq;
+                    for (uint32_t seq = 0; seq < n_seq; ++seq) {
+                        const double nmse = compare_logits(found->second.data() + seq * row_size,
+                                                           entry.second.data() + seq * row_size, row_size).nmse();
+                        TLOG_TRC("conv-reference: n_seq=%u accepted=%d layer=%d seq=%u nmse=%.9g\n", n_seq, accepted, entry.first, seq, nmse);
+                        CTX_REQUIRE(nmse <= 1e-4, "snapshot conv state differs from independent prefix");
+                    }
+                }
+                for (uint32_t seq = 0; seq < n_seq; ++seq) {
+                    const float * a = llama_get_logits_ith(actual.get(), seq);
+                    const float * b = llama_get_logits_ith(ref.get(), seq);
+                    CTX_REQUIRE(a && b, "missing snapshot logits");
+                    const double nmse = compare_logits(a, b, n_vocab).nmse();
+                    TLOG_TRC("conv-snapshots: n_seq=%u accepted=%d seq=%u nmse=%.9g\n", n_seq, accepted, seq, nmse);
+                    CTX_REQUIRE(nmse <= 1e-4, "snapshot prefix logits differ");
+                    std::vector<uint8_t> state, restored;
+                    CTX_REQUIRE(get_seq_state(actual.get(), seq, 0, state) &&
+                                set_seq_state(actual.get(), seq, 0, state) &&
+                                get_seq_state(actual.get(), seq, 0, restored) && blobs_equal(state, restored), "snapshot checkpoint differs");
+                }
+            }
+        }
+        return case_result::pass();
+    }
+};
+
 std::vector<ctx_test_ptr> make_rs_cases() {
     std::vector<ctx_test_ptr> cases;
 
+    cases.push_back(std::make_unique<case_conv_snapshots>());
     cases.push_back(std::make_unique<case_rollback>());
     cases.push_back(std::make_unique<case_multi_seq_split_replay>());
     cases.push_back(std::make_unique<case_shared_seq_reserve>());
