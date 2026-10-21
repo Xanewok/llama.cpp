@@ -11111,6 +11111,27 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
         }
     }
 
+    // CUDA MMQ picks its tile from the launch shape: small-I tiles for 9..24 columns, partitioned like the default tile.
+    // The rows cover plain tiling and stream-k on common SM counts (3072, 5120, 6144: partial waves with the stream-k fixup,
+    // 8704 and 9216: full waves, 124160: many waves), Q8_0 has no small-I tile. MUL_MAT_ID: 24 and 48 tokens over 4 experts
+    // give 12 and 24 columns per expert.
+    for (ggml_type type_a : { GGML_TYPE_IQ4_XS, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0 }) {
+        for (int64_t m : {3072, 5120, 6144, 8704, 9216}) {
+            for (int64_t n : {9, 12, 16, 17, 24, 25}) {
+                test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, m, n, 1024, { 1, 1 }, { 1, 1 }));
+            }
+        }
+        for (int64_t n : {12, 24}) {
+            test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, 124160, n, 256, { 1, 1 }, { 1, 1 }));
+            test_cases.emplace_back(new test_mul_mat_id(type_a, GGML_TYPE_F32, 4, 2, false, 8704, n, 512));
+        }
+        for (int64_t m : {3072, 5120}) {
+            for (int64_t n : {24, 48}) {
+                test_cases.emplace_back(new test_mul_mat_id(type_a, GGML_TYPE_F32, 4, 2, false, m, n, 1024));
+            }
+        }
+    }
+
     // The SYCL backend picks between one and two output rows per subgroup by row count when there
     // are two destination columns (Q4_K_MMVQ_ROW_PAIR_MIN_NROWS in ggml-sycl/mmvq.cpp). Cover both
     // sides of that boundary, including an odd row count above it for the row-pair tail.
@@ -12513,6 +12534,19 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
 // Test cases for performance evaluation: should be representative of real-world use cases
 static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     std::vector<std::unique_ptr<test_case>> test_cases;
+
+    // CUDA MMQ small-column tile selection at 27B-class TP2 shapes (m, k): gate/up, down, attention and output projections, lm_head
+    for (ggml_type type_a : { GGML_TYPE_IQ4_XS, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0 }) {
+        for (const auto & [m, k] : std::vector<std::pair<int64_t, int64_t>>{
+                {8704, 5120}, {5120, 8704}, {5120, 6144}, {3072, 5120}, {6144, 5120}, {5120, 3072}, {5120, 5120}, {9216, 5120}, {17408, 5120}}) {
+            for (int64_t n : {6, 9, 12, 16, 17, 24}) {
+                test_cases.emplace_back(new test_mul_mat(type_a, GGML_TYPE_F32, m, n, k, { 1, 1 }, { 1, 1 }));
+            }
+        }
+    }
+    for (int64_t n : {6, 12, 16, 24}) {
+        test_cases.emplace_back(new test_mul_mat(GGML_TYPE_Q6_K, GGML_TYPE_F32, 124160, n, 5120, { 1, 1 }, { 1, 1 }));
+    }
 
     // SWIGLU at a 27B-class FFN width, fused [gate|up] vs split operands
     // note: same bytes either way, so a backend that indexes them differently shows it here

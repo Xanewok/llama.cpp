@@ -205,7 +205,7 @@ void ggml_cuda_mul_mat_q(
         int ntiles_J_best = INT_MAX;
 
         for (int J = 8; J <= 128 && ntiles_J_best > 1; J += 8) {
-            const ggml_cuda_mmq_config config = ggml_cuda_mmq_get_config(src0->type, J, fallback, cc, prec_src1);
+            const ggml_cuda_mmq_config config = ggml_cuda_mmq_get_config(src0->type, J, fallback, GGML_CUDA_MMQ_TILES_DEFAULT, cc, prec_src1);
             if (config.type == GGML_TYPE_COUNT) {
                 continue;
             }
