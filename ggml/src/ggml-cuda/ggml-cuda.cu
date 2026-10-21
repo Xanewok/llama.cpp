@@ -1131,12 +1131,14 @@ struct ggml_backend_cuda_comm_context {
     try_allreduce_fn            try_allreduce = nullptr;
 
     ggml_cuda_ar_pipeline *     ar_pipeline = nullptr;
+    ggml_cuda_ar_pending *      pending = nullptr;
 
 #ifdef GGML_USE_NCCL
     std::vector<ncclComm_t>     comms;
 #endif // GGML_USE_NCCL
 
     ~ggml_backend_cuda_comm_context() {
+        if (pending) { ggml_cuda_ar_finish(pending); }
 #ifdef GGML_USE_NCCL
         for (ncclComm_t comm : comms) {
             NCCL_CHECK(ncclCommDestroy(comm));
@@ -1271,13 +1273,17 @@ static bool ggml_backend_cuda_comm_internal_accepts(
 // Run the internal AR pipeline.  Returns false on unsupported / failed input
 // -- the caller decides whether to abort (env-forced) or fall back silently.
 static bool ggml_backend_cuda_comm_allreduce_internal(
-        ggml_backend_cuda_comm_context * comm_ctx, struct ggml_tensor ** tensors) {
+        ggml_backend_cuda_comm_context * comm_ctx, ggml_tensor ** tensors, ggml_cuda_ar_pending ** pending = nullptr) {
     GGML_ASSERT(comm_ctx->ar_pipeline != nullptr);
     if (!ggml_backend_cuda_comm_internal_accepts(comm_ctx, tensors)) {
         return false;
     }
     if (ggml_nelements(tensors[0]) == 0) {
         return true;
+    }
+    if (pending) {
+        *pending = ggml_cuda_ar_start(comm_ctx->ar_pipeline, comm_ctx->backends.data(), tensors);
+        return *pending != nullptr;
     }
     return ggml_cuda_ar_allreduce(comm_ctx->ar_pipeline, comm_ctx->backends.data(), tensors);
 }
@@ -1433,6 +1439,27 @@ static bool ggml_backend_cuda_comm_allreduce_tensor(void * comm_ctx_v, struct gg
     }
     auto * comm_ctx = static_cast<ggml_backend_cuda_comm_context *>(comm_ctx_v);
     return comm_ctx->try_allreduce(comm_ctx, tensors);
+}
+
+static bool ggml_backend_cuda_comm_allreduce_start(void * comm_ctx_v, ggml_tensor ** tensors, void ** pending) {
+    *pending = nullptr;
+    auto * ctx = static_cast<ggml_backend_cuda_comm_context *>(comm_ctx_v);
+    if (!ctx || ctx->try_allreduce != ggml_backend_cuda_comm_try_allreduce_internal) {
+        return false;
+    }
+    GGML_ASSERT(!ctx->pending);
+    if (!ggml_backend_cuda_comm_allreduce_internal(ctx, tensors, &ctx->pending)) {
+        return false;
+    }
+    *pending = ctx->pending;
+    return true;
+}
+
+static void ggml_backend_cuda_comm_allreduce_finish(void * comm_ctx_v, void * pending) {
+    auto * ctx = static_cast<ggml_backend_cuda_comm_context *>(comm_ctx_v);
+    GGML_ASSERT(ctx->pending == pending && pending);
+    ggml_cuda_ar_finish(ctx->pending);
+    ctx->pending = nullptr;
 }
 
 // host buffer type
@@ -7146,6 +7173,12 @@ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, con
     }
     if (strcmp(name, "ggml_backend_comm_free") == 0) {
         return (void *)ggml_backend_cuda_comm_free;
+    }
+    if (strcmp(name, "ggml_backend_comm_allreduce_start") == 0) {
+        return (void *)ggml_backend_cuda_comm_allreduce_start;
+    }
+    if (strcmp(name, "ggml_backend_comm_allreduce_finish") == 0) {
+        return (void *)ggml_backend_cuda_comm_allreduce_finish;
     }
     if (strcmp(name, "ggml_backend_comm_allreduce_tensor") == 0) {
         return (void *)ggml_backend_cuda_comm_allreduce_tensor;
