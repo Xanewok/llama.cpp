@@ -664,6 +664,10 @@ struct ggml_backend_meta_split_state llama_meta_device_get_split_state(const str
 
 // vocab ids 0..n_vocab-1 as F32, split across devices like the logits of output.weight
 #define LLAMA_TENSOR_NAME_OUTPUT_VOCAB_IDS "output_vocab_ids"
+#define LLAMA_TENSOR_NAME_DRAFT_OUTPUT "draft_output.weight"
+#define LLAMA_TENSOR_NAME_DRAFT_VOCAB_IDS "draft_output_vocab_ids"
+#define LLAMA_TENSOR_NAME_DRAFT_TOKEN_EMBD "draft_token_embd.weight"
+#define LLAMA_TENSOR_NAME_DRAFT_VOCAB_MAP "draft_vocab_map"
 
 struct llama_prec_policy {
     // the key is the weight tensor `res->src[0]`, stores the recommended accumulation type of the op (unused for now)
@@ -750,6 +754,10 @@ struct llama_model {
     struct ggml_tensor * output_res_score = nullptr; // kimi-k3: final cross-layer residual mix
     struct ggml_tensor * output_norm_b   = nullptr;
     struct ggml_tensor * output          = nullptr;
+    struct ggml_tensor * draft_output    = nullptr;
+    std::vector<llama_token> draft_vocab_ids;
+    struct ggml_tensor * draft_token_embd = nullptr; // [n_embd, n_draft]: token embedding rows of draft_vocab_ids
+    struct ggml_tensor * draft_vocab_map  = nullptr; // [n_vocab] I32: token id -> row of draft_token_embd, or -1
     struct ggml_tensor * output_b        = nullptr;
     struct ggml_tensor * output_norm_enc = nullptr;
 
@@ -891,9 +899,9 @@ struct llama_model {
     llama_split_mode split_mode() const;
 
     // tensor split only: every LM head is output.weight split by vocab, so all logits are vocab-split
-    bool logits_vocab_split() const;
+    bool logits_vocab_split(bool draft = false) const;
     // the fewest vocab rows of the logits on one device when vocab-split in one plain segment, else 0
-    int64_t logits_vocab_shard_min() const;
+    int64_t logits_vocab_shard_min(bool draft = false) const;
 
     std::map<ggml_backend_buffer_type_t, size_t> memory_breakdown() const;
 
