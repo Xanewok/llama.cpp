@@ -178,11 +178,27 @@ static bool ggml_backend_meta_device_supports_op(ggml_backend_dev_t dev, const g
         [op](ggml_backend_dev_t simple_dev) { return ggml_backend_dev_supports_op(simple_dev, op); });
 }
 
+// [TAG_META_HOST_MAPPED]
+// a host buffer type that every simple device reads in place (e.g. CUDA_Host_Mapped) holds one copy of a tensor for all
+// of them, which makes the tensor MIRRORED. CPU and host staging buffer types are excluded: a CPU simple device accepts
+// any host buffer, including the compute buffers of CPU splits, whose nodes must not move into the meta graph.
+static bool ggml_backend_meta_device_supports_host_buft(ggml_backend_dev_t dev, ggml_backend_buffer_type_t buft) {
+    ggml_backend_dev_t dev_buft = ggml_backend_buft_get_device(buft);
+    if (dev_buft == nullptr || ggml_backend_dev_type(dev_buft) == GGML_BACKEND_DEVICE_TYPE_CPU || !ggml_backend_buft_is_host(buft)) {
+        return false;
+    }
+    const ggml_backend_meta_device_context * meta_dev_ctx = (const ggml_backend_meta_device_context *) dev->context;
+    return std::all_of(meta_dev_ctx->simple_devs.begin(), meta_dev_ctx->simple_devs.end(),
+        [buft](ggml_backend_dev_t simple_dev) {
+            return buft != ggml_backend_dev_host_buffer_type(simple_dev) && ggml_backend_dev_supports_buft(simple_dev, buft);
+        });
+}
+
 static bool ggml_backend_meta_device_supports_buft(ggml_backend_dev_t dev, ggml_backend_buffer_type_t buft) {
     GGML_ASSERT(ggml_backend_dev_is_meta(dev));
     ggml_backend_dev_t dev_buft = ggml_backend_buft_get_device(buft);
     if (!ggml_backend_dev_is_meta(dev_buft)) {
-        return false;
+        return ggml_backend_meta_device_supports_host_buft(dev, buft);
     }
     const ggml_backend_meta_device_context * meta_dev_ctx      = (const ggml_backend_meta_device_context *) dev->context;
     const ggml_backend_meta_device_context * meta_buft_dev_ctx = (const ggml_backend_meta_device_context *) dev_buft->context;
@@ -534,6 +550,9 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_calculate_split_st
     // FIXME Currently this function preserves/erases the information in n_segments and nr in an inconsistent way.
     // Since the operations in question are developed specifically for llama.cpp this currently does not manifest as a bug there.
     // However, in a broader ggml context with arbitrary ggml graphs this can lead to unexpected results.
+    if (!ggml_backend_buffer_is_meta(tensor->buffer)) {
+        return ggml_backend_meta_get_split_state(tensor, assume_sync);
+    }
     const size_t n_bufs = ggml_backend_meta_buffer_n_bufs(tensor->buffer);
 
     auto split_states_equal = [&](const ggml_backend_meta_split_state & a, const ggml_backend_meta_split_state & b) -> bool {
@@ -1350,10 +1369,14 @@ static struct ggml_backend_meta_split_state ggml_backend_meta_get_split_state(co
     //       such host-buffer views to the meta backend. figure out how to update the scheduler logic to achieve that
     //       ref: https://github.com/ggml-org/llama.cpp/pull/30217
     if (!ggml_backend_buffer_is_meta(tensor->buffer)) {
-        GGML_ASSERT(ggml_backend_meta_is_host_view(tensor));
+        if (ggml_backend_meta_is_host_view(tensor)) {
+            // the view is not allocated in the meta buffer, it is not split across the sub-devices
+            return { GGML_BACKEND_SPLIT_AXIS_NONE, {0}, {1}, 1 };
+        }
 
-        // the view is not allocated in the meta buffer, it is not split across the sub-devices
-        return { GGML_BACKEND_SPLIT_AXIS_NONE, {0}, {1}, 1 };
+        // [TAG_META_HOST_MAPPED]
+        GGML_ASSERT(tensor->buffer != nullptr && ggml_backend_buffer_is_host(tensor->buffer));
+        return { GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1 };
     }
     ggml_backend_meta_buffer_context * buf_ctx = (ggml_backend_meta_buffer_context *) tensor->buffer->context;
     return ggml_backend_meta_get_split_state(buf_ctx->get_simple_tensor_container(tensor), tensor, assume_sync);

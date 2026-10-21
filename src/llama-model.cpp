@@ -1159,6 +1159,27 @@ llm_ffn_op_type llm_ffn_op_type_from_string(const std::string & name, llm_ffn_op
     return fallback;
 }
 
+// a host buffer type offered as an extra buffer type of a GPU device that dev reads in place
+static ggml_backend_buffer_type_t find_device_mapped_host_buft(ggml_backend_dev_t dev) {
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        ggml_backend_dev_t gpu = ggml_backend_dev_get(i);
+        if (ggml_backend_dev_type(gpu) != GGML_BACKEND_DEVICE_TYPE_GPU && ggml_backend_dev_type(gpu) != GGML_BACKEND_DEVICE_TYPE_IGPU) {
+            continue;
+        }
+        auto ggml_backend_dev_get_extra_bufts_fn = (ggml_backend_dev_get_extra_bufts_t)
+            ggml_backend_reg_get_proc_address(ggml_backend_dev_backend_reg(gpu), "ggml_backend_dev_get_extra_bufts");
+        if (!ggml_backend_dev_get_extra_bufts_fn) {
+            continue;
+        }
+        for (ggml_backend_buffer_type_t * buft = ggml_backend_dev_get_extra_bufts_fn(gpu); buft && *buft; ++buft) {
+            if (ggml_backend_buft_is_host(*buft) && ggml_backend_dev_supports_buft(dev, *buft)) {
+                return *buft;
+            }
+        }
+    }
+    return nullptr;
+}
+
 // CPU: ACCEL -> GPU host -> CPU extra -> CPU
 static buft_list_t make_cpu_buft_list(const std::vector<llama_device> & devices, bool use_extra_bufts, bool no_host) {
     buft_list_t buft_list;
@@ -1293,6 +1314,7 @@ struct llama_model::impl {
     std::vector<std::pair<ggml_context_ptr, std::vector<ggml_backend_buffer_ptr>>> ctxs_bufs;
 
     buft_list_t cpu_buft_list;
+    buft_list_t tok_embd_buft_list; // empty: the token embeddings use dev_input
     std::map<ggml_backend_dev_t, buft_list_t> gpu_buft_list;
 
     struct layer_dev {
@@ -1739,6 +1761,19 @@ bool llama_model_base::load_tensors(llama_model_loader & ml) {
 
     // assign the output layer
     pimpl->dev_output = get_layer_buft_list(n_layer_all);
+
+    // the token embeddings, whose GET_ROWS reads a few rows per batch: the GPU that runs the first layer gathers them in
+    // place from host memory that it maps, without a copy of the table or a CPU split in front of the graph; under mmap
+    // they are copied into it. Automatic placement only: an override to CPU keeps them on the CPU (buft_list_cpu).
+    // bitnet also uses tok_embd as its output matrix, a MUL_MAT that the GPU does not run from such memory.
+    if (!params.no_host && n_layer_all > 0 && pimpl->dev_layer[0].dev != cpu_dev && arch != LLM_ARCH_BITNET) {
+        ggml_backend_dev_t dev = pimpl->dev_layer[0].dev;
+        ggml_backend_buffer_type_t buft = find_device_mapped_host_buft(dev);
+        if (buft) {
+            pimpl->tok_embd_buft_list.emplace_back(dev, buft);
+            pimpl->tok_embd_buft_list.insert(pimpl->tok_embd_buft_list.end(), pimpl->cpu_buft_list.begin(), pimpl->cpu_buft_list.end());
+        }
+    }
 
     const auto TENSOR_NOT_REQUIRED = llama_model_loader::TENSOR_NOT_REQUIRED;
 
@@ -2540,8 +2575,12 @@ ggml_tensor * llama_model_base::create_tensor(llama_model_loader & ml, const LLM
         // blocks that are not model layers (e.g. the blocks of a head) go with the output
         buft_list_layer = (size_t) tn.bid < pimpl->dev_layer.size() ? pimpl->dev_layer.at(tn.bid).buft_list : pimpl->dev_output.buft_list;
     }
+    const buft_list_t * buft_list_input = pimpl->dev_input.buft_list;
+    if (tn.tensor == LLM_TENSOR_TOKEN_EMBD && !(flags & llama_model_loader::TENSOR_DUPLICATED) && !pimpl->tok_embd_buft_list.empty()) {
+        buft_list_input = &pimpl->tok_embd_buft_list;
+    }
     return ml.create_tensor(
-        hparams, &pimpl->cpu_buft_list, pimpl->dev_input.buft_list, pimpl->dev_output.buft_list, buft_list_layer,
+        hparams, &pimpl->cpu_buft_list, buft_list_input, pimpl->dev_output.buft_list, buft_list_layer,
         tn, ne, flags);
 }
 
