@@ -2199,8 +2199,9 @@ void ggml_cuda_flash_attn_ext_mma_f16_case(ggml_backend_cuda_context & ctx, ggml
             shared_memory_limit_raised[id] = true;
         }
 
+        const bool async_kv_preload = nstages == 2;
         launch_fattn<DV, ncols1, ncols2>
-            (ctx, dst, fattn_kernel, nwarps, nbytes_shared_total, nbatch_fa, false, false, true, false, warp_size_host);
+            (ctx, dst, fattn_kernel, nwarps, nbytes_shared_total, nbatch_fa, false, false, true, false, warp_size_host, async_kv_preload);
         return;
     } else if (logit_softcap == 0.0f) {
         constexpr bool use_logit_softcap = false;
