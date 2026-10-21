@@ -140,7 +140,7 @@ static int ggml_cuda_mmq_get_J_best(
     int ntiles_J_best = INT_MAX;
 
     for (int J = 8; J <= 128 && ntiles_J_best > 1; J += 8) {
-        const ggml_cuda_mmq_config config = ggml_cuda_mmq_get_config(type, J, fallback, cc, prec_src1);
+        const ggml_cuda_mmq_config config = ggml_cuda_mmq_get_config(type, J, fallback, GGML_CUDA_MMQ_TILES_DEFAULT, cc, prec_src1);
         if (config.type == GGML_TYPE_COUNT) {
             continue;
         }
@@ -535,7 +535,7 @@ bool ggml_cuda_mmq_fusion_is_efficient(const ggml_type type, const int64_t nrows
     if (J_best == 0) {
         return false;
     }
-    const int64_t nrows_tile = ggml_cuda_mmq_get_config(type, J_best, fallback, cc, GGML_PREC_Q8).I / 2;
+    const int64_t nrows_tile = ggml_cuda_mmq_get_config(type, J_best, fallback, GGML_CUDA_MMQ_TILES_DEFAULT, cc, GGML_PREC_Q8).I / 2;
     const int64_t ntiles     = (ncols + J_best - 1)/J_best * ((nrows_x + nrows_tile - 1)/nrows_tile) * nchannels;
     // Same condition as launch_mul_mat_q uses to run the stream-k kernel with one block per tile.
     const int64_t tiles_nwaves             = (ntiles + nsm - 1) / nsm;
