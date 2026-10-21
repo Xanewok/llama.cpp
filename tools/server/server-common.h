@@ -153,6 +153,18 @@ std::vector<size_t> lora_get_enabled_ids(const std::vector<common_adapter_lora_i
 // server_tokens
 //
 
+// a span of a prompt replaced by the cached tokens of the same text, see server_tokens::get_common_prefix_resync()
+// [beg, end) in the prompt before the replacement, shift: change of the positions from end on
+struct server_resync_span {
+    size_t  beg;
+    size_t  end;
+    int64_t shift;
+};
+
+// position in the prompt after the replacement. a position inside a replaced span moves to the end of the span, so a
+// protected range keeps all of the text it covered
+size_t server_resync_remap_pos(const std::vector<server_resync_span> & spans, size_t pos);
+
 /**
  * server_tokens is a helper to manage the input tokens and image for the server.
  * it is made this way to simplify the logic of KV cache management.
@@ -258,11 +270,11 @@ public:
     // like get_common_prefix(), but a span of b that spells the same text as a span of ours with different
     // tokens (e.g. a sampled non-canonical BPE split that re-tokenizing does not reproduce) counts as a match.
     // returns the prefix length in our tokens and in b's own tokens; b_out receives b with such spans replaced by ours,
-    // shifts receives {index in b after each span, position change of b from there on}.
+    // spans receives each replaced span of b as [beg, end) and the position change of b from end on.
     // text tokens only, otherwise it is get_common_prefix()
     std::pair<size_t, size_t> get_common_prefix_resync(
             const server_tokens & b, const llama_vocab * vocab, server_tokens * b_out = nullptr,
-            std::vector<std::pair<size_t, int64_t>> * shifts = nullptr) const;
+            std::vector<server_resync_span> * spans = nullptr) const;
 
     // split the tokens into message spans, skipping over media chunks
     common_chat_msg_spans find_message_spans(const common_chat_msg_delimiters & delims) const;

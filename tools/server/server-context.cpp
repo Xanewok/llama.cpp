@@ -2076,26 +2076,18 @@ private:
         // positions in the task shift by the length change. aLoRA matches tokens, n_cmpl > 1 copies the parent's state
         if (task.params.cache_prompt && task.type == SERVER_TASK_TYPE_COMPLETION && !lora_all_alora(slot.lora) &&
                 !task.is_parent() && !task.is_child()) {
-            std::vector<std::pair<size_t, int64_t>> shifts;
+            std::vector<server_resync_span> resynced;
             const size_t n_plain = slot.prompt.tokens.get_common_prefix(task.tokens);
-            const size_t n_sync  = slot.prompt.tokens.get_common_prefix_resync(task.tokens, vocab, &task.tokens, &shifts).first;
-            if (!shifts.empty()) {
+            const size_t n_sync  = slot.prompt.tokens.get_common_prefix_resync(task.tokens, vocab, &task.tokens, &resynced).first;
+            if (!resynced.empty()) {
                 SLT_INF(slot, "prompt tokenization differs from the cache only in spelling, common prefix %zu -> %zu\n", n_plain, n_sync);
 
-                const auto remap = [&](size_t pos) {
-                    for (auto it = shifts.rbegin(); it != shifts.rend(); ++it) {
-                        if (pos >= it->first) {
-                            return pos + it->second;
-                        }
-                    }
-                    return pos;
-                };
                 if (task.params.n_keep > 0) {
                     const int n_bos = add_bos_token ? 1 : 0; // the context shift keeps n_keep + BOS tokens
-                    task.params.n_keep = remap(task.params.n_keep + n_bos) - n_bos;
+                    task.params.n_keep = server_resync_remap_pos(resynced, task.params.n_keep + n_bos) - n_bos;
                 }
                 for (auto & span : task.params.message_spans.spans) {
-                    span.pos = remap(span.pos);
+                    span.pos = server_resync_remap_pos(resynced, span.pos);
                 }
             }
         }
