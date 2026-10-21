@@ -411,6 +411,7 @@ if (NOT LLAMA_USE_SYSTEM_GGML)
         target_link_libraries(test-alloc PRIVATE Threads::Threads)
     endif()
     llama_build_and_test(test-backend-sched-upload.cpp)
+    llama_build_and_test(test-meta-input-stage.cpp)
 endif()
 
 llama_build(test-export-graph-ops.cpp)
