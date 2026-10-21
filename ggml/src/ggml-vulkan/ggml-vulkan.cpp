@@ -15298,6 +15298,7 @@ static ggml_backend_i ggml_backend_vk_interface = {
     /* .event_record            = */ ggml_backend_vk_event_record,
     /* .event_wait              = */ ggml_backend_vk_event_wait,
     /* .graph_optimize          = */ ggml_vk_graph_optimize,
+    /* .set_tensor_batch_owned = */ NULL,
 };
 
 static ggml_guid_t ggml_backend_vk_guid() {

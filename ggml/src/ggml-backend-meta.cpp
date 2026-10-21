@@ -1816,6 +1816,27 @@ static void ggml_backend_meta_buffer_reset(ggml_backend_buffer_t buffer) {
     }
 }
 
+static void ggml_backend_meta_buffer_set_tensor_batch(ggml_backend_buffer_t buffer, const ggml_backend_tensor_transfer * transfers, size_t n_transfers) {
+    for (size_t i = 0; i < n_transfers; ++i) {
+        const auto state = ggml_backend_meta_get_split_state(transfers[i].tensor, /*assume_sync =*/ false);
+        if (state.axis != GGML_BACKEND_SPLIT_AXIS_MIRRORED) {
+            for (size_t j = 0; j < n_transfers; ++j) {
+                const auto & transfer = transfers[j];
+                ggml_backend_meta_buffer_set_tensor(buffer, transfer.tensor, transfer.data, transfer.offset, transfer.size);
+            }
+            return;
+        }
+    }
+    std::vector<ggml_backend_tensor_transfer> simple_transfers(n_transfers);
+    for (size_t j = 0; j < ggml_backend_meta_buffer_n_bufs(buffer); ++j) {
+        for (size_t i = 0; i < n_transfers; ++i) {
+            simple_transfers[i] = transfers[i];
+            simple_transfers[i].tensor = ggml_backend_meta_buffer_simple_tensor(transfers[i].tensor, j);
+        }
+        ggml_backend_tensor_set_batch(simple_transfers.data(), simple_transfers.size());
+    }
+}
+
 static const ggml_backend_buffer_i ggml_backend_meta_buffer_iface = {
     /* .free_buffer     = */ ggml_backend_meta_buffer_free_buffer,
     /* .get_base        = */ ggml_backend_meta_buffer_get_base,
@@ -1828,6 +1849,7 @@ static const ggml_backend_buffer_i ggml_backend_meta_buffer_iface = {
     /* .cpy_tensor      = */ nullptr,
     /* .clear           = */ ggml_backend_meta_buffer_clear,
     /* .reset           = */ ggml_backend_meta_buffer_reset,
+    /* .set_tensor_batch = */ ggml_backend_meta_buffer_set_tensor_batch,
 };
 
 bool ggml_backend_buffer_is_meta(ggml_backend_buffer_t buf) {
@@ -2068,6 +2090,39 @@ static void ggml_backend_meta_set_tensor_async(ggml_backend_t backend, ggml_tens
             GGML_ABORT("fatal error");
         }
     }
+}
+
+static void ggml_backend_meta_synchronize(ggml_backend_t backend);
+
+static bool ggml_backend_meta_set_tensor_batch_owned(ggml_backend_t backend, const ggml_backend_tensor_transfer * transfers, size_t n_transfers) {
+    const size_t n_backends = ggml_backend_meta_n_backends(backend);
+    for (size_t j = 0; j < n_backends; ++j) {
+        ggml_backend_t simple = ggml_backend_meta_simple_backend(backend, j);
+        if (!simple->iface.set_tensor_batch_owned || !simple->iface.set_tensor_batch_owned(simple, nullptr, 0)) {
+            return false;
+        }
+    }
+    for (size_t i = 0; i < n_transfers; ++i) {
+        const auto state = ggml_backend_meta_get_split_state(transfers[i].tensor, /*assume_sync =*/ false);
+        if (state.axis != GGML_BACKEND_SPLIT_AXIS_MIRRORED) {
+            return false;
+        }
+    }
+    std::vector<ggml_backend_tensor_transfer> simple_transfers(n_transfers);
+    for (size_t j = 0; j < n_backends; ++j) {
+        ggml_backend_t simple = ggml_backend_meta_simple_backend(backend, j);
+        for (size_t i = 0; i < n_transfers; ++i) {
+            simple_transfers[i] = transfers[i];
+            simple_transfers[i].tensor = ggml_backend_meta_buffer_simple_tensor(transfers[i].tensor, j);
+        }
+        if (!simple->iface.set_tensor_batch_owned(simple, simple_transfers.data(), n_transfers)) {
+            // An earlier rank may have queued writes; drain all ranks before ordered fallback.
+            ggml_backend_meta_synchronize(backend);
+            ggml_backend_tensor_set_batch(transfers, n_transfers);
+            return true;
+        }
+    }
+    return true;
 }
 
 static void ggml_backend_meta_get_tensor_async(ggml_backend_t backend, const ggml_tensor * tensor, void * data, size_t offset, size_t size) {
@@ -2650,6 +2705,7 @@ static const ggml_backend_i ggml_backend_meta_i = {
     /* .event_record            = */ nullptr,
     /* .event_wait              = */ nullptr,
     /* .graph_optimize          = */ nullptr,
+    /* .set_tensor_batch_owned  = */ ggml_backend_meta_set_tensor_batch_owned,
 };
 
 bool ggml_backend_is_meta(ggml_backend_t backend) {
