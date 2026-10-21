@@ -629,6 +629,7 @@ llama_model_qwen35::graph_mtp::graph_mtp(const llama_model & model, const llm_gr
     // TODO: make static using `ggml_build_forward_select()`
     //       see llm_graph_context::build_inp_embd() for reference
     ggml_tensor * tok_embd = nullptr;
+    ASSERT_EMBD_OR_TOKEN(ubatch);
     if (chain) {
         // only step 0 embeds a host token
     } else if (ubatch.token) {
