@@ -410,8 +410,7 @@ ggml_tensor * llama_model_plamo2::graph::build_plamo2_mamba_layer(llm_graph_inpu
         y = ggml_swiglu_split(ctx0, ggml_cont(ctx0, z), y);
         cb(y, "mamba_y_swiglu_z", il);
 
-        // out_proj: {d_inner, n_embd} @ {d_inner, n_seq_tokens, n_seqs} => {n_embd, n_seq_tokens, n_seqs}
-        y   = ggml_view_3d(ctx0, y, head_dim * n_heads, n_seq_tokens, n_seqs, y->nb[2], y->nb[3], 0);
+        y   = ggml_reshape_2d(ctx0, y, head_dim * n_heads, n_seq_tokens * n_seqs);
         cur = build_lora_mm(model.layers[il].ssm_out, y);
         cb(cur, "mamba_out_proj", il);
     }
