@@ -1108,9 +1108,11 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "OPT_STEP_SGD",
 
     "GLU",
+
+    "SSM_CONV_RS",
 };
 
-static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
+static_assert(GGML_OP_COUNT == 103, "GGML_OP_COUNT != 103");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "none",
@@ -1224,9 +1226,11 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "sgd(x)",
 
     "glu(x)",
+
+    "ssm_conv_rs(x, w, states, ids, snap)",
 };
 
-static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
+static_assert(GGML_OP_COUNT == 103, "GGML_OP_COUNT != 103");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -5731,6 +5735,47 @@ struct ggml_tensor * ggml_ssm_conv(
     result->op     = GGML_OP_SSM_CONV;
     result->src[0] = sx;
     result->src[1] = c;
+
+    return result;
+}
+
+// ggml_ssm_conv_rs
+
+struct ggml_tensor * ggml_ssm_conv_rs(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * x,
+        struct ggml_tensor  * w,
+        struct ggml_tensor  * states,
+        struct ggml_tensor  * ids,
+        struct ggml_tensor  * snap) {
+    GGML_ASSERT(ggml_is_3d(x));
+    GGML_ASSERT(ggml_is_matrix(w));
+
+    const int64_t d_conv  = w->ne[0];
+    const int64_t d_inner = w->ne[1];
+    const int64_t n_t     = x->ne[0];
+    const int64_t n_s     = x->ne[2];
+
+    GGML_ASSERT(x->type == GGML_TYPE_F32 && w->type == GGML_TYPE_F32);
+    GGML_ASSERT(states->type == GGML_TYPE_F32 && snap->type == GGML_TYPE_F32);
+    GGML_ASSERT(ids->type == GGML_TYPE_I32);
+    GGML_ASSERT(d_conv >= 2 && n_t >= 1);
+    GGML_ASSERT(x->ne[1] == d_inner);
+
+    const int64_t row = (d_conv - 1)*d_inner;
+    GGML_ASSERT(states->ne[0] == row && states->ne[2] == 1 && states->ne[3] == 1 && states->nb[0] == sizeof(float));
+    GGML_ASSERT(ggml_is_vector(ids) && ggml_is_contiguous(ids) && ids->ne[0] == n_s);
+    GGML_ASSERT(snap->ne[0] == row && snap->ne[1] == n_s && snap->ne[3] == 1 && snap->nb[0] == sizeof(float));
+    GGML_ASSERT(snap->nb[1] == states->nb[1] && snap->nb[2] >= (size_t) n_s*snap->nb[1]);
+
+    struct ggml_tensor * result = ggml_new_tensor_3d(ctx, GGML_TYPE_F32, d_inner, n_t, n_s);
+
+    result->op     = GGML_OP_SSM_CONV_RS;
+    result->src[0] = x;
+    result->src[1] = w;
+    result->src[2] = states;
+    result->src[3] = ids;
+    result->src[4] = snap;
 
     return result;
 }
