@@ -26,7 +26,8 @@ static void check_config(std::set<std::pair<int, int>> & unique) {
             require(nw >= 1 && nw <= 8 && nr >= 1 && nr <= nw * 2);
             for (uint32_t nrows = 1; nrows <= 33; ++nrows) {
                 const uint32_t blocks = config_t::nblocks(nrows);
-                require(blocks * nr >= nrows && (blocks - 1) * nr < nrows);
+                const uint32_t tail_rows = nrows % nr;
+                require(blocks * nr + tail_rows == nrows && tail_rows < uint32_t(nr));
             }
             unique.emplace(nw, nr);
             ++checks;
@@ -44,6 +45,13 @@ static void check_type() {
         kernels += unique.size(); // fused and unfused use the same configurations
     }
     kernels += unique.size();
+    std::set<int> tail_warps;
+    for (const auto & config : unique) {
+        if (config.second > 1) {
+            tail_warps.insert(config.first);
+        }
+    }
+    kernels += tail_warps.size() * (ncols == 1 ? 2 : 1);
     if constexpr (ncols < MMVQ_MAX_BATCH_SIZE) {
         check_type<type, ncols + 1>();
     }
