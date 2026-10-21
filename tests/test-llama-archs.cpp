@@ -19,7 +19,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <random>
+#include <limits>
 #include <regex>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -2154,6 +2156,147 @@ static bool test_kq_mask_prefix(const size_t seed, const float stdev) {
     return ok;
 }
 
+static void seq_rm_require(bool ok, const char * message) {
+    if (!ok) {
+        throw std::runtime_error(message);
+    }
+}
+
+// Positions of the cells that hold seq_id, in cell order, read from the serialized sequence state
+// (n_stream, then per stream: cell_count and, for each cell, pos, n_seq_id, seq_ids; the K/V data follows).
+static std::vector<llama_pos> seq_cell_positions(llama_context * lctx, llama_seq_id seq_id) {
+    std::vector<uint8_t> buf(llama_state_seq_get_size(lctx, seq_id));
+    seq_rm_require(llama_state_seq_get_data(lctx, buf.data(), buf.size(), seq_id) == buf.size(), "state_seq_get_data failed");
+    size_t off = 0;
+    auto read = [&](auto & v) {
+        seq_rm_require(off + sizeof(v) <= buf.size(), "truncated sequence state");
+        memcpy(&v, buf.data() + off, sizeof(v));
+        off += sizeof(v);
+    };
+    uint32_t n_stream = 0;
+    read(n_stream);
+    for (uint32_t s = 0; s < n_stream; ++s) {
+        uint32_t cell_count = 0;
+        read(cell_count);
+        if (cell_count == 0) {
+            continue;
+        }
+        std::vector<llama_pos> res;
+        for (uint32_t i = 0; i < cell_count; ++i) {
+            llama_pos pos = 0;
+            uint32_t  n_seq_id = 0;
+            read(pos);
+            read(n_seq_id);
+            off += n_seq_id*sizeof(llama_seq_id);
+            res.push_back(pos);
+        }
+        return res;
+    }
+    return {};
+}
+
+static void seq_decode(llama_context * lctx, llama_seq_id first, llama_seq_id last, llama_pos p0, llama_pos p1, llama_pos shared_until) {
+    llama_batch batch = llama_batch_init(p1 - p0, 0, 2);
+    for (llama_pos p = p0; p < p1; ++p) {
+        const int i = batch.n_tokens++;
+        batch.token[i] = 1 + p%7;
+        batch.pos[i]   = p;
+        batch.n_seq_id[i] = 0;
+        for (llama_seq_id s = first; s <= last && (s == first || p < shared_until); ++s) {
+            batch.seq_id[i][batch.n_seq_id[i]++] = s;
+        }
+        batch.logits[i] = 0;
+    }
+    const int32_t rc = llama_decode(lctx, batch);
+    llama_batch_free(batch);
+    seq_rm_require(rc == 0, "llama_decode failed");
+}
+
+// seq_rm through the public memory API, checked against the cell contents that the sequence state exposes.
+static int test_seq_rm(const size_t seed, const float stdev) {
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+
+    gguf_context_ptr gguf_ctx = get_gguf_ctx(LLM_ARCH_LLAMA, false);
+    ggml_backend_dev_t devs[] = { cpu, nullptr };
+    llama_model_params mparams = llama_model_default_params();
+    mparams.progress_callback = silent_model_load_progress;
+    mparams.devices = devs;
+    tensor_data_params tparams = { seed, stdev };
+    llama_model_ptr model(llama_model_init_from_user(gguf_ctx.get(), set_tensor_data, &tparams, mparams));
+    seq_rm_require(model != nullptr, "failed to create llama model");
+
+    for (bool unified : {false, true}) {
+        llama_context_params cparams = llama_context_default_params();
+        cparams.n_ctx           = 512;
+        cparams.n_ubatch        = 64;
+        cparams.n_seq_max       = 2;
+        cparams.kv_unified      = unified;
+        cparams.n_threads       = 4;
+        cparams.n_threads_batch = 4;
+        llama_context_ptr lctx(llama_init_from_model(model.get(), cparams));
+        seq_rm_require(lctx != nullptr, "failed to create llama context");
+        llama_memory_t mem = llama_get_memory(lctx.get());
+
+        // seq 0 holds 0..99 and seq 1 holds 0..99; in a unified cache 0..49 are cells shared by both
+        const llama_pos n = 100;
+        const llama_pos shared = unified ? 50 : 0;
+        const auto fill = [&]() {
+            llama_memory_clear(mem, true);
+            seq_decode(lctx.get(), 0, 1, 0, n, shared);
+            seq_decode(lctx.get(), 1, 1, shared, n, 0);
+        };
+        const auto check = [&](const std::set<llama_pos> (&expected)[2], const char * message) {
+            for (llama_seq_id s : {0, 1}) {
+                auto actual = seq_cell_positions(lctx.get(), s);
+                seq_rm_require(std::set<llama_pos>(actual.begin(), actual.end()) == expected[s] && actual.size() == expected[s].size(), message);
+            }
+        };
+
+        for (llama_seq_id seq_id : {0, 1, -1}) {
+            for (const auto & range : std::vector<std::pair<llama_pos, llama_pos>>{
+                    {-1, -1}, {0, 0}, {0, 1}, {7, 19}, {19, 7}, {49, 51}, {63, -1}, {99, 100}, {100, 1000}}) {
+                fill();
+                std::set<llama_pos> expected[2];
+                for (llama_pos p = 0; p < n; ++p) {
+                    expected[0].insert(p);
+                    expected[1].insert(p);
+                }
+                const llama_pos p0 = range.first < 0 ? 0 : range.first;
+                const llama_pos p1 = range.second < 0 ? std::numeric_limits<llama_pos>::max() : range.second;
+                for (llama_seq_id s : {0, 1}) {
+                    if (seq_id < 0 || seq_id == s) {
+                        expected[s].erase(expected[s].lower_bound(p0), expected[s].lower_bound(std::max(p0, p1)));
+                    }
+                }
+                for (int repeat = 0; repeat < 2; ++repeat) {
+                    seq_rm_require(llama_memory_seq_rm(mem, seq_id, range.first, range.second), "seq_rm failed");
+                    check(expected, "seq_rm result differs from the expected positions");
+                }
+            }
+        }
+
+        // The freed cell with the lowest index is the next one to be filled, wherever its position sits in the range:
+        // 100..109 refill cells 10..19, so removing 20..101 frees cells 10 and 11 last in position order.
+        llama_memory_clear(mem, true);
+        seq_decode(lctx.get(), 0, 0, 0, n, 0);
+        seq_rm_require(llama_memory_seq_rm(mem, 0, 10, 20), "seq_rm failed");
+        seq_decode(lctx.get(), 0, 0, n, n + 10, 0);
+        seq_rm_require(llama_memory_seq_rm(mem, 0, 20, 102), "seq_rm failed");
+        seq_decode(lctx.get(), 0, 0, n + 10, n + 11, 0);
+        std::vector<llama_pos> cells;
+        for (llama_pos p = 0; p < 10; ++p) {
+            cells.push_back(p);
+        }
+        cells.push_back(n + 10);
+        for (llama_pos p = 102; p < n + 10; ++p) {
+            cells.push_back(p);
+        }
+        seq_rm_require(seq_cell_positions(lctx.get(), 0) == cells, "seq_rm did not make the lowest freed cell the next one");
+    }
+    return 0;
+}
+
 int main(int argc, char ** argv) {
     // init the logger at max verbosity. filter with a custom callback respecting the user-configure verbosity
     common_log_set_verbosity_thold(LOG_LEVEL_DEBUG);
@@ -2162,6 +2305,7 @@ int main(int argc, char ** argv) {
 
     std::random_device rd;
 
+    bool seq_rm_only = false;
     std::string arch_filter;
     size_t seed = rd();
     float stdev = 0.1f;
@@ -2178,6 +2322,8 @@ int main(int argc, char ** argv) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
             usage(argv);
             return 0;
+        } else if (strcmp(argv[i], "--seq-rm") == 0) {
+            seq_rm_only = true;
         } else if (strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "--arch") == 0) {
             if (i + 1 < argc) {
                 const std::string arch_name = argv[++i];
@@ -2265,6 +2411,9 @@ int main(int argc, char ** argv) {
         }
         if (tp_sampling) {
             return test_tp_sampling(seed, stdev, tp_sampling_gpu);
+        }
+        if (seq_rm_only) {
+            return test_seq_rm(seed, stdev);
         }
         if (!out.empty()) {
             return save_models(arch_filter, seed, stdev, verbosity, out);
