@@ -8,6 +8,10 @@
 #include <memory>
 #include <vector>
 
+#ifndef _WIN32
+#include <pthread.h>
+#endif
+
 //
 // dummy backend with configurable max_buffer_size, tracks allocations
 
@@ -1099,6 +1103,67 @@ static void test_buft_get_alloc_size_n_does_not_allocate() {
     GGML_ASSERT(x[1]->data == nullptr);
 }
 
+// Rebuilding a different selected branch must not use stack proportional to its ancestor chain.
+static ggml_backend_meta_split_state test_meta_split_state_mirrored(const ggml_tensor * tensor, void * userdata) {
+    GGML_UNUSED(tensor);
+    GGML_UNUSED(userdata);
+    return {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
+}
+
+static void test_meta_split_state_rebuild_impl(bool select_other) {
+    const int n_chain = 512;
+
+    ggml_backend_load_all();
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+    ggml_backend_dev_t devs[2] = {cpu, cpu};
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, test_meta_split_state_mirrored, nullptr);
+    ggml_gallocr_t galloc = ggml_gallocr_new(ggml_backend_dev_buffer_type(meta));
+
+    // the same memory for both builds, so that the rebuilt graph reuses the tensor addresses
+    std::vector<uint8_t> mem(ggml_tensor_overhead()*(n_chain + 3) + ggml_graph_overhead_custom(n_chain + 3, false));
+
+    for (int build = 0; build < 2; build++) {
+        ggml_init_params params = {mem.size(), mem.data(), /*no_alloc =*/ true};
+        ggml_context * ctx = ggml_init(params);
+        ggml_tensor * cur = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 1);
+        ggml_set_input(cur);
+        for (int i = 0; i < n_chain; i++) {
+            cur = ggml_scale(ctx, cur, 1.0f);
+        }
+        ggml_tensor * branches[2] = {ggml_scale(ctx, cur, 1.0f), ggml_scale(ctx, cur, 1.0f)};
+        ggml_cgraph * gf = ggml_new_graph_custom(ctx, n_chain + 3, false);
+        ggml_tensor * out = ggml_build_forward_select(gf, branches, 2, select_other ? build : 0);
+        GGML_ASSERT(ggml_gallocr_alloc_graph(galloc, gf));
+
+        const float value = 3.0f;
+        float result = 0.0f;
+        ggml_backend_tensor_set(out, &value, 0, sizeof(value));
+        ggml_backend_tensor_get(out, &result, 0, sizeof(result));
+        GGML_ASSERT(result == value);
+        ggml_free(ctx);
+    }
+    ggml_gallocr_free(galloc);
+}
+
+static void test_meta_split_state_rebuild(bool select_other) {
+#ifndef _WIN32
+    pthread_attr_t attr;
+    GGML_ASSERT(pthread_attr_init(&attr) == 0);
+    // 512 uncached nodes exceed 1 MiB recursively; the iterative walk has constant stack use.
+    GGML_ASSERT(pthread_attr_setstacksize(&attr, 1024*1024) == 0);
+    pthread_t thread;
+    GGML_ASSERT(pthread_create(&thread, &attr, [](void * arg) -> void * {
+        test_meta_split_state_rebuild_impl(*static_cast<bool *>(arg));
+        return nullptr;
+    }, &select_other) == 0);
+    GGML_ASSERT(pthread_attr_destroy(&attr) == 0);
+    GGML_ASSERT(pthread_join(thread, nullptr) == 0);
+#else
+    test_meta_split_state_rebuild_impl(select_other);
+#endif
+}
+
 static void run(const char * name, void (*f)()) {
     printf("%s ", name);
     fflush(stdout);
@@ -1106,7 +1171,15 @@ static void run(const char * name, void (*f)()) {
     printf("PASSED\n");
 }
 
-int main() {
+int main(int argc, char ** argv) {
+    if (argc == 2 && strcmp(argv[1], "--split-state-same") == 0) {
+        test_meta_split_state_rebuild(false);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--split-state-other") == 0) {
+        test_meta_split_state_rebuild(true);
+        return 0;
+    }
     run("test_max_size_too_many_tensors", test_max_size_too_many_tensors);
     run("test_max_size_tensor_too_large", test_max_size_tensor_too_large);
     run("test_tensor_larger_than_max_size", test_tensor_larger_than_max_size);
@@ -1139,5 +1212,7 @@ int main() {
     run("test_buft_get_alloc_size_n_custom_override", test_buft_get_alloc_size_n_custom_override);
     run("test_buft_get_alloc_size_n_custom_override_ctx_size", test_buft_get_alloc_size_n_custom_override_ctx_size);
     run("test_buft_get_alloc_size_n_does_not_allocate", test_buft_get_alloc_size_n_does_not_allocate);
+    run("test_meta_split_state_rebuild(same)", []() { test_meta_split_state_rebuild(false); });
+    run("test_meta_split_state_rebuild(other)", []() { test_meta_split_state_rebuild(true); });
     return 0;
 }
