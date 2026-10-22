@@ -1,0 +1,16 @@
+All checks ran with CUDA_VISIBLE_DEVICES="", GIT_NO_LAZY_FETCH=1, nice 19 and <=4 worker threads. No target binaries, tests, builds or GPU tools ran.
+
+PASS (exit 0): g++ -std=c++17 -fsyntax-only -Iggml/include -Iggml/src -Iinclude -Icommon tests/test-backend-ops.cpp
+PASS (exit 0): g++ -std=c++17 -fsyntax-only -Iggml/include /tmp/flatcost-mmvq-host.cpp
+The second input extracts ggml_cuda_should_use_mmvq verbatim from mmvq.cu, GGML_CUDA_CC_* macros from common.cuh and MMVQ_MAX_BATCH_SIZE from mmvq-params.h, with ggml.h and cstdlib. It checks host dispatch syntax only, not CUDA translation or linkage.
+
+PASS (exit 0): python3 AST parse of bench.py
+PASS (exit 0): bash -n item/flatcost-sweep.sh
+PASS (exit 0): PYTHONPATH=/home/xanewok/repos/gpuq python3 -m gpuq.shlint item/flatcost-sweep.sh
+PASS (exit 0): gpuq submit --check /home/xanewok/repos/qwen38-eval-worktrees/wt/flatcost-sweep/item/flatcost-sweep.toml
+Output: /home/xanewok/repos/qwen38-eval-worktrees/wt/flatcost-sweep/item/flatcost-sweep.toml: flatcost-sweep: valid
+
+Metadata-only inventory: python3 bench.py --prepare --out evidence
+23 model/type/shape rows; 93 unique perf cells per GPU. Source header read sizes and SHA256 are in shapes.json. Tensor payloads were not read.
+
+Unverified: CUDA build/link, executable output/parser integration, route correctness, cold DRAM traffic, kernel-only timing, timing stability and queue-time estimate. These checks establish syntax and the draft manifest contract only.

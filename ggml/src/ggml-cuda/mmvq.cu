@@ -5,6 +5,7 @@
 #include "vecdotq.cuh"
 
 #include <cstdint>
+#include <cstdlib>
 #include <type_traits>
 
 // only enabled on DGX Spark, where it is a gain on every type below. On the higher-bandwidth parts the kernel
@@ -308,6 +309,20 @@ bool ggml_cuda_should_use_mmvq(enum ggml_type type, int cc, int64_t ne11) {
         }
     }
     if (GGML_CUDA_CC_IS_NVIDIA(cc) && cc == GGML_CUDA_CC_BLACKWELL) {
+        // Bench only: keep the compiled MMVQ width limit and all other type dispatch unchanged.
+        static const int bench_max_cols = []() {
+            const char * value = std::getenv("GGML_CUDA_MMVQ_MAX_COLS");
+            if (!value) {
+                return -1;
+            }
+            if (value[0] < '0' || value[0] > '8' || value[1] != '\0') {
+                GGML_ABORT("GGML_CUDA_MMVQ_MAX_COLS must be 0..8; unset it for default dispatch");
+            }
+            return value[0] - '0';
+        }();
+        if (bench_max_cols >= 0 && (type == GGML_TYPE_IQ4_XS || type == GGML_TYPE_Q5_K || type == GGML_TYPE_Q6_K)) {
+            return ne11 <= bench_max_cols;
+        }
         switch (type) { // tuned on RTX 5090
             case GGML_TYPE_Q2_K:
             case GGML_TYPE_Q3_K:

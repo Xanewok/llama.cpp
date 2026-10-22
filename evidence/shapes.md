@@ -1,0 +1,25 @@
+| Model | Type | m | k | GDN | Count |
+|---|---|---:|---:|---|---:|
+| Swift-1.5-Qwen3.8-27B-IQ4_XS | q6_K | 124160 | 5120 | False | 1 |
+| Swift-1.5-Qwen3.8-27B-IQ4_XS | q6_K | 5120 | 5120 | False | 1 |
+| Swift-1.5-Qwen3.8-27B-IQ4_XS | iq4_xs | 5120 | 8704 | False | 63 |
+| Swift-1.5-Qwen3.8-27B-IQ4_XS | iq4_xs | 8704 | 5120 | False | 126 |
+| Swift-1.5-Qwen3.8-27B-IQ4_XS | iq4_xs | 3072 | 5120 | False | 47 |
+| Swift-1.5-Qwen3.8-27B-IQ4_XS | iq4_xs | 5120 | 5120 | False | 47 |
+| Swift-1.5-Qwen3.8-27B-IQ4_XS | q6_K | 5120 | 3072 | True | 11 |
+| Swift-1.5-Qwen3.8-27B-IQ4_XS | q6_K | 5120 | 3072 | False | 15 |
+| Swift-1.5-Qwen3.8-27B-IQ4_XS | iq4_xs | 6144 | 5120 | False | 16 |
+| Swift-1.5-Qwen3.8-27B-IQ4_XS | iq4_xs | 5120 | 3072 | True | 29 |
+| Swift-1.5-Qwen3.8-27B-IQ4_XS | q5_K | 5120 | 3072 | True | 1 |
+| Swift-1.5-Qwen3.8-27B-IQ4_XS | q6_K | 5120 | 8704 | False | 1 |
+| Swift-1.5-Qwen3.8-27B-IQ4_XS | q6_K | 8704 | 5120 | False | 2 |
+| Swift-1.5-Qwen3.8-27B-J5q-bf16 | q6_K | 124160 | 5120 | False | 1 |
+| Swift-1.5-Qwen3.8-27B-J5q-bf16 | q6_K | 5120 | 5120 | False | 48 |
+| Swift-1.5-Qwen3.8-27B-J5q-bf16 | q5_K | 5120 | 8704 | False | 15 |
+| Swift-1.5-Qwen3.8-27B-J5q-bf16 | q5_K | 8704 | 5120 | False | 126 |
+| Swift-1.5-Qwen3.8-27B-J5q-bf16 | iq4_xs | 3072 | 5120 | False | 47 |
+| Swift-1.5-Qwen3.8-27B-J5q-bf16 | q6_K | 5120 | 3072 | True | 47 |
+| Swift-1.5-Qwen3.8-27B-J5q-bf16 | q6_K | 5120 | 3072 | False | 15 |
+| Swift-1.5-Qwen3.8-27B-J5q-bf16 | q6_K | 6144 | 5120 | False | 16 |
+| Swift-1.5-Qwen3.8-27B-J5q-bf16 | q6_K | 5120 | 8704 | False | 49 |
+| Swift-1.5-Qwen3.8-27B-J5q-bf16 | q6_K | 8704 | 5120 | False | 2 |
