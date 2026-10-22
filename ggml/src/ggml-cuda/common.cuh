@@ -1278,6 +1278,8 @@ struct ggml_cuda_graph {
     std::vector<cudaGraphNode_t> nodes;
     bool disable_due_to_gpu_arch = false;
     bool warmup_complete = false;
+    bool has_ar_node = false;
+    bool capture_required = false;
     uint64_t uid = 0;
     int64_t last_used_time = 0;
     struct node_properties {
