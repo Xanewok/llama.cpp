@@ -1,6 +1,8 @@
 #include "ggml.h"
 #include "ggml-backend.h"
 #include "ggml-alloc.h"
+#include "../ggml/src/ggml-impl.h"
+#include "../ggml/src/ggml-backend-impl.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -32,6 +34,214 @@ static void encode(std::vector<uint8_t> & bytes, ggml_type type, size_t i, float
 
 static bool equal(const std::vector<uint8_t> & a, const std::vector<uint8_t> & b) {
     return a == b;
+}
+
+static uint32_t next(uint32_t & state) {
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return state;
+}
+
+// Fractional inputs exercise BF16 wire rounding when enabled.
+static std::vector<float> random_values(size_t n, uint32_t seed, float scale) {
+    std::vector<float> v(n);
+    for (auto & x : v) {
+        x = (float(int(next(seed) % 2000001u)) - 1000000.0f) * 1.0e-6f * scale;
+    }
+    return v;
+}
+
+constexpr int64_t D  = 512;  // residual width
+constexpr int64_t F  = 1024; // hidden width
+constexpr int     L  = 5;
+constexpr int     L0 = 2;    // rank 1 must contribute zeros for this layer
+
+// Row-split up projections and column-split down projections produce PARTIAL sums.
+static ggml_backend_meta_split_state split_state(const ggml_tensor * t, void *) {
+    const bool solo = strstr(t->name, "-solo") != nullptr;
+    if (strncmp(t->name, "up", 2) == 0) {
+        return { GGML_BACKEND_SPLIT_AXIS_1, { solo ? F : F/2, solo ? 0 : F/2 }, {1}, 1 };
+    }
+    if (strncmp(t->name, "down", 4) == 0) {
+        return { GGML_BACKEND_SPLIT_AXIS_0, { solo ? F : F/2, solo ? 0 : F/2 }, {1}, 1 };
+    }
+    if (strncmp(t->name, "out", 3) == 0) {
+        return { GGML_BACKEND_SPLIT_AXIS_1, { D/2, D/2 }, {1}, 1 };
+    }
+    return { GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1 };
+}
+
+struct weights {
+    ggml_tensor * up[L];
+    ggml_tensor * down[L];
+    ggml_tensor * out;
+};
+
+struct graph {
+    ggml_context *            ctx  = nullptr;
+    ggml_cgraph *             gf   = nullptr;
+    ggml_tensor *             x    = nullptr;
+    ggml_tensor *             res  = nullptr; // final residual: MIRRORED, read from device 0
+    ggml_tensor *             out  = nullptr; // split by rows: each half is computed from its own device's residual
+    ggml_gallocr_t            ga   = nullptr;
+    ggml_tensor *            tweak = nullptr;
+};
+
+// Use distinct non-zero UIDs, as scheduler split graphs do.
+static uint64_t next_uid() {
+    static uint64_t uid = 0;
+    return ++uid;
+}
+
+static graph build(ggml_backend_t backend, const weights & w, int64_t rows, uint64_t uid, int layers = L, int extra = 0) {
+    graph g;
+    ggml_init_params params = { (8*L + 16 + extra)*ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true };
+    g.ctx = ggml_init(params);
+    require(g.ctx != nullptr, "graph context");
+    g.x = ggml_new_tensor_2d(g.ctx, GGML_TYPE_F32, D, rows);
+    ggml_set_name(g.x, "x");
+    ggml_set_input(g.x);
+    ggml_tensor * cur = g.x;
+    for (int l = 0; l < layers; ++l) {
+        ggml_tensor * h = ggml_mul_mat(g.ctx, w.up[l], cur);
+        ggml_tensor * y = ggml_mul_mat(g.ctx, w.down[l], h);
+        cur = ggml_add(g.ctx, cur, y);
+    }
+    for (int i = 0; i < extra; ++i) {
+        cur = ggml_scale(g.ctx, cur, 0.99f);
+    }
+    g.tweak = ggml_scale(g.ctx, cur, 1.0f);
+    g.res = g.tweak;
+    ggml_set_output(g.res);
+    g.out = ggml_mul_mat(g.ctx, w.out, g.res);
+    ggml_set_output(g.out);
+    g.gf = ggml_new_graph(g.ctx);
+    ggml_build_forward_expand(g.gf, g.out);
+    g.ga = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
+    require(ggml_gallocr_alloc_graph(g.ga, g.gf), "graph allocation");
+    g.gf->uid = uid;
+    return g;
+}
+
+static void release(graph & g) {
+    ggml_gallocr_free(g.ga);
+    ggml_free(g.ctx);
+}
+
+static std::vector<uint8_t> read(const ggml_tensor * t) {
+    std::vector<uint8_t> bytes(ggml_nbytes(t));
+    ggml_backend_tensor_get(t, bytes.data(), 0, bytes.size());
+    return bytes;
+}
+
+static void * (*get_proc)(ggml_backend_reg_t, const char *);
+static ggml_backend_comm_graph_compute_t graph_compute;
+static bool split_reference = false;
+static size_t graph_calls = 0;
+static size_t graph_runs = 0;
+
+static bool compute_spy(void * ctx, ggml_cgraph ** graphs, size_t n_graphs) {
+    ++graph_calls;
+    ggml_cgraph * incomplete[] = { graphs[0], nullptr };
+    require(!graph_compute(ctx, incomplete, 2), "incomplete rank list submitted work");
+    const bool handled = graph_compute(ctx, graphs, n_graphs);
+    graph_runs += handled;
+    return handled;
+}
+
+static void * lookup(ggml_backend_reg_t reg, const char * name) {
+    if (strcmp(name, "ggml_backend_comm_graph_compute") == 0) {
+        return split_reference ? nullptr : (void *) compute_spy;
+    }
+    return get_proc(reg, name);
+}
+
+static void graph_cases(ggml_backend_reg_t reg) {
+    get_proc = reg->iface.get_proc_address;
+    graph_compute = (ggml_backend_comm_graph_compute_t) get_proc(reg, "ggml_backend_comm_graph_compute");
+    if (graph_compute == nullptr) {
+        puts("SKIP: collective graph procedure unavailable");
+        return;
+    }
+    require(!graph_compute(nullptr, nullptr, 0), "empty collective submitted work");
+    ggml_backend_dev_t devs[2] = { ggml_backend_reg_dev_get(reg, 0), ggml_backend_reg_dev_get(reg, 1) };
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, split_state, nullptr);
+    ggml_backend_t backends[2];
+    reg->iface.get_proc_address = lookup;
+    for (int arm = 0; arm < 2; ++arm) {
+        split_reference = arm == 0;
+        backends[arm] = ggml_backend_dev_init(meta, nullptr);
+        require(backends[arm] != nullptr, "meta backend");
+    }
+    reg->iface.get_proc_address = get_proc;
+    ggml_context * ctx_w = ggml_init({ (2*L + 1)*ggml_tensor_overhead(), nullptr, true });
+    require(ctx_w != nullptr, "weight context");
+    weights w;
+    for (int l = 0; l < L; ++l) {
+        w.up[l] = ggml_new_tensor_2d(ctx_w, GGML_TYPE_F32, D, F);
+        w.down[l] = ggml_new_tensor_2d(ctx_w, GGML_TYPE_F32, F, D);
+        ggml_format_name(w.up[l], "up-%d%s", l, l == L0 ? "-solo" : "");
+        ggml_format_name(w.down[l], "down-%d%s", l, l == L0 ? "-solo" : "");
+    }
+    w.out = ggml_new_tensor_2d(ctx_w, GGML_TYPE_F32, D, D);
+    ggml_set_name(w.out, "out");
+    ggml_backend_buffer_t wbuf = ggml_backend_alloc_ctx_tensors(ctx_w, backends[0]);
+    require(wbuf != nullptr, "weight buffer");
+    uint32_t seed = 0x9e3779b9u;
+    for (ggml_tensor * t = ggml_get_first_tensor(ctx_w); t != nullptr; t = ggml_get_next_tensor(ctx_w, t)) {
+        const auto v = random_values(ggml_nelements(t), next(seed), 0.05f);
+        ggml_backend_tensor_set(t, v.data(), 0, ggml_nbytes(t));
+    }
+    bool graph_supported = false;
+    const int layers[] = { L, 1, L };
+    const int extras[] = { 0, 40, 0 };
+    for (int phase = 0; phase < 3; ++phase) {
+        graph graphs[2];
+        for (int arm = 0; arm < 2; ++arm) {
+            graphs[arm] = build(backends[arm], w, 6, next_uid(), layers[phase], extras[phase]);
+        }
+        for (int round = 0; round < 8; ++round) {
+            if (phase == 2 && round == 4) {
+                for (auto & g : graphs) {
+                    ggml_set_op_params_f32(g.tweak, 0, 0.75f);
+                    g.gf->uid = next_uid();
+                }
+            }
+            const size_t runs_before = graph_runs;
+            std::vector<uint8_t> res[2], out[2];
+            for (int arm = 0; arm < 2; ++arm) {
+                graph & g = graphs[arm];
+                const auto x = random_values(ggml_nelements(g.x), 0x51ed2700u + 977u*round, 1.0f);
+                ggml_backend_tensor_set(g.x, x.data(), 0, ggml_nbytes(g.x));
+                require(ggml_backend_graph_compute_async(backends[arm], g.gf) == GGML_STATUS_SUCCESS, "compute");
+                ggml_backend_synchronize(backends[arm]);
+                res[arm] = read(g.res);
+                out[arm] = read(g.out);
+            }
+            require(res[0] == res[1] && out[0] == out[1], "collective graph differs from split");
+            if ((phase == 0 && round == 0) || (phase == 2 && round == 4)) {
+                require(graph_runs == runs_before, "cold/changed properties bypassed warmup");
+            }
+            if (phase == 0 && round == 2) {
+                graph_supported = graph_runs > 0;
+            }
+            if (graph_supported && round >= 2 && !(phase == 2 && round == 4)) {
+                require(graph_runs == runs_before + 1, "stable collective fell back to split");
+            }
+        }
+        for (auto & g : graphs) {
+            release(g);
+        }
+    }
+    require(graph_calls > graph_runs, "cold graph bypassed warmup");
+    ggml_backend_buffer_free(wbuf);
+    ggml_free(ctx_w);
+    for (auto backend : backends) {
+        ggml_backend_free(backend);
+    }
+    puts(graph_runs ? "PASS: bitwise split identity, replay, inactive rank, arena rebuild and property change" :
+                      "SKIP: collective graph capture unsupported; split fallback matched");
 }
 
 int main(int argc, char ** argv) {
@@ -128,6 +338,7 @@ int main(int argc, char ** argv) {
     for (auto backend : backends) {
         ggml_backend_free(backend);
     }
+    graph_cases(reg);
     printf("PASS: %zu AllReduce cases\n", cases);
     return 0;
 }
