@@ -5611,6 +5611,7 @@ static bool ggml_backend_cuda_comm_graph_compute(void * comm_ctx_v, ggml_cgraph 
         return !graph->warmup_complete || graph->instance == nullptr;
     });
     if (recapture) {
+        GGML_LOG_DEBUG("%s: capturing %zu subgraphs per device with %zu AllReduces in one graph\n", __func__, n_graphs, n_graphs - 1);
         {
             std::lock_guard<std::mutex> lock(ggml_cuda_lock);
             ggml_cuda_lock_counter.fetch_add(1, std::memory_order_relaxed);
