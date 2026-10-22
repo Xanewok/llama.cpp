@@ -1,0 +1,52 @@
+id = "ar-norm-fuse"
+title = "Build and gate package 101 + decode AllReduce residual RMSNorm fusion; freeze ar-norm-fuse"
+priority = 30
+kind = "filler"
+host_sensitive = false
+budget_s = 28800
+est_s = 14400
+ab = false
+retry = "never"
+note = "DRAFT; not enqueued or executed. Source pin 4b8b462bc348cafd82b990cec07d0c9c14e07abb. CUDA 13.2 through buildgate, -j4, NCCL=OFF, TMPDIR=/mnt/scratch/tmp-build. Inherit every bw-pkg101-fork gate: host/peer bytes, graph PASS lines, graphs-disabled rc 77, library strings, and manifest freeze blockers. Add 15 norm cases in each of BF16 and native F32 wire modes, NMSE <= 1e-7, positive/negative fusion engagement. Falsifier: build/link error, SKIP in an enabled gate, missing or duplicated PASS, numerical or engagement failure, peer timeout. KLD remains required before model-level acceptance."
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "integrity", regex = "integrity: " }]
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-norm-fuse/item/ar-norm-fuse.sh", "--preflight"]
+timeout_s = 600
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-norm-fuse/item/ar-norm-fuse.sh", "--canary"]
+timeout_s = 600
+
+[selftest]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-norm-fuse/item/ar-norm-fuse.sh", "--selftest"]
+timeout_s = 600
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-norm-fuse/item/ar-norm-fuse.sh"]
+cwd = "/home/xanewok/repos/qwen38-eval"
+env = { GPUQ_ACTIVE = "1", CUDA_VISIBLE_DEVICES = "0,1", OUT = "/mnt/scratch/work/ar-norm-fuse-build-a{attempt}", BUDGET_S = "28200" }
+
+[outputs]
+paths = ["/mnt/scratch/work/ar-norm-fuse-build-a{attempt}"]
+
+[fix]
+editable = []
+protected = ["identity", "budget", "frozen"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-norm-fuse/item/ar-norm-fuse.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/ar-norm-fuse/FUSE.md",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/cpugate",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/wt-retire",
+  "/home/xanewok/repos/qwen38-eval-worktrees/frozen/stack11-fa-s2/RECIPE.txt",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/items/bw-pkg101-fork.py",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/items/bw-fork-ff5a.py",
+  "/home/xanewok/repos/qwen38-eval/orchestration/gpuq/items/bw-stack12b.py",
+  "/home/xanewok/repos/qwen38-eval/orchestration/p2p-driver/verify.sh",
+  "/home/xanewok/repos/qwen38-eval/docs/upstream/manifest-stack12.tsv",
+]
