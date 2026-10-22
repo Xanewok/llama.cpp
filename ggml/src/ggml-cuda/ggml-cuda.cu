@@ -2741,11 +2741,8 @@ static const void * ggml_cuda_graph_get_key(ggml_cgraph * cgraph) {
     return cgraph->nodes[0];
 }
 
-static bool ggml_cuda_graph_update_required(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, const void * key = nullptr) {
+static bool ggml_cuda_graph_update_required(ggml_cuda_graph * graph, ggml_cgraph * cgraph) {
     bool res = false;
-
-    const void * graph_key = key != nullptr ? key : ggml_cuda_graph_get_key(cgraph);
-    ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
 
     if (cgraph->uid != 0 &&
         cgraph->uid == graph->uid) {
@@ -2785,9 +2782,7 @@ static bool ggml_cuda_graph_update_required(ggml_backend_cuda_context * cuda_ctx
     return res;
 }
 
-static void ggml_cuda_graph_update_executable(ggml_backend_cuda_context * cuda_ctx, const void * graph_key) {
-    ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
-
+static void ggml_cuda_graph_update_executable(ggml_cuda_graph * graph) {
 #if CUDART_VERSION >= 12000
     cudaGraphExecUpdateResultInfo result_info;
     cudaError_t stat = cudaGraphExecUpdate(graph->instance, graph->graph, &result_info);
@@ -4760,7 +4755,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
         if (graph->instance == nullptr) { // Create executable graph from captured graph.
             CUDA_CHECK(cudaGraphInstantiate(&graph->instance, graph->graph, NULL, NULL, 0));
         } else if (cuda_graph_update_required) { // Update graph executable
-            ggml_cuda_graph_update_executable(cuda_ctx, graph_key);
+            ggml_cuda_graph_update_executable(graph);
         }
         // Launch graph
         CUDA_CHECK(cudaGraphLaunch(graph->instance, cuda_ctx->stream()));
@@ -4806,7 +4801,7 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     if (graph->is_enabled()) {
         const bool graph_compatible = ggml_cuda_graph_check_compability(cgraph);
         if (graph_compatible) {
-            const bool properties_changed = ggml_cuda_graph_update_required(cuda_ctx, cgraph);
+            const bool properties_changed = ggml_cuda_graph_update_required(graph, cgraph);
 
             if (!graph->warmup_complete) {
                 // Warmup: need at least 2 calls with no property change on the 2nd call
@@ -4909,7 +4904,7 @@ static bool ggml_backend_cuda_comm_graph_compute(void * comm_ctx_v, ggml_cgraph 
         flat.n_nodes = (int) nodes.size();
         // A subgraph UID cannot vouch for properties of the other subgraphs.
         flat.uid = 0;
-        changed = ggml_cuda_graph_update_required(contexts[r], &flat, graphs[r]) || changed;
+        changed = ggml_cuda_graph_update_required(captures[r], &flat) || changed;
         changed = captures[r]->subgraph_sizes != sizes || changed;
         captures[r]->subgraph_sizes = std::move(sizes);
     }
@@ -4963,7 +4958,7 @@ static bool ggml_backend_cuda_comm_graph_compute(void * comm_ctx_v, ggml_cgraph 
             if (capture->instance == nullptr) {
                 CUDA_CHECK(cudaGraphInstantiate(&capture->instance, capture->graph, nullptr, nullptr, 0));
             } else {
-                ggml_cuda_graph_update_executable(contexts[r], graphs[r]);
+                ggml_cuda_graph_update_executable(capture);
             }
             capture->warmup_complete = true;
         }
