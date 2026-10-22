@@ -13,7 +13,7 @@ import sys
 import tempfile
 
 EVAL = Path('/home/xanewok/repos/qwen38-eval')
-SOURCE = '4b8b462bc348cafd82b990cec07d0c9c14e07abb'
+SOURCE = 'f26f264db1e52206e909fbd83d7d19a6c55cccf3'
 BASE = '6ef25f572c544b705d3fe7a37c02978bc2d1aa56'
 BF16_PASS = 'PASS: AllReduce residual RMSNorm cases=15 wire=BF16'
 F32_PASS = 'PASS: AllReduce residual RMSNorm cases=15 wire=F32'
