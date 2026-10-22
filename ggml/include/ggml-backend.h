@@ -212,7 +212,8 @@ extern "C" {
     typedef bool   (*ggml_backend_comm_allreduce_tensor_t)(void * comm_ctx, struct ggml_tensor ** tensors);
 
     // Optional: execute graphs[g*n_ranks + rank], with an in-place sum of their last tensors between graph steps.
-    // n_graphs is the number of steps per rank. False submits no work; the caller must use its normal split path.
+    // n_graphs counts steps per rank; rank order is the backend order from comm_init. Last tensors without GGML_TENSOR_FLAG_COMPUTE contribute zero.
+    // True queues all work asynchronously; keep graphs, tensors, buffers and comm_ctx alive until all rank backends synchronize. False submits no work; use the normal split path.
     typedef bool   (*ggml_backend_comm_graph_compute_t)(void * comm_ctx, struct ggml_cgraph ** graphs, size_t n_graphs);
 
     // Split buffer type for tensor parallelism (old)
