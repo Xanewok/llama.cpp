@@ -9,6 +9,8 @@ Upstream form, exit 0 with no diagnostics:
 
 `ggml-cuda.cu` and `allreduce.cu` need nvcc; host syntax checks do not validate them.
 
+Fork form: the same host syntax-check command returned 0 with no diagnostics after the port. See `NOTES-101-port.md` for conflicts and owner/plan adaptations.
+
 ## Tests added, not executed
 
 - `test-ar-p2p-graph`: compares merged vs split meta execution bitwise for both residual and row-split output, including an inactive rank shard. Eight rounds per phase change inputs while stable rounds assert no new merged capture. Direct copy-engine AllReduces use the same comm pipeline between graph calls and compare both ranks.
