@@ -1,0 +1,28 @@
+Base: 726f57ffecedcdbfdbbaf8892fcdc8321779fd56
+Port source: cdb265be1e9a13897581e04950da7bec1b976275
+Shared cold-weight source: flatcost-sweep 64afa6d5c4a3cf1a1fc5f31e1b790ea8891bf8de
+
+Observed static checks:
+  g++ -std=c++17 -fsyntax-only -Iggml/include -Iggml/src -Iinclude tests/test-backend-ops.cpp
+  bash -n item/mma78.sh
+  Python ast.parse for bench.py and item/check_mma78_build.py
+  Python tomllib.loads for item/mma78.toml
+  git diff --check
+All passed with CUDA_VISIBLE_DEVICES empty, GIT_NO_LAZY_FETCH=1, nice 19 and at most 8 threads.
+No project binaries, tests, CUDA compiler, GPU tools, network calls or queue submissions were executed.
+
+Contract: one 8-column tile, IQ4_XS and Q6_K, n=7/8 only, before MMVQ. Other widths retain their dispatch.
+IQ4_XS requires 4-byte alignment. Both types require whole-block strides. Invalid columns are zero.
+The port retains register prefetch and removes the final redundant block reload.
+Register expectation (inference, not measurement): <=128/thread from launch_bounds(128,4) on sm_120a; zero spills is unverified.
+Deferred item gates both kernels with ptxas and SASS, then CPU-reference NMSE <=5e-4 before performance.
+
+Correctness draft: four served (type,m,k) shapes at n=1,6,7,8 in default and mma arms; 32 small tail/broadcast/strided/permuted cases per arm.
+Perf draft: four served shapes, n=6/7/8, default/mma, four alternating paired repeats, GPU0 only.
+Best-existing selection: served dispatch except IQ4 down n8, whose prior winner MMQ is remeasured (four extra invocations).
+Gate: IQ4 n7/8 geometric mean >=1.10x the remeasured selected baseline and no IQ4 large-shape cell loses.
+No A/A bookends; CIs are reported but are not a confidence-bound gate. Best-arm selection comes from the partial prior sweep.
+Estimate: 5760s / 464 prior invocations ~=12.4s each; 100 new perf invocations ~=1240s plus 260s correctness =1500s.
+The observed log mtime deltas average 11.44s; the 96-minute brief estimate is used conservatively.
+GPU work has a hard 1800s cap including timeout cleanup. GPU-hidden preflight build allows 14400s separately.
+Unverified: CUDA compilation, actual registers/spills, numerical results, runtime estimate and speedup.

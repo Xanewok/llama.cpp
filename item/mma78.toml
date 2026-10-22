@@ -1,0 +1,51 @@
+id = "mma78"
+title = "One-tile IQ4_XS/Q6_K MMA at n7/8 on GPU0"
+priority = 50
+kind = "measure"
+host_sensitive = true
+budget_s = 16200
+est_s = 1500
+ab = true
+retry = "fresh"
+note = "why: stream weights once at n7/8 | expect (G): IQ4 n7/8 geomean >=1.10x best existing, neither large shape loses | falsifier: slower, regs >128, spills or CPU NMSE >5e-4 | estimate: sweep 5760s/464 calls ~=12.4s/call; 100 calls ~=1240s plus 260s correctness; no A/A bookends; IQ4 down n8 MMQ control remeasured | GPU cap 1800s including correctness; build is GPU-hidden"
+exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
+signatures = [{ class = "integrity", regex = "mma78 integrity: " }]
+
+[preflight]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78/item/mma78.sh", "--preflight"]
+env = { OUT = "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78/artifacts/a{attempt}", CUDA_VISIBLE_DEVICES = "" }
+timeout_s = 14400
+
+[canary]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78/item/mma78.sh", "--canary"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78"
+env = { OUT = "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78/artifacts/a{attempt}", GPUQ_ACTIVE = "1", CUDA_VISIBLE_DEVICES = "0" }
+timeout_s = 360
+
+[run]
+cmd = ["bash", "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78/item/mma78.sh", "--run"]
+cwd = "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78"
+env = { OUT = "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78/artifacts/a{attempt}", GPUQ_ACTIVE = "1", CUDA_VISIBLE_DEVICES = "0" }
+timeout_s = 1440
+ports = []
+
+[outputs]
+paths = ["/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78/artifacts/a{attempt}"]
+
+[fix]
+editable = []
+protected = ["identity", "budget", "sources", "threshold"]
+
+[pins]
+files = [
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78/item/mma78.sh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78/item/check_mma78_build.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78/bench.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78/ggml/src/ggml-cuda/ggml-cuda.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78/ggml/src/ggml-cuda/mmvq-mma.cu",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78/ggml/src/ggml-cuda/mmvq-mma.cuh",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/mma78/tests/test-backend-ops.cpp",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/flatcost-sweep/bench.py",
+  "/home/xanewok/repos/qwen38-eval-worktrees/wt/flatcost-sweep/evidence/shapes.json",
+  "/home/xanewok/repos/qwen38-eval-worktrees/bin/buildgate",
+]

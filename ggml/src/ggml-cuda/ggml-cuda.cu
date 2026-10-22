@@ -34,6 +34,7 @@
 #include "ggml-cuda/mmq.cuh"
 #include "ggml-cuda/mmvf.cuh"
 #include "ggml-cuda/mmvq.cuh"
+#include "ggml-cuda/mmvq-mma.cuh"
 #include "ggml-cuda/moe-weighted-reduction.cuh"
 #include "ggml-cuda/norm.cuh"
 #include "ggml-cuda/opt-step-adamw.cuh"
@@ -2171,6 +2172,37 @@ static void ggml_cuda_mul_mat(ggml_backend_cuda_context & ctx, const ggml_tensor
     if (ggml_cuda_should_use_mmf(src0->type, cc, warp_size, src0->ne, src0->nb, ne11, /*mul_mat_id =*/ false)) {
         ggml_cuda_mul_mat_f(ctx, src0, src1, nullptr, dst);
         return;
+    }
+    if (ggml_cuda_should_use_mmvq_mma(src0, ne11, cc)) {
+        // Bench only: an unset arm uses the new dispatch; default restores the served dispatch.
+        static const int bench_arm = []() {
+            const char * value = std::getenv("GGML_CUDA_MMA78_ARM");
+            if (!value || strcmp(value, "mma") == 0) {
+                return 1;
+            }
+            if (strcmp(value, "default") == 0) {
+                return 0;
+            }
+            if (strcmp(value, "mmq") == 0) {
+                return 2;
+            }
+            if (strcmp(value, "mmvq") == 0) {
+                return 3;
+            }
+            GGML_ABORT("GGML_CUDA_MMA78_ARM must be default, mma, mmq or mmvq");
+        }();
+        if (bench_arm == 1) {
+            ggml_cuda_mul_mat_vec_q_mma(ctx, src0, src1, dst);
+            return;
+        }
+        if (bench_arm == 2) {
+            ggml_cuda_mul_mat_q(ctx, src0, src1, nullptr, dst);
+            return;
+        }
+        if (bench_arm == 3) {
+            ggml_cuda_mul_mat_vec_q(ctx, src0, src1, nullptr, dst);
+            return;
+        }
     }
     if (ggml_cuda_should_use_mmvq(src0->type, cc, ne11)) {
         ggml_cuda_mul_mat_vec_q(ctx, src0, src1, nullptr, dst);
