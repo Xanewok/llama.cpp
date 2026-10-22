@@ -1406,77 +1406,6 @@ static bool ggml_backend_cuda_comm_allreduce_tensor(void * comm_ctx_v, struct gg
     return comm_ctx->try_allreduce(comm_ctx, tensors);
 }
 
-static void ggml_cuda_comm_ar_unsupported(ggml_tensor *, int, int, void *) {
-    GGML_ABORT("AllReduce graph nodes require CUDA graph execution");
-}
-
-static bool ggml_cuda_is_comm_ar_node(const ggml_tensor * node) {
-    if (node->op != GGML_OP_CUSTOM) {
-        return false;
-    }
-    ggml_custom_op_params params;
-    memcpy(&params, node->op_params, sizeof(params));
-    return params.fun == ggml_cuda_comm_ar_unsupported;
-}
-
-static bool ggml_backend_cuda_comm_allreduce_graph(void * comm_ctx_v, ggml_tensor ** tensors, ggml_tensor ** nodes) {
-#if defined(USE_CUDA_GRAPH) && !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
-    auto * comm_ctx = static_cast<ggml_backend_cuda_comm_context *>(comm_ctx_v);
-    if (comm_ctx == nullptr || getenv("GGML_CUDA_DISABLE_GRAPHS") != nullptr ||
-            comm_ctx->try_allreduce != ggml_backend_cuda_comm_try_allreduce_internal ||
-            !ggml_backend_cuda_comm_internal_accepts(comm_ctx, tensors) || ggml_nelements(tensors[0]) == 0 ||
-            !ggml_cuda_ar_in_graph_supported(comm_ctx->ar_pipeline, tensors)) {
-        return false;
-    }
-    for (int dev : comm_ctx->dev_ids) {
-        if (ggml_cuda_info().devices[dev].cc < GGML_CUDA_CC_VOLTA) {
-            return false;
-        }
-    }
-    if (nodes != nullptr) {
-        for (size_t i = 0; i < comm_ctx->backends.size(); ++i) {
-            ggml_tensor * node = nodes[i];
-            *node = *tensors[i];
-            node->op = GGML_OP_CUSTOM;
-            memset(node->src, 0, sizeof(node->src));
-            memset(node->op_params, 0, sizeof(node->op_params));
-            node->src[0] = tensors[i];
-            node->view_src = tensors[i];
-            node->view_offs = 0;
-            node->flags = GGML_TENSOR_FLAG_COMPUTE;
-            node->extra = nullptr;
-            ggml_set_name(node, "comm_allreduce");
-            // Capture properties compare op_params byte for byte, including struct padding.
-            ggml_custom_op_params params;
-            memset(&params, 0, sizeof(params));
-            params.fun = ggml_cuda_comm_ar_unsupported;
-            params.n_tasks = 1;
-            params.userdata = comm_ctx;
-            memcpy(node->op_params, &params, sizeof(params));
-        }
-    }
-    return true;
-#else
-    GGML_UNUSED(comm_ctx_v);
-    GGML_UNUSED(tensors);
-    GGML_UNUSED(nodes);
-    return false;
-#endif
-}
-
-static void ggml_cuda_comm_ar_node(ggml_backend_cuda_context & ctx, ggml_tensor * node) {
-    ggml_custom_op_params params;
-    memcpy(&params, node->op_params, sizeof(params));
-    auto * comm_ctx = static_cast<ggml_backend_cuda_comm_context *>(params.userdata);
-    for (size_t i = 0; i < comm_ctx->dev_ids.size(); ++i) {
-        if (comm_ctx->dev_ids[i] == ctx.device) {
-            ggml_cuda_ar_allreduce_in_graph(comm_ctx->ar_pipeline, (int) i, node->src[0], ctx.stream());
-            return;
-        }
-    }
-    GGML_ABORT("AllReduce graph node submitted to a non-participating device");
-}
-
 // host buffer type
 
 static const char * ggml_backend_cuda_host_buffer_type_name(ggml_backend_buffer_type_t buft) {
@@ -2453,12 +2382,6 @@ static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * 
 
 static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct ggml_tensor * dst) {
     switch (dst->op) {
-        case GGML_OP_CUSTOM:
-            if (!ggml_cuda_is_comm_ar_node(dst)) {
-                return false;
-            }
-            ggml_cuda_comm_ar_node(ctx, dst);
-            break;
         case GGML_OP_ARGMAX:
             ggml_cuda_argmax(ctx, dst);
             break;
@@ -3379,20 +3302,11 @@ static bool ggml_cuda_graph_check_compability(ggml_cgraph * cgraph) {
 }
 
 static const void * ggml_cuda_graph_get_key(ggml_cgraph * cgraph) {
-    // Split and merged layouts can share their first tensor, but not their executable.
-    for (int i = 0; i < cgraph->n_nodes; ++i) {
-        if (ggml_cuda_is_comm_ar_node(cgraph->nodes[i])) {
-            return cgraph->nodes[i];
-        }
-    }
     return cgraph->nodes[0];
 }
 
-static bool ggml_cuda_graph_update_required(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph) {
+static bool ggml_cuda_graph_update_required(ggml_cuda_graph * graph, ggml_cgraph * cgraph) {
     bool res = false;
-
-    const void * graph_key = ggml_cuda_graph_get_key(cgraph);
-    ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
 
     if (cgraph->uid != 0 &&
         cgraph->uid == graph->uid) {
@@ -3411,9 +3325,7 @@ static bool ggml_cuda_graph_update_required(ggml_backend_cuda_context * cuda_ctx
         graph->node_props.resize(cgraph->n_nodes);
     }
 
-    graph->has_ar_node = false;
     for (int i = 0; i < cgraph->n_nodes; i++) {
-        graph->has_ar_node = graph->has_ar_node || ggml_cuda_is_comm_ar_node(cgraph->nodes[i]);
         ggml_cuda_graph::node_properties prop = {};
         memcpy(&prop.node, cgraph->nodes[i], sizeof(ggml_tensor));
 
@@ -3434,34 +3346,7 @@ static bool ggml_cuda_graph_update_required(ggml_backend_cuda_context * cuda_ctx
     return res;
 }
 
-static bool ggml_backend_cuda_comm_graph_ready(void * comm_ctx_v, ggml_cgraph ** graphs) {
-    auto * comm_ctx = static_cast<ggml_backend_cuda_comm_context *>(comm_ctx_v);
-    bool ready = true;
-    for (size_t i = 0; i < comm_ctx->backends.size(); ++i) {
-        auto * ctx = static_cast<ggml_backend_cuda_context *>(comm_ctx->backends[i]->context);
-        ggml_cuda_set_device(ctx->device);
-        ggml_cuda_graph * graph = ctx->cuda_graph(ggml_cuda_graph_get_key(graphs[i]));
-        if (!graph->is_enabled() || !ggml_cuda_graph_check_compability(graphs[i])) {
-            ready = false;
-            continue;
-        }
-        bool has_ar = false;
-        for (int n = 0; n < graphs[i]->n_nodes; ++n) {
-            has_ar = has_ar || ggml_cuda_is_comm_ar_node(graphs[i]->nodes[n]);
-        }
-        if (!has_ar) {
-            continue;
-        }
-        const bool changed = ggml_cuda_graph_update_required(ctx, graphs[i]);
-        graph->capture_required = graph->capture_required || changed;
-        ready = ready && !changed;
-    }
-    return ready;
-}
-
-static void ggml_cuda_graph_update_executable(ggml_backend_cuda_context * cuda_ctx, const void * graph_key) {
-    ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
-
+static void ggml_cuda_graph_update_executable(ggml_cuda_graph * graph) {
 #if CUDART_VERSION >= 12000
     cudaGraphExecUpdateResultInfo result_info;
     cudaError_t stat = cudaGraphExecUpdate(graph->instance, graph->graph, &result_info);
@@ -5519,8 +5404,8 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
         }
 
 #ifdef USE_CUDA_GRAPH
-        ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
         if (use_cuda_graph && cuda_graph_update_required) { // End CUDA graph capture
+            ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
             if (graph->graph != nullptr) {
                 CUDA_CHECK(cudaGraphDestroy(graph->graph));
                 graph->graph = nullptr;
@@ -5543,7 +5428,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
         if (graph->instance == nullptr) { // Create executable graph from captured graph.
             CUDA_CHECK(cudaGraphInstantiate(&graph->instance, graph->graph, NULL, NULL, 0));
         } else if (cuda_graph_update_required) { // Update graph executable
-            ggml_cuda_graph_update_executable(cuda_ctx, graph_key);
+            ggml_cuda_graph_update_executable(graph);
         }
         // Launch graph
         CUDA_CHECK(cudaGraphLaunch(graph->instance, cuda_ctx->stream()));
@@ -5589,14 +5474,9 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     if (graph->is_enabled()) {
         const bool graph_compatible = ggml_cuda_graph_check_compability(cgraph);
         if (graph_compatible) {
-            const bool properties_changed = ggml_cuda_graph_update_required(cuda_ctx, cgraph);
+            const bool properties_changed = ggml_cuda_graph_update_required(graph, cgraph);
 
-            if (graph->has_ar_node) {
-                // Both ranks were warmed through the split layout; never enqueue a spinning graph eagerly.
-                use_cuda_graph = true;
-                cuda_graph_update_required = properties_changed || graph->capture_required || graph->instance == nullptr;
-                graph->capture_required = false;
-            } else if (!graph->warmup_complete) {
+            if (!graph->warmup_complete) {
                 // Warmup: need at least 2 calls with no property change on the 2nd call
                 if (!properties_changed) {
                     graph->warmup_complete = true;
@@ -5624,20 +5504,7 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
     }
 #endif // USE_CUDA_GRAPH
 
-    if (!use_cuda_graph) {
-        for (int i = 0; i < cgraph->n_nodes; ++i) {
-            if (ggml_cuda_is_comm_ar_node(cgraph->nodes[i])) {
-                GGML_ABORT("AllReduce graph cannot run eagerly");
-            }
-        }
-    }
-
     if (use_cuda_graph && cuda_graph_update_required) {
-#ifdef USE_CUDA_GRAPH
-        if (graph->has_ar_node && ggml_cuda_graph_debug_enabled()) {
-            GGML_LOG_DEBUG("CUDA AllReduce graph capture\n");
-        }
-#endif
         // Start CUDA graph capture
         {
             std::lock_guard<std::mutex> lock(ggml_cuda_lock);
@@ -5651,6 +5518,132 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
 
     return GGML_STATUS_SUCCESS;
 }
+
+#if defined(USE_CUDA_GRAPH) && !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+static bool ggml_backend_cuda_comm_graph_compute(void * comm_ctx_v, ggml_cgraph ** graphs, size_t n_graphs) {
+    auto * comm_ctx = static_cast<ggml_backend_cuda_comm_context *>(comm_ctx_v);
+    if (comm_ctx == nullptr || graphs == nullptr || n_graphs < 2 ||
+            comm_ctx->try_allreduce != ggml_backend_cuda_comm_try_allreduce_internal) {
+        return false;
+    }
+    const size_t n_ranks = comm_ctx->backends.size();
+    if (n_ranks != 2 || n_graphs > SIZE_MAX / n_ranks) {
+        return false;
+    }
+    std::vector<ggml_backend_cuda_context *> contexts(n_ranks);
+    std::vector<ggml_cuda_graph *> captures(n_ranks);
+    std::vector<ggml_tensor *> tensors(n_ranks);
+    for (size_t r = 0; r < n_ranks; ++r) {
+        contexts[r] = static_cast<ggml_backend_cuda_context *>(comm_ctx->backends[r]->context);
+        if (graphs[r] == nullptr || contexts[r]->curr_stream_no != 0) {
+            return false;
+        }
+        ggml_cuda_set_device(contexts[r]->device);
+        // Graph-object keys keep collective executables separate from ordinary per-subgraph executables.
+        if (!ggml_cuda_graph_set_enabled(contexts[r], graphs[r])) {
+            return false;
+        }
+        captures[r] = contexts[r]->cuda_graph(graphs[r]);
+    }
+    for (size_t g = 0; g < n_graphs; ++g) {
+        for (size_t r = 0; r < n_ranks; ++r) {
+            ggml_cgraph * graph = graphs[g*n_ranks + r];
+            ggml_cuda_set_device(contexts[r]->device);
+            if (graph == nullptr || graph->n_nodes <= 0 || !ggml_cuda_graph_check_compability(graph)) {
+                return false;
+            }
+            tensors[r] = graph->nodes[graph->n_nodes - 1];
+        }
+        if (g + 1 < n_graphs && (!ggml_backend_cuda_comm_internal_accepts(comm_ctx, tensors.data()) ||
+                ggml_nelements(tensors[0]) == 0 || !ggml_cuda_ar_in_graph_supported(comm_ctx->ar_pipeline, tensors.data()))) {
+            return false;
+        }
+    }
+
+    bool changed = false;
+    for (size_t r = 0; r < n_ranks; ++r) {
+        std::vector<ggml_tensor *> nodes;
+        std::vector<int> sizes;
+        for (size_t g = 0; g < n_graphs; ++g) {
+            ggml_cgraph * graph = graphs[g*n_ranks + r];
+            if (nodes.size() > (size_t) std::numeric_limits<int>::max() - graph->n_nodes) {
+                return false;
+            }
+            nodes.insert(nodes.end(), graph->nodes, graph->nodes + graph->n_nodes);
+            sizes.push_back(graph->n_nodes);
+        }
+        ggml_cgraph flat = *graphs[r];
+        flat.nodes = nodes.data();
+        flat.n_nodes = (int) nodes.size();
+        // A subgraph UID cannot vouch for properties of the other subgraphs.
+        flat.uid = 0;
+        changed = ggml_cuda_graph_update_required(captures[r], &flat) || changed;
+        changed = captures[r]->subgraph_sizes != sizes || changed;
+        captures[r]->subgraph_sizes = std::move(sizes);
+    }
+    if (changed) {
+        for (auto * capture : captures) {
+            capture->warmup_complete = false;
+        }
+        return false;
+    }
+
+    const bool recapture = std::any_of(captures.begin(), captures.end(), [](const ggml_cuda_graph * graph) {
+        return !graph->warmup_complete || graph->instance == nullptr;
+    });
+    if (recapture) {
+        {
+            std::lock_guard<std::mutex> lock(ggml_cuda_lock);
+            ggml_cuda_lock_counter.fetch_add(1, std::memory_order_relaxed);
+        }
+        for (auto * ctx : contexts) {
+            ggml_cuda_set_device(ctx->device);
+            CUDA_CHECK(cudaStreamBeginCapture(ctx->stream(), cudaStreamCaptureModeRelaxed));
+        }
+        for (size_t g = 0; g < n_graphs; ++g) {
+            for (size_t r = 0; r < n_ranks; ++r) {
+                ggml_cgraph * graph = graphs[g*n_ranks + r];
+                ggml_cuda_set_device(contexts[r]->device);
+                ggml_cuda_graph_evaluate_and_capture(contexts[r], graph, false, false, nullptr);
+                tensors[r] = graph->nodes[graph->n_nodes - 1];
+            }
+            if (g + 1 < n_graphs) {
+                GGML_ASSERT(ggml_backend_cuda_comm_allreduce_tensor(comm_ctx, tensors.data()));
+            }
+        }
+        for (size_t r = 0; r < n_ranks; ++r) {
+            ggml_cuda_set_device(contexts[r]->device);
+            ggml_cuda_graph * capture = captures[r];
+            if (capture->graph != nullptr) {
+                CUDA_CHECK(cudaGraphDestroy(capture->graph));
+            }
+            CUDA_CHECK(cudaStreamEndCapture(contexts[r]->stream(), &capture->graph));
+        }
+        {
+            std::lock_guard<std::mutex> lock(ggml_cuda_lock);
+            if (ggml_cuda_lock_counter.fetch_sub(1, std::memory_order_relaxed) == 1) {
+                ggml_cuda_lock_cv.notify_all();
+            }
+        }
+        for (size_t r = 0; r < n_ranks; ++r) {
+            ggml_cuda_set_device(contexts[r]->device);
+            ggml_cuda_graph * capture = captures[r];
+            if (capture->instance == nullptr) {
+                CUDA_CHECK(cudaGraphInstantiate(&capture->instance, capture->graph, nullptr, nullptr, 0));
+            } else {
+                ggml_cuda_graph_update_executable(capture);
+            }
+            capture->warmup_complete = true;
+        }
+    }
+    // Finish every capture and instantiate before a peer-polling executable can run.
+    for (size_t r = 0; r < n_ranks; ++r) {
+        ggml_cuda_set_device(contexts[r]->device);
+        CUDA_CHECK(cudaGraphLaunch(captures[r]->instance, contexts[r]->stream()));
+    }
+    return true;
+}
+#endif
 
 static void ggml_backend_cuda_event_record(ggml_backend_t backend, ggml_backend_event_t event) {
     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *)backend->context;
@@ -6350,8 +6343,6 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
     }
 
     switch (op->op) {
-        case GGML_OP_CUSTOM:
-            return ggml_cuda_is_comm_ar_node(op);
         case GGML_OP_UNARY:
             switch (ggml_get_unary_op(op)) {
                 case GGML_UNARY_OP_ABS:
@@ -6992,12 +6983,9 @@ static void * ggml_backend_cuda_reg_get_proc_address(ggml_backend_reg_t reg, con
     if (strcmp(name, "ggml_backend_comm_allreduce_tensor") == 0) {
         return (void *)ggml_backend_cuda_comm_allreduce_tensor;
     }
-    if (strcmp(name, "ggml_backend_comm_allreduce_graph") == 0) {
-        return (void *) ggml_backend_cuda_comm_allreduce_graph;
-    }
-#ifdef USE_CUDA_GRAPH
-    if (strcmp(name, "ggml_backend_comm_graph_ready") == 0) {
-        return (void *) ggml_backend_cuda_comm_graph_ready;
+#if defined(USE_CUDA_GRAPH) && !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+    if (strcmp(name, "ggml_backend_comm_graph_compute") == 0) {
+        return (void *)ggml_backend_cuda_comm_graph_compute;
     }
 #endif
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
