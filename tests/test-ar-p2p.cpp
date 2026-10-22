@@ -547,6 +547,7 @@ static void graph_cases(ggml_backend_reg_t reg) {
     const int extras[] = { 0, 40, 0 };
     for (int phase = 0; phase < 3; ++phase) {
         graph graphs[2];
+        std::vector<uint8_t> res_before_change;
         for (int arm = 0; arm < 2; ++arm) {
             graphs[arm] = build(backends[arm], w, 6, next_uid(), layers[phase], extras[phase]);
         }
@@ -561,7 +562,8 @@ static void graph_cases(ggml_backend_reg_t reg) {
             std::vector<uint8_t> res[2], out[2];
             for (int arm = 0; arm < 2; ++arm) {
                 graph & g = graphs[arm];
-                const auto x = random_values(ggml_nelements(g.x), 0x51ed2700u + 977u*round, 1.0f);
+                const int input_round = phase == 2 && round == 4 ? round - 1 : round;
+                const auto x = random_values(ggml_nelements(g.x), 0x51ed2700u + 977u*input_round, 1.0f);
                 ggml_backend_tensor_set(g.x, x.data(), 0, ggml_nbytes(g.x));
                 require(ggml_backend_graph_compute_async(backends[arm], g.gf) == GGML_STATUS_SUCCESS, "compute");
                 ggml_backend_synchronize(backends[arm]);
@@ -569,6 +571,17 @@ static void graph_cases(ggml_backend_reg_t reg) {
                 out[arm] = read(g.out);
             }
             require(res[0] == res[1] && out[0] == out[1], "collective graph differs from split");
+            if (phase == 2 && round == 3) {
+                res_before_change = res[0];
+            }
+            if (phase == 2 && round == 4) {
+                for (size_t i = 0; i < res[0].size(); i += sizeof(float)) {
+                    float before, after;
+                    memcpy(&before, res_before_change.data() + i, sizeof(float));
+                    memcpy(&after, res[0].data() + i, sizeof(float));
+                    require(after == 0.75f * before, "changed scale parameter was not applied");
+                }
+            }
             if ((phase == 0 && round == 0) || (phase == 2 && round == 4)) {
                 require(graph_runs == runs_before, "cold/changed properties bypassed warmup");
             }
