@@ -320,14 +320,8 @@ target_link_libraries(test-ar-p2p PRIVATE ggml)
 llama_test(test-ar-p2p LABEL "backend")
 set_tests_properties(test-ar-p2p PROPERTIES SKIP_RETURN_CODE 77 ENVIRONMENT "GGML_CUDA_ALLREDUCE=internal" TIMEOUT 120)
 
-llama_build(test-ar-p2p-graph.cpp LINK ggml)
-llama_test(test-ar-p2p-graph LABEL "backend")
-llama_test(test-ar-p2p-graph NAME test-ar-p2p-graph-disabled LABEL "backend")
-set_tests_properties(test-ar-p2p-graph test-ar-p2p-graph-disabled PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
-set_tests_properties(test-ar-p2p-graph-disabled PROPERTIES ENVIRONMENT "GGML_CUDA_DISABLE_GRAPHS=1")
-add_test(NAME test-ar-p2p-graph-timeout COMMAND ${CMAKE_COMMAND}
-    -DTEST_EXE=$<TARGET_FILE:test-ar-p2p-graph> -P ${CMAKE_CURRENT_SOURCE_DIR}/test-ar-p2p-timeout.cmake)
-set_tests_properties(test-ar-p2p-graph-timeout PROPERTIES LABELS "backend" SKIP_REGULAR_EXPRESSION "SKIP:" TIMEOUT 40)
+llama_test(test-ar-p2p NAME test-ar-p2p-graph LABEL "backend")
+set_tests_properties(test-ar-p2p-graph PROPERTIES SKIP_RETURN_CODE 77 ENVIRONMENT "GGML_CUDA_ALLREDUCE=internal;GGML_CUDA_P2P=1" TIMEOUT 120)
 
 llama_build_and_test(test-tiled-mulmat.cpp LINK ggml)
 llama_build_and_test(test-model-load-cancel.cpp LABEL "model")

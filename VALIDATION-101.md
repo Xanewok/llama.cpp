@@ -1,23 +1,16 @@
 # Package 101 source validation
 
-No binaries, tests, GPU tools, nvcc or builds were run. All commands used `CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1`, nice 19 and one compiler process.
+Environment for every check: `CUDA_VISIBLE_DEVICES='' GIT_NO_LAZY_FETCH=1`, nice 19, one compiler process. No built binaries, tests, GPU tools, nvcc or builds are executed. The only compiler invocation is syntax-only, as requested by the brief.
 
-Upstream form, exit 0 with no diagnostics:
+Host syntax command (master and fork):
 
-    nice -n 19 g++ -std=c++17 -Wall -Wextra -fsyntax-only -Iggml/include -Iggml/src ggml/src/ggml-backend-meta.cpp tests/test-ar-p2p.cpp tests/test-ar-p2p-graph.cpp
+    nice -n 19 g++ -std=c++17 -Wall -Wextra -fsyntax-only -Iggml/include -Iggml/src ggml/src/ggml-backend-meta.cpp tests/test-ar-p2p.cpp
     nice -n 19 git diff --check
 
-`ggml-cuda.cu` and `allreduce.cu` need nvcc; host syntax checks do not validate them.
+Master: exit 0, no diagnostics. Fork status is recorded in `NOTES-101-port.md` after porting.
 
-Fork form: the same host syntax-check command returned 0 with no diagnostics after the port. See `NOTES-101-port.md` for conflicts and owner/plan adaptations.
+`test-ar-p2p.cpp:graph_cases` compares split and collective results bitwise for residuals and a projection split across both ranks. Changed inputs exercise repeated execution; an inactive layer tests zero contribution. Five reductions, one reduction plus 40 scales, then five reductions exercise arena replacement and reuse. A changed scale parameter and UID must decline optimization once before resuming. The spy asserts that stable calls keep using collective execution once available; it does not count captures or prove a driver-level cache hit. Null context and incomplete rank lists must decline on the host. The existing direct AllReduce cases retain type, size, scalar-tail and inactive-rank coverage.
 
-## Tests added, not executed
+`test-ar-p2p-graph` now invokes the same existing binary with `GGML_CUDA_ALLREDUCE=internal;GGML_CUDA_P2P=1`. No standalone graph binary, timeout child, CMake script, or deliberate device fault remains. An unavailable graph procedure or unsupported peer capture prints a subtest skip while ordinary reductions still run.
 
-- `test-ar-p2p-graph`: compares merged vs split meta execution bitwise for both residual and row-split output, including an inactive rank shard. Eight rounds per phase change inputs while stable rounds assert no new merged capture. Direct copy-engine AllReduces use the same comm pipeline between graph calls and compare both ranks.
-- Phase sequence: five AllReduces with a forced unsupported boundary (two merged segments); one AllReduce plus 40 scales (more graph nodes, fewer split and merged subgraphs, forces arena replacement); five AllReduces again (reuse retained slots); copy-engine-sized meta graph (must stay split). The third phase changes a SCALE parameter and graph UID, requires a split stabilization call without capture, then requires recapture and stable replay.
-- `test-ar-p2p-graph-disabled`: same source with `GGML_CUDA_DISABLE_GRAPHS=1`. Support query returns skip 77. A graph-disabled build also skips.
-- `test-ar-p2p-graph-timeout`: isolated `--timeout` child warms both ranks, captures and launches rank 0 alone, then synchronizes. CMake requires nonzero termination with `peer missed AllReduce epoch`; external timeout and unrelated crashes fail. Unsupported configurations skip. Only the captured launch passes a nonzero timeout; host-driven launches pass zero.
-
-## Limits
-
-No runtime identity, progress, performance, GPU graph count, CUDA compiler acceptance or timeout diagnostic is established here. The epoch deadline bounds an executing block's poll, not driver submission or scheduling. The CUDA fatal trap cannot recover the comm context. Stability gating avoids transient captures but cannot eliminate cold capture for every new graph variant. The optional comm protocol and backend-owned CUSTOM node representation need maintainer discussion before any submission.
+Unverified: nvcc acceptance, simultaneous independent rank-stream captures, bitwise identity, progress, cache reuse and speed. Prior GPU results belong to the old CUSTOM-node design. Dropped tests no longer establish copy-engine interleaving or device-side peer timeout; late peer loss is unbounded. No evidence supports attributing the fixed per-request cost to capture/instantiate, so this reduction adds no workaround for it.

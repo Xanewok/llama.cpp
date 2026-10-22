@@ -211,11 +211,9 @@ extern "C" {
     typedef void   (*ggml_backend_comm_free_t)(void * comm_ctx);
     typedef bool   (*ggml_backend_comm_allreduce_tensor_t)(void * comm_ctx, struct ggml_tensor ** tensors);
 
-    // Optional: query with nodes == NULL; otherwise initialize one caller-owned, in-place node per rank.
-    // Tensors must be allocated. Nodes and comm_ctx must outlive execution of every graph that contains them.
-    typedef bool   (*ggml_backend_comm_allreduce_graph_t)(void * comm_ctx, struct ggml_tensor ** tensors, struct ggml_tensor ** nodes);
-    // Optional: observe one graph per rank without submitting work; true only when all ranks can record and replay them safely.
-    typedef bool   (*ggml_backend_comm_graph_ready_t)(void * comm_ctx, struct ggml_cgraph ** graphs);
+    // Optional: execute graphs[g*n_ranks + rank], with an in-place sum of their last tensors between graph steps.
+    // n_graphs is the number of steps per rank. False submits no work; the caller must use its normal split path.
+    typedef bool   (*ggml_backend_comm_graph_compute_t)(void * comm_ctx, struct ggml_cgraph ** graphs, size_t n_graphs);
 
     // Split buffer type for tensor parallelism (old)
     typedef ggml_backend_buffer_type_t   (*ggml_backend_split_buffer_type_t)(int main_device, const float * tensor_split);
