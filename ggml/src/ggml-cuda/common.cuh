@@ -1449,11 +1449,26 @@ struct ggml_cuda_stream_context {
 
 struct ggml_cuda_q8_cache;
 
+static constexpr int GGML_CUDA_AR_KERNEL_BLOCKS = 8;
+
 struct ggml_backend_cuda_context {
     ggml_cuda_q8_cache * q8_cache = nullptr;
     int device;
     std::string name;
     cudaEvent_t copy_event = nullptr;
+    int * ar_failed_host = nullptr;
+    int * ar_failed_device = nullptr;
+
+    void check_ar_failed() const {
+        if (ar_failed_host == nullptr) {
+            return;
+        }
+        for (int i = 0; i < GGML_CUDA_AR_KERNEL_BLOCKS; ++i) {
+            if (((const volatile int *) ar_failed_host)[i]) {
+                GGML_ABORT("CUDA AllReduce peer wait timed out (device %d, block %d)", device, i);
+            }
+        }
+    }
 
 #if !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
     struct input_slot {
