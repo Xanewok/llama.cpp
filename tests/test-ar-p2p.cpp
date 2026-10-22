@@ -9,6 +9,10 @@
 #include <cstring>
 #include <vector>
 
+#ifdef GGML_TEST_CUDA_GRAPH
+#include <cuda_runtime_api.h>
+#endif
+
 static void require(bool ok, const char * message) {
     if (!ok) {
         fprintf(stderr, "FAIL: %s\n", message);
@@ -20,16 +24,20 @@ static float input(size_t i, int rank, int iteration) {
     return float(int((i + 7 * rank + 3 * iteration) % 31) - 15);
 }
 
-static void encode(std::vector<uint8_t> & bytes, ggml_type type, size_t i, float value) {
+static void encode(uint8_t * bytes, ggml_type type, size_t i, float value) {
     if (type == GGML_TYPE_F32) {
-        memcpy(bytes.data() + i * sizeof(value), &value, sizeof(value));
+        memcpy(bytes + i * sizeof(value), &value, sizeof(value));
     } else if (type == GGML_TYPE_F16) {
         const ggml_fp16_t half = ggml_fp32_to_fp16(value);
-        memcpy(bytes.data() + i * sizeof(half), &half, sizeof(half));
+        memcpy(bytes + i * sizeof(half), &half, sizeof(half));
     } else {
         const ggml_bf16_t half = ggml_fp32_to_bf16(value);
-        memcpy(bytes.data() + i * sizeof(half), &half, sizeof(half));
+        memcpy(bytes + i * sizeof(half), &half, sizeof(half));
     }
+}
+
+static void encode(std::vector<uint8_t> & bytes, ggml_type type, size_t i, float value) {
+    encode(bytes.data(), type, i, value);
 }
 
 static bool equal(const std::vector<uint8_t> & a, const std::vector<uint8_t> & b) {
@@ -157,13 +165,179 @@ static void * lookup(ggml_backend_reg_t reg, const char * name) {
     return get_proc(reg, name);
 }
 
+static bool graph_qualified() {
+#ifdef GGML_TEST_CUDA_GRAPH
+    if (std::getenv("GGML_CUDA_DISABLE_GRAPHS") != nullptr) {
+        return false;
+    }
+    int count = 0;
+    require(cudaGetDeviceCount(&count) == cudaSuccess, "CUDA device query failed");
+    if (count < 2) {
+        return false;
+    }
+    for (int rank = 0; rank < 2; ++rank) {
+        int major = 0, peer = 0;
+        require(cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, rank) == cudaSuccess, "CUDA architecture query failed");
+        require(cudaDeviceCanAccessPeer(&peer, rank, 1 - rank) == cudaSuccess, "CUDA peer query failed");
+        if (major < 7 || !peer) {
+            return false;
+        }
+    }
+    return true;
+#else
+    return false;
+#endif
+}
+
+#ifdef GGML_TEST_CUDA_GRAPH
+struct reduction_graph {
+    ggml_context * ctx[2];
+    ggml_backend_buffer_t buffers[2];
+    ggml_tensor * inputs[2];
+    ggml_tensor * sums[2];
+    ggml_tensor * outputs[2];
+    ggml_cgraph steps[4];
+    ggml_cgraph * graphs[4];
+
+    reduction_graph(ggml_backend_t * backends, ggml_type type, size_t n) {
+        for (int rank = 0; rank < 2; ++rank) {
+            ctx[rank] = ggml_init({3 * ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true});
+            require(ctx[rank] != nullptr, "reduction graph context");
+            inputs[rank] = ggml_new_tensor_1d(ctx[rank], type, n);
+            sums[rank] = ggml_dup(ctx[rank], inputs[rank]);
+            outputs[rank] = ggml_dup(ctx[rank], sums[rank]);
+            sums[rank]->flags |= GGML_TENSOR_FLAG_COMPUTE;
+            outputs[rank]->flags |= GGML_TENSOR_FLAG_COMPUTE;
+            ggml_cgraph * full = ggml_new_graph(ctx[rank]);
+            ggml_build_forward_expand(full, outputs[rank]);
+            require(full->n_nodes == 2, "reduction graph boundaries");
+            steps[rank] = ggml_graph_view(full, 0, 1);
+            steps[2 + rank] = ggml_graph_view(full, 1, 2);
+            graphs[rank] = &steps[rank];
+            graphs[2 + rank] = &steps[2 + rank];
+            buffers[rank] = ggml_backend_alloc_ctx_tensors(ctx[rank], backends[rank]);
+            require(buffers[rank] != nullptr, "reduction graph buffer");
+        }
+    }
+
+    ~reduction_graph() {
+        for (int rank = 0; rank < 2; ++rank) {
+            ggml_backend_buffer_free(buffers[rank]);
+            ggml_free(ctx[rank]);
+        }
+    }
+};
+
+static void split_compute(reduction_graph & g, ggml_backend_t * backends, void * comm, ggml_backend_comm_allreduce_tensor_t reduce) {
+    for (int step = 0; step < 2; ++step) {
+        for (int rank = 0; rank < 2; ++rank) {
+            require(ggml_backend_graph_compute_async(backends[rank], g.graphs[2 * step + rank]) == GGML_STATUS_SUCCESS, "split compute");
+        }
+        if (step == 0) {
+            require(reduce(comm, g.sums), "split reduction declined");
+        }
+    }
+}
+
+static void replay_cases(ggml_backend_reg_t reg, ggml_backend_t * backends, void * comm, ggml_backend_comm_allreduce_tensor_t reduce) {
+    auto compute = (ggml_backend_comm_graph_compute_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_comm_graph_compute");
+    require(compute != nullptr, "qualified pair requires ggml_backend_comm_graph_compute");
+    const char * threshold = std::getenv("GGML_CUDA_AR_COPY_THRESHOLD");
+    const char * bf16 = std::getenv("GGML_CUDA_AR_BF16_THRESHOLD");
+    require(threshold && strcmp(threshold, "2097152") == 0, "set GGML_CUDA_AR_COPY_THRESHOLD=2097152 for multi-chunk and copy-engine coverage");
+    require(bf16 && strcmp(bf16, "1") == 0, "set GGML_CUDA_AR_BF16_THRESHOLD=1 for F32 wire coverage");
+    for (ggml_type type : {GGML_TYPE_F32, GGML_TYPE_F16, GGML_TYPE_BF16}) {
+        for (size_t n : {size_t(256), size_t(524296)}) {
+            reduction_graph reference(backends, type, n), captured(backends, type, n);
+            const size_t bytes = ggml_nbytes(captured.inputs[0]);
+            std::vector<uint8_t> zero(bytes, 0);
+            for (int rank = 0; rank < 2; ++rank) {
+                ggml_backend_tensor_set(captured.inputs[rank], zero.data(), 0, bytes);
+                ggml_backend_tensor_set(reference.inputs[rank], zero.data(), 0, bytes);
+            }
+            require(!compute(comm, captured.graphs, 2), "cold reduction graph bypassed warmup");
+            split_compute(captured, backends, comm, reduce);
+            require(compute(comm, captured.graphs, 2), "qualified reduction graph never engaged");
+            split_compute(reference, backends, comm, reduce);
+            split_compute(reference, backends, comm, reduce);
+            for (int rank = 0; rank < 2; ++rank) {
+                ggml_backend_synchronize(backends[rank]);
+            }
+
+            constexpr int replays = 6;
+            uint8_t * host = nullptr;
+            require(cudaMallocHost((void **) &host, replays * 6 * bytes) == cudaSuccess, "pinned replay buffers");
+            uint8_t * data[replays][2], * actual[replays][2][2];
+            std::vector<uint8_t> expected[replays];
+            for (int round = 0; round < replays; ++round) {
+                expected[round].resize(bytes);
+                for (int rank = 0; rank < 2; ++rank) {
+                    data[round][rank] = host + (round * 6 + rank) * bytes;
+                    for (size_t i = 0; i < n; ++i) {
+                        encode(data[round][rank], type, i, input(i, rank, round));
+                    }
+                }
+                for (size_t i = 0; i < n; ++i) {
+                    encode(expected[round], type, i, input(i, 0, round) + input(i, 1, round));
+                }
+            }
+            for (int round = 0; round < replays; ++round) {
+                for (int arm = 0; arm < 2; ++arm) {
+                    reduction_graph & g = arm == 0 ? reference : captured;
+                    for (int rank = 0; rank < 2; ++rank) {
+                        ggml_backend_tensor_set_async(backends[rank], g.inputs[rank], data[round][rank], 0, bytes);
+                    }
+                    if (arm == 0) {
+                        split_compute(g, backends, comm, reduce);
+                    } else {
+                        require(compute(comm, g.graphs, 2), "queued replay fell back to split");
+                    }
+                    for (int rank = 0; rank < 2; ++rank) {
+                        actual[round][arm][rank] = host + (round * 6 + 2 + arm * 2 + rank) * bytes;
+                        ggml_backend_tensor_get_async(backends[rank], g.outputs[rank], actual[round][arm][rank], 0, bytes);
+                    }
+                }
+            }
+            for (int rank = 0; rank < 2; ++rank) {
+                ggml_backend_synchronize(backends[rank]);
+            }
+            for (int round = 0; round < replays; ++round) {
+                for (int rank = 0; rank < 2; ++rank) {
+                    require(memcmp(actual[round][0][rank], actual[round][1][rank], bytes) == 0 && memcmp(actual[round][1][rank], expected[round].data(), bytes) == 0, "queued reduction bytes differ");
+                }
+            }
+            require(cudaFreeHost(host) == cudaSuccess, "free pinned replay buffers");
+
+            reduction_graph large(backends, type, 1048576);
+            const size_t large_bytes = ggml_nbytes(large.inputs[0]);
+            std::vector<uint8_t> ones(large_bytes), twos(large_bytes);
+            for (size_t i = 0; i < 1048576; ++i) {
+                encode(ones, type, i, 1.0f);
+                encode(twos, type, i, 2.0f);
+            }
+            for (int transition = 0; transition < 3; ++transition) {
+                for (int rank = 0; rank < 2; ++rank) {
+                    ggml_backend_tensor_set_async(backends[rank], large.inputs[rank], ones.data(), 0, large_bytes);
+                }
+                require(!compute(comm, large.graphs, 2), "copy-engine graph must use split fallback");
+                split_compute(large, backends, comm, reduce);
+                require(compute(comm, captured.graphs, 2), "capture failed after copy-engine reduction");
+                for (int rank = 0; rank < 2; ++rank) {
+                    ggml_backend_synchronize(backends[rank]);
+                    require(read(large.outputs[rank]) == twos, "copy-engine transition bytes differ");
+                    require(read(captured.outputs[rank]) == expected[replays - 1], "captured transition bytes differ");
+                }
+            }
+        }
+    }
+    puts("PASS: captured F32/F16/BF16, multi-chunk epochs, queued replays and captured/copy-engine transitions");
+}
+#endif
+
 static void graph_cases(ggml_backend_reg_t reg) {
     get_proc = reg->iface.get_proc_address;
     graph_compute = (ggml_backend_comm_graph_compute_t) get_proc(reg, "ggml_backend_comm_graph_compute");
-    if (graph_compute == nullptr) {
-        puts("SKIP: collective graph procedure unavailable");
-        return;
-    }
+    require(graph_compute != nullptr, "qualified pair requires collective graph procedure");
     require(!graph_compute(nullptr, nullptr, 0), "empty collective submitted work");
     ggml_backend_dev_t devs[2] = { ggml_backend_reg_dev_get(reg, 0), ggml_backend_reg_dev_get(reg, 1) };
     ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, split_state, nullptr);
@@ -193,7 +367,6 @@ static void graph_cases(ggml_backend_reg_t reg) {
         const auto v = random_values(ggml_nelements(t), next(seed), 0.05f);
         ggml_backend_tensor_set(t, v.data(), 0, ggml_nbytes(t));
     }
-    bool graph_supported = false;
     const int layers[] = { L, 1, L };
     const int extras[] = { 0, 40, 0 };
     for (int phase = 0; phase < 3; ++phase) {
@@ -223,10 +396,7 @@ static void graph_cases(ggml_backend_reg_t reg) {
             if ((phase == 0 && round == 0) || (phase == 2 && round == 4)) {
                 require(graph_runs == runs_before, "cold/changed properties bypassed warmup");
             }
-            if (phase == 0 && round == 2) {
-                graph_supported = graph_runs > 0;
-            }
-            if (graph_supported && round >= 2 && !(phase == 2 && round == 4)) {
+            if (round >= 2 && !(phase == 2 && round == 4)) {
                 require(graph_runs == runs_before + 1, "stable collective fell back to split");
             }
         }
@@ -235,13 +405,13 @@ static void graph_cases(ggml_backend_reg_t reg) {
         }
     }
     require(graph_calls > graph_runs, "cold graph bypassed warmup");
+    require(graph_runs > 0, "qualified meta graph never engaged");
     ggml_backend_buffer_free(wbuf);
     ggml_free(ctx_w);
     for (auto backend : backends) {
         ggml_backend_free(backend);
     }
-    puts(graph_runs ? "PASS: bitwise split identity, replay, inactive rank, arena rebuild and property change" :
-                      "SKIP: collective graph capture unsupported; split fallback matched");
+    puts("PASS: bitwise split identity, replay, inactive rank, arena rebuild and property change");
 }
 
 int main(int argc, char ** argv) {
@@ -262,6 +432,11 @@ int main(int argc, char ** argv) {
     }
     const char * provider = std::getenv("GGML_CUDA_ALLREDUCE");
     require(provider && strcmp(provider, "internal") == 0, "set GGML_CUDA_ALLREDUCE=internal");
+    const bool graphs = std::getenv("GGML_CUDA_P2P") != nullptr;
+    if (graphs && !graph_qualified()) {
+        puts("SKIP: CUDA graphs enabled and two Volta-or-newer devices with bidirectional P2P required");
+        return 77;
+    }
     auto init = reinterpret_cast<ggml_backend_comm_init_t>(ggml_backend_reg_get_proc_address(reg, "ggml_backend_comm_init"));
     auto reduce = reinterpret_cast<ggml_backend_comm_allreduce_tensor_t>(ggml_backend_reg_get_proc_address(reg, "ggml_backend_comm_allreduce_tensor"));
     auto free_comm = reinterpret_cast<ggml_backend_comm_free_t>(ggml_backend_reg_get_proc_address(reg, "ggml_backend_comm_free"));
@@ -334,11 +509,18 @@ int main(int argc, char ** argv) {
     if (file) {
         require(fclose(file) == 0, "close output");
     }
+#ifdef GGML_TEST_CUDA_GRAPH
+    if (graphs) {
+        replay_cases(reg, backends, comm, reduce);
+    }
+#endif
     free_comm(comm);
     for (auto backend : backends) {
         ggml_backend_free(backend);
     }
-    graph_cases(reg);
+    if (graphs) {
+        graph_cases(reg);
+    }
     printf("PASS: %zu AllReduce cases\n", cases);
     return 0;
 }
