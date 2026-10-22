@@ -14,7 +14,7 @@ import tempfile
 
 EVAL = Path('/home/xanewok/repos/qwen38-eval')
 SOURCE = '69844435d76c21d778dde8fb8457429cda4aa01f'
-BASE = '6ef25f572c544b705d3fe7a37c02978bc2d1aa56'
+BASE = '15473f75d0bf49bec9fbf3ce933b0c8fdfe69eed'
 BF16_PASS = 'PASS: AllReduce residual RMSNorm cases=15 wire=BF16'
 F32_PASS = 'PASS: AllReduce residual RMSNorm cases=15 wire=F32'
 spec = importlib.util.spec_from_file_location('pkg101', EVAL / 'orchestration/gpuq/items/bw-pkg101-fork.py')

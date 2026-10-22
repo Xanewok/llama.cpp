@@ -91,7 +91,7 @@ answers = "Does fusing the in-graph P2P AllReduce epilogue with residual ADD + R
 
 [arms.up]
 label = "up"
-commit = "6ef25f572c544b705d3fe7a37c02978bc2d1aa56"
+commit = "15473f75d0bf49bec9fbf3ce933b0c8fdfe69eed"
 root = "/home/xanewok/repos/qwen38-eval-worktrees/frozen/pkg101-fork"
 repo = "/home/xanewok/repos/llama.cpp"
 bin = "build/bin"
