@@ -1225,6 +1225,119 @@ static void test_meta_host_view(ggml_op op, bool split) {
     }
 }
 
+// Computing an allocated graph again after changing a node's op_params must apply the new values on every device.
+static void test_meta_op_params_refresh() {
+    ggml_backend_load_all();
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+    ggml_backend_dev_t devs[2] = {cpu, cpu};
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, test_meta_split_state_mirrored, nullptr);
+    ggml_backend_t backend = ggml_backend_dev_init(meta, nullptr);
+    GGML_ASSERT(backend != nullptr);
+
+    ggml_init_params params = {ggml_tensor_overhead()*2 + ggml_graph_overhead(), nullptr, /*no_alloc =*/ true};
+    ggml_context * ctx = ggml_init(params);
+    ggml_tensor * x = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 1);
+    ggml_set_input(x);
+    ggml_tensor * y = ggml_scale(ctx, x, 2.0f);
+    ggml_set_output(y);
+    ggml_cgraph * gf = ggml_new_graph(ctx);
+    ggml_build_forward_expand(gf, y);
+
+    ggml_gallocr_t galloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
+    GGML_ASSERT(ggml_gallocr_alloc_graph(galloc, gf));
+
+    // y may be computed in place of x, so x is set before each compute
+    const float x_val = 1.0f;
+    float y_val = 0.0f;
+    ggml_backend_tensor_set(x, &x_val, 0, sizeof(x_val));
+    GGML_ASSERT(ggml_backend_graph_compute(backend, gf) == GGML_STATUS_SUCCESS);
+    ggml_backend_tensor_get(y, &y_val, 0, sizeof(y_val));
+    GGML_ASSERT(y_val == 2.0f);
+
+    ggml_set_op_params_f32(y, 0, 3.0f);
+    ggml_backend_tensor_set(x, &x_val, 0, sizeof(x_val));
+    GGML_ASSERT(ggml_backend_graph_compute(backend, gf) == GGML_STATUS_SUCCESS);
+    ggml_backend_tensor_get(y, &y_val, 0, sizeof(y_val));
+    GGML_ASSERT(y_val == 3.0f);
+
+    ggml_gallocr_free(galloc);
+    ggml_free(ctx);
+    ggml_backend_free(backend);
+}
+
+static ggml_backend_meta_split_state test_meta_split_state_gather_rows(const ggml_tensor * tensor, void * userdata) {
+    GGML_UNUSED(userdata);
+    if (strcmp(tensor->name, "w") == 0) {
+        return {GGML_BACKEND_SPLIT_AXIS_1, {4, 4}, {1}, 1};
+    }
+    return {GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
+}
+
+// Gather slices carry per-rank pad offsets in op_params; the per-compute op_params refresh must keep them.
+static void test_meta_gather_op_params_refresh() {
+    ggml_backend_load_all();
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+    ggml_backend_dev_t devs[2] = {cpu, cpu};
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, test_meta_split_state_gather_rows, nullptr);
+    ggml_backend_t backend = ggml_backend_dev_init(meta, nullptr);
+    GGML_ASSERT(backend != nullptr);
+
+    ggml_context * wctx = ggml_init({ggml_tensor_overhead(), nullptr, /*no_alloc =*/ true});
+    ggml_tensor * w = ggml_new_tensor_2d(wctx, GGML_TYPE_F32, 8, 8);
+    ggml_set_name(w, "w");
+    ggml_backend_buffer_t wbuf = ggml_backend_alloc_ctx_tensors(wctx, backend);
+    GGML_ASSERT(wbuf != nullptr);
+    float wv[64];
+    for (int k = 0; k < 64; ++k) {
+        wv[k] = float(k % 5 - 2) * 0.125f;
+    }
+    ggml_backend_tensor_set(w, wv, 0, sizeof(wv));
+
+    // rank 0 computes rows 0-3 and rank 1 rows 4-7 of w*x; the gather pads each into place and the sum completes it
+    ggml_context * ctx = ggml_init({8*ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, /*no_alloc =*/ true});
+    ggml_tensor * x = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 8, 2);
+    ggml_set_input(x);
+    ggml_tensor * gather = ggml_backend_meta_gather(ctx, ggml_mul_mat(ctx, w, x));
+    ggml_tensor * y = ggml_scale(ctx, ggml_cont(ctx, gather), 2.0f);
+    ggml_set_output(y);
+    ggml_cgraph * gf = ggml_new_graph(ctx);
+    ggml_build_forward_expand(gf, y);
+    ggml_gallocr_t galloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
+    GGML_ASSERT(ggml_gallocr_alloc_graph(galloc, gf));
+
+    // uid 0: every compute rebuilds the subgraphs and refreshes op_params; the second one also changes the scale
+    for (int step = 0; step < 2; ++step) {
+        const float scale = step == 0 ? 2.0f : 3.0f;
+        ggml_set_op_params_f32(y, 0, scale);
+        float xv[16];
+        for (int k = 0; k < 16; ++k) {
+            xv[k] = float((k + step) % 7 - 3) * 0.25f;
+        }
+        ggml_backend_tensor_set(x, xv, 0, sizeof(xv));
+        GGML_ASSERT(ggml_backend_graph_compute(backend, gf) == GGML_STATUS_SUCCESS);
+        float yv[16];
+        ggml_backend_tensor_get(y, yv, 0, sizeof(yv));
+        // host reference; all values are small dyadic fractions, so the sums are exact in any order
+        for (int r = 0; r < 2; ++r) {
+            for (int n = 0; n < 8; ++n) {
+                float expected = 0.0f;
+                for (int k = 0; k < 8; ++k) {
+                    expected += wv[n*8 + k] * xv[r*8 + k];
+                }
+                GGML_ASSERT(yv[r*8 + n] == scale * expected);
+            }
+        }
+    }
+
+    ggml_gallocr_free(galloc);
+    ggml_free(ctx);
+    ggml_backend_buffer_free(wbuf);
+    ggml_free(wctx);
+    ggml_backend_free(backend);
+}
+
 static void run(const char * name, void (*f)()) {
     printf("%s ", name);
     fflush(stdout);
@@ -1281,5 +1394,7 @@ int main(int argc, char ** argv) {
     run("test_meta_host_cpy(split)", []() { test_meta_host_view(GGML_OP_CPY, true); });
     run("test_meta_host_set_rows(mirrored)", []() { test_meta_host_view(GGML_OP_SET_ROWS, false); });
     run("test_meta_host_set_rows(split)", []() { test_meta_host_view(GGML_OP_SET_ROWS, true); });
+    run("test_meta_op_params_refresh", test_meta_op_params_refresh);
+    run("test_meta_gather_op_params_refresh", test_meta_gather_op_params_refresh);
     return 0;
 }
