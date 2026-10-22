@@ -5,6 +5,7 @@
 #include "../ggml/src/ggml-backend-impl.h"
 
 #include <cstdio>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
@@ -346,6 +347,167 @@ static void replay_cases(ggml_backend_reg_t reg, ggml_backend_t * backends, void
     }
     puts("PASS: captured F32/F16/BF16, multi-chunk epochs, queued replays and captured/copy-engine transitions");
 }
+
+enum norm_layout { CONTIGUOUS, INPLACE, TRANSPOSED, ASYMMETRIC_PREFIX, ASYMMETRIC_SHAPE, LIVE_NORM, BROADCAST };
+
+struct norm_graph {
+    ggml_context * ctx[2];
+    ggml_backend_buffer_t buffers[2];
+    ggml_tensor * inputs[2];
+    ggml_tensor * residuals[2];
+    ggml_tensor * weights[2];
+    ggml_tensor * sums[2];
+    ggml_tensor * adds[2];
+    ggml_tensor * norms[2];
+    ggml_tensor * outputs[2];
+    ggml_cgraph steps[4];
+    ggml_cgraph * graphs[4];
+
+    norm_graph(ggml_backend_t * backends, int64_t cols, int64_t rows, bool weighted, bool swap, norm_layout layout) {
+        for (int rank = 0; rank < 2; ++rank) {
+            ctx[rank] = ggml_init({12 * ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true});
+            require(ctx[rank] != nullptr, "norm context");
+            const int64_t width = layout == ASYMMETRIC_SHAPE && rank == 1 ? cols / 2 : cols;
+            const int64_t height = layout == ASYMMETRIC_SHAPE && rank == 1 ? rows * 2 : rows;
+            inputs[rank] = ggml_new_tensor_2d(ctx[rank], GGML_TYPE_F32, width, height);
+            residuals[rank] = ggml_new_tensor_2d(ctx[rank], GGML_TYPE_F32, layout == TRANSPOSED ? height : width, layout == TRANSPOSED ? width : layout == BROADCAST ? 1 : height);
+            weights[rank] = ggml_new_tensor_1d(ctx[rank], GGML_TYPE_F32, width);
+            sums[rank] = ggml_dup(ctx[rank], inputs[rank]);
+            ggml_tensor * residual = layout == TRANSPOSED ? ggml_transpose(ctx[rank], residuals[rank]) : residuals[rank];
+            if (layout == ASYMMETRIC_PREFIX && rank == 1) {
+                residual = ggml_scale(ctx[rank], residual, 0.5f);
+            }
+            adds[rank] = layout == INPLACE ? ggml_add_inplace(ctx[rank], sums[rank], residual) :
+                ggml_add(ctx[rank], swap ? residual : sums[rank], swap ? sums[rank] : residual);
+            norms[rank] = ggml_rms_norm(ctx[rank], adds[rank], 1e-5f);
+            outputs[rank] = weighted ? ggml_mul(ctx[rank], norms[rank], weights[rank]) : norms[rank];
+            ggml_set_output(adds[rank]);
+            ggml_set_output(outputs[rank]);
+            if (layout == LIVE_NORM) {
+                ggml_set_output(norms[rank]);
+            }
+            ggml_cgraph * full = ggml_new_graph(ctx[rank]);
+            ggml_build_forward_expand(full, outputs[rank]);
+            require(full->nodes[0] == sums[rank], "norm boundary");
+            for (int i = 0; i < full->n_nodes; ++i) {
+                full->nodes[i]->flags |= GGML_TENSOR_FLAG_COMPUTE;
+            }
+            steps[rank] = graph_view(full, 0, 1);
+            steps[2 + rank] = graph_view(full, 1, full->n_nodes);
+            graphs[rank] = &steps[rank];
+            graphs[2 + rank] = &steps[2 + rank];
+            buffers[rank] = ggml_backend_alloc_ctx_tensors(ctx[rank], backends[rank]);
+            require(buffers[rank] != nullptr, "norm buffer");
+        }
+    }
+
+    ~norm_graph() {
+        for (int rank = 0; rank < 2; ++rank) {
+            ggml_backend_buffer_free(buffers[rank]);
+            ggml_free(ctx[rank]);
+        }
+    }
+};
+
+struct norm_log_counts { size_t total = 0; size_t weighted = 0; };
+
+static void norm_log(ggml_log_level, const char * text, void * data) {
+    if (strstr(text, ": fused AllReduce + ADD + RMS_NORM") != nullptr) {
+        auto & counts = *static_cast<norm_log_counts *>(data);
+        ++counts.total;
+        counts.weighted += strstr(text, " + MUL") != nullptr;
+    }
+    fputs(text, stderr);
+}
+
+static void norm_close(const ggml_tensor * reference, const ggml_tensor * actual) {
+    const auto a = read(reference), b = read(actual);
+    double error = 0.0, energy = 0.0;
+    for (size_t i = 0; i < a.size() / sizeof(float); ++i) {
+        float x, y;
+        memcpy(&x, a.data() + i * sizeof(float), sizeof(float));
+        memcpy(&y, b.data() + i * sizeof(float), sizeof(float));
+        require(std::isfinite(x) && std::isfinite(y), "non-finite norm result");
+        error += double(x - y) * (x - y);
+        energy += double(x) * x;
+    }
+    require(error <= 1e-7 * energy, "AllReduce norm NMSE exceeds test-backend-ops tolerance");
+}
+
+static void norm_cases(ggml_backend_reg_t reg, ggml_backend_t * backends, void * comm, ggml_backend_comm_allreduce_tensor_t reduce) {
+    auto compute = (ggml_backend_comm_graph_compute_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_comm_graph_compute");
+    require(compute != nullptr, "norm requires collective graph procedure");
+    require(std::getenv("GGML_CUDA_DISABLE_FUSION") == nullptr, "unset GGML_CUDA_DISABLE_FUSION for norm engagement checks");
+    const char * bf16 = std::getenv("GGML_CUDA_AR_BF16_THRESHOLD");
+    require(bf16 && (strcmp(bf16, "0") == 0 || strcmp(bf16, "1") == 0), "set GGML_CUDA_AR_BF16_THRESHOLD=0 or 1 for norm cases");
+    const char * threshold = std::getenv("GGML_CUDA_AR_COPY_THRESHOLD");
+    require(threshold && strcmp(threshold, "2097152") == 0, "set GGML_CUDA_AR_COPY_THRESHOLD=2097152 for norm cases");
+    norm_log_counts fused;
+    size_t cases = 0;
+    ggml_log_set(norm_log, &fused);
+    struct config { int cols; int rows; bool weighted; bool swap; norm_layout layout; };
+    for (const config c : {
+            config{5120, 1, true, false, CONTIGUOUS}, {5120, 6, true, true, CONTIGUOUS}, {5120, 8, false, false, CONTIGUOUS},
+            {5120, 12, true, false, CONTIGUOUS}, {5120, 16, true, false, CONTIGUOUS}, {256, 1, false, true, CONTIGUOUS},
+            {8192, 16, true, false, CONTIGUOUS}, {5120, 6, true, false, INPLACE},
+            {5120, 17, true, false, CONTIGUOUS}, {260, 2, true, false, CONTIGUOUS}, {5120, 6, true, false, TRANSPOSED},
+            {5120, 6, true, false, ASYMMETRIC_PREFIX}, {5120, 6, true, false, ASYMMETRIC_SHAPE},
+            {5120, 6, true, false, LIVE_NORM}, {5120, 6, true, false, BROADCAST}}) {
+        norm_graph reference(backends, c.cols, c.rows, c.weighted, c.swap, c.layout);
+        norm_graph captured(backends, c.cols, c.rows, c.weighted, c.swap, c.layout);
+        const auto fused_before = fused;
+        const bool eligible = c.cols % 8 == 0 && c.rows <= 16 && (c.layout == CONTIGUOUS || c.layout == INPLACE || c.layout == LIVE_NORM);
+        for (int round = 0; round < 7; ++round) {
+            for (int rank = 0; rank < 2; ++rank) {
+                for (auto * g : { &reference, &captured }) {
+                    const auto x = random_values(ggml_nelements(g->inputs[rank]), 1729u + 97u*round + rank, 2.0f);
+                    const auto residual = random_values(ggml_nelements(g->residuals[rank]), 43u + round, 0.5f);
+                    const auto weight = random_values(ggml_nelements(g->weights[rank]), 17u + round, 1.0f);
+                    ggml_backend_tensor_set(g->inputs[rank], x.data(), 0, ggml_nbytes(g->inputs[rank]));
+                    ggml_backend_tensor_set(g->residuals[rank], residual.data(), 0, ggml_nbytes(g->residuals[rank]));
+                    ggml_backend_tensor_set(g->weights[rank], weight.data(), 0, ggml_nbytes(g->weights[rank]));
+                    if (round == 3) {
+                        ggml_set_op_params_f32(g->norms[rank], 0, 0.03f);
+                    }
+                    if (round == 5) {
+                        g->sums[rank]->flags = rank == 1 ? 0 : GGML_TENSOR_FLAG_COMPUTE;
+                    }
+                }
+                require(ggml_backend_graph_compute_async(backends[rank], &reference.steps[rank]) == GGML_STATUS_SUCCESS, "norm reference prefix");
+            }
+            require(reduce(comm, reference.sums), "norm reference reduction");
+            for (int rank = 0; rank < 2; ++rank) {
+                require(ggml_backend_graph_compute_async(backends[rank], &reference.steps[2 + rank]) == GGML_STATUS_SUCCESS, "norm reference suffix");
+            }
+            const bool handled = compute(comm, captured.graphs, 2);
+            require(handled == (round != 0 && round != 3 && round != 5), "norm capture warmup or recapture");
+            if (!handled) {
+                for (int rank = 0; rank < 2; ++rank) {
+                    require(ggml_backend_graph_compute_async(backends[rank], &captured.steps[rank]) == GGML_STATUS_SUCCESS, "norm fallback prefix");
+                }
+                require(reduce(comm, captured.sums), "norm fallback reduction");
+                for (int rank = 0; rank < 2; ++rank) {
+                    require(ggml_backend_graph_compute_async(backends[rank], &captured.steps[2 + rank]) == GGML_STATUS_SUCCESS, "norm fallback suffix");
+                }
+            }
+            for (int rank = 0; rank < 2; ++rank) {
+                ggml_backend_synchronize(backends[rank]);
+                norm_close(reference.sums[rank], captured.sums[rank]);
+                norm_close(reference.adds[rank], captured.adds[rank]);
+                norm_close(reference.outputs[rank], captured.outputs[rank]);
+                if (c.layout == LIVE_NORM) {
+                    norm_close(reference.norms[rank], captured.norms[rank]);
+                }
+            }
+        }
+        require(eligible ? fused.total > fused_before.total : fused.total == fused_before.total, "norm fusion engagement or decline");
+        const bool weighted = eligible && c.weighted && c.layout != LIVE_NORM;
+        require(weighted ? fused.weighted > fused_before.weighted : fused.weighted == fused_before.weighted, "norm weight fusion engagement or decline");
+        ++cases;
+    }
+    ggml_log_set(nullptr, nullptr);
+    printf("PASS: AllReduce residual RMSNorm cases=%zu wire=%s\n", cases, strcmp(bf16, "1") == 0 ? "BF16" : "F32");
+}
 #endif
 
 static void graph_cases(ggml_backend_reg_t reg) {
@@ -430,14 +592,18 @@ static void graph_cases(ggml_backend_reg_t reg) {
 
 int main(int argc, char ** argv) {
     const char * output = nullptr;
+    bool norm_only = false;
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--output") == 0 && i + 1 < argc) {
             output = argv[++i];
+        } else if (strcmp(argv[i], "--norm-only") == 0) {
+            norm_only = true;
         } else {
-            fprintf(stderr, "usage: %s [--output FILE]\n", argv[0]);
+            fprintf(stderr, "usage: %s [--output FILE | --norm-only]\n", argv[0]);
             return 1;
         }
     }
+    require(!norm_only || output == nullptr, "--norm-only cannot be combined with --output");
     ggml_backend_load_all();
     ggml_backend_reg_t reg = ggml_backend_reg_by_name("CUDA");
     if (!reg || ggml_backend_reg_dev_count(reg) < 2) {
@@ -447,6 +613,7 @@ int main(int argc, char ** argv) {
     const char * provider = std::getenv("GGML_CUDA_ALLREDUCE");
     require(provider && strcmp(provider, "internal") == 0, "set GGML_CUDA_ALLREDUCE=internal");
     const bool graphs = std::getenv("GGML_CUDA_P2P") != nullptr;
+    require(!norm_only || graphs, "set GGML_CUDA_P2P=1 for --norm-only");
     if (graphs && !graph_qualified()) {
         puts("SKIP: CUDA graphs enabled and two Volta-or-newer devices with bidirectional P2P required");
         return 77;
@@ -462,6 +629,18 @@ int main(int argc, char ** argv) {
     }
     void * comm = init(backends, 2);
     require(comm != nullptr, "internal comm init");
+    if (norm_only) {
+#ifdef GGML_TEST_CUDA_GRAPH
+        norm_cases(reg, backends, comm, reduce);
+#else
+        require(false, "--norm-only requires a CUDA graph build");
+#endif
+        free_comm(comm);
+        for (auto backend : backends) {
+            ggml_backend_free(backend);
+        }
+        return 0;
+    }
     FILE * file = output ? fopen(output, "wb") : nullptr;
     require(!output || file, "open output");
     size_t cases = 0;
@@ -526,6 +705,7 @@ int main(int argc, char ** argv) {
 #ifdef GGML_TEST_CUDA_GRAPH
     if (graphs) {
         replay_cases(reg, backends, comm, reduce);
+        norm_cases(reg, backends, comm, reduce);
     }
 #endif
     free_comm(comm);
