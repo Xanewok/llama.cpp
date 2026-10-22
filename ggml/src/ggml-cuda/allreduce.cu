@@ -142,9 +142,18 @@ static constexpr size_t GGML_CUDA_AR_ARRIVAL_STRIDE = 64;
 // blocks.  Tail elements (the leftover < ELEMS_PER_VEC at the end) are
 // handled only by block 0 to avoid cross-block writes to the same slots.
 // ---------------------------------------------------------------------------
+struct ggml_cuda_ar_norm_args {
+    const float * residual;
+    float * add;
+    const float * weight;
+    float * dst;
+    int ncols;
+    float eps;
+};
+
 // Epoch e reuses e-2's slot only after both ranks passed e-1 by stream order.
 // Both ranks must issue the same chunk sequence; no early dependent launch is allowed.
-template <typename T_dst, typename T_wire, bool P2P = false, bool EPOCH = false>
+template <typename T_dst, typename T_wire, bool P2P = false, bool EPOCH = false, bool NORM = false>
 static __global__ void ggml_cuda_ar_kernel(
         const T_dst  *              sendbuf,
         T_dst        *              recvbuf,
@@ -157,8 +166,10 @@ static __global__ void ggml_cuda_ar_kernel(
         int *                       epoch,
         int *                       failed,
         size_t                      slot_elems,
-        size_t                      slot_arrival_ints) {
+        size_t                      slot_arrival_ints,
+        ggml_cuda_ar_norm_args       norm) {
     static_assert(!EPOCH || P2P, "device epochs need device-local peer buffers");
+    static_assert(!NORM || (EPOCH && std::is_same<T_dst, float>::value), "norm needs F32 device epochs");
 
     // Vector unit for the wire type, sized to the arch's widest single-instruction
     // copy (16 B on Volta+).  Each phase-1 iter writes one vector to host memory;
@@ -203,7 +214,20 @@ static __global__ void ggml_cuda_ar_kernel(
     }
 
     // Phase 1: cast sendbuf (T_dst) -> host_mine (T_wire) and store as vectors.
-    {
+    if constexpr (NORM) {
+        // A block owns complete rows in both phases; every epoch slot must still advance.
+        for (int row = bid; row < count / norm.ncols; row += gridDim.x) {
+            for (int col = tid * ELEMS_PER_VEC; col < norm.ncols; col += nt * ELEMS_PER_VEC) {
+                const int off = row * norm.ncols + col;
+                T_wire wire[ELEMS_PER_VEC];
+                #pragma unroll
+                for (int k = 0; k < ELEMS_PER_VEC; ++k) {
+                    wire[k] = ggml_cuda_cast<T_wire>(sendbuf[off + k]);
+                }
+                ggml_cuda_memcpy_1<sizeof(wire)>(&host_mine[off], wire);
+            }
+        }
+    } else {
         for (int i = gtid; i < count_vec; i += gnt) {
             const int off = i * ELEMS_PER_VEC;
             T_wire wire[ELEMS_PER_VEC];
@@ -263,7 +287,37 @@ static __global__ void ggml_cuda_ar_kernel(
 
     // Phase 3: read peer's T_wire vector, cast both sides through T_wire for
     // bit-equivalence, sum in T_dst precision, and write back to recvbuf.
-    {
+    if constexpr (NORM) {
+        extern __shared__ float values[];
+        float * scratch = values + norm.ncols;
+        for (int row = bid; row < count / norm.ncols; row += gridDim.x) {
+            float sum2 = 0.0f;
+            for (int col = tid * ELEMS_PER_VEC; col < norm.ncols; col += nt * ELEMS_PER_VEC) {
+                const int off = row * norm.ncols + col;
+                T_wire wire[ELEMS_PER_VEC];
+                ggml_cuda_ar_load<sizeof(wire), P2P>(wire, &host_other[off]);
+                #pragma unroll
+                for (int k = 0; k < ELEMS_PER_VEC; ++k) {
+                    const float sum = ggml_cuda_cast<float>(ggml_cuda_cast<T_wire>(sendbuf[off + k])) + ggml_cuda_cast<float>(wire[k]);
+                    const float value = sum + norm.residual[off + k];
+                    recvbuf[off + k] = sum;
+                    values[col + k] = value;
+                    sum2 += value * value;
+                }
+            }
+            sum2 = block_reduce<block_reduce_method::SUM, 256>(sum2, scratch);
+            const float scale = rsqrtf(sum2 / norm.ncols + norm.eps);
+            __syncthreads();
+            for (int col = tid; col < norm.ncols; col += nt) {
+                const int off = row * norm.ncols + col;
+                const float value = values[col];
+                norm.add[off] = value;
+                const float normalized = value * scale;
+                norm.dst[off] = norm.weight ? normalized * norm.weight[col] : normalized;
+            }
+            __syncthreads();
+        }
+    } else {
         for (int i = gtid; i < count_vec; i += gnt) {
             const int off = i * ELEMS_PER_VEC;
             T_wire wire[ELEMS_PER_VEC];
@@ -983,7 +1037,8 @@ bool ggml_cuda_ar_in_graph_supported(ggml_cuda_ar_pipeline * p, ggml_tensor ** t
 bool ggml_cuda_ar_allreduce(
         ggml_cuda_ar_pipeline * p,
         ggml_backend_t        * backends,
-        ggml_tensor           ** tensors) {
+        ggml_tensor           ** tensors,
+        const ggml_cuda_ar_norm * norms) {
     GGML_ASSERT(p != nullptr);
 
     const int n = p->n_devices;
@@ -1015,6 +1070,7 @@ bool ggml_cuda_ar_allreduce(
     // type's actual byte count.  No upper bound: copy_outer slices reductions
     // larger than copy_bytes into copy_bytes-sized pieces.
     const bool use_copy_engine = ggml_cuda_ar_use_copy_engine(p, nbytes);
+    GGML_ASSERT(norms == nullptr || (p->p2p_kernel && input_type == GGML_TYPE_F32 && !use_copy_engine && nbytes <= p->buf_bytes));
 
     // BF16 inactive-shard zeroing: when use_bf16 is on, the combined kernel
     // (chunked kernel path) and the combined add kernel (copy_engine path)
@@ -1150,6 +1206,33 @@ bool ggml_cuda_ar_allreduce(
                 }
 
                 const int peer = 1 - i;
+                if (norms != nullptr) {
+                    const auto & norm = norms[i];
+                    const ggml_cuda_ar_norm_args args = {
+                        static_cast<const float *>(norm.residual->data),
+                        static_cast<float *>(norm.add->data),
+                        norm.weight ? static_cast<const float *>(norm.weight->data) : nullptr,
+                        static_cast<float *>(norm.dst->data),
+                        (int) tensors[i]->ne[0], ggml_get_op_params_f32(norm.norm, 0),
+                    };
+#define LAUNCH_AR_NORM(T_wire) \
+                    ggml_cuda_ar_kernel<float, T_wire, true, true, true><<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256), (args.ncols + 32) * sizeof(float), stream>>>( \
+                        reinterpret_cast<const float *>(data), reinterpret_cast<float *>(data), \
+                        reinterpret_cast<T_wire *>(p->host_buf[peer].dev), \
+                        reinterpret_cast<const T_wire *>(p->host_buf[i].dev), \
+                        (int) chunk_elems, ggml_cuda_ar_arrival_ptr(p, 0, peer), ggml_cuda_ar_arrival_ptr(p, 0, i), \
+                        0, reinterpret_cast<int *>(p->epoch[i].dev), cuda_ctx->ar_failed_device, \
+                        p->buf_bytes / sizeof(T_wire), \
+                        (size_t) p->n_devices * GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_STRIDE / sizeof(int), args)
+                    if (use_bf16) {
+                        LAUNCH_AR_NORM(nv_bfloat16);
+                    } else {
+                        LAUNCH_AR_NORM(float);
+                    }
+#undef LAUNCH_AR_NORM
+                    CUDA_CHECK(cudaGetLastError());
+                    continue;
+                }
 #define LAUNCH_AR_KERNEL_IMPL(T_dst, T_wire, P2P, EPOCH) \
                 ggml_cuda_ar_kernel<T_dst, T_wire, P2P, EPOCH><<<dim3(GGML_CUDA_AR_KERNEL_BLOCKS), dim3(256), 0, stream>>>( \
                     reinterpret_cast<const T_dst *>(data), \
@@ -1163,7 +1246,7 @@ bool ggml_cuda_ar_allreduce(
                     reinterpret_cast<int *>(p->epoch[i].dev), \
                     cuda_ctx->ar_failed_device, \
                     p->buf_bytes / sizeof(T_wire), \
-                    (size_t) p->n_devices * GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_STRIDE / sizeof(int))
+                    (size_t) p->n_devices * GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_STRIDE / sizeof(int), {})
 
 #define LAUNCH_AR_KERNEL(T_dst, T_wire) \
                 do { \
@@ -1212,7 +1295,7 @@ ggml_cuda_ar_pipeline * ggml_cuda_ar_pipeline_init(const int *, size_t) {
 }
 void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline *) {
 }
-bool ggml_cuda_ar_allreduce(ggml_cuda_ar_pipeline *, ggml_backend_t *, ggml_tensor **) {
+bool ggml_cuda_ar_allreduce(ggml_cuda_ar_pipeline *, ggml_backend_t *, ggml_tensor **, const ggml_cuda_ar_norm *) {
     return false;
 }
 bool ggml_cuda_ar_in_graph_supported(ggml_cuda_ar_pipeline *, ggml_tensor **) {

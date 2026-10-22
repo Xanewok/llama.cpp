@@ -8,6 +8,14 @@
 // Opaque pipeline context -- owns all pinned buffers, streams, and events.
 struct ggml_cuda_ar_pipeline;
 
+struct ggml_cuda_ar_norm {
+    const ggml_tensor * residual = nullptr;
+    ggml_tensor * add = nullptr;
+    ggml_tensor * norm = nullptr;
+    const ggml_tensor * weight = nullptr;
+    ggml_tensor * dst = nullptr;
+};
+
 // Allocate a pipeline for n_devices GPUs.
 // devices[] holds the GPU device IDs in rank order.
 // Returns nullptr on allocation failure.
@@ -25,7 +33,8 @@ void ggml_cuda_ar_pipeline_free(ggml_cuda_ar_pipeline * pipeline);
 bool ggml_cuda_ar_allreduce(
     ggml_cuda_ar_pipeline * pipeline,
     ggml_backend_t        * backends,
-    ggml_tensor           ** tensors);
+    ggml_tensor           ** tensors,
+    const ggml_cuda_ar_norm * norms = nullptr);
 
 // Both ranks must enqueue the same chunk sequence across captured and split calls.
 bool ggml_cuda_ar_in_graph_supported(ggml_cuda_ar_pipeline * pipeline, ggml_tensor ** tensors);

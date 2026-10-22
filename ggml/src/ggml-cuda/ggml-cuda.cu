@@ -5219,7 +5219,7 @@ static size_t ggml_cuda_q8_cache_prepare(ggml_cuda_q8_cache & cache, const ggml_
     return cache.reserve();
 }
 
-static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, const bool use_cuda_graph, const bool cuda_graph_update_required, const void * graph_key) {
+static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, const bool use_cuda_graph, const bool cuda_graph_update_required, const void * graph_key, int first_node = 0) {
     bool graph_evaluated_or_captured = false;
     ggml_cuda_q8_cache q8_cache;
     ggml_cuda_pool_alloc<char> q8_scratch(cuda_ctx->pool());
@@ -5327,7 +5327,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
                 }
             }
 
-            for (int i = 0; i < cgraph->n_nodes; i++) {
+            for (int i = first_node; i < cgraph->n_nodes; i++) {
                 ggml_tensor * node = cgraph->nodes[i];
                 if (is_concurrent_event_active) {
                     GGML_ASSERT(concurrent_event);
@@ -5539,6 +5539,70 @@ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, 
 }
 
 #if defined(USE_CUDA_GRAPH) && !defined(GGML_USE_HIP) && !defined(GGML_USE_MUSA)
+static int ggml_cuda_match_ar_norm(const ggml_cgraph * next, const ggml_tensor * sum, ggml_cuda_ar_norm & match) {
+    if (ggml_cuda_fusion_disabled() || next->n_nodes < 2 || sum->type != GGML_TYPE_F32 ||
+            sum->ne[0] < 256 || sum->ne[0] > 8192 || sum->ne[0] % 8 != 0 ||
+            ggml_nrows(sum) < 1 || ggml_nrows(sum) > 16) {
+        return 0;
+    }
+    ggml_tensor * add = next->nodes[0];
+    ggml_tensor * norm = next->nodes[1];
+    if (add->op != GGML_OP_ADD || norm->op != GGML_OP_RMS_NORM || norm->src[0] != add ||
+            (add->src[0] != sum && add->src[1] != sum)) {
+        return 0;
+    }
+    const ggml_tensor * residual = add->src[add->src[0] == sum ? 1 : 0];
+    if (residual == nullptr || residual->data == sum->data) {
+        return 0;
+    }
+    int count = 2;
+    ggml_tensor * dst = norm;
+    const ggml_tensor * weight = nullptr;
+    if (next->n_nodes >= 3 && ggml_can_fuse_subgraph(next, 0, { GGML_OP_ADD, GGML_OP_RMS_NORM, GGML_OP_MUL }, { 0, 2 })) {
+        ggml_tensor * mul = next->nodes[2];
+        if (mul->src[0] == norm || mul->src[1] == norm) {
+            const ggml_tensor * w = mul->src[mul->src[0] == norm ? 1 : 0];
+            if (w != nullptr && w != norm && w->type == GGML_TYPE_F32 && ggml_is_contiguous(w) &&
+                    w->ne[0] == sum->ne[0] && ggml_nrows(w) == 1) {
+                weight = w;
+                dst = mul;
+                count = 3;
+            }
+        }
+    }
+    if (count == 2 && !ggml_can_fuse_subgraph(next, 0, { GGML_OP_ADD, GGML_OP_RMS_NORM }, { 0, 1 })) {
+        return 0;
+    }
+    for (const ggml_tensor * t : { sum, residual, (const ggml_tensor *) add, (const ggml_tensor *) norm, (const ggml_tensor *) dst }) {
+        if (t->type != GGML_TYPE_F32 || !ggml_is_contiguous(t) || !ggml_are_same_shape(t, sum)) {
+            return 0;
+        }
+    }
+    for (int i = 0; i < count; ++i) {
+        if ((next->nodes[i]->flags & GGML_TENSOR_FLAG_COMPUTE) == 0) {
+            return 0;
+        }
+    }
+    // Complete rows can alias in place; shifted overlaps and shared weights cannot.
+    const auto overlaps = [](const ggml_tensor * a, const ggml_tensor * b) {
+        const uintptr_t pa = (uintptr_t) a->data;
+        const uintptr_t pb = (uintptr_t) b->data;
+        return pa <= pb ? pb - pa < ggml_nbytes(a) : pa - pb < ggml_nbytes(b);
+    };
+    for (const ggml_tensor * out : { (const ggml_tensor *) sum, (const ggml_tensor *) add, (const ggml_tensor *) dst }) {
+        if (weight != nullptr && overlaps(out, weight)) {
+            return 0;
+        }
+        for (const ggml_tensor * in : { (const ggml_tensor *) sum, residual, (const ggml_tensor *) add, (const ggml_tensor *) dst }) {
+            if (out->data != in->data && overlaps(out, in)) {
+                return 0;
+            }
+        }
+    }
+    match = { residual, add, norm, weight, dst };
+    return count;
+}
+
 static bool ggml_backend_cuda_comm_graph_compute(void * comm_ctx_v, ggml_cgraph ** graphs, size_t n_graphs) {
     auto * comm_ctx = static_cast<ggml_backend_cuda_comm_context *>(comm_ctx_v);
     if (comm_ctx == nullptr || graphs == nullptr || n_graphs < 2 ||
@@ -5611,6 +5675,21 @@ static bool ggml_backend_cuda_comm_graph_compute(void * comm_ctx_v, ggml_cgraph 
         return !graph->warmup_complete || graph->instance == nullptr;
     });
     if (recapture) {
+        std::vector<ggml_cuda_ar_norm> norms(n_graphs * n_ranks);
+        std::vector<int> prefix(n_graphs, 0);
+        for (size_t g = 1; g < n_graphs; ++g) {
+            int count[2] = {};
+            for (size_t r = 0; r < n_ranks; ++r) {
+                ggml_cgraph * prev = graphs[(g - 1)*n_ranks + r];
+                if (contexts[r]->stream_context().concurrent_events.empty()) {
+                    count[r] = ggml_cuda_match_ar_norm(graphs[g*n_ranks + r], prev->nodes[prev->n_nodes - 1], norms[g*n_ranks + r]);
+                }
+            }
+            // Both ranks must use the same row ownership for the peer handshake.
+            if (count[0] != 0 && count[0] == count[1] && ggml_are_same_shape(norms[g*n_ranks].add, norms[g*n_ranks + 1].add)) {
+                prefix[g] = count[0];
+            }
+        }
         GGML_LOG_DEBUG("%s: capturing %zu subgraphs per device with %zu AllReduces in one graph\n", __func__, n_graphs, n_graphs - 1);
         {
             std::lock_guard<std::mutex> lock(ggml_cuda_lock);
@@ -5624,11 +5703,16 @@ static bool ggml_backend_cuda_comm_graph_compute(void * comm_ctx_v, ggml_cgraph 
             for (size_t r = 0; r < n_ranks; ++r) {
                 ggml_cgraph * graph = graphs[g*n_ranks + r];
                 ggml_cuda_set_device(contexts[r]->device);
-                ggml_cuda_graph_evaluate_and_capture(contexts[r], graph, false, false, nullptr);
+                ggml_cuda_graph_evaluate_and_capture(contexts[r], graph, false, false, nullptr, prefix[g]);
                 tensors[r] = graph->nodes[graph->n_nodes - 1];
             }
             if (g + 1 < n_graphs) {
-                GGML_ASSERT(ggml_backend_cuda_comm_allreduce_tensor(comm_ctx, tensors.data()));
+                if (prefix[g + 1] != 0) {
+                    GGML_LOG_DEBUG("%s: fused AllReduce + ADD + RMS_NORM%s\n", __func__, prefix[g + 1] == 3 ? " + MUL" : "");
+                    GGML_ASSERT(ggml_cuda_ar_allreduce(comm_ctx->ar_pipeline, comm_ctx->backends.data(), tensors.data(), &norms[(g + 1)*n_ranks]));
+                } else {
+                    GGML_ASSERT(ggml_backend_cuda_comm_allreduce_tensor(comm_ctx, tensors.data()));
+                }
             }
         }
         for (size_t r = 0; r < n_ranks; ++r) {
