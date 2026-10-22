@@ -112,11 +112,6 @@ static __device__ __forceinline__ void ggml_cuda_ar_load(void * dst, const void 
 // false-sharing stalls on the polling GPU.
 static constexpr size_t GGML_CUDA_AR_ARRIVAL_STRIDE = 64;
 
-// Number of blocks the chunked kernel launches with.  Each block stripes a
-// disjoint slice of the data and synchronizes through its own arrival-token
-// slot so multiple SMs can pump PCIe stores in parallel.
-static constexpr int GGML_CUDA_AR_KERNEL_BLOCKS = 8;
-
 // ---------------------------------------------------------------------------
 // Chunked kernel AllReduce -- 2 GPUs, supports float, half, and bfloat16.
 //
@@ -160,6 +155,7 @@ static __global__ void ggml_cuda_ar_kernel(
         int *                       arrival_other,
         int                         token,
         int *                       epoch,
+        int *                       failed,
         size_t                      slot_elems,
         size_t                      slot_arrival_ints) {
     static_assert(!EPOCH || P2P, "device epochs need device-local peer buffers");
@@ -177,6 +173,15 @@ static __global__ void ggml_cuda_ar_kernel(
     const int gnt       = gridDim.x * nt;
     const int count_vec = count / ELEMS_PER_VEC;
     const int tail      = count_vec * ELEMS_PER_VEC;
+
+    __shared__ bool peer_failed;
+    if (tid == 0) {
+        peer_failed = ((const volatile int *) failed)[bid] != 0;
+    }
+    __syncthreads();
+    if (peer_failed) {
+        return;
+    }
 
     if constexpr (EPOCH) {
         __shared__ int epoch_token;
@@ -227,7 +232,15 @@ static __global__ void ggml_cuda_ar_kernel(
         ggml_cuda_ar_signal_set<P2P>(my_slot, token);
         __threadfence_system(); // make our signal visible system-wide
 
+        // Limit each peer wait to 60 billion device clock cycles (about 30 s at 2 GHz).
+        const unsigned long long start = clock64();
         while (ggml_cuda_ar_signal_get<P2P>(other_slot) != token) {
+            if (clock64() - start >= 60000000000ULL) {
+                ((volatile int *) failed)[bid] = 1;
+                __threadfence_system();
+                peer_failed = true;
+                break;
+            }
 #ifdef GGML_USE_HIP
             // Equals ~100ns at 2500 MHz (sleeps for n * [1,64] clock cycles)
             __builtin_amdgcn_s_sleep(4);
@@ -240,6 +253,10 @@ static __global__ void ggml_cuda_ar_kernel(
     }
 
     __syncthreads();
+
+    if (peer_failed) {
+        return;
+    }
 
     // Acquire peer's host_other writes (this block's stripe of them).
     __threadfence_system();
@@ -479,7 +496,7 @@ struct ggml_cuda_ar_slot_info {
     int token;
 };
 
-static ggml_cuda_ar_slot_info ggml_cuda_ar_acquire_slot(ggml_cuda_ar_pipeline * p) {
+static ggml_cuda_ar_slot_info ggml_cuda_ar_acquire_slot(ggml_cuda_ar_pipeline * p, ggml_backend_t * backends) {
     const int  slot        = static_cast<int>(p->call_count % GGML_CUDA_AR_POOL_SIZE);
     const bool pool_lapped = p->call_count >= GGML_CUDA_AR_POOL_SIZE;
     p->call_count++;
@@ -488,6 +505,7 @@ static ggml_cuda_ar_slot_info ggml_cuda_ar_acquire_slot(ggml_cuda_ar_pipeline * 
         for (int i = 0; i < p->n_devices; ++i) {
             ggml_cuda_set_device(p->devices[i]);
             CUDA_CHECK(cudaEventSynchronize(p->ev_pool[i][slot].ker));
+            static_cast<ggml_backend_cuda_context *>(backends[i]->context)->check_ar_failed();
         }
     }
 
@@ -788,7 +806,7 @@ static bool ggml_cuda_ar_allreduce_copy_impl(
     const size_t chunk_bytes = ggml_cuda_ar_chunk_bytes(p, nbytes);
     GGML_ASSERT(chunk_bytes > 0);
 
-    const int slot = ggml_cuda_ar_acquire_slot(p).slot;
+    const int slot = ggml_cuda_ar_acquire_slot(p, backends).slot;
     const size_t copy_chunks = (nbytes + chunk_bytes - 1) / chunk_bytes;
     GGML_ASSERT(copy_chunks <= GGML_CUDA_AR_COPY_MAX_CHUNKS);
 
@@ -1113,7 +1131,7 @@ bool ggml_cuda_ar_allreduce(
             const size_t chunk_elems = remaining_elems < max_chunk_elems ? remaining_elems : max_chunk_elems;
             const size_t chunk_dst_bytes  = chunk_elems * input_type_size;
 
-            const auto [slot, token] = p->p2p_kernel ? ggml_cuda_ar_slot_info{0, 0} : ggml_cuda_ar_acquire_slot(p);
+            const auto [slot, token] = p->p2p_kernel ? ggml_cuda_ar_slot_info{0, 0} : ggml_cuda_ar_acquire_slot(p, backends);
             const bool last_chunk = chunk_start + (int64_t) chunk_elems == ne;
 
             for (int i = 0; i < n; ++i) {
@@ -1143,6 +1161,7 @@ bool ggml_cuda_ar_allreduce(
                     ggml_cuda_ar_arrival_ptr(p, slot, P2P ? i : peer), \
                     token, \
                     reinterpret_cast<int *>(p->epoch[i].dev), \
+                    cuda_ctx->ar_failed_device, \
                     p->buf_bytes / sizeof(T_wire), \
                     (size_t) p->n_devices * GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_STRIDE / sizeof(int))
 
