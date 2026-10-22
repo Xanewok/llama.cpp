@@ -110,7 +110,7 @@ GGML_CUDA_AR_P2P = "1"
 
 [arms.patch]
 label = "patch"
-commit = "4b8b462bc348cafd82b990cec07d0c9c14e07abb"
+commit = "69844435d76c21d778dde8fb8457429cda4aa01f"
 root = "/home/xanewok/repos/qwen38-eval-worktrees/frozen/ar-norm-fuse"
 repo = "/home/xanewok/repos/llama.cpp"
 bin = "build/bin"

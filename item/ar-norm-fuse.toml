@@ -7,7 +7,7 @@ budget_s = 28800
 est_s = 14400
 ab = false
 retry = "never"
-note = "DRAFT; not enqueued or executed. Source pin 4b8b462bc348cafd82b990cec07d0c9c14e07abb. CUDA 13.2 through buildgate, -j4, NCCL=OFF, TMPDIR=/mnt/scratch/tmp-build. Inherit every bw-pkg101-fork gate: host/peer bytes, graph PASS lines, graphs-disabled rc 77, library strings, and manifest freeze blockers. Add 15 norm cases in each of BF16 and native F32 wire modes, NMSE <= 1e-7, positive/negative fusion engagement. Falsifier: build/link error, SKIP in an enabled gate, missing or duplicated PASS, numerical or engagement failure, peer timeout. KLD remains required before model-level acceptance."
+note = "DRAFT; not enqueued or executed. Source pin 69844435d76c21d778dde8fb8457429cda4aa01f. CUDA 13.2 through buildgate, -j4, NCCL=OFF, TMPDIR=/mnt/scratch/tmp-build. Inherit every bw-pkg101-fork gate: host/peer bytes, graph PASS lines, graphs-disabled rc 77, library strings, and manifest freeze blockers. Add 15 norm cases in each of BF16 and native F32 wire modes, NMSE <= 1e-7, positive/negative fusion engagement. Falsifier: build/link error, SKIP in an enabled gate, missing or duplicated PASS, numerical or engagement failure, peer timeout. KLD remains required before model-level acceptance."
 exit_codes = { "3" = "hazard", "4" = "transient", "5" = "insufficient_data", "6" = "integrity", "7" = "timeout", "8" = "deterministic" }
 signatures = [{ class = "integrity", regex = "integrity: " }]
 
