@@ -747,6 +747,11 @@ ggml_backend_cuda_context::~ggml_backend_cuda_context() {
     for (int i = 0; i < GGML_CUDA_MAX_DEVICES; ++i) {
         for (int j = 0; j < GGML_CUDA_MAX_STREAMS; ++j) {
             if (streams[i][j] != nullptr) {
+                if (ar_failed_host != nullptr) {
+                    ggml_cuda_set_device(i);
+                    CUDA_CHECK(cudaStreamSynchronize(streams[i][j]));
+                    check_ar_failed();
+                }
                 CUDA_CHECK(cudaStreamDestroy(streams[i][j]));
             }
             if (cublas_handles[i][j] != nullptr) {
@@ -756,6 +761,9 @@ ggml_backend_cuda_context::~ggml_backend_cuda_context() {
                 CUDA_CHECK(cudaFree(cublas_workspaces[i][j]));
             }
         }
+    }
+    if (ar_failed_host != nullptr) {
+        CUDA_CHECK(cudaFreeHost(ar_failed_host));
     }
 }
 
@@ -1211,6 +1219,18 @@ static void ggml_backend_cuda_comm_init_none(ggml_backend_cuda_comm_context * re
 static void ggml_backend_cuda_comm_init_internal(ggml_backend_cuda_comm_context * ret) {
     ret->ar_pipeline = ggml_cuda_ar_pipeline_init(ret->dev_ids.data(), ret->dev_ids.size());
     if (ret->ar_pipeline) {
+#ifndef GGML_USE_MUSA
+        for (auto backend : ret->backends) {
+            auto * ctx = static_cast<ggml_backend_cuda_context *>(backend->context);
+            if (ctx->ar_failed_host == nullptr) {
+                ggml_cuda_set_device(ctx->device);
+                const size_t bytes = GGML_CUDA_AR_KERNEL_BLOCKS * sizeof(int);
+                CUDA_CHECK(cudaHostAlloc((void **) &ctx->ar_failed_host, bytes, cudaHostAllocPortable | cudaHostAllocMapped));
+                CUDA_CHECK(cudaHostGetDevicePointer((void **) &ctx->ar_failed_device, ctx->ar_failed_host, 0));
+                memset(ctx->ar_failed_host, 0, bytes);
+            }
+        }
+#endif
         ret->try_allreduce = ggml_backend_cuda_comm_try_allreduce_internal;
         return;
     }
@@ -2689,8 +2709,7 @@ static void ggml_backend_cuda_synchronize(ggml_backend_t backend) {
     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *)backend->context;
 
     CUDA_CHECK(cudaStreamSynchronize(cuda_ctx->stream()));
-
-    GGML_UNUSED(backend);
+    cuda_ctx->check_ar_failed();
 }
 
 static bool ggml_cuda_is_view_or_noop(const ggml_tensor * t) {

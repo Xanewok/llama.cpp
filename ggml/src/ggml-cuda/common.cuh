@@ -1446,10 +1446,25 @@ struct ggml_cuda_stream_context {
     }
 };
 
+static constexpr int GGML_CUDA_AR_KERNEL_BLOCKS = 8;
+
 struct ggml_backend_cuda_context {
     int device;
     std::string name;
     cudaEvent_t copy_event = nullptr;
+    int * ar_failed_host = nullptr;
+    int * ar_failed_device = nullptr;
+
+    void check_ar_failed() const {
+        if (ar_failed_host == nullptr) {
+            return;
+        }
+        for (int i = 0; i < GGML_CUDA_AR_KERNEL_BLOCKS; ++i) {
+            if (((const volatile int *) ar_failed_host)[i]) {
+                GGML_ABORT("CUDA AllReduce peer wait timed out (device %d, block %d)", device, i);
+            }
+        }
+    }
 
     cudaStream_t streams[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = {};
     cublasHandle_t cublas_handles[GGML_CUDA_MAX_DEVICES][GGML_CUDA_MAX_STREAMS] = {};
