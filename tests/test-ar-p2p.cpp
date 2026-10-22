@@ -165,6 +165,20 @@ static void * lookup(ggml_backend_reg_t reg, const char * name) {
     return get_proc(reg, name);
 }
 
+// ggml_graph_view is internal to ggml-base and not exported; same view: a node range sharing the parent's bookkeeping.
+static ggml_cgraph graph_view(ggml_cgraph * graph, int i0, int i1) {
+    ggml_cgraph view = *graph;
+    view.size      = 0;
+    view.n_nodes   = i1 - i0;
+    view.n_leafs   = 0;
+    view.nodes     = graph->nodes + i0;
+    view.grads     = nullptr;
+    view.grad_accs = nullptr;
+    view.leafs     = nullptr;
+    view.uid       = 0;
+    return view;
+}
+
 static bool graph_qualified() {
 #ifdef GGML_TEST_CUDA_GRAPH
     if (std::getenv("GGML_CUDA_DISABLE_GRAPHS") != nullptr) {
@@ -211,8 +225,8 @@ struct reduction_graph {
             ggml_cgraph * full = ggml_new_graph(ctx[rank]);
             ggml_build_forward_expand(full, outputs[rank]);
             require(full->n_nodes == 2, "reduction graph boundaries");
-            steps[rank] = ggml_graph_view(full, 0, 1);
-            steps[2 + rank] = ggml_graph_view(full, 1, 2);
+            steps[rank] = graph_view(full, 0, 1);
+            steps[2 + rank] = graph_view(full, 1, 2);
             graphs[rank] = &steps[rank];
             graphs[2 + rank] = &steps[2 + rank];
             buffers[rank] = ggml_backend_alloc_ctx_tensors(ctx[rank], backends[rank]);
