@@ -96,6 +96,12 @@ struct graph {
     ggml_tensor * tweak = nullptr;
 };
 
+// ggml_graph_next_uid is internal to ggml-base; plan reuse only needs uids that are distinct and non-zero within this process.
+static uint64_t next_uid() {
+    static uint64_t uid = 0;
+    return ++uid;
+}
+
 static graph build(ggml_backend_t backend, const weights & w, int64_t rows, uint64_t uid, int layers = L, int extra = 0) {
     graph g;
     ggml_init_params params = { (8*L + 16 + extra)*ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true };
@@ -320,7 +326,7 @@ int main(int argc, char ** argv) {
     for (int phase = 0; phase < 4; ++phase) {
         graph graphs[2];
         for (int arm = 0; arm < 2; ++arm) {
-            graphs[arm] = build(backends[arm], w, rows[phase], ggml_graph_next_uid(), layers[phase], extras[phase]);
+            graphs[arm] = build(backends[arm], w, rows[phase], next_uid(), layers[phase], extras[phase]);
         }
         const size_t captures_before = count(g_log, "CUDA AllReduce graph capture");
         const size_t ready_before = ready_true;
@@ -329,7 +335,7 @@ int main(int argc, char ** argv) {
             if (phase == 2 && round == 4) {
                 for (auto & g : graphs) {
                     ggml_set_op_params_f32(g.tweak, 0, 0.75f);
-                    g.gf->uid = ggml_graph_next_uid();
+                    g.gf->uid = next_uid();
                 }
             }
             std::vector<uint8_t> res[2], out[2], copied[2];
