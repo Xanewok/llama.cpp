@@ -1347,7 +1347,12 @@ static bool ggml_backend_cuda_comm_allreduce_graph(void * comm_ctx_v, ggml_tenso
             node->flags = GGML_TENSOR_FLAG_COMPUTE;
             node->extra = nullptr;
             ggml_set_name(node, "comm_allreduce");
-            const ggml_custom_op_params params = { ggml_cuda_comm_ar_unsupported, 1, comm_ctx };
+            // Capture properties compare op_params byte for byte, including struct padding.
+            ggml_custom_op_params params;
+            memset(&params, 0, sizeof(params));
+            params.fun = ggml_cuda_comm_ar_unsupported;
+            params.n_tasks = 1;
+            params.userdata = comm_ctx;
             memcpy(node->op_params, &params, sizeof(params));
         }
     }
@@ -4864,8 +4869,7 @@ static void ggml_cuda_graph_evaluate_and_capture(ggml_backend_cuda_context * cud
         ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
         if (graph->instance == nullptr) { // Create executable graph from captured graph.
             CUDA_CHECK(cudaGraphInstantiate(&graph->instance, graph->graph, NULL, NULL, 0));
-        }
-        else if (cuda_graph_update_required) { // Update graph executable
+        } else if (cuda_graph_update_required) { // Update graph executable
             ggml_cuda_graph_update_executable(cuda_ctx, graph_key);
         }
         // Launch graph
