@@ -2430,6 +2430,8 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
                 }
                 bcj.nodes[i] = ggml_backend_meta_buffer_simple_tensor(node, j);
                 GGML_ASSERT(bcj.nodes[i]);
+                // op_params may have changed since init_tensor created the slice
+                memcpy(bcj.nodes[i]->op_params, node->op_params, sizeof(node->op_params));
             }
         }
 

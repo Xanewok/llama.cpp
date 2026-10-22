@@ -1225,6 +1225,47 @@ static void test_meta_host_view(ggml_op op, bool split) {
     }
 }
 
+// Computing an allocated graph again after changing a node's op_params must apply the new values on every device.
+static void test_meta_op_params_refresh() {
+    ggml_backend_load_all();
+    ggml_backend_dev_t cpu = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU);
+    GGML_ASSERT(cpu != nullptr);
+    ggml_backend_dev_t devs[2] = {cpu, cpu};
+    ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, test_meta_split_state_mirrored, nullptr);
+    ggml_backend_t backend = ggml_backend_dev_init(meta, nullptr);
+    GGML_ASSERT(backend != nullptr);
+
+    ggml_init_params params = {ggml_tensor_overhead()*2 + ggml_graph_overhead(), nullptr, /*no_alloc =*/ true};
+    ggml_context * ctx = ggml_init(params);
+    ggml_tensor * x = ggml_new_tensor_1d(ctx, GGML_TYPE_F32, 1);
+    ggml_set_input(x);
+    ggml_tensor * y = ggml_scale(ctx, x, 2.0f);
+    ggml_set_output(y);
+    ggml_cgraph * gf = ggml_new_graph(ctx);
+    ggml_build_forward_expand(gf, y);
+
+    ggml_gallocr_t galloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
+    GGML_ASSERT(ggml_gallocr_alloc_graph(galloc, gf));
+
+    // y may be computed in place of x, so x is set before each compute
+    const float x_val = 1.0f;
+    float y_val = 0.0f;
+    ggml_backend_tensor_set(x, &x_val, 0, sizeof(x_val));
+    GGML_ASSERT(ggml_backend_graph_compute(backend, gf) == GGML_STATUS_SUCCESS);
+    ggml_backend_tensor_get(y, &y_val, 0, sizeof(y_val));
+    GGML_ASSERT(y_val == 2.0f);
+
+    ggml_set_op_params_f32(y, 0, 3.0f);
+    ggml_backend_tensor_set(x, &x_val, 0, sizeof(x_val));
+    GGML_ASSERT(ggml_backend_graph_compute(backend, gf) == GGML_STATUS_SUCCESS);
+    ggml_backend_tensor_get(y, &y_val, 0, sizeof(y_val));
+    GGML_ASSERT(y_val == 3.0f);
+
+    ggml_gallocr_free(galloc);
+    ggml_free(ctx);
+    ggml_backend_free(backend);
+}
+
 static void run(const char * name, void (*f)()) {
     printf("%s ", name);
     fflush(stdout);
@@ -1281,5 +1322,6 @@ int main(int argc, char ** argv) {
     run("test_meta_host_cpy(split)", []() { test_meta_host_view(GGML_OP_CPY, true); });
     run("test_meta_host_set_rows(mirrored)", []() { test_meta_host_view(GGML_OP_SET_ROWS, false); });
     run("test_meta_host_set_rows(split)", []() { test_meta_host_view(GGML_OP_SET_ROWS, true); });
+    run("test_meta_op_params_refresh", test_meta_op_params_refresh);
     return 0;
 }
