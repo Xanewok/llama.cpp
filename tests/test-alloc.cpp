@@ -1247,11 +1247,15 @@ static void test_meta_comm_runs() {
         test_meta_runs.clear();
         ggml_backend_t backend = ggml_backend_dev_init(meta, nullptr);
         GGML_ASSERT(backend != nullptr);
-        ggml_context * ctx = ggml_init({32 * ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true});
-        ggml_tensor * up = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 8, 8);
-        ggml_tensor * down = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 8, 8);
+        // Only weight buffers take the split callback; activations need a compute buffer so their splits are inferred.
+        ggml_context * wctx = ggml_init({2 * ggml_tensor_overhead(), nullptr, true});
+        ggml_tensor * up = ggml_new_tensor_2d(wctx, GGML_TYPE_F32, 8, 8);
+        ggml_tensor * down = ggml_new_tensor_2d(wctx, GGML_TYPE_F32, 8, 8);
         ggml_set_name(up, "up");
         ggml_set_name(down, "down");
+        ggml_backend_buffer_t buffer = ggml_backend_alloc_ctx_tensors(wctx, backend);
+        GGML_ASSERT(buffer != nullptr);
+        ggml_context * ctx = ggml_init({32 * ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true});
         ggml_tensor * x = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, 8, 2);
         ggml_set_input(x);
         ggml_tensor * cur = x;
@@ -1262,8 +1266,8 @@ static void test_meta_comm_runs() {
         ggml_set_output(out);
         ggml_cgraph * graph = ggml_new_graph(ctx);
         ggml_build_forward_expand(graph, out);
-        ggml_backend_buffer_t buffer = ggml_backend_alloc_ctx_tensors(ctx, backend);
-        GGML_ASSERT(buffer != nullptr);
+        ggml_gallocr_t galloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
+        GGML_ASSERT(ggml_gallocr_alloc_graph(galloc, graph));
         float weights[64];
         for (size_t k = 0; k < 64; ++k) {
             weights[k] = float(int(k % 5) - 2) * 0.125f;
@@ -1285,8 +1289,10 @@ static void test_meta_comm_runs() {
             GGML_ASSERT(test_meta_runs == std::vector<size_t>({5}));
             GGML_ASSERT(memcmp(reference.data(), result.data(), ggml_nbytes(out)) == 0);
         }
+        ggml_gallocr_free(galloc);
         ggml_backend_buffer_free(buffer);
         ggml_free(ctx);
+        ggml_free(wctx);
         ggml_backend_free(backend);
     }
     reg->iface.get_proc_address = test_meta_get_proc;
