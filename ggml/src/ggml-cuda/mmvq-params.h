@@ -206,10 +206,11 @@ static constexpr int calc_rows_per_block(ggml_type type, int ncols_dst, int tabl
     return 1;
 }
 
-template <int nwarps_, int rows_per_block_>
+template <int nwarps_, int rows_per_block_, int min_blocks_per_sm_ = 1>
 struct mmvq_launch_config {
     static constexpr int nwarps = nwarps_;
     static constexpr int rows_per_block = rows_per_block_;
+    static constexpr int min_blocks_per_sm = min_blocks_per_sm_;
 
     static constexpr uint32_t nblocks(uint32_t nrows) {
         return nrows / rows_per_block;

@@ -5,6 +5,8 @@
 #include "vecdotq.cuh"
 
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <type_traits>
 
 // only enabled on DGX Spark, where it is a gain on every type below. On the higher-bandwidth parts the kernel
@@ -425,8 +427,9 @@ static constexpr __device__ int get_mmvq_mmid_max_batch_for_device() {
 #endif
 }
 
-template <ggml_type type, int ncols_dst, bool has_fusion, int nwarps, int rows_per_cuda_block, bool is_tail = false>
-__launch_bounds__(nwarps*ggml_cuda_get_physical_warp_size(), 1)
+template <ggml_type type, int ncols_dst, bool has_fusion, int nwarps, int rows_per_cuda_block, bool is_tail = false,
+          int min_blocks_per_sm = 1>
+__launch_bounds__(nwarps*ggml_cuda_get_physical_warp_size(), min_blocks_per_sm)
 static __global__ void mul_mat_vec_q(
         const void * vx_ptr, const void * vy_ptr, const int32_t * ids_ptr, const ggml_cuda_mm_fusion_args_device fusion, float * dst_ptr,
         const uint32_t ncols_x, const uint3 nchannels_y, const uint32_t nrows_x, const uint32_t stride_row_x, const uint32_t stride_col_y,
@@ -835,6 +838,55 @@ static __global__ void mul_mat_vec_q_moe(
     }
 }
 
+// Bench-only experiment, read once: GGML_CUDA_MMVQ_REGCAP_ARM=default|lb|rows2; unset is default (served dispatch).
+enum mmvq_regcap_arm {
+    MMVQ_REGCAP_DEFAULT,
+    MMVQ_REGCAP_LB,
+    MMVQ_REGCAP_ROWS2,
+};
+
+static mmvq_regcap_arm mmvq_regcap_arm_get() {
+    static const mmvq_regcap_arm arm = [] {
+        const char * value = getenv("GGML_CUDA_MMVQ_REGCAP_ARM");
+        if (value == nullptr || strcmp(value, "default") == 0) {
+            return MMVQ_REGCAP_DEFAULT;
+        }
+        if (strcmp(value, "lb") == 0) {
+            return MMVQ_REGCAP_LB;
+        }
+        if (strcmp(value, "rows2") == 0) {
+            return MMVQ_REGCAP_ROWS2;
+        }
+        GGML_ABORT("GGML_CUDA_MMVQ_REGCAP_ARM must be default, lb or rows2");
+    }();
+    return arm;
+}
+
+// sm_120 keeps 4 x 16K registers per SM, one quarter per scheduler, and allocates per warp in 256-register units
+// (8 per thread). 3 warps per scheduler fit at <= 168 registers per thread (3*168*32 = 16128 <= 16384) but only 2 at 176:
+// a 12-warp residency bound must leave <= 168 (65536/(12*32) = 170.7 before rounding; the bench build gate checks ptxas).
+static constexpr int MMVQ_REGCAP_WARPS_PER_SM = 12;
+
+// Both arms keep nwarps, so every output element sums the same K blocks in the same order as the default config.
+template <ggml_type type, int ncols, bool small_k, bool halve_iters, typename F>
+static void mmvq_select_config_regcap(mmvq_parameter_table_id table_id, F launch) {
+    if constexpr ((type == GGML_TYPE_IQ4_XS || type == GGML_TYPE_Q6_K) && (ncols == 7 || ncols == 8)) {
+        const mmvq_regcap_arm arm = mmvq_regcap_arm_get();
+        if (table_id == MMVQ_PARAMETERS_BLACKWELL && arm != MMVQ_REGCAP_DEFAULT) {
+            constexpr int nw = calc_nwarps(type, ncols, MMVQ_PARAMETERS_BLACKWELL, small_k, halve_iters);
+            constexpr int nr = calc_rows_per_block(type, ncols, MMVQ_PARAMETERS_BLACKWELL, small_k, nw);
+            static_assert(MMVQ_REGCAP_WARPS_PER_SM % nw == 0, "the residency bound counts whole blocks");
+            if (arm == MMVQ_REGCAP_LB) {
+                launch(mmvq_launch_config<nw, nr, MMVQ_REGCAP_WARPS_PER_SM/nw>{});
+            } else {
+                launch(mmvq_launch_config<nw, 2>{});
+            }
+            return;
+        }
+    }
+    mmvq_select_config<type, ncols, small_k, halve_iters>(table_id, launch);
+}
+
 template<ggml_type type, int c_ncols_dst, bool small_k = false, bool halve_iters = false>
 static void mul_mat_vec_q_switch_fusion(
         const void * vx, const void * vy, const int32_t * ids, const ggml_cuda_mm_fusion_args_device fusion, float * dst,
@@ -847,7 +899,7 @@ static void mul_mat_vec_q_switch_fusion(
 
     const bool has_fusion = fusion.gate != nullptr || fusion.x_bias != nullptr || fusion.gate_bias != nullptr ||
                             fusion.x_scale != nullptr || fusion.gate_scale != nullptr;
-    mmvq_select_config<type, c_ncols_dst, small_k, halve_iters>(table_id, [&](auto config) {
+    mmvq_select_config_regcap<type, c_ncols_dst, small_k, halve_iters>(table_id, [&](auto config) {
         using config_t = decltype(config);
         const dim3 block_dims(warp_size, config_t::nwarps, 1);
         const auto launch = [&](auto fusion_tag) {
@@ -856,7 +908,8 @@ static void mul_mat_vec_q_switch_fusion(
             if (nblocks > 0) {
                 const dim3 block_nums(nblocks, nchannels_dst, nsamples_dst);
                 const ggml_cuda_kernel_launch_params launch_params(block_nums, block_dims, 0, stream);
-                ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, c_has_fusion, config_t::nwarps, config_t::rows_per_block>, launch_params,
+                ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, c_has_fusion, config_t::nwarps, config_t::rows_per_block, false,
+                                                      config_t::min_blocks_per_sm>, launch_params,
                     vx, vy, ids, fusion, dst, ncols_x, nchannels_y, nrows_x, stride_row_x, stride_col_y, stride_col_dst,
                     channel_ratio, stride_channel_x, stride_channel_y, stride_channel_dst,
                     sample_ratio, stride_sample_x, stride_sample_y, stride_sample_dst, ids_stride, uint32_t(0));
@@ -868,7 +921,8 @@ static void mul_mat_vec_q_switch_fusion(
                     // One row per tail block keeps all weight and gate reads inside the matrix.
                     const dim3 block_nums(tail_rows, nchannels_dst, nsamples_dst);
                     const ggml_cuda_kernel_launch_params launch_params(block_nums, block_dims, 0, stream);
-                    ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, c_has_fusion, config_t::nwarps, 1, true>, launch_params,
+                    ggml_cuda_kernel_launch(mul_mat_vec_q<type, c_ncols_dst, c_has_fusion, config_t::nwarps, 1, true,
+                                                          config_t::min_blocks_per_sm>, launch_params,
                         vx, vy, ids, fusion, dst, ncols_x, nchannels_y, nrows_x, stride_row_x, stride_col_y, stride_col_dst,
                         channel_ratio, stride_channel_x, stride_channel_y, stride_channel_dst,
                         sample_ratio, stride_sample_x, stride_sample_y, stride_sample_dst, ids_stride, row_start);
