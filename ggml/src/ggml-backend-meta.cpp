@@ -2324,18 +2324,6 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
         }
     }
 
-    if (backend_ctx->comm_graph_compute != nullptr && backend_ctx->n_subgraphs > 1) {
-        std::vector<ggml_cgraph *> graphs;
-        for (size_t i = 0; i < backend_ctx->n_subgraphs; ++i) {
-            for (size_t j = 0; j < n_backends; ++j) {
-                graphs.push_back(backend_ctx->backend_configs[j].cgraphs[i].cgraph_main);
-            }
-        }
-        if (backend_ctx->comm_graph_compute(backend_ctx->comm_ctx, graphs.data(), backend_ctx->n_subgraphs)) {
-            return GGML_STATUS_SUCCESS;
-        }
-    }
-
     size_t iga = 0; // i graph aux
     size_t ina = 0; // i node aux
 
@@ -2484,12 +2472,31 @@ static enum ggml_status ggml_backend_meta_graph_compute(ggml_backend_t backend, 
     };
 
 
+    size_t run_end = 0;
     for (size_t i = 0; i < backend_ctx->n_subgraphs; i++) {
-        for (size_t j = 0; j < n_backends; j++) {
-            auto & bcj = backend_ctx->backend_configs[j];
-            const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, bcj.cgraphs[i].cgraph_main);
-            if (status != GGML_STATUS_SUCCESS) {
-                return status;
+        bool computed = false;
+        if (i == run_end) {
+            run_end = backend_ctx->n_subgraphs;
+            if (backend_ctx->comm_graph_compute != nullptr && run_end - i > 1) {
+                std::vector<ggml_cgraph *> graphs;
+                for (size_t g = i; g < run_end; ++g) {
+                    for (size_t j = 0; j < n_backends; ++j) {
+                        graphs.push_back(backend_ctx->backend_configs[j].cgraphs[g].cgraph_main);
+                    }
+                }
+                if (backend_ctx->comm_graph_compute(backend_ctx->comm_ctx, graphs.data(), run_end - i)) {
+                    i = run_end - 1;
+                    computed = true;
+                }
+            }
+        }
+        if (!computed) {
+            for (size_t j = 0; j < n_backends; j++) {
+                auto & bcj = backend_ctx->backend_configs[j];
+                const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, bcj.cgraphs[i].cgraph_main);
+                if (status != GGML_STATUS_SUCCESS) {
+                    return status;
+                }
             }
         }
 
