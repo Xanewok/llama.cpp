@@ -618,8 +618,21 @@ static constexpr __host__ __device__ int calc_rows_per_block(ggml_type type, int
     return 1;
 }
 
+// sm_120 allocates registers per warp in 256-register units from 16K per scheduler: 3 warps per scheduler fit at
+// <= 168 registers per thread, only 2 above. List only configurations that ptxas fits in 168 without spills;
+// the bound changes register allocation, not launch geometry or summation order.
+static constexpr __device__ int calc_min_blocks_per_sm(ggml_type type, int ncols_dst, int nwarps) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ == GGML_CUDA_CC_BLACKWELL
+    if (type == GGML_TYPE_IQ4_XS && (ncols_dst == 7 || ncols_dst == 8)) {
+        return 12 / nwarps;
+    }
+#endif
+    return 1;
+}
+
 template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false, bool halve_iters = false>
-__launch_bounds__(calc_nwarps(type, ncols_dst, get_device_table_id(), small_k, halve_iters)*ggml_cuda_get_physical_warp_size(), 1)
+__launch_bounds__(calc_nwarps(type, ncols_dst, get_device_table_id(), small_k, halve_iters)*ggml_cuda_get_physical_warp_size(),
+                  calc_min_blocks_per_sm(type, ncols_dst, calc_nwarps(type, ncols_dst, get_device_table_id(), small_k, halve_iters)))
 static __global__ void mul_mat_vec_q(
         const void * vx_ptr, const void * vy_ptr, const int32_t * ids_ptr, const ggml_cuda_mm_fusion_args_device fusion, float * dst_ptr,
         const uint32_t ncols_x, const uint3 nchannels_y, const uint32_t stride_row_x, const uint32_t stride_col_y,
