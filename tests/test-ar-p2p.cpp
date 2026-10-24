@@ -94,6 +94,7 @@ struct graph {
     ggml_tensor *             out  = nullptr; // split by rows: each half is computed from its own device's residual
     ggml_gallocr_t            ga   = nullptr;
     ggml_tensor *            tweak = nullptr;
+    ggml_tensor *         gathered = nullptr;
 };
 
 // Use distinct non-zero UIDs, as scheduler split graphs do.
@@ -102,7 +103,7 @@ static uint64_t next_uid() {
     return ++uid;
 }
 
-static graph build(ggml_backend_t backend, const weights & w, int64_t rows, uint64_t uid, int layers = L, int extra = 0) {
+static graph build(ggml_backend_t backend, const weights & w, int64_t rows, uint64_t uid, int layers = L, int extra = 0, bool gather = false) {
     graph g;
     ggml_init_params params = { (8*L + 16 + extra)*ggml_tensor_overhead() + ggml_graph_overhead(), nullptr, true };
     g.ctx = ggml_init(params);
@@ -115,6 +116,13 @@ static graph build(ggml_backend_t backend, const weights & w, int64_t rows, uint
         ggml_tensor * h = ggml_mul_mat(g.ctx, w.up[l], cur);
         ggml_tensor * y = ggml_mul_mat(g.ctx, w.down[l], h);
         cur = ggml_add(g.ctx, cur, y);
+        if (gather && l == 1) {
+            ggml_tensor * boundary = ggml_backend_meta_gather(g.ctx, ggml_mul_mat(g.ctx, w.out, cur));
+            ggml_set_name(boundary, "sampling_candidates");
+            g.gathered = ggml_cont(g.ctx, boundary);
+            ggml_set_output(g.gathered);
+            cur = g.gathered;
+        }
     }
     for (int i = 0; i < extra; ++i) {
         cur = ggml_scale(g.ctx, cur, 0.99f);
@@ -148,13 +156,23 @@ static ggml_backend_comm_graph_compute_t graph_compute;
 static bool split_reference = false;
 static size_t graph_calls = 0;
 static size_t graph_runs = 0;
+static std::vector<size_t> graph_run_sizes;
 
 static bool compute_spy(void * ctx, ggml_cgraph ** graphs, size_t n_graphs) {
     ++graph_calls;
+    for (size_t g = 0; g + 1 < n_graphs; ++g) {
+        for (size_t r = 0; r < 2; ++r) {
+            ggml_cgraph * graph = graphs[2*g + r];
+            require(strcmp(graph->nodes[graph->n_nodes - 1]->name, "sampling_candidates") != 0, "gather inside merged run");
+        }
+    }
     ggml_cgraph * incomplete[] = { graphs[0], nullptr };
     require(!graph_compute(ctx, incomplete, 2), "incomplete rank list submitted work");
     const bool handled = graph_compute(ctx, graphs, n_graphs);
     graph_runs += handled;
+    if (handled) {
+        graph_run_sizes.push_back(n_graphs);
+    }
     return handled;
 }
 
@@ -381,13 +399,13 @@ static void graph_cases(ggml_backend_reg_t reg) {
         const auto v = random_values(ggml_nelements(t), next(seed), 0.05f);
         ggml_backend_tensor_set(t, v.data(), 0, ggml_nbytes(t));
     }
-    const int layers[] = { L, 1, L };
-    const int extras[] = { 0, 40, 0 };
-    for (int phase = 0; phase < 3; ++phase) {
+    const int layers[] = { L, 1, L, L };
+    const int extras[] = { 0, 40, 0, 0 };
+    for (int phase = 0; phase < 4; ++phase) {
         graph graphs[2];
         std::vector<uint8_t> res_before_change;
         for (int arm = 0; arm < 2; ++arm) {
-            graphs[arm] = build(backends[arm], w, 6, next_uid(), layers[phase], extras[phase]);
+            graphs[arm] = build(backends[arm], w, 6, next_uid(), layers[phase], extras[phase], phase == 3);
         }
         for (int round = 0; round < 8; ++round) {
             if (phase == 2 && round == 4) {
@@ -397,7 +415,8 @@ static void graph_cases(ggml_backend_reg_t reg) {
                 }
             }
             const size_t runs_before = graph_runs;
-            std::vector<uint8_t> res[2], out[2];
+            graph_run_sizes.clear();
+            std::vector<uint8_t> res[2], out[2], gathered[2];
             for (int arm = 0; arm < 2; ++arm) {
                 graph & g = graphs[arm];
                 const int input_round = phase == 2 && round == 4 ? round - 1 : round;
@@ -407,8 +426,11 @@ static void graph_cases(ggml_backend_reg_t reg) {
                 ggml_backend_synchronize(backends[arm]);
                 res[arm] = read(g.res);
                 out[arm] = read(g.out);
+                if (g.gathered != nullptr) {
+                    gathered[arm] = read(g.gathered);
+                }
             }
-            require(res[0] == res[1] && out[0] == out[1], "collective graph differs from split");
+            require(res[0] == res[1] && out[0] == out[1] && gathered[0] == gathered[1], "collective graph differs from split");
             if (phase == 2 && round == 3) {
                 res_before_change = res[0];
             }
@@ -424,7 +446,10 @@ static void graph_cases(ggml_backend_reg_t reg) {
                 require(graph_runs == runs_before, "cold/changed properties bypassed warmup");
             }
             if (round >= 2 && !(phase == 2 && round == 4)) {
-                require(graph_runs == runs_before + 1, "stable collective fell back to split");
+                require(graph_runs == runs_before + (phase == 3 ? 2 : 1), "stable collective fell back to split");
+                if (phase == 3) {
+                    require(graph_run_sizes == std::vector<size_t>({3, 4}), "gather did not delimit two merged runs");
+                }
             }
         }
         for (auto & g : graphs) {
@@ -438,7 +463,7 @@ static void graph_cases(ggml_backend_reg_t reg) {
     for (auto backend : backends) {
         ggml_backend_free(backend);
     }
-    puts("PASS: bitwise split identity, replay, inactive rank, arena rebuild and property change");
+    puts("PASS: bitwise split identity, replay, inactive rank, arena rebuild, property change and gather-delimited runs");
 }
 
 int main(int argc, char ** argv) {
