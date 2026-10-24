@@ -1234,6 +1234,8 @@ static void ggml_backend_cuda_comm_init_internal(ggml_backend_cuda_comm_context 
                 memset(ctx->ar_failed_host, 0, bytes);
                 CUDA_CHECK(cudaMalloc((void **) &ctx->ar_failed_device, bytes));
                 CUDA_CHECK(cudaMemset(ctx->ar_failed_device, 0, bytes));
+                // the compute streams are non-blocking, so nothing orders them after this legacy-stream memset
+                CUDA_CHECK(cudaDeviceSynchronize());
             }
         }
 #endif
