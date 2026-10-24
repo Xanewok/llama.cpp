@@ -5,6 +5,8 @@
 #include "vecdotq.cuh"
 
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <type_traits>
 
 // only enabled on DGX Spark, where it is a gain on every type below. On the higher-bandwidth parts the kernel
@@ -835,6 +837,64 @@ static __global__ void mul_mat_vec_q_moe(
     }
 }
 
+// Bench-only, read once: GGML_CUDA_MMVQ_REGCAP_ARM selects the 7/8-column IQ4_XS/Q6_K Blackwell config.
+// default = no residency bound (the dispatch before the rule); up = the calc_min_blocks_per_sm rule; q6k-* = up plus
+// one Q6_K n8 candidate (fork default nw2 r6, 233 regs). Unset is up (the served dispatch).
+enum mmvq_regcap_arm {
+    MMVQ_REGCAP_DEFAULT,
+    MMVQ_REGCAP_UP,
+    MMVQ_REGCAP_Q6K_R4, // nw2 r4 bound 12 warps: same summation order
+    MMVQ_REGCAP_Q6K_R3, // nw2 r3 bound 12 warps: same summation order
+    MMVQ_REGCAP_Q6K_W1, // nw1 r6 bound 12 warps: K split over one warp, summation order changes
+    MMVQ_REGCAP_Q6K_B8, // nw2 r6 bound 8 warps: same order; expected no-op (233 regs already give 8 warps)
+};
+
+static mmvq_regcap_arm mmvq_regcap_arm_get() {
+    static const mmvq_regcap_arm arm = [] {
+        static const struct { const char * name; mmvq_regcap_arm arm; } arms[] = {
+            {"default", MMVQ_REGCAP_DEFAULT}, {"up", MMVQ_REGCAP_UP}, {"q6k-r4", MMVQ_REGCAP_Q6K_R4},
+            {"q6k-r3", MMVQ_REGCAP_Q6K_R3}, {"q6k-w1", MMVQ_REGCAP_Q6K_W1}, {"q6k-b8", MMVQ_REGCAP_Q6K_B8},
+        };
+        const char * value = getenv("GGML_CUDA_MMVQ_REGCAP_ARM");
+        if (value == nullptr) {
+            return MMVQ_REGCAP_UP;
+        }
+        for (const auto & a : arms) {
+            if (strcmp(value, a.name) == 0) {
+                return a.arm;
+            }
+        }
+        GGML_ABORT("GGML_CUDA_MMVQ_REGCAP_ARM must be default, up, q6k-r4, q6k-r3, q6k-w1 or q6k-b8");
+    }();
+    return arm;
+}
+
+template <ggml_type type, int ncols, bool small_k, bool halve_iters, typename F>
+static void mmvq_select_config_regcap(mmvq_parameter_table_id table_id, F launch) {
+    if constexpr ((type == GGML_TYPE_IQ4_XS || type == GGML_TYPE_Q6_K) && (ncols == 7 || ncols == 8)) {
+        if (table_id == MMVQ_PARAMETERS_BLACKWELL) {
+            constexpr int nw = calc_nwarps(type, ncols, MMVQ_PARAMETERS_BLACKWELL, small_k, halve_iters);
+            constexpr int nr = calc_rows_per_block(type, ncols, MMVQ_PARAMETERS_BLACKWELL, small_k, nw);
+            const mmvq_regcap_arm arm = mmvq_regcap_arm_get();
+            if (arm == MMVQ_REGCAP_DEFAULT) {
+                launch(mmvq_launch_config<nw, nr, 1>{});
+                return;
+            }
+            if constexpr (type == GGML_TYPE_Q6_K && ncols == 8) {
+                static_assert(nw == 2 && nr == 6, "candidates are defined against the nw2 r6 table entry");
+                switch (arm) {
+                    case MMVQ_REGCAP_Q6K_R4: launch(mmvq_launch_config<2, 4, 6>{});  return;
+                    case MMVQ_REGCAP_Q6K_R3: launch(mmvq_launch_config<2, 3, 6>{});  return;
+                    case MMVQ_REGCAP_Q6K_W1: launch(mmvq_launch_config<1, 6, 12>{}); return;
+                    case MMVQ_REGCAP_Q6K_B8: launch(mmvq_launch_config<2, 6, 4>{});  return;
+                    default: break;
+                }
+            }
+        }
+    }
+    mmvq_select_config<type, ncols, small_k, halve_iters>(table_id, launch);
+}
+
 template<ggml_type type, int c_ncols_dst, bool small_k = false, bool halve_iters = false>
 static void mul_mat_vec_q_switch_fusion(
         const void * vx, const void * vy, const int32_t * ids, const ggml_cuda_mm_fusion_args_device fusion, float * dst,
@@ -847,7 +907,7 @@ static void mul_mat_vec_q_switch_fusion(
 
     const bool has_fusion = fusion.gate != nullptr || fusion.x_bias != nullptr || fusion.gate_bias != nullptr ||
                             fusion.x_scale != nullptr || fusion.gate_scale != nullptr;
-    mmvq_select_config<type, c_ncols_dst, small_k, halve_iters>(table_id, [&](auto config) {
+    mmvq_select_config_regcap<type, c_ncols_dst, small_k, halve_iters>(table_id, [&](auto config) {
         using config_t = decltype(config);
         const dim3 block_dims(warp_size, config_t::nwarps, 1);
         const auto launch = [&](auto fusion_tag) {

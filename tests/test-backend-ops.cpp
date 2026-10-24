@@ -49,8 +49,22 @@
 #ifdef __EMSCRIPTEN__
 #   define N_THREADS 1
 #else
-#   define N_THREADS std::thread::hardware_concurrency()
+#   define N_THREADS ((getenv("GGML_TEST_FLATCOST_CASE") || getenv("GGML_TEST_MMA78_CASES") || getenv("GGML_TEST_OUT_HASH")) ? 8U : std::thread::hardware_concurrency())
 #endif
+
+// Bench-only: seeded inputs and output hashes let separate processes (dispatch arms) be compared bit for bit.
+static bool test_seeded_init() {
+    static const bool seeded = getenv("GGML_TEST_FLATCOST_CASE") != nullptr || getenv("GGML_TEST_OUT_HASH") != nullptr;
+    return seeded;
+}
+
+static uint64_t test_fnv1a(const void * data, size_t n) {
+    uint64_t h = 1469598103934665603ULL;
+    for (size_t i = 0; i < n; ++i) {
+        h = (h ^ ((const uint8_t *) data)[i]) * 1099511628211ULL;
+    }
+    return h;
+}
 
 static void init_tensor_uniform(ggml_tensor * tensor, float min = -1.0f, float max = 1.0f) {
     if (ggml_is_empty(tensor)) {
@@ -64,7 +78,16 @@ static void init_tensor_uniform(ggml_tensor * tensor, float min = -1.0f, float m
         static const size_t n_threads = std::max<size_t>(1, std::min<size_t>(nels/1024, std::min<size_t>(4, N_THREADS/2)));
 
         auto init_thread = [&](size_t start, size_t end) {
-            thread_local std::default_random_engine gen(std::random_device{}());
+            thread_local std::default_random_engine default_gen(std::random_device{}());
+            unsigned seed = 0;
+            if (test_seeded_init()) {
+                seed = 1234U + (unsigned) start;
+                for (const char * p = tensor->name; *p; ++p) {
+                    seed = seed * 33U + (unsigned char) *p;
+                }
+            }
+            std::default_random_engine seeded_gen(seed);
+            auto & gen = test_seeded_init() ? seeded_gen : default_gen;
             std::uniform_real_distribution<float> distribution(min, max);
             for (size_t i = start; i < end; i++) {
                 data[i] = distribution(gen);
@@ -1546,9 +1569,11 @@ struct test_case {
                 //exit(1);
                 ud->ok = false;
             }
+            if (getenv("GGML_TEST_OUT_HASH")) {
+                printf("OUTHASH %d %s %016" PRIx64 " %s\n", index, ggml_op_desc(t1),
+                       test_fnv1a(f1.data(), f1.size()*sizeof(float)), ud->tc->vars().c_str());
+            }
             return true;
-
-            GGML_UNUSED(index);
         };
 
         std::vector<ggml_tensor *> fused_nodes_to_verify = fusion_test_nodes();
@@ -1604,6 +1629,22 @@ struct test_case {
             return true;
         }
 
+        const bool flatcost = getenv("GGML_TEST_FLATCOST_CASE") != nullptr;
+        std::vector<ggml_tensor *> perf_outputs = {out};
+        if (flatcost) {
+            GGML_ASSERT(out->op == GGML_OP_MUL_MAT);
+            const size_t weight_bytes = ggml_nbytes(out->src[0]);
+            const size_t copies = (64*1024*1024 + weight_bytes - 1) / weight_bytes + 1;
+            GGML_ASSERT(copies < 32);
+            for (size_t i = 1; i < copies; ++i) {
+                ggml_tensor * a = ggml_dup_tensor(ctx.get(), out->src[0]);
+                ggml_tensor * b = ggml_dup_tensor(ctx.get(), out->src[1]);
+                ggml_format_name(a, "flatcost_weight_%zu", i);
+                ggml_format_name(b, "flatcost_input_%zu", i);
+                perf_outputs.push_back(ggml_mul_mat(ctx.get(), a, b));
+            }
+        }
+
         ggml_backend_buffer_ptr buf_weights(nullptr);
         if (ctx_weights) {
             buf_weights.reset(ggml_backend_alloc_ctx_tensors(ctx_weights.get(), backend));
@@ -1630,7 +1671,9 @@ struct test_case {
 
         // build graph
         ggml_cgraph * gf = ggml_new_graph_custom(ctx.get(), graph_nodes, false);
-        ggml_build_forward_expand(gf, out);
+        for (ggml_tensor * perf_out : perf_outputs) {
+            ggml_build_forward_expand(gf, perf_out);
+        }
 
         // warmup run
         ggml_status status = ggml_backend_graph_compute(backend, gf);
@@ -1658,13 +1701,18 @@ struct test_case {
             n_runs = (int)std::min<int64_t>(ggml_graph_size(gf) - ggml_graph_n_nodes(gf), target_size / op_size(out)) + 1;
         }
 
+        // Each cold operation needs its own activation producer; repeated nodes would reuse Q8 scratch.
+        if (flatcost) {
+            n_runs = 1;
+        }
+
         // duplicate the op
         for (int i = 1; i < n_runs; i++) {
             ggml_graph_add_node(gf, out);
         }
 
         // calculate memory
-        size_t mem = n_runs * op_size(out);
+        size_t mem = n_runs * perf_outputs.size() * op_size(out);
         auto tensor_op_size = [](ggml_tensor * t) {
             size_t size = ggml_nbytes(t);
             // add source tensors
@@ -1676,7 +1724,8 @@ struct test_case {
             return size;
         };
         for (int i = 0; i < ggml_graph_n_nodes(gf); ++i) {
-            if (ggml_is_view_op(ggml_graph_node(gf, i)->op) || ggml_graph_node(gf, i) == out) {
+            if (ggml_is_view_op(ggml_graph_node(gf, i)->op) ||
+                    std::find(perf_outputs.begin(), perf_outputs.end(), ggml_graph_node(gf, i)) != perf_outputs.end()) {
                 continue;
             }
             mem += tensor_op_size(ggml_graph_node(gf, i));
@@ -1697,7 +1746,7 @@ struct test_case {
 
             total_time_us += end_time - start_time;
             total_mem += mem;
-            total_runs += n_runs;
+            total_runs += n_runs * perf_outputs.size();
 
             // re-draw any data-dependent inputs (expert ids) outside the timed region
             reinit_perf_iter(ctx.get());
@@ -1705,6 +1754,13 @@ struct test_case {
 
         // Create test result
         double avg_time_us      = (double) total_time_us / total_runs;
+        if (flatcost) {
+            std::vector<uint8_t> out_data(ggml_nbytes(out));
+            ggml_backend_tensor_get(out, out_data.data(), 0, out_data.size());
+            printf("FLATCOST {\"op_us\":%.9f,\"weight_bytes\":%zu,\"copies\":%zu,\"runs\":%d,\"out_fnv\":\"%016" PRIx64 "\"}\n",
+                   avg_time_us, ggml_nbytes(out->src[0]), perf_outputs.size(), total_runs,
+                   test_fnv1a(out_data.data(), out_data.size()));
+        }
         double calculated_flops = (op_flops(out) > 0) ? (op_flops(out) * total_runs) / (total_time_us / 1e6) : 0.0;
         double calculated_bandwidth =
             (op_flops(out) == 0) ? total_mem / (total_time_us / 1e6) / 1024.0 / 1024.0 / 1024.0 : 0.0;
@@ -9988,9 +10044,42 @@ static const ggml_type other_types[] = {
 #pragma optimize("", off)
 #endif
 
+static std::unique_ptr<test_case> make_flatcost_case() {
+    if (const char * spec = getenv("GGML_TEST_FLATCOST_CASE")) {
+        int type, m, n, k, batches;
+        char tail;
+        if (sscanf(spec, "%d,%d,%d,%d,%d%c", &type, &m, &n, &k, &batches, &tail) != 5 ||
+                (type != GGML_TYPE_IQ4_XS && type != GGML_TYPE_Q5_K && type != GGML_TYPE_Q6_K) ||
+                m < 1024 || m > 262144 || k < 1024 || k > 32768 || k % 256 != 0 ||
+                n < 1 || n > 12 || (batches != 1 && batches != 2)) {
+            GGML_ABORT("GGML_TEST_FLATCOST_CASE must be type,m,n,k,batches; use bench.py to generate it");
+        }
+        return std::make_unique<test_mul_mat>((ggml_type) type, GGML_TYPE_F32, m, n, k, std::array<int64_t, 2>{1, 1}, std::array<int64_t, 2>{batches, 1});
+    }
+    return nullptr;
+}
+
 // Test cases for evaluation: should try to cover edge cases while using small input sizes to keep the runtime low
 static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
     std::vector<std::unique_ptr<test_case>> test_cases;
+
+    if (auto test = make_flatcost_case()) {
+        test_cases.emplace_back(std::move(test));
+        return test_cases;
+    }
+
+    for (ggml_type type : {GGML_TYPE_IQ4_XS, GGML_TYPE_Q6_K}) {
+        for (int n : {1, 6, 7, 8}) {
+            test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, 40, n, 256, {1, 1}, {1, 1}));
+            test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, 520, n, 1280, {3, 2}, {2, 2}));
+            test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, 520, n, 1280, {1, 1}, {1, 1}, {0, 1, 2, 3}, 1536));
+            test_cases.emplace_back(new test_mul_mat(type, GGML_TYPE_F32, 520, n, 1280, {2, 3}, {1, 1}, {0, 2, 1, 3}));
+        }
+    }
+    if (getenv("GGML_TEST_MMA78_CASES")) {
+        return test_cases;
+    }
+
     std::default_random_engine rng(0);
 
     // unary ops
@@ -12538,6 +12627,11 @@ static std::vector<std::unique_ptr<test_case>> make_test_cases_eval() {
 // Test cases for performance evaluation: should be representative of real-world use cases
 static std::vector<std::unique_ptr<test_case>> make_test_cases_perf() {
     std::vector<std::unique_ptr<test_case>> test_cases;
+
+    if (auto test = make_flatcost_case()) {
+        test_cases.emplace_back(std::move(test));
+        return test_cases;
+    }
 
     // CUDA MMQ small-column tile selection at 27B-class TP2 shapes (m, k): gate/up, down, attention and output projections, lm_head
     for (ggml_type type_a : { GGML_TYPE_IQ4_XS, GGML_TYPE_Q4_K, GGML_TYPE_Q5_K, GGML_TYPE_Q6_K, GGML_TYPE_Q8_0 }) {
