@@ -762,6 +762,10 @@ ggml_backend_cuda_context::~ggml_backend_cuda_context() {
             }
         }
     }
+    if (ar_failed_device != nullptr) {
+        ggml_cuda_set_device(device);
+        CUDA_CHECK(cudaFree(ar_failed_device));
+    }
     if (ar_failed_host != nullptr) {
         CUDA_CHECK(cudaFreeHost(ar_failed_host));
     }
@@ -1226,8 +1230,10 @@ static void ggml_backend_cuda_comm_init_internal(ggml_backend_cuda_comm_context 
                 ggml_cuda_set_device(ctx->device);
                 const size_t bytes = GGML_CUDA_AR_KERNEL_BLOCKS * sizeof(int);
                 CUDA_CHECK(cudaHostAlloc((void **) &ctx->ar_failed_host, bytes, cudaHostAllocPortable | cudaHostAllocMapped));
-                CUDA_CHECK(cudaHostGetDevicePointer((void **) &ctx->ar_failed_device, ctx->ar_failed_host, 0));
+                CUDA_CHECK(cudaHostGetDevicePointer((void **) &ctx->ar_failed_notify, ctx->ar_failed_host, 0));
                 memset(ctx->ar_failed_host, 0, bytes);
+                CUDA_CHECK(cudaMalloc((void **) &ctx->ar_failed_device, bytes));
+                CUDA_CHECK(cudaMemset(ctx->ar_failed_device, 0, bytes));
             }
         }
 #endif
