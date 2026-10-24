@@ -5589,24 +5589,36 @@ static bool ggml_backend_cuda_comm_graph_compute(void * comm_ctx_v, ggml_cgraph 
 
     bool changed = false;
     for (size_t r = 0; r < n_ranks; ++r) {
-        std::vector<ggml_tensor *> nodes;
+        ggml_cuda_graph * capture = captures[r];
         std::vector<int> sizes;
+        std::vector<uint64_t> uids;
+        bool uids_set = true;
+        for (size_t g = 0; g < n_graphs; ++g) {
+            const ggml_cgraph * graph = graphs[g*n_ranks + r];
+            sizes.push_back(graph->n_nodes);
+            uids.push_back(graph->uid);
+            uids_set = uids_set && graph->uid != 0;
+        }
+        // Each non-zero UID vouches only for its own subgraph, as in ggml_cuda_graph_update_required.
+        if (uids_set && uids == capture->subgraph_uids && sizes == capture->subgraph_sizes) {
+            continue;
+        }
+        std::vector<ggml_tensor *> nodes;
         for (size_t g = 0; g < n_graphs; ++g) {
             ggml_cgraph * graph = graphs[g*n_ranks + r];
             if (nodes.size() > (size_t) std::numeric_limits<int>::max() - graph->n_nodes) {
                 return false;
             }
             nodes.insert(nodes.end(), graph->nodes, graph->nodes + graph->n_nodes);
-            sizes.push_back(graph->n_nodes);
         }
         ggml_cgraph flat = *graphs[r];
         flat.nodes = nodes.data();
         flat.n_nodes = (int) nodes.size();
-        // A subgraph UID cannot vouch for properties of the other subgraphs.
         flat.uid = 0;
-        changed = ggml_cuda_graph_update_required(captures[r], &flat) || changed;
-        changed = captures[r]->subgraph_sizes != sizes || changed;
-        captures[r]->subgraph_sizes = std::move(sizes);
+        changed = ggml_cuda_graph_update_required(capture, &flat) || changed;
+        changed = capture->subgraph_sizes != sizes || changed;
+        capture->subgraph_sizes = std::move(sizes);
+        capture->subgraph_uids = uids_set ? std::move(uids) : std::vector<uint64_t>();
     }
     if (changed) {
         for (auto * capture : captures) {

@@ -5,6 +5,7 @@
 #include "ggml.h"
 
 #include <algorithm>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -1275,6 +1276,50 @@ static bool test_meta_merge;
 static int test_meta_decline;
 static std::vector<size_t> test_meta_runs;
 
+// Mirrors the CUDA collective skip: a repeated tuple of non-zero subgraph UIDs must imply unchanged node properties.
+struct test_meta_uid_state {
+    std::vector<uint64_t> uids;
+    std::vector<uint8_t>  props;
+};
+static std::map<const ggml_cgraph *, test_meta_uid_state> test_meta_uids;
+static size_t test_meta_uid_skips;
+static size_t test_meta_uid_scans;
+
+static void test_meta_check_uids(ggml_cgraph ** graphs, size_t n_graphs) {
+    std::vector<uint64_t> uids;
+    std::vector<uint8_t> props;
+    bool uids_set = true;
+    auto append = [&](const void * p, size_t n) {
+        props.insert(props.end(), (const uint8_t *) p, (const uint8_t *) p + n);
+    };
+    for (size_t k = 0; k < 2*n_graphs; ++k) {
+        uids.push_back(graphs[k]->uid);
+        uids_set = uids_set && graphs[k]->uid != 0;
+        append(&graphs[k]->n_nodes, sizeof(graphs[k]->n_nodes));
+        for (int i = 0; i < graphs[k]->n_nodes; ++i) {
+            const ggml_tensor * node = graphs[k]->nodes[i];
+            append(node, sizeof(ggml_tensor));
+            for (int j = 0; j < GGML_MAX_SRC; ++j) {
+                if (node->src[j]) {
+                    append(&node->src[j]->data, sizeof(node->src[j]->data));
+                    append(node->src[j]->ne, sizeof(node->src[j]->ne));
+                    append(node->src[j]->nb, sizeof(node->src[j]->nb));
+                }
+            }
+        }
+    }
+    // Keyed like the CUDA collective executable: by the run's first graph object.
+    test_meta_uid_state & state = test_meta_uids[graphs[0]];
+    if (uids_set && uids == state.uids) {
+        GGML_ASSERT(props == state.props);
+        ++test_meta_uid_skips;
+        return;
+    }
+    ++test_meta_uid_scans;
+    state.uids = uids_set ? uids : std::vector<uint64_t>();
+    state.props = std::move(props);
+}
+
 static void * test_meta_comm_init(ggml_backend_t * backends, size_t n) {
     GGML_ASSERT(n == 2);
     return new test_meta_comm_context{{backends[0], backends[1]}};
@@ -1299,6 +1344,7 @@ static bool test_meta_comm_compute(void * ptr, ggml_cgraph ** graphs, size_t n_g
         }
     }
     test_meta_runs.push_back(n_graphs);
+    test_meta_check_uids(graphs, n_graphs);
     if (run == test_meta_decline) {
         return false;
     }
@@ -1366,11 +1412,20 @@ static void test_meta_comm_runs() {
     reg->iface.get_proc_address = test_meta_comm_lookup;
     ggml_backend_dev_t devs[2] = {cpu, cpu};
     ggml_backend_dev_t meta = ggml_backend_meta_device(devs, 2, test_meta_comm_split, nullptr);
-    std::vector<float> reference;
+    // Outer UID per plan, as scheduler splits set it; a property change comes with a new UID, 0 means unset.
+    // ggml_graph_next_uid is not GGML_API; these values stay far above its counter.
+    const uint64_t plan_uids[]   = {0x7e57000000000001ull, 0x7e57000000000002ull, 0};
+    const float    plan_scales[] = {0.5f, 0.25f, 0.25f};
+    const size_t   n_plans = sizeof(plan_uids)/sizeof(plan_uids[0]);
+    const size_t   n_computes = 2;
+    std::vector<std::vector<float>> reference(n_plans*n_computes);
     for (int mode = 0; mode < 4; ++mode) {
         test_meta_merge = mode != 0;
         test_meta_decline = mode >= 2 ? mode - 2 : -1;
         test_meta_runs.clear();
+        test_meta_uids.clear();
+        test_meta_uid_skips = 0;
+        test_meta_uid_scans = 0;
         ggml_backend_t backend = ggml_backend_dev_init(meta, nullptr);
         GGML_ASSERT(backend != nullptr);
         // Only weight buffers take the split callback; activations need a compute buffer so their splits are inferred.
@@ -1405,25 +1460,38 @@ static void test_meta_comm_runs() {
         }
         ggml_backend_tensor_set(up, weights, 0, sizeof(weights));
         ggml_backend_tensor_set(down, weights, 0, sizeof(weights));
-        float input[16];
-        for (size_t k = 0; k < 16; ++k) {
-            input[k] = float(int(k % 7) - 3) * 0.25f;
+        for (size_t p = 0; p < n_plans; ++p) {
+            graph->uid = plan_uids[p];
+            ggml_set_op_params_f32(out, 0, plan_scales[p]);
+            const size_t runs_before = test_meta_runs.size();
+            ggml_backend_graph_plan_t plan = ggml_backend_graph_plan_create(backend, graph);
+            GGML_ASSERT(plan != nullptr && test_meta_runs.size() == runs_before);
+            for (size_t c = 0; c < n_computes; ++c) {
+                const size_t step = p*n_computes + c;
+                float input[16];
+                for (size_t k = 0; k < 16; ++k) {
+                    input[k] = float(int((k + step) % 7) - 3) * 0.25f;
+                }
+                ggml_backend_tensor_set(x, input, 0, sizeof(input));
+                GGML_ASSERT(ggml_backend_graph_plan_compute(backend, plan) == GGML_STATUS_SUCCESS);
+                ggml_backend_synchronize(backend);
+                std::vector<float> result(16);
+                ggml_backend_tensor_get(out, result.data(), 0, ggml_nbytes(out));
+                if (mode == 0) {
+                    reference[step] = result;
+                } else {
+                    GGML_ASSERT(memcmp(reference[step].data(), result.data(), ggml_nbytes(out)) == 0);
+                }
+            }
+            ggml_backend_graph_plan_free(backend, plan);
         }
-        ggml_backend_tensor_set(x, input, 0, sizeof(input));
-        ggml_backend_graph_plan_t plan = ggml_backend_graph_plan_create(backend, graph);
-        GGML_ASSERT(plan != nullptr && test_meta_runs.empty());
-        GGML_ASSERT(ggml_backend_graph_plan_compute(backend, plan) == GGML_STATUS_SUCCESS);
-        ggml_backend_synchronize(backend);
-        std::vector<float> result(16);
-        ggml_backend_tensor_get(out, result.data(), 0, ggml_nbytes(out));
         if (mode == 0) {
-            reference = result;
             GGML_ASSERT(test_meta_runs.empty());
         } else {
-            GGML_ASSERT(test_meta_runs == std::vector<size_t>({3, 3}));
-            GGML_ASSERT(memcmp(reference.data(), result.data(), ggml_nbytes(out)) == 0);
+            GGML_ASSERT(test_meta_runs == std::vector<size_t>(2*n_plans*n_computes, 3));
+            // Per run: a repeated non-zero UID skips; a new UID (with the scale change) or UID 0 scans.
+            GGML_ASSERT(test_meta_uid_skips == 2*2 && test_meta_uid_scans == 2*4);
         }
-        ggml_backend_graph_plan_free(backend, plan);
         ggml_gallocr_free(galloc);
         ggml_backend_buffer_free(buffer);
         ggml_free(ctx);
