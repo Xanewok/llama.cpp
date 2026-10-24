@@ -839,7 +839,10 @@ static __global__ void mul_mat_vec_q_moe(
 
 // Bench-only, read once: GGML_CUDA_MMVQ_REGCAP_ARM selects the 7/8-column IQ4_XS/Q6_K Blackwell config.
 // default = no residency bound (the dispatch before the rule); up = the calc_min_blocks_per_sm rule; q6k-* = up plus
-// one Q6_K n8 candidate (fork default nw2 r6, 233 regs). Unset is up (the served dispatch).
+// one Q6_K n8 candidate (fork default nw2 r6, 233 regs). w2r4 = package 56 root 0001 geometry (2 warps x 4 rows for every
+// type at 5-8 columns, no bound); w2r4-up = w2r4 plus the 12-warp bound for IQ4_XS/Q5_K/Q6_K (the timed types; ptxas
+// decides where it fits). w2r4 changes nwarps for IQ4_XS, Q4_K, Q5_K 6-8 and Q6_K 7, so their summation order differs.
+// Unset is up (the served dispatch).
 enum mmvq_regcap_arm {
     MMVQ_REGCAP_DEFAULT,
     MMVQ_REGCAP_UP,
@@ -847,6 +850,8 @@ enum mmvq_regcap_arm {
     MMVQ_REGCAP_Q6K_R3, // nw2 r3 bound 12 warps: same summation order
     MMVQ_REGCAP_Q6K_W1, // nw1 r6 bound 12 warps: K split over one warp, summation order changes
     MMVQ_REGCAP_Q6K_B8, // nw2 r6 bound 8 warps: same order; expected no-op (233 regs already give 8 warps)
+    MMVQ_REGCAP_W2R4,
+    MMVQ_REGCAP_W2R4_UP,
 };
 
 static mmvq_regcap_arm mmvq_regcap_arm_get() {
@@ -854,6 +859,7 @@ static mmvq_regcap_arm mmvq_regcap_arm_get() {
         static const struct { const char * name; mmvq_regcap_arm arm; } arms[] = {
             {"default", MMVQ_REGCAP_DEFAULT}, {"up", MMVQ_REGCAP_UP}, {"q6k-r4", MMVQ_REGCAP_Q6K_R4},
             {"q6k-r3", MMVQ_REGCAP_Q6K_R3}, {"q6k-w1", MMVQ_REGCAP_Q6K_W1}, {"q6k-b8", MMVQ_REGCAP_Q6K_B8},
+            {"w2r4", MMVQ_REGCAP_W2R4}, {"w2r4-up", MMVQ_REGCAP_W2R4_UP},
         };
         const char * value = getenv("GGML_CUDA_MMVQ_REGCAP_ARM");
         if (value == nullptr) {
@@ -864,13 +870,29 @@ static mmvq_regcap_arm mmvq_regcap_arm_get() {
                 return a.arm;
             }
         }
-        GGML_ABORT("GGML_CUDA_MMVQ_REGCAP_ARM must be default, up, q6k-r4, q6k-r3, q6k-w1 or q6k-b8");
+        GGML_ABORT("GGML_CUDA_MMVQ_REGCAP_ARM must be default, up, q6k-r4, q6k-r3, q6k-w1, q6k-b8, w2r4 or w2r4-up");
     }();
     return arm;
 }
 
 template <ggml_type type, int ncols, bool small_k, bool halve_iters, typename F>
 static void mmvq_select_config_regcap(mmvq_parameter_table_id table_id, F launch) {
+    if constexpr (ncols >= 5 && ncols <= MMVQ_MAX_BATCH_SIZE) {
+        if (table_id == MMVQ_PARAMETERS_BLACKWELL) {
+            const mmvq_regcap_arm arm = mmvq_regcap_arm_get();
+            constexpr bool timed = type == GGML_TYPE_IQ4_XS || type == GGML_TYPE_Q5_K || type == GGML_TYPE_Q6_K;
+            if (arm == MMVQ_REGCAP_W2R4 || (arm == MMVQ_REGCAP_W2R4_UP && !timed)) {
+                launch(mmvq_launch_config<2, 4, 1>{});
+                return;
+            }
+            if constexpr (timed) {
+                if (arm == MMVQ_REGCAP_W2R4_UP) {
+                    launch(mmvq_launch_config<2, 4, 6>{});
+                    return;
+                }
+            }
+        }
+    }
     if constexpr ((type == GGML_TYPE_IQ4_XS || type == GGML_TYPE_Q6_K) && (ncols == 7 || ncols == 8)) {
         if (table_id == MMVQ_PARAMETERS_BLACKWELL) {
             constexpr int nw = calc_nwarps(type, ncols, MMVQ_PARAMETERS_BLACKWELL, small_k, halve_iters);
