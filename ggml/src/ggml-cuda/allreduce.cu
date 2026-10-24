@@ -156,6 +156,7 @@ static __global__ void ggml_cuda_ar_kernel(
         int                         token,
         int *                       epoch,
         int *                       failed,
+        int *                       failed_notify,
         size_t                      slot_elems,
         size_t                      slot_arrival_ints) {
     static_assert(!EPOCH || P2P, "device epochs need device-local peer buffers");
@@ -175,8 +176,15 @@ static __global__ void ggml_cuda_ar_kernel(
     const int tail      = count_vec * ELEMS_PER_VEC;
 
     __shared__ bool peer_failed;
+    __shared__ int epoch_token;
     if (tid == 0) {
         peer_failed = ((const volatile int *) failed)[bid] != 0;
+        if constexpr (EPOCH) {
+            if (!peer_failed) {
+                epoch_token = (int) ((unsigned) epoch[bid] + 1u); // wraps; only equality and parity are used
+                epoch[bid]  = epoch_token;
+            }
+        }
     }
     __syncthreads();
     if (peer_failed) {
@@ -184,12 +192,6 @@ static __global__ void ggml_cuda_ar_kernel(
     }
 
     if constexpr (EPOCH) {
-        __shared__ int epoch_token;
-        if (tid == 0) {
-            epoch_token = (int) ((unsigned) epoch[bid] + 1u); // wraps; only equality and parity are used
-            epoch[bid]  = epoch_token;
-        }
-        __syncthreads();
         token = epoch_token;
         const size_t slot = (size_t) (token & 1); // GGML_CUDA_AR_POOL_SIZE == 2
         host_mine     += slot * slot_elems;
@@ -234,9 +236,11 @@ static __global__ void ggml_cuda_ar_kernel(
 
         // Limit each peer wait to 60 billion device clock cycles (about 30 s at 2 GHz).
         const unsigned long long start = clock64();
+        unsigned int polls = 0;
         while (ggml_cuda_ar_signal_get<P2P>(other_slot) != token) {
-            if (clock64() - start >= 60000000000ULL) {
+            if ((++polls & 255u) == 0 && clock64() - start >= 60000000000ULL) {
                 ((volatile int *) failed)[bid] = 1;
+                ((volatile int *) failed_notify)[bid] = 1;
                 __threadfence_system();
                 peer_failed = true;
                 break;
@@ -1162,6 +1166,7 @@ bool ggml_cuda_ar_allreduce(
                     token, \
                     reinterpret_cast<int *>(p->epoch[i].dev), \
                     cuda_ctx->ar_failed_device, \
+                    cuda_ctx->ar_failed_notify, \
                     p->buf_bytes / sizeof(T_wire), \
                     (size_t) p->n_devices * GGML_CUDA_AR_KERNEL_BLOCKS * GGML_CUDA_AR_ARRIVAL_STRIDE / sizeof(int))
 

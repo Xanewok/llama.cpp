@@ -1458,6 +1458,7 @@ struct ggml_backend_cuda_context {
     cudaEvent_t copy_event = nullptr;
     int * ar_failed_host = nullptr;
     int * ar_failed_device = nullptr;
+    int * ar_failed_notify = nullptr;
 
     void check_ar_failed() const {
         if (ar_failed_host == nullptr) {
