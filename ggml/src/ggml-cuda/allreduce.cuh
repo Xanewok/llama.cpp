@@ -27,3 +27,5 @@ bool ggml_cuda_ar_allreduce(
     ggml_backend_t        * backends,
     ggml_tensor           ** tensors);
 
+// Both ranks must enqueue the same chunk sequence across captured and split calls.
+bool ggml_cuda_ar_in_graph_supported(ggml_cuda_ar_pipeline * pipeline, ggml_tensor ** tensors);
