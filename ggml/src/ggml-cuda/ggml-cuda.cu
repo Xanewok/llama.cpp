@@ -1443,6 +1443,9 @@ static bool ggml_backend_cuda_comm_allreduce_start(void * comm_ctx_v, ggml_tenso
     if (!ctx || ctx->try_allreduce != ggml_backend_cuda_comm_try_allreduce_internal) {
         return false;
     }
+    if (!tensors) {
+        return true;
+    }
     GGML_ASSERT(!ctx->pending);
     if (!ggml_backend_cuda_comm_allreduce_internal(ctx, tensors, &ctx->pending)) {
         return false;

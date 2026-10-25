@@ -221,6 +221,7 @@ extern "C" {
     // Optional pair. Start returns false only if no work was submitted; true with NULL pending means completion is already ordered.
     // Finish each handle once, in submission order, before reading or overwriting any input storage.
     // Finish orders completion on every backend and releases the handle. Tensor storage must remain valid until then. Finish all handles before calling the legacy entry point.
+    // With tensors == NULL, start submits nothing and returns whether this communicator can return pending handles.
     typedef bool   (*ggml_backend_comm_allreduce_start_t)(void * comm_ctx, struct ggml_tensor ** tensors, void ** pending);
     typedef void   (*ggml_backend_comm_allreduce_finish_t)(void * comm_ctx, void * pending);
 
@@ -461,6 +462,9 @@ extern "C" {
     // op, which then takes the lossy backend AllReduce. Reading the gather itself with ggml_backend_tensor_get() is
     // not supported; read a consumer. -0.0f comes out as +0.0f.
     GGML_API struct ggml_tensor * ggml_backend_meta_gather(struct ggml_context * ctx, struct ggml_tensor * a);
+
+    // true if an AllReduce of this meta backend can still be in flight while later compute that does not read its result runs, false for any other backend
+    GGML_API bool ggml_backend_meta_can_defer_allreduce(ggml_backend_t backend);
 
     //
     // Utils

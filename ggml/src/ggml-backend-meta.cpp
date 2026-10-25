@@ -2135,7 +2135,8 @@ struct ggml_backend_meta_context : ggml_backend_meta_graph_plan {
             ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(ggml_backend_get_device(simple_backends[0]));
             comm_start  = (ggml_backend_comm_allreduce_start_t)  ggml_backend_reg_get_proc_address(reg, "ggml_backend_comm_allreduce_start");
             comm_finish = (ggml_backend_comm_allreduce_finish_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_comm_allreduce_finish");
-            if (!comm_finish) {
+            void * probe = nullptr;
+            if (!comm_finish || !comm_start || !comm_start(comm_ctx, nullptr, &probe)) {
                 comm_start = nullptr;
             }
         }
@@ -3093,6 +3094,10 @@ static ggml_backend_t ggml_backend_meta_device_init_backend(ggml_backend_dev_t d
     backend->device  = dev;
     backend->context = backend_ctx;
     return backend;
+}
+
+bool ggml_backend_meta_can_defer_allreduce(ggml_backend_t backend) {
+    return ggml_backend_is_meta(backend) && ((const ggml_backend_meta_context *) backend->context)->comm_start != nullptr;
 }
 
 size_t ggml_backend_meta_n_backends(ggml_backend_t meta_backend) {
