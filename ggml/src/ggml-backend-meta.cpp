@@ -1392,6 +1392,22 @@ static void * ggml_backend_meta_buffer_get_base(ggml_backend_buffer_t buffer) {
     return (void *) 0x1000000000000000; // FIXME
 }
 
+static void ggml_backend_meta_update_op_params(ggml_tensor * simple_tensor, const ggml_tensor * tensor, size_t index) {
+    memcpy(simple_tensor->op_params, tensor->op_params, sizeof(tensor->op_params));
+    if (ggml_backend_meta_is_gather(tensor)) {
+        const ggml_backend_meta_split_state ss_src = ggml_backend_meta_get_split_state(tensor->src[0], /*assume_sync =*/ true);
+        const int axis = ss_src.axis;
+        if (axis >= 0 && axis < GGML_MAX_DIMS) {
+            int64_t offset = 0;
+            for (size_t j = 0; j < index; j++) {
+                offset += ss_src.ne[j];
+            }
+            ggml_set_op_params_i32(simple_tensor, 2*axis + 0, int32_t(offset));
+            ggml_set_op_params_i32(simple_tensor, 2*axis + 1, int32_t(tensor->ne[axis] - offset - ss_src.ne[index]));
+        }
+    }
+}
+
 static enum ggml_status ggml_backend_meta_buffer_init_tensor_impl(ggml_backend_meta_simple_tensor_container & stc, ggml_tensor * tensor) {
     GGML_ASSERT(ggml_backend_buffer_is_meta(tensor->buffer));
     ggml_backend_meta_buffer_context * buf_ctx = (ggml_backend_meta_buffer_context *) tensor->buffer->context;
@@ -1435,19 +1451,7 @@ static enum ggml_status ggml_backend_meta_buffer_init_tensor_impl(ggml_backend_m
             t_ij->nb[i] = nb[i];
         }
         t_ij->flags = tensor->flags;
-        memcpy(t_ij->op_params, tensor->op_params, sizeof(tensor->op_params));
-        if (ggml_backend_meta_is_gather(tensor)) {
-            const ggml_backend_meta_split_state ss_src = ggml_backend_meta_get_split_state(tensor->src[0], /*assume_sync =*/ true);
-            const int axis = ss_src.axis;
-            if (axis >= 0 && axis < GGML_MAX_DIMS) {
-                int64_t offset = 0;
-                for (size_t jj = 0; jj < j; jj++) {
-                    offset += ss_src.ne[jj];
-                }
-                ggml_set_op_params_i32(t_ij, 2*axis + 0, int32_t(offset));
-                ggml_set_op_params_i32(t_ij, 2*axis + 1, int32_t(tensor->ne[axis] - offset - ss_src.ne[j]));
-            }
-        }
+        ggml_backend_meta_update_op_params(t_ij, tensor, j);
         ggml_set_name(t_ij, tensor->name);
         t_ij->buffer = simple_buf;
         t_ij->view_src = tensor->view_src;
@@ -2081,6 +2085,7 @@ struct ggml_backend_meta_context : ggml_backend_meta_graph_plan {
     bool plan_reuse;
     void *                               comm_ctx       = nullptr;
     ggml_backend_comm_allreduce_tensor_t comm_allreduce = nullptr;
+    ggml_backend_comm_graph_compute_t    comm_graph_compute = nullptr;
 
     // Probed on the first owned upload; stays NULL when the backends have no shared staging.
     bool                                 input_stage_probed = false;
@@ -2121,6 +2126,8 @@ struct ggml_backend_meta_context : ggml_backend_meta_graph_plan {
                 ggml_backend_reg_get_proc_address(ggml_backend_dev_backend_reg(
                     ggml_backend_get_device(simple_backends[0])), "ggml_backend_comm_allreduce_tensor");
             GGML_ASSERT(comm_allreduce != nullptr);
+            comm_graph_compute = (ggml_backend_comm_graph_compute_t) ggml_backend_reg_get_proc_address(
+                ggml_backend_dev_backend_reg(ggml_backend_get_device(simple_backends[0])), "ggml_backend_comm_graph_compute");
         }
     }
 
@@ -2430,8 +2437,8 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
                 }
                 bcj.nodes[i] = ggml_backend_meta_buffer_simple_tensor(node, j);
                 GGML_ASSERT(bcj.nodes[i]);
-                // op_params may have changed since init_tensor created the slice
-                memcpy(bcj.nodes[i]->op_params, node->op_params, sizeof(node->op_params));
+                // Allocated slices survive graph rebuilds.
+                ggml_backend_meta_update_op_params(bcj.nodes[i], node, j);
             }
         }
 
@@ -2856,12 +2863,39 @@ static enum ggml_status ggml_backend_meta_graph_compute_impl(ggml_backend_t back
     };
 
 
+    size_t run_end = 0;
     for (size_t i = 0; i < backend_ctx->n_subgraphs; i++) {
-        for (size_t j = 0; j < n_backends; j++) {
-            auto & bcj = backend_ctx->backend_configs[j];
-            const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, bcj.cgraphs[i].cgraph_main);
-            if (status != GGML_STATUS_SUCCESS) {
-                return status;
+        bool computed = false;
+        if (i == run_end) {
+            run_end = i + 1;
+            // The last subgraph may end at a gather; its boundary stays on the exact split path below.
+            while (run_end < backend_ctx->n_subgraphs) {
+                const ggml_cgraph * graph = backend_ctx->backend_configs[0].cgraphs[run_end - 1].cgraph_main;
+                if (ggml_backend_meta_is_gather(graph->nodes[graph->n_nodes - 1])) {
+                    break;
+                }
+                ++run_end;
+            }
+            if (owner->comm_graph_compute != nullptr && run_end - i > 1) {
+                std::vector<ggml_cgraph *> graphs;
+                for (size_t g = i; g < run_end; ++g) {
+                    for (size_t j = 0; j < n_backends; ++j) {
+                        graphs.push_back(backend_ctx->backend_configs[j].cgraphs[g].cgraph_main);
+                    }
+                }
+                if (owner->comm_graph_compute(owner->comm_ctx, graphs.data(), run_end - i)) {
+                    i = run_end - 1;
+                    computed = true;
+                }
+            }
+        }
+        if (!computed) {
+            for (size_t j = 0; j < n_backends; j++) {
+                auto & bcj = backend_ctx->backend_configs[j];
+                const ggml_status status = ggml_backend_graph_compute_async(bcj.backend, bcj.cgraphs[i].cgraph_main);
+                if (status != GGML_STATUS_SUCCESS) {
+                    return status;
+                }
             }
         }
 
