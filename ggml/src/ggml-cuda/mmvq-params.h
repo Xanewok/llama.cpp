@@ -206,10 +206,18 @@ static constexpr int calc_rows_per_block(ggml_type type, int ncols_dst, int tabl
     return 1;
 }
 
-template <int nwarps_, int rows_per_block_>
+// sm_120 allocates registers per warp in 256-register units from 16K per scheduler: 3 warps per scheduler fit at
+// <= 168 registers per thread, only 2 above. Unbounded, 4-row blocks at 5-8 columns reach up to 243 registers; under a
+// 12-warp bound ptxas fits all of them without spills, 6-row blocks spill. Launch geometry and summation order are unchanged.
+static constexpr int calc_min_blocks_per_sm(int ncols_dst, mmvq_parameter_table_id table_id, int nwarps, int rows_per_block) {
+    return table_id == MMVQ_PARAMETERS_BLACKWELL && ncols_dst >= 5 && rows_per_block <= 4 ? 12 / nwarps : 1;
+}
+
+template <int nwarps_, int rows_per_block_, int min_blocks_per_sm_>
 struct mmvq_launch_config {
     static constexpr int nwarps = nwarps_;
     static constexpr int rows_per_block = rows_per_block_;
+    static constexpr int min_blocks_per_sm = min_blocks_per_sm_;
 
     static constexpr uint32_t nblocks(uint32_t nrows) {
         return nrows / rows_per_block;
@@ -222,7 +230,7 @@ static void mmvq_select_config(mmvq_parameter_table_id table, F launch) {
         constexpr auto table_id = decltype(table_tag)::value;
         constexpr int nw = calc_nwarps(type, ncols, table_id, small_k, halve_iters);
         constexpr int nr = calc_rows_per_block(type, ncols, table_id, small_k, nw);
-        launch(mmvq_launch_config<nw, nr>{});
+        launch(mmvq_launch_config<nw, nr, calc_min_blocks_per_sm(ncols, table_id, nw, nr)>{});
     };
     switch (table) {
         case MMVQ_PARAMETERS_GENERIC: select(std::integral_constant<mmvq_parameter_table_id, MMVQ_PARAMETERS_GENERIC>{}); return;
