@@ -418,3 +418,9 @@ if (TARGET gguf-model-data)
 endif()
 
 llama_build_and_test(test-kv-mask.cpp)
+
+if (NOT LLAMA_USE_SYSTEM_GGML AND NOT GGML_BACKEND_DL AND GGML_CPU)
+    add_executable(test-backend-comm test-backend-comm.cpp)
+    target_link_libraries(test-backend-comm PRIVATE ggml)
+    llama_test(test-backend-comm)
+endif()
