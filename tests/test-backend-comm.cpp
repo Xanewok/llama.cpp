@@ -4,6 +4,7 @@
 #include "../ggml/src/ggml-backend-impl.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -22,6 +23,7 @@ struct comm_test {
     bool gpu = false;
     bool deferred = false;
     bool reject = false;
+    bool decline = false;
     bool fail = false;
     int starts = 0;
     int finishes = 0;
@@ -62,7 +64,10 @@ static bool reduce(void *, ggml_tensor ** tensors) {
 
 static bool start(void *, ggml_tensor ** tensors, void ** pending) {
     *pending = nullptr;
-    if (state.reject && state.starts > 0) {
+    if (!tensors) {
+        return state.gpu ? cuda_start(cuda_comm, nullptr, pending) : !state.decline;
+    }
+    if (state.decline || (state.reject && state.starts > 0)) {
         return false;
     }
     if (state.gpu) {
@@ -157,23 +162,29 @@ static ggml_backend_meta_split_state split(const ggml_tensor * tensor, void *) {
     return result;
 }
 
-static std::vector<float> cpu_case(bool deferred, bool reject, bool fail, bool views, bool unused, bool reuse = false, bool gpu = false) {
-    state = {};
-    state.gpu = gpu;
-    state.deferred = deferred;
-    state.reject = reject;
-    state.fail = fail;
+static ggml_backend_t make_meta_backend(ggml_backend_meta_get_split_state_t split_fn) {
     ggml_backend_t cpu = ggml_backend_cpu_init();
     static ggml_backend_reg reg{};
     static ggml_backend_device devices[2];
     reg.iface.get_proc_address = get_proc;
     ggml_backend_dev_t devs[2] = {&devices[0], &devices[1]};
     for (auto & dev : devices) {
-        dev = gpu ? *ggml_backend_reg_dev_get(cuda_reg, &dev - devices) : *ggml_backend_get_device(cpu);
+        dev = state.gpu ? *ggml_backend_reg_dev_get(cuda_reg, &dev - devices) : *ggml_backend_get_device(cpu);
         dev.reg = &reg;
         dev.iface.init_backend = init_backend;
     }
-    ggml_backend_t backend = ggml_backend_dev_init(ggml_backend_meta_device(devs, 2, split, nullptr), nullptr);
+    ggml_backend_t backend = ggml_backend_dev_init(ggml_backend_meta_device(devs, 2, split_fn, nullptr), nullptr);
+    ggml_backend_free(cpu);
+    return backend;
+}
+
+static std::vector<float> cpu_case(bool deferred, bool reject, bool fail, bool views, bool unused, bool reuse = false, bool gpu = false) {
+    state = {};
+    state.gpu = gpu;
+    state.deferred = deferred;
+    state.reject = reject;
+    state.fail = fail;
+    ggml_backend_t backend = make_meta_backend(split);
     ggml_context * weights = ggml_init({4096, nullptr, true});
     const int64_t k = gpu ? 1024 : 4, m = gpu ? 5120 : 4, n = gpu ? 512 : 2;
     ggml_tensor * w = ggml_new_tensor_2d(weights, gpu ? GGML_TYPE_F16 : GGML_TYPE_F32, k, m);
@@ -256,8 +267,117 @@ static std::vector<float> cpu_case(bool deferred, bool reject, bool fail, bool v
     ggml_backend_buffer_free(buffer_w);
     ggml_free(weights);
     ggml_backend_free(backend);
-    ggml_backend_free(cpu);
     return result;
+}
+
+static void query_cases() {
+    for (bool deferred : {false, true}) {
+        for (bool decline : {false, true}) {
+            state = {};
+            state.deferred = deferred;
+            state.decline = decline;
+            ggml_backend_t backend = make_meta_backend(split);
+            require(ggml_backend_meta_can_defer_allreduce(backend) == (deferred && !decline), "deferral query");
+            ggml_backend_free(backend);
+        }
+    }
+    ggml_backend_t cpu = ggml_backend_cpu_init();
+    require(!ggml_backend_meta_can_defer_allreduce(cpu), "deferral query on a simple backend");
+    ggml_backend_free(cpu);
+}
+
+static ggml_backend_meta_split_state ffn_split(const ggml_tensor * tensor, void *) {
+    ggml_backend_meta_split_state result{GGML_BACKEND_SPLIT_AXIS_MIRRORED, {0}, {1}, 1};
+    if (!strcmp(tensor->name, "up") || !strcmp(tensor->name, "gate")) {
+        result.axis = GGML_BACKEND_SPLIT_AXIS_1;
+    } else if (!strcmp(tensor->name, "down")) {
+        result.axis = GGML_BACKEND_SPLIT_AXIS_0;
+    } else {
+        return result;
+    }
+    result.ne[0] = result.ne[1] = tensor->ne[result.axis] / 2;
+    return result;
+}
+
+// Graph shape of llm_graph_context::build_ffn: tiles from 512 tokens, bias after the concat unless bias_in_tile.
+static std::vector<float> ffn_case(bool deferred, bool tiled, int64_t tokens, bool bias_in_tile = false) {
+    state = {};
+    state.deferred = deferred;
+    ggml_backend_t backend = make_meta_backend(ffn_split);
+    ggml_context * weights = ggml_init({8192, nullptr, true});
+    auto * input = ggml_new_tensor_2d(weights, GGML_TYPE_F32, 16, tokens);
+    auto * up = ggml_new_tensor_2d(weights, GGML_TYPE_F32, 16, 32);
+    auto * gate = ggml_new_tensor_2d(weights, GGML_TYPE_F32, 16, 32);
+    auto * down = ggml_new_tensor_2d(weights, GGML_TYPE_F32, 32, 16);
+    auto * bias = ggml_new_tensor_1d(weights, GGML_TYPE_F32, 16);
+    ggml_set_name(up, "up");
+    ggml_set_name(gate, "gate");
+    ggml_set_name(down, "down");
+    auto * buffer = ggml_backend_alloc_ctx_tensors(weights, backend);
+    for (auto * tensor : {input, up, gate, down, bias}) {
+        std::vector<float> data(ggml_nelements(tensor));
+        for (size_t i = 0; i < data.size(); i++) { data[i] = float(int(i % 19) - 9) / 32; }
+        ggml_backend_tensor_set(tensor, data.data(), 0, data.size() * sizeof(float));
+    }
+    ggml_context * ctx = ggml_init({65536, nullptr, true});
+    auto * graph = ggml_new_graph_custom(ctx, 64, false);
+    auto build = [&](ggml_tensor * x, bool with_bias) {
+        auto * y = ggml_mul_mat(ctx, down, ggml_swiglu_split(ctx, ggml_mul_mat(ctx, gate, x), ggml_mul_mat(ctx, up, x)));
+        return with_bias ? ggml_add(ctx, y, bias) : y;
+    };
+    auto * norm = ggml_rms_norm(ctx, input, 1e-6f);
+    ggml_tensor * output;
+    const bool eligible = tiled && tokens >= 512;
+    if (eligible) {
+        ggml_tensor * tiles[2];
+        for (int t = 0; t < 2; t++) {
+            const int64_t n = t == 0 ? tokens/2 : tokens - tokens/2;
+            tiles[t] = build(ggml_view_2d(ctx, norm, 16, n, norm->nb[1], t*(tokens/2)*norm->nb[1]), bias_in_tile);
+            ggml_build_forward_expand(graph, tiles[t]);
+        }
+        output = ggml_concat(ctx, tiles[0], tiles[1], 1);
+        if (!bias_in_tile) { output = ggml_add(ctx, output, bias); }
+    } else {
+        output = build(norm, true);
+    }
+    output = ggml_add(ctx, output, input);
+    ggml_build_forward_expand(graph, output);
+    auto * alloc = ggml_gallocr_new(ggml_backend_get_default_buffer_type(backend));
+    require(ggml_gallocr_alloc_graph(alloc, graph), "FFN graph allocation");
+    std::vector<float> result(ggml_nelements(output)), repeated(result.size());
+    for (int repeat = 0; repeat < 2; repeat++) {
+        require(ggml_backend_graph_compute(backend, graph) == GGML_STATUS_SUCCESS, "FFN compute");
+        ggml_backend_tensor_get(output, repeated.data(), 0, repeated.size() * sizeof(float));
+        if (!repeat) { result = repeated; }
+        require(!memcmp(result.data(), repeated.data(), result.size() * sizeof(float)), "FFN repeat identity");
+    }
+    require(state.starts == state.finishes && !state.active, "FFN drain");
+    // One deferred start per FFN and repetition: tile 0 behind tile 1; tile 1 is consumed by the next subgraph.
+    require(state.starts == (eligible && deferred && !bias_in_tile ? 2 : 0), "FFN engagement per actual shape");
+    if (state.starts) { require(state.independent > 0, "tile 1 compute while tile 0 pending"); }
+    printf("ffn tokens=%lld tiled=%d deferred=%d bias_in_tile=%d starts=%d finishes=%d independent=%d\n",
+           (long long) tokens, tiled, deferred, bias_in_tile, state.starts, state.finishes, state.independent);
+    ggml_gallocr_free(alloc);
+    ggml_free(ctx);
+    ggml_backend_buffer_free(buffer);
+    ggml_free(weights);
+    ggml_backend_free(backend);
+    return result;
+}
+
+static void ffn_cases() {
+    for (int64_t tokens : {1, 128, 256, 511, 512, 513, 1024}) {
+        auto a = ffn_case(false, false, tokens);
+        auto t = ffn_case(false, true, tokens);
+        auto o = ffn_case(true, true, tokens);
+        require(!memcmp(t.data(), o.data(), t.size() * sizeof(float)), "FFN tiled immediate/deferred bytes");
+        for (size_t i = 0; i < a.size(); i++) {
+            require(std::isfinite(o[i]) && std::abs(a[i] - o[i]) <= 1e-5f * (1 + std::abs(a[i])), "FFN untiled/tiled values");
+        }
+    }
+    auto inside = ffn_case(true, true, 512, true);
+    auto after  = ffn_case(true, true, 512);
+    require(!memcmp(inside.data(), after.data(), inside.size() * sizeof(float)), "FFN bias placement bytes");
 }
 
 static void fill_input(std::vector<unsigned char> & input, ggml_type type, int rank, int iteration) {
@@ -429,12 +549,14 @@ static void gpu_meta_cases() {
 }
 
 int main(int argc, char ** argv) {
-    if (argc == 2 && !strcmp(argv[1], "--gpu-meta")) {
+    if (argc == 2 && !strcmp(argv[1], "--ffn")) {
+        ffn_cases();
+    } else if (argc == 2 && !strcmp(argv[1], "--gpu-meta")) {
         gpu_meta_cases();
     } else if (argc == 3 && (!strcmp(argv[1], "--gpu") || !strcmp(argv[1], "--gpu-sync") || !strcmp(argv[1], "--gpu-broken"))) {
         gpu_cases(argv[2], !strcmp(argv[1], "--gpu-sync"), !strcmp(argv[1], "--gpu-broken"));
     } else {
-        require(argc == 1, "usage: test-backend-comm [--gpu-meta | --gpu|--gpu-sync|--gpu-broken internal|nccl]");
+        require(argc == 1, "usage: test-backend-comm [--ffn | --gpu-meta | --gpu|--gpu-sync|--gpu-broken internal|nccl]");
         for (bool views : {false, true}) {
             for (bool unused : {false, true}) {
                 if (views && unused) { continue; }
@@ -447,6 +569,8 @@ int main(int argc, char ** argv) {
         }
         cpu_case(true, false, true, false, false);
         cpu_case(true, false, false, false, true, true);
+        query_cases();
+        ffn_cases();
     }
     puts("PASS backend communicator");
 }
