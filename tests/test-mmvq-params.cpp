@@ -38,6 +38,12 @@ static void check_config(std::set<std::pair<int, int>> & unique, std::set<std::p
         mmvq_select_config<type, ncols, small_k, halve_iters>(table_id, [&](auto config) {
             using config_t = decltype(config);
             require(config_t::nwarps == nw && config_t::rows_per_block == nr);
+            constexpr int first = mmvq_regcap_first_ncols(type);
+            if (table_id == MMVQ_PARAMETERS_BLACKWELL && first != 0 && ncols >= first && nr <= 4) {
+                require(config_t::min_blocks_per_sm * nw == 12);
+            } else {
+                require(config_t::min_blocks_per_sm == 1);
+            }
             require(nw >= 1 && nw <= 8 && nr >= 1 && nr <= 8);
             for (uint32_t nrows = 1; nrows <= 33; ++nrows) {
                 const uint32_t blocks = config_t::nblocks(nrows);
@@ -83,7 +89,29 @@ static void check_type() {
     }
 }
 
+// ptxas -v, sm_120a, CUDA 13.2: first column count at which the unbounded 4-row kernel exceeds 168 registers.
+static void check_regcap_thresholds() {
+    const struct { ggml_type type; int first; } expected[] = {
+        {GGML_TYPE_Q2_K, 5}, {GGML_TYPE_Q3_K, 5}, {GGML_TYPE_IQ1_M, 5},
+        {GGML_TYPE_IQ3_S, 6}, {GGML_TYPE_IQ2_S, 6},
+        {GGML_TYPE_IQ2_XXS, 7}, {GGML_TYPE_IQ2_XS, 7}, {GGML_TYPE_IQ3_XXS, 7}, {GGML_TYPE_IQ4_XS, 7}, {GGML_TYPE_NVFP4, 7},
+        {GGML_TYPE_Q1_0, 8}, {GGML_TYPE_Q2_0, 8},
+        {GGML_TYPE_Q4_K, 0}, {GGML_TYPE_Q5_K, 0}, {GGML_TYPE_Q6_K, 0}, {GGML_TYPE_Q8_0, 0}, {GGML_TYPE_IQ1_S, 0}, {GGML_TYPE_F16, 0},
+    };
+    for (const auto & e : expected) {
+        require(mmvq_regcap_first_ncols(e.type) == e.first);
+        for (int ncols = 1; ncols <= MMVQ_MAX_BATCH_SIZE; ++ncols) {
+            const bool bound = e.first != 0 && ncols >= e.first;
+            require(calc_min_blocks_per_sm(e.type, ncols, MMVQ_PARAMETERS_BLACKWELL, 2, 4) == (bound ? 6 : 1));
+            require(calc_min_blocks_per_sm(e.type, ncols, MMVQ_PARAMETERS_BLACKWELL, 2, 6) == 1);
+            require(calc_min_blocks_per_sm(e.type, ncols, MMVQ_PARAMETERS_GENERIC, 2, 4) == 1);
+        }
+    }
+    ++checks;
+}
+
 int main() {
+    check_regcap_thresholds();
     check_type<GGML_TYPE_Q1_0>();
     check_type<GGML_TYPE_Q2_0>();
     check_type<GGML_TYPE_Q4_0>();
