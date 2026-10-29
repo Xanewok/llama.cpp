@@ -1,0 +1,110 @@
+[
+  {
+    "arm": "patch",
+    "sha256": "dae29521732b298697ef91c07d536b7ec80f88ee0bc3515f162efa1613554a38",
+    "requests": [
+      {
+        "request": 0,
+        "prompt_ms_M": 17601.689,
+        "groups": {
+          "target_prefill": {
+            "ubatches_M": 17,
+            "tokens_M": 534,
+            "misses_M": 5,
+            "hits_M": 12,
+            "meta_builds_M": 5,
+            "meta_executes_D": 17,
+            "arena_creates_M": 0,
+            "arena_bytes_M": 0,
+            "build_union_ms_D": 57.585678,
+            "build_us_per_ubatch_D": 3387.3928235294115,
+            "retention_ms_M": 3.16189,
+            "arena_init_ms_M": 0.0,
+            "input_ms_M": 0.255979
+          },
+          "draft_prefill": {
+            "ubatches_M": 17,
+            "tokens_M": 534,
+            "misses_M": 4,
+            "hits_M": 13,
+            "meta_builds_M": 4,
+            "meta_executes_D": 17,
+            "arena_creates_M": 1,
+            "arena_bytes_M": 23808,
+            "build_union_ms_D": 1.772953,
+            "build_us_per_ubatch_D": 104.29135294117647,
+            "retention_ms_M": 0.126086,
+            "arena_init_ms_M": 0.003287,
+            "input_ms_M": 0.9233659999999999
+          },
+          "decode": {
+            "ubatches_M": 69,
+            "tokens_M": 147,
+            "misses_M": 10,
+            "hits_M": 59,
+            "meta_builds_M": 10,
+            "meta_executes_D": 69,
+            "arena_creates_M": 2,
+            "arena_bytes_M": 35697024,
+            "build_union_ms_D": 69.372723,
+            "build_us_per_ubatch_D": 1005.4017826086956,
+            "retention_ms_M": 3.3885069999999997,
+            "arena_init_ms_M": 0.879534,
+            "input_ms_M": 0.7199860000000002
+          }
+        }
+      },
+      {
+        "request": 1,
+        "prompt_ms_M": 18326.645,
+        "groups": {
+          "target_prefill": {
+            "ubatches_M": 18,
+            "tokens_M": 555,
+            "misses_M": 5,
+            "hits_M": 13,
+            "meta_builds_M": 5,
+            "meta_executes_D": 18,
+            "arena_creates_M": 0,
+            "arena_bytes_M": 0,
+            "build_union_ms_D": 52.864634,
+            "build_us_per_ubatch_D": 2936.9241111111114,
+            "retention_ms_M": 3.6235130000000004,
+            "arena_init_ms_M": 0.0,
+            "input_ms_M": 0.26549599999999995
+          },
+          "draft_prefill": {
+            "ubatches_M": 18,
+            "tokens_M": 555,
+            "misses_M": 4,
+            "hits_M": 14,
+            "meta_builds_M": 4,
+            "meta_executes_D": 18,
+            "arena_creates_M": 0,
+            "arena_bytes_M": 0,
+            "build_union_ms_D": 1.751174,
+            "build_us_per_ubatch_D": 97.28744444444445,
+            "retention_ms_M": 0.11709900000000001,
+            "arena_init_ms_M": 0.0,
+            "input_ms_M": 0.846684
+          },
+          "decode": {
+            "ubatches_M": 74,
+            "tokens_M": 158,
+            "misses_M": 9,
+            "hits_M": 65,
+            "meta_builds_M": 9,
+            "meta_executes_D": 74,
+            "arena_creates_M": 2,
+            "arena_bytes_M": 35697024,
+            "build_union_ms_D": 56.733707,
+            "build_us_per_ubatch_D": 766.6717162162163,
+            "retention_ms_M": 2.9920649999999998,
+            "arena_init_ms_M": 0.160191,
+            "input_ms_M": 0.704898
+          }
+        }
+      }
+    ]
+  }
+]

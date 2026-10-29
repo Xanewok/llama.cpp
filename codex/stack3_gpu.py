@@ -36,6 +36,13 @@ def body(temperature, stream=None):
             "ignore_eos": True, "cache_prompt": False, "chat_template_kwargs": {"enable_thinking": False}}
 
 
+def story(seed):
+    # High entropy: a stale sampler binding, RNG draw or small logit change alters these bytes; counting output does not.
+    return {"messages": [{"role": "user", "content": "Write an unusual short story about a lighthouse keeper and a migrating whale."}],
+            "temperature": 1, "top_k": 20, "top_p": 0.95, "min_p": 0.05, "seed": 1729, "max_tokens": 768,
+            "ignore_eos": True, "cache_prompt": False, "chat_template_kwargs": {"enable_thinking": False}}
+
+
 def output_bytes(record):
     if "error" in record:
         raise ValueError("recorded request failed: " + json.dumps(record["error"]))
@@ -43,9 +50,17 @@ def output_bytes(record):
     return json.dumps(choices, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
 
 
+def draft_counters(record):
+    timings = record["response"]["timings"]
+    return timings["draft_n"], timings["draft_n_accepted"]
+
+
 def same_outputs(expected, actual):
     if set(expected) != set(actual) or any(output_bytes(expected[key]) != output_bytes(actual[key]) for key in expected):
         raise ValueError("identity failed: completion bytes or finish reason changed")
+    # Sequential requests run alone, so their accept/reject sequence is deterministic too.
+    if any(draft_counters(expected[key]) != draft_counters(actual[key]) for key in expected if not key.startswith("np2-")):
+        raise ValueError("identity failed: sequential draft counters changed")
 
 
 def stream_bounds(record):
@@ -67,7 +82,7 @@ def validate(records, pair_metrics, k, minimum=40):
         try:
             output_bytes(record)
             final = record["response"]["timings"]
-            low, high = (30000, 34000) if key == "single-t1" else (768, 2048)
+            low, high = (30000, 34000) if key == "single-t1" else (16, 2048) if key == "single-story" else (768, 2048)
             if not low <= final["prompt_n"] <= high or final.get("cache_n", 0) != 0:
                 raise ValueError("cold prompt size/cache gate failed")
             if final["predicted_n"] < 500 or final["predicted_n"] >= 32000:
@@ -101,8 +116,9 @@ def suite(harness, dest, canary):
     for temperature in (0, 1):
         key = f"single-t{temperature}"
         records[key] = harness.request(dest, key, 1, body(temperature), stream=True)
+    records["single-story"] = harness.request(dest, "single-story", 1, story(1729), stream=True)
     if canary:
-        records["repeat"] = harness.request(dest, "repeat", 1, body(0), stream=True)
+        records["repeat"] = harness.request(dest, "repeat", 1, story(1729), stream=True)
     before = harness.metrics()
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         futures = [pool.submit(harness.request, dest, f"np2-{i}", 1, body(1, i), True) for i in (0, 1)]
@@ -116,7 +132,7 @@ def suite(harness, dest, canary):
     verdict = validate(checked, pair_metrics, harness.args.k)
     if canary:
         try:
-            same_outputs({"repeat": records["single-t0"]}, {"repeat": records["repeat"]})
+            same_outputs({"repeat": records["single-story"]}, {"repeat": records["repeat"]})
         except ValueError as error:
             verdict["failures"].append(str(error))
     (dest / "validation.json").write_text(json.dumps(verdict, indent=2))
@@ -138,12 +154,12 @@ def main():
     parser.add_argument("--canary", action="store_true")
     parser.add_argument("--pins", action="store_true")
     parser.add_argument("--out", type=Path)
-    parser.add_argument("--budget", type=int, default=960)
+    parser.add_argument("--budget", type=int, default=1000)
     parser.add_argument("--port", type=int, default=8403)
     args = parser.parse_args()
     args.k = 5
-    estimate = 160 if args.canary else 620
-    if estimate > 0.7 * args.budget or args.budget > (240 if args.canary else 960):
+    estimate = 175 if args.canary else 680
+    if estimate > 0.7 * args.budget or args.budget > (260 if args.canary else 1000):
         raise ValueError("queue wall budget estimate exceeds margin or item limit")
     roots = {"stack2": ROOT / "codex/frozen/stack2", "default": ROOT / "codex/frozen/stack3", "staged": ROOT / "codex/frozen/stack3"}
     files = pins(roots)

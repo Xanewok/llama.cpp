@@ -1,0 +1,40 @@
+name stack3-judge-src-stack3
+tag refs/tags/frozen/stack3-judge-src-stack3
+commit b8a3c2786f240c95487f217acda45abf7f9d8bcd
+base 68d99c67d958c28b6bff5fdc2db096f81c324ef9 (stack-resync-fmq/2026-09-30 tip); nearest by commit count; candidates: stack-resync-fmq/2026-09-30 tip=68d99c67d(22), merge-base master=e95dae18d(1732), merge-base origin/master (upstream)=a6ea155d3(48)
+log base..commit (22 commits):
+  b8a3c2786 tests : prepare a frozen stack3 GPU identity gate
+  fbb208fdc tests : check stack3 CPU identity and allocation contracts
+  f5d476035 cuda : grow owned input slots geometrically
+  735c2342c llama : gate retained graphs and owned input staging
+  6fb301b31 ggml : stage inputs from synchronous host producers
+  710b61582 ggml : own staged host inputs until uploads complete
+  b22fe8e8b ggml : keep recycled meta graphs at their retained capacity
+  2f635cf2d ggml : hash visited tensors when retaining meta plans
+  5ac8b1e13 ggml : reuse one spare meta plan arena
+  e67c557cd tests : trace prefill ubatches and meta plan allocations
+  a4c2bb3d8 ggml : declare shared meta storage helpers
+  7b177636d llama : fetch deferred logits before graph invalidation
+  aab941526 llama : reuse output and catch-up graphs across MTP rounds
+  67eccbd71 ggml : retain split plans on shared compute storage
+  b9de10f47 llama : trace MTP round submission (DO NOT MERGE)
+  772e1cde3 ggml-meta : resolve split states without recursion
+  0dba27b90 llama : retain scheduler when detaching backend samplers
+  46c388284 llama : retain scheduler when replacing backend samplers
+  b8668a92e llama : handle small MTP draft vocabularies
+  faee46be9 llama : add reduced vocabulary for Qwen3.5 MTP drafts
+  70036f47d sampling : verify target rows from backend candidates
+  e7071647c ggml : batch scheduler host input uploads
+flags_source unknown
+flags:
+  flags unknown
+nvcc: unknown
+rebuild:
+  REBUILD_DIR=~/repos/qwen38-eval-worktrees/work/rebuild-stack3-judge-src-stack3   # keep under the worktrees root
+  git -C ~/repos/llama.cpp worktree add --detach "$REBUILD_DIR" frozen/stack3-judge-src-stack3
+  # flags unknown: the line below is the project default (G), not the recorded build
+  cd "$REBUILD_DIR" && CUDA_HOME=/usr/local/cuda-13.2 nice -n 19 cmake -B build -DCUDAToolkit_ROOT=/usr/local/cuda-13.2 -DGGML_CUDA_NCCL=OFF -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120a
+  nice -n 19 cmake --build build -j8 --target round-trace
+  # then bin/wt freeze for a frozen copy; frozen copy used patchelf --set-rpath $ORIGIN, so hashes differ from a fresh build
+sha256sums: ~/repos/qwen38-eval-worktrees/wt/stack3-judge-src/codex/frozen/stack3/SHA256SUMS
+cited_by: (none)

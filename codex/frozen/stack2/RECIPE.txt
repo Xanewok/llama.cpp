@@ -1,0 +1,26 @@
+name stack3-judge-src-stack2
+tag refs/tags/frozen/stack3-judge-src-stack2
+commit 0dba27b9002b8347c6f14a9f4a1651b3478065ef
+base 68d99c67d958c28b6bff5fdc2db096f81c324ef9 (stack-resync-fmq/2026-09-30 tip); nearest by commit count; candidates: stack-resync-fmq/2026-09-30 tip=68d99c67d(6), merge-base master=e95dae18d(1716), merge-base origin/master (upstream)=a6ea155d3(32)
+log base..commit (6 commits):
+  0dba27b90 llama : retain scheduler when detaching backend samplers
+  46c388284 llama : retain scheduler when replacing backend samplers
+  b8668a92e llama : handle small MTP draft vocabularies
+  faee46be9 llama : add reduced vocabulary for Qwen3.5 MTP drafts
+  70036f47d sampling : verify target rows from backend candidates
+  e7071647c ggml : batch scheduler host input uploads
+flags_source source-text
+flags:
+  (derived from SOURCE text, D): -DGGML_CUDA_NCCL=OFF -DCMAKE_CUDA_ARCHITECTURES=120 -DCMAKE_BUILD_TYPE=Release -DCUDAToolkit_ROOT=/usr/local/cuda-13.2 -DGGML_CUDA=ON
+nvcc: CUDA 13.2 (from SOURCE text)
+source_notes (SOURCE lines 2+):
+  stack/draft-vocab-host-vp; CUDA 13.2; NCCL OFF; arch 120 (CMake 120a); Release
+  FA q4_0-q4_0;q8_0-q8_0;f16-f16;bf16-bf16; ccache OFF; nice 19; -j8
+rebuild:
+  REBUILD_DIR=~/repos/qwen38-eval-worktrees/work/rebuild-stack3-judge-src-stack2   # keep under the worktrees root
+  git -C ~/repos/llama.cpp worktree add --detach "$REBUILD_DIR" frozen/stack3-judge-src-stack2
+  cd "$REBUILD_DIR" && CUDA_HOME=/usr/local/cuda-13.2 nice -n 19 cmake -B build -DGGML_CUDA_NCCL=OFF -DCMAKE_CUDA_ARCHITECTURES=120 -DCMAKE_BUILD_TYPE=Release -DCUDAToolkit_ROOT=/usr/local/cuda-13.2 -DGGML_CUDA=ON
+  nice -n 19 cmake --build build -j8 --target round-trace
+  # then bin/wt freeze for a frozen copy; frozen copy used patchelf --set-rpath $ORIGIN, so hashes differ from a fresh build
+sha256sums: ~/repos/qwen38-eval-worktrees/wt/stack3-judge-src/codex/frozen/stack2/SHA256SUMS
+cited_by: (none)

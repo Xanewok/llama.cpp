@@ -249,6 +249,8 @@ class Harness:
             self.child = subprocess.Popen(cmd, env=self.env, stdout=log, stderr=subprocess.STDOUT)
         until = time.monotonic() + self.timeout()
         while time.monotonic() < until:
+            if self.child.poll() is not None:
+                raise RuntimeError(f"server exited during load: rc={self.child.returncode}")
             try:
                 pid = owned_pid(binary)
                 fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()

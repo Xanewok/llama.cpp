@@ -38,6 +38,10 @@ def main():
     changed["response"]["choices"][0]["message"]["content"] += "broken"
     reject(lambda: s.same_outputs({"case": real}, {"case": changed}), "identity failed")
     changed = copy.deepcopy(real)
+    changed["response"]["timings"]["draft_n_accepted"] -= 1
+    reject(lambda: s.same_outputs({"single-story": real}, {"single-story": changed}), "draft counters changed")
+    s.same_outputs({"np2-0": real}, {"np2-0": changed})
+    changed = copy.deepcopy(real)
     changed["chunks"] = changed["chunks"][:5]
     reject(lambda: s.h.steady(changed, 5, 40), "insufficient steady")
     changed = copy.deepcopy(real)
@@ -56,7 +60,7 @@ def main():
     reject(lambda: s.h.gpu_memory(memory.replace("108 MiB", "unknown")), "memory values")
     reject(lambda: s.h.gpu_memory(memory.splitlines()[1]), "not a pair")
     with tempfile.TemporaryDirectory(dir=s.ROOT / "build-tmp") as directory:
-        harness = s.h.Harness(SimpleNamespace(budget=960, port=8403), Path(directory))
+        harness = s.h.Harness(SimpleNamespace(budget=1000, port=8403), Path(directory))
         harness.env["XID_SINCE"] = "fixture-cutoff"
         harness.env["CUDA_VISIBLE_DEVICES"] = "mock-pair"
         busy_memory = memory.replace("108 MiB", "16000 MiB")
@@ -142,7 +146,7 @@ def main():
                     result["response"]["timings"]["prompt_n"] = 1024
                 (dest / f"{case}-{number}.json").write_text(json.dumps(result))
                 return result
-            argv = ["stack3_gpu", "--execute", "--out", str(out)] + (["--canary", "--budget", "240"] if canary else [])
+            argv = ["stack3_gpu", "--execute", "--out", str(out)] + (["--canary", "--budget", "260"] if canary else [])
             with patch.dict(os.environ, RUN_GPU="1", CUDA_VISIBLE_DEVICES="0,1", XID_SINCE="mock-cutoff"), \
                  patch.object(s, "pins", return_value=[s.h.MODEL]), patch.object(s.h, "sha", return_value=s.h.MODEL_SHA), \
                  patch.object(s.h, "frozen", return_value={}), patch.object(s.h.Harness, "boot", boot), \

@@ -11,7 +11,7 @@
       "runs_M": 16,
       "steady_rounds_M": 144,
       "C_D1_build_union_us_per_round_median_D": 0.0,
-      "decode_wall_us_per_round_median_D": 1111.084888888889,
+      "decode_wall_us_per_round_median_D": 1037.0963333333334,
       "counts": {
         "C": {
           "hit_M": 0,
@@ -32,7 +32,7 @@
       "runs_M": 16,
       "steady_rounds_M": 144,
       "C_D1_build_union_us_per_round_median_D": 0.0,
-      "decode_wall_us_per_round_median_D": 925.7111666666667,
+      "decode_wall_us_per_round_median_D": 897.8792777777778,
       "counts": {
         "C": {
           "hit_M": 144,
@@ -53,7 +53,7 @@
       "runs_M": 16,
       "steady_rounds_M": 144,
       "C_D1_build_union_us_per_round_median_D": 0.0,
-      "decode_wall_us_per_round_median_D": 1404.678388888889,
+      "decode_wall_us_per_round_median_D": 1387.334277777778,
       "counts": {
         "C": {
           "hit_M": 0,
@@ -74,7 +74,7 @@
       "runs_M": 16,
       "steady_rounds_M": 144,
       "C_D1_build_union_us_per_round_median_D": 0.0,
-      "decode_wall_us_per_round_median_D": 1280.5763333333334,
+      "decode_wall_us_per_round_median_D": 1236.6102777777778,
       "counts": {
         "C": {
           "hit_M": 144,
@@ -95,7 +95,7 @@
       "runs_M": 16,
       "steady_rounds_M": 144,
       "C_D1_build_union_us_per_round_median_D": 0.0,
-      "decode_wall_us_per_round_median_D": 2831.1207777777777,
+      "decode_wall_us_per_round_median_D": 2853.1362222222224,
       "counts": {
         "C": {
           "hit_M": 0,
@@ -116,7 +116,7 @@
       "runs_M": 16,
       "steady_rounds_M": 144,
       "C_D1_build_union_us_per_round_median_D": 0.0,
-      "decode_wall_us_per_round_median_D": 1898.6281666666669,
+      "decode_wall_us_per_round_median_D": 1835.1910555555555,
       "counts": {
         "C": {
           "hit_M": 144,
@@ -137,7 +137,7 @@
       "runs_M": 16,
       "steady_rounds_M": 144,
       "C_D1_build_union_us_per_round_median_D": 0.0,
-      "decode_wall_us_per_round_median_D": 3705.5490555555557,
+      "decode_wall_us_per_round_median_D": 3660.3885555555557,
       "counts": {
         "C": {
           "hit_M": 0,
@@ -158,7 +158,7 @@
       "runs_M": 16,
       "steady_rounds_M": 144,
       "C_D1_build_union_us_per_round_median_D": 0.0,
-      "decode_wall_us_per_round_median_D": 2691.0491666666667,
+      "decode_wall_us_per_round_median_D": 2673.800388888889,
       "counts": {
         "C": {
           "hit_M": 144,

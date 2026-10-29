@@ -3,8 +3,8 @@ title = "Swift S5 np2: stack2 vs stack3 defaults vs staged inputs, exact output 
 kind = "measure"
 ab = true
 retry = "fresh"
-budget_s = 1200
-est_s = 780
+budget_s = 1260
+est_s = 855
 startup_grace_s = 90
 signatures = [
   { class = "hazard", regex = "\\bXid\\b|fallen off the bus" },
@@ -15,25 +15,25 @@ signatures = [
 ]
 
 [run]
-cmd = ["bash", "/home/xanewok/repos/stack3/codex/gpu_ab.sh", "--execute", "--budget", "960", "--port", "8403", "--out", "/home/xanewok/repos/stack3/codex/runs/stack3-identity/full-a{attempt}"]
+cmd = ["bash", "/home/xanewok/repos/stack3/codex/gpu_ab.sh", "--execute", "--budget", "1000", "--port", "8403", "--out", "/home/xanewok/repos/stack3/codex/runs/stack3-identity/full-a{attempt}"]
 cwd = "/home/xanewok/repos/stack3"
 env = { RUN_GPU = "1" }
 ports = [8403]
 
 [preflight]
-cmd = ["bash", "/home/xanewok/repos/stack3/codex/gpu_ab.sh", "--budget", "960", "--port", "8403"]
+cmd = ["bash", "/home/xanewok/repos/stack3/codex/gpu_ab.sh", "--budget", "1000", "--port", "8403"]
 cwd = "/home/xanewok/repos/stack3"
 env = {}
 timeout_s = 120
 
 [canary]
-cmd = ["bash", "/home/xanewok/repos/stack3/codex/gpu_ab.sh", "--execute", "--canary", "--budget", "240", "--port", "8403", "--out", "/home/xanewok/repos/stack3/codex/runs/stack3-identity/canary-a{attempt}"]
+cmd = ["bash", "/home/xanewok/repos/stack3/codex/gpu_ab.sh", "--execute", "--canary", "--budget", "260", "--port", "8403", "--out", "/home/xanewok/repos/stack3/codex/runs/stack3-identity/canary-a{attempt}"]
 cwd = "/home/xanewok/repos/stack3"
 env = { RUN_GPU = "1" }
-timeout_s = 240
+timeout_s = 260
 
 [outputs]
-paths = ["/home/xanewok/repos/stack3/codex/runs/stack3-identity"]
+paths = ["/home/xanewok/repos/stack3/codex/runs/stack3-identity/full-a{attempt}"]
 
 [fix]
 editable = []
