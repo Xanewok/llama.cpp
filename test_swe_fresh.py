@@ -1138,7 +1138,8 @@ class RealCanaryCapCut(unittest.TestCase):
         self.assertEqual(job["status"], "timeout")
         self.assertEqual((probe["reward"], probe["task_success"], probe["censored"]), (1, False, True))
         self.assertEqual(probe["verified_wall_seconds"], CAP)
-        self.assertEqual(probe["post_cap"], {"calls": [51, 52, 53], "served_calls": [51, 52, 53], "tool_calls": 0,
+        self.assertEqual(probe["post_cap"], {"calls": [51, 52, 53], "served_calls": [51, 52, 53], "delivered_calls": [50],
+                                             "tool_calls": 0,
                                              "reward_not_credited": True})
         self.assertEqual(probe["ignored_inflight_calls"], [])
         summary = r.campaign_summary([job], [("pallets__click-3239", 1)], 3.0, {}, args)
@@ -1146,7 +1147,7 @@ class RealCanaryCapCut(unittest.TestCase):
         self.assertEqual((summary["timeouts"], summary["solved"], summary["invalid_tasks"]), (1, 0, 0))
 
     def test_solved_timeout_without_post_cap_activity_is_passed_but_censored_at_the_cap(self):
-        facts, stats = canary_case(calls("cal-llama-canary/model-calls.jsonl")[:2])
+        facts, stats = canary_case(calls("cal-llama-canary/model-calls.jsonl")[:1])
         facts["agent_wall_seconds"] = CAP + 0.46
         args = types.SimpleNamespace(**{**vars(ARGS), "cap_s": CAP})
         probe = r.build_job("t", 1, 0, facts, stats, {}, args, 1.0, 2.0)["probe"]
@@ -1157,7 +1158,7 @@ class RealCanaryCapCut(unittest.TestCase):
         facts = r.parse_trial(CANARY / "job/trial", CAP)
         start = facts["agent_started_epoch"]
         cut = dict(rows[-1], started_epoch=start + CAP - 5, finished_epoch=start + CAP + 2)
-        _, stats = canary_case(rows[:2] + [cut])
+        _, stats = canary_case(rows[:1] + [cut])
         args = types.SimpleNamespace(**{**vars(ARGS), "cap_s": CAP})
         job = r.build_job("t", 1, 0, facts, stats, {}, args, 1.0, 2.0)
         self.assertEqual((job["status"], job["probe"]["ignored_inflight_calls"]), ("passed", [53]))
@@ -1177,7 +1178,7 @@ class RealCanaryCapCut(unittest.TestCase):
         facts = r.parse_trial(CANARY / "job/trial", CAP)
         start = facts["agent_started_epoch"]
         cut = dict(rows[-1], started_epoch=start + CAP - 5, finished_epoch=start + CAP + 2)
-        _, stats = canary_case(rows[:2] + [cut])
+        _, stats = canary_case(rows[:1] + [cut])
         self.assertEqual(stats["inflight_at_cap_calls"], [53])
         self.assertEqual(r.classify(facts, stats, CAP), ("passed", []))  # no activity after the cap: the solve stands
         facts_unsolved = dict(facts, solved=False, reward=0.0)
@@ -1199,7 +1200,7 @@ class PostCapEdits(unittest.TestCase):
         return trial
 
     def pre_cap_rows(self):
-        return calls("cal-llama-canary/model-calls.jsonl")[:2]
+        return calls("cal-llama-canary/model-calls.jsonl")[:1]  # call 49 ends at +299.0; call 50 straddles the cap
 
     def test_solved_run_without_post_cap_activity_keeps_its_solve(self):
         facts, stats = canary_case(self.pre_cap_rows())
@@ -1219,6 +1220,15 @@ class PostCapEdits(unittest.TestCase):
             facts, stats = canary_case(self.pre_cap_rows(), trial)
             self.assertEqual(facts["post_cap_tool_calls"], 0)
             self.assertEqual(r.classify(facts, stats, CAP), ("passed", []))
+
+    def test_a_response_delivered_after_the_cap_voids_the_solve(self):
+        # the real canary under the 403 relay: call 50 (+299.0 to +305.5) returns a tool call Codex runs at +305.5,
+        # 0.1 s after the verifier started; calls 51+ are rejected and never served
+        rows = calls("cal-llama-canary/model-calls.jsonl")
+        rejected = [dict(c, status=403, post_cap=True, event=None, error="PostCapRejected") for c in rows[2:]]
+        facts, stats = canary_case(rows[:2] + rejected)
+        self.assertEqual((stats["post_cap_served_calls"], stats["post_cap_delivered_calls"]), ([], [50]))
+        self.assertEqual(r.classify(facts, stats, CAP), ("timeout", []))
 
     def test_without_the_cap_nothing_is_dated(self):
         with tempfile.TemporaryDirectory() as tmp:
