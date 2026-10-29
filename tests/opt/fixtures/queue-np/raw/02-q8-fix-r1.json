@@ -1,0 +1,299 @@
+{
+ "arm": "q8-fix",
+ "np": 1,
+ "k": 3,
+ "ctx": 102400,
+ "boot": 2,
+ "round": 1,
+ "depths": [
+  8192,
+  32768,
+  98304
+ ],
+ "reps": 2,
+ "n_predict": 512,
+ "complete": true,
+ "results": [
+  {
+   "depth": 8192,
+   "prefill": [
+    {
+     "slot": 0,
+     "wall_s": 9.202562688995386,
+     "tokens_evaluated": 8192,
+     "prompt_n": 8192,
+     "prompt_ms": 9184.474,
+     "cache_n": 0,
+     "prompt_per_second": 891.9400283565504
+    }
+   ],
+   "rounds": [
+    {
+     "streams": [
+      {
+       "slot": 0,
+       "seed": 1929,
+       "n": 512,
+       "ttft_s": 0.12009573000250384,
+       "decode_s": 7.147857944000862,
+       "tg": 71.48994901736654,
+       "server_tg": 71.49814069854664,
+       "replay_prompt_n": 4,
+       "draft_n": 525,
+       "draft_accepted": 334,
+       "think_closed": false,
+       "eos_text": false,
+       "content_head": "We need answer user's request. Need summarize code and notes, then list three most likely bugs, each with file and reason. We have a large pasted collection of "
+      }
+     ],
+     "overlap_s": 7.147857944000862,
+     "overlap_frac": 1.0,
+     "agg_tg": 71.48994901736654,
+     "agg_union_tg": 71.48994901736654,
+     "draft_n": 525,
+     "draft_accepted": 334,
+     "checkpoint_miss": false
+    },
+    {
+     "streams": [
+      {
+       "slot": 0,
+       "seed": 1939,
+       "n": 512,
+       "ttft_s": 0.14308715998777188,
+       "decode_s": 6.985416242998326,
+       "tg": 73.15240527179597,
+       "server_tg": 73.16032562787593,
+       "replay_prompt_n": 4,
+       "draft_n": 528,
+       "draft_accepted": 335,
+       "think_closed": false,
+       "eos_text": false,
+       "content_head": "We need answer user's request. Need summarize code and notes above, then list three most likely bugs, each with file and reason. User provided multiple Python s"
+      }
+     ],
+     "overlap_s": 6.985416242998326,
+     "overlap_frac": 1.0,
+     "agg_tg": 73.15240527179597,
+     "agg_union_tg": 73.15240527179597,
+     "draft_n": 528,
+     "draft_accepted": 335,
+     "checkpoint_miss": false
+    }
+   ]
+  },
+  {
+   "depth": 32768,
+   "prefill": [
+    {
+     "slot": 0,
+     "wall_s": 29.290156603005016,
+     "tokens_evaluated": 32768,
+     "prompt_n": 25092,
+     "prompt_ms": 29224.561,
+     "cache_n": 7676,
+     "prompt_per_second": 858.5928801462577
+    }
+   ],
+   "rounds": [
+    {
+     "streams": [
+      {
+       "slot": 0,
+       "seed": 2929,
+       "n": 512,
+       "ttft_s": 0.16939049000211526,
+       "decode_s": 7.385994155993103,
+       "tg": 69.1849992306543,
+       "server_tg": 69.21033848054186,
+       "replay_prompt_n": 4,
+       "draft_n": 528,
+       "draft_accepted": 334,
+       "think_closed": false,
+       "eos_text": false,
+       "content_head": "We need answer user's request: \"Summarize what the code and notes above do, then list the three most likely bugs, each with the file and the reason.\" User paste"
+      }
+     ],
+     "overlap_s": 7.385994155993103,
+     "overlap_frac": 1.0,
+     "agg_tg": 69.1849992306543,
+     "agg_union_tg": 69.1849992306543,
+     "draft_n": 528,
+     "draft_accepted": 334,
+     "checkpoint_miss": false
+    },
+    {
+     "streams": [
+      {
+       "slot": 0,
+       "seed": 2939,
+       "n": 512,
+       "ttft_s": 0.19774938799673691,
+       "decode_s": 6.364502801006893,
+       "tg": 80.28906828655296,
+       "server_tg": 80.31941664526387,
+       "replay_prompt_n": 4,
+       "draft_n": 453,
+       "draft_accepted": 359,
+       "think_closed": false,
+       "eos_text": false,
+       "content_head": "We need answer user's request. Need summarize code and notes, then list three most likely bugs, each with file and reason. User provided many Python scripts con"
+      }
+     ],
+     "overlap_s": 6.364502801006893,
+     "overlap_frac": 1.0,
+     "agg_tg": 80.28906828655296,
+     "agg_union_tg": 80.28906828655296,
+     "draft_n": 453,
+     "draft_accepted": 359,
+     "checkpoint_miss": false
+    }
+   ]
+  },
+  {
+   "depth": 98304,
+   "prefill": [
+    {
+     "slot": 0,
+     "wall_s": 95.20894185599172,
+     "tokens_evaluated": 98305,
+     "prompt_n": 66053,
+     "prompt_ms": 95028.003,
+     "cache_n": 32252,
+     "prompt_per_second": 695.0898463056201
+    }
+   ],
+   "rounds": [
+    {
+     "streams": [
+      {
+       "slot": 0,
+       "seed": 3929,
+       "n": 512,
+       "ttft_s": 0.3022219709964702,
+       "decode_s": 7.785807107007713,
+       "tg": 65.6322450552452,
+       "server_tg": 65.69404342723382,
+       "replay_prompt_n": 4,
+       "draft_n": 494,
+       "draft_accepted": 345,
+       "think_closed": false,
+       "eos_text": false,
+       "content_head": "We need answer user's request: \"Summarize what the code and notes above do, then list the three most likely bugs, each with the file and the reason.\" Need analy"
+      }
+     ],
+     "overlap_s": 7.785807107007713,
+     "overlap_frac": 1.0,
+     "agg_tg": 65.6322450552452,
+     "agg_union_tg": 65.6322450552452,
+     "draft_n": 494,
+     "draft_accepted": 345,
+     "checkpoint_miss": false
+    },
+    {
+     "streams": [
+      {
+       "slot": 0,
+       "seed": 3939,
+       "n": 512,
+       "ttft_s": 0.33058963499206584,
+       "decode_s": 8.223898014999577,
+       "tg": 62.135984549904016,
+       "server_tg": 62.19516306634568,
+       "replay_prompt_n": 4,
+       "draft_n": 525,
+       "draft_accepted": 335,
+       "think_closed": false,
+       "eos_text": false,
+       "content_head": "We need answer user's request. Need summarize what code and notes above do, then list three most likely bugs, each with file and reason. User provided a huge du"
+      }
+     ],
+     "overlap_s": 8.223898014999577,
+     "overlap_frac": 1.0,
+     "agg_tg": 62.135984549904016,
+     "agg_union_tg": 62.135984549904016,
+     "draft_n": 525,
+     "draft_accepted": 335,
+     "checkpoint_miss": false
+    }
+   ]
+  }
+ ],
+ "launch": {
+  "command": [
+   "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/queue/build/fattn-mma-quant/new/bin/llama-server",
+   "-m",
+   "/mnt/scratch/work/models/j5/Swift-1.5-Qwen3.8-27B-fdown6mid-bf16.gguf",
+   "-c",
+   "102400",
+   "-np",
+   "1",
+   "-ctk",
+   "q8_0",
+   "-ctv",
+   "q8_0",
+   "-ngl",
+   "99",
+   "-fa",
+   "on",
+   "--spec-type",
+   "draft-mtp",
+   "--spec-draft-n-max",
+   "3",
+   "--spec-draft-n-min",
+   "0",
+   "--spec-draft-p-min",
+   "0",
+   "--spec-draft-type-k",
+   "f16",
+   "--spec-draft-type-v",
+   "f16",
+   "--spec-draft-sampling",
+   "probabilistic",
+   "--no-spec-draft-backend-sampling",
+   "-sm",
+   "tensor",
+   "--tensor-split",
+   "50,50",
+   "-b",
+   "2048",
+   "-ub",
+   "512",
+   "--cache-ram",
+   "0",
+   "--jinja",
+   "--chat-template-file",
+   "/home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/queue/build/llama-agg/template.jinja",
+   "--temp",
+   "1",
+   "--top-k",
+   "20",
+   "--top-p",
+   "0.95",
+   "--min-p",
+   "0.05",
+   "--host",
+   "127.0.0.1",
+   "--port",
+   "8081",
+   "--metrics"
+  ],
+  "env": {
+   "GGML_CUDA_FA_MMA_Q8_0": "1"
+  },
+  "load_s": 7.5,
+  "n_ctx_slot": 102400,
+  "source": "ee6afe4def64ec53b9ab45051f98adfc71d780bc topic/fattn-mma-quant-kv copied 2026-09-30T05:47:18+02:00 from /home/xanewok/.cache/claude-code-tmp/claude-1000/-home-xanewok-repos-qwen38-eval/93663eaa-5db0-437a-ac16-7d725d755e5b/scratchpad/fattn-mma-quant/wt/build/bin (tree clean, build newer than sources); RUNPATH -> $ORIGIN"
+ },
+ "prompt_info": {
+  "corpus_tokens": 236307,
+  "template_overhead_tokens": 79,
+  "question": "Summarize what the code and notes above do, then list the three most likely bugs, each with the file and the reason.",
+  "offset": 100000,
+  "sha256": {
+   "s0-d8192": "6012f349117e9ff9",
+   "s0-d32768": "03f0b0963b0b565d",
+   "s0-d98304": "b603887c7464e3ff"
+  }
+ }
+}

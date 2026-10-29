@@ -1,0 +1,16 @@
+[Unit]
+# The only bound on an orphaned rental. Every driver's teardown can be skipped -- by a
+# crash, a kill between create and handoff, or KEEP=1 -- and this is what makes the bill
+# finite anyway. It must survive a reboot, which a nohup'd shell does not.
+Description=qwen38-eval vast.ai TTL reaper
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/repos/qwen38-eval/scripts/infra/reaper.sh
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=default.target

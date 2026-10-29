@@ -1,0 +1,17 @@
+{
+  "url": "http://127.0.0.1:8081",
+  "model": "local-benchmark",
+  "runs": [
+    {
+      "depth": 94000,
+      "prompt_tokens": 94000,
+      "completion_tokens": 512,
+      "ttft_s": 113.22564816474915,
+      "decode_s": 5.17758321762085,
+      "pp": 830.2005907992257,
+      "tg": 98.69469567595083,
+      "accepted": 375.0,
+      "drafted": 705.0
+    }
+  ]
+}

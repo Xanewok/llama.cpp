@@ -1,0 +1,94 @@
+{
+  "job": "solve-swift-iq4-xs-rust-forth",
+  "model": "swift15-iq4-xs",
+  "config": {
+    "devices": [
+      "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46",
+      "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"
+    ],
+    "context": 102400,
+    "slots": 1,
+    "mode": "tensor",
+    "split": "50,50",
+    "ubatch": 128,
+    "maximum": 3,
+    "chat_template": "bartowski-leading-instructions-v1",
+    "workload": "agentic"
+  },
+  "target": 0,
+  "task": "rust/forth",
+  "seed": 1729,
+  "status": "passed",
+  "attempt": "attempts/5fa72786a2c2a486-01",
+  "probe": {
+    "workload": "agentic",
+    "task_id": "rust/forth",
+    "complete": true,
+    "task_success": true,
+    "timed_out": false,
+    "error": null,
+    "verified_wall_seconds": 179.7080134669959,
+    "prefill_seconds": 33.618,
+    "decode_seconds": 136.868,
+    "other_seconds": 9.222013466995918,
+    "grader_seconds": 0.5603609530007816,
+    "grading_rounds": 1,
+    "expected_passed_tests": 50,
+    "harness_verified": true,
+    "metrics_scope": "task_single_slot",
+    "metrics_delta": {
+      "prefill_tokens": 22355.0,
+      "cached_prompt_tokens": 176943.0,
+      "prefill_seconds": 33.618,
+      "decode_tokens": 10457.0,
+      "decode_seconds": 136.868,
+      "draft_tokens": 10287.0,
+      "draft_accepted_tokens": 7024.0,
+      "drafts": 3429.0,
+      "server_high_water_tokens": 24366.0,
+      "prefill_tps": 664.9711464096614,
+      "decode_tps": 76.40208083701084
+    },
+    "mtp": {
+      "draft_accept_rate": 0.682803538446583,
+      "accepted_per_draft": 2.048410615339749
+    },
+    "mtp_live": true,
+    "depth_verified": true,
+    "overlap_verified": true,
+    "context_occupancy_requirement": "natural task history",
+    "peak_context_tokens": 24366,
+    "legacy_sampled_context_tokens": 28503,
+    "context_peak_source": "fresh-server n_tokens_max",
+    "client_context": 102400,
+    "client_compaction": 86016,
+    "agent_stats": {
+      "agent_turns": 1,
+      "tool_calls": 11,
+      "prompt_tokens": 199298,
+      "completion_tokens": 10457,
+      "cached_input_tokens": 176943,
+      "cache_write_tokens": 0,
+      "reasoning_tokens": 0
+    },
+    "throughput_output_cap_applied": false,
+    "external_network": false,
+    "pristine_grader": true,
+    "test_scope": "trusted-tests-v2"
+  },
+  "decode_tps": 76.40208083701084,
+  "prefill_tps": 664.9711464096614,
+  "finished_at": 1790639269.8944154,
+  "elapsed_seconds": 211.4620817190007,
+  "minimum_free_mib": {
+    "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46": 5171.0,
+    "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f": 5709.0
+  },
+  "peak_temperature_c": {
+    "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46": 68.0,
+    "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f": 64.0
+  },
+  "sampled_board_energy_wh": 12.390904135191109,
+  "energy_scope": "whole_attempt_including_load_and_probe; trapezoidal_board_power",
+  "workload": "agentic"
+}

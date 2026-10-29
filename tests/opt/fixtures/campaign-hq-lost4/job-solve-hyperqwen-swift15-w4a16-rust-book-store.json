@@ -1,0 +1,103 @@
+{
+  "job": "solve-hyperqwen-swift15-w4a16-rust-book-store",
+  "model": "hyperqwen-swift15-w4a16",
+  "config": {
+    "engine": "vllm",
+    "context": 102400,
+    "slots": 1,
+    "workload": "agentic"
+  },
+  "target": 0,
+  "task": "rust/book-store",
+  "seed": null,
+  "status": "passed",
+  "attempt": "attempts/b3b14458ae758663-01",
+  "workload": "agentic",
+  "probe": {
+    "workload": "agentic",
+    "task_id": "rust/book-store",
+    "complete": true,
+    "task_success": true,
+    "timed_out": false,
+    "error": null,
+    "verified_wall_seconds": 217.83712914200441,
+    "prefill_seconds": 13.557387531996937,
+    "decode_seconds": 197.70119075600087,
+    "other_seconds": 6.5785508540066076,
+    "grader_seconds": 0.2891737440004363,
+    "grading_rounds": 1,
+    "expected_passed_tests": 18,
+    "harness_verified": true,
+    "metrics_scope": "task_single_slot",
+    "metrics_delta": {
+      "prefill_tokens": 13957.0,
+      "cached_prompt_tokens": 79680.0,
+      "prefill_seconds": 13.557387531996937,
+      "decode_tokens": 20623.0,
+      "decode_seconds": 197.70119075600087,
+      "draft_tokens": 19656.0,
+      "draft_accepted_tokens": 14071.0,
+      "drafts": 6552.0,
+      "prefill_tps": 1029.4756247883254,
+      "decode_tps": 104.31398982038769
+    },
+    "mtp": {
+      "draft_accept_rate": 0.7158628408628409,
+      "accepted_per_draft": 2.1475885225885225
+    },
+    "mtp_live": true,
+    "depth_verified": true,
+    "overlap_verified": true,
+    "context_occupancy_requirement": "natural task history",
+    "peak_context_tokens": 32470,
+    "legacy_sampled_context_tokens": 32470,
+    "context_peak_source": "bridge proxy: max input+output tokens of one /v1/responses call",
+    "client_context": 102400,
+    "client_compaction": 86016,
+    "agent_stats": {
+      "agent_turns": 1,
+      "tool_calls": 4,
+      "prompt_tokens": 93637,
+      "completion_tokens": 20623,
+      "cached_input_tokens": 79680,
+      "cache_write_tokens": 0,
+      "reasoning_tokens": 19743
+    },
+    "throughput_output_cap_applied": false,
+    "external_network": false,
+    "pristine_grader": true,
+    "test_scope": "trusted-tests-v2"
+  },
+  "decode_tps": 104.31398982038769,
+  "prefill_tps": 1029.4756247883254,
+  "finished_at": 1790636801.3207476,
+  "elapsed_seconds": 218.25481560199842,
+  "gpu_before": [
+    {
+      "index": 0.0,
+      "power_limit": 150.0,
+      "temperature": 50.0,
+      "memory_used_mib": 15337.0
+    },
+    {
+      "index": 1.0,
+      "power_limit": 150.0,
+      "temperature": 48.0,
+      "memory_used_mib": 14822.0
+    }
+  ],
+  "gpu_after": [
+    {
+      "index": 0.0,
+      "power_limit": 150.0,
+      "temperature": 52.0,
+      "memory_used_mib": 15337.0
+    },
+    {
+      "index": 1.0,
+      "power_limit": 150.0,
+      "temperature": 46.0,
+      "memory_used_mib": 14822.0
+    }
+  ]
+}

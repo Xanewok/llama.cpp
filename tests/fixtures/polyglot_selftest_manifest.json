@@ -1,0 +1,14 @@
+[
+  {
+    "task_id": "fixture-selftest-good",
+    "language": "python",
+    "source_dir": "polyglot/selftest_good",
+    "test_cmd": ["python", "-m", "unittest", "-q"]
+  },
+  {
+    "task_id": "fixture-selftest-broken",
+    "language": "python",
+    "source_dir": "polyglot/selftest_broken",
+    "test_cmd": ["python", "-m", "unittest", "-q"]
+  }
+]

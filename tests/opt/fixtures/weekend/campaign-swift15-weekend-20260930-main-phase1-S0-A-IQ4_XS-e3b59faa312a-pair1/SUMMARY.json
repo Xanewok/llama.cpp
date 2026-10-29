@@ -1,0 +1,14 @@
+{
+  "updated_epoch": 1790807575.4236434,
+  "state": "complete",
+  "model": "swift15-iq4-xs",
+  "tasks": 8,
+  "solved": 8,
+  "timeouts": 0,
+  "wall_seconds": 1163.6615441150207,
+  "output_tokens": 88120.0,
+  "prefill_seconds": 146.2247,
+  "decode_seconds": 943.1924,
+  "peak_context_tokens": 41411,
+  "draft_acceptance": 0.7660030933492991
+}

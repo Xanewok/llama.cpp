@@ -1,0 +1,194 @@
+KL(REF || arm), REF = Q6_K, KV f16 [REF]; top-64 estimator; assistant rows; SE = sequence-level (n_seq in col)
+
+arm                                          bucket          rows      KLD    seqSE     p99    top1     NLL d_vs_IQ4_f16      dSE seq>0
+IQ4_XS, KV f16                               all_prefill   210503  0.00909  0.00081  0.1106  97.47%  0.2767 
+IQ4_XS, KV f16                               0-8k            1065  0.00955  0.00126  0.1250  98.69%  0.1407 
+IQ4_XS, KV f16                               8-32k         112400  0.00907  0.00092  0.1103  97.50%  0.2751 
+IQ4_XS, KV f16                               32k+           97038  0.00909  0.00095  0.1108  97.42%  0.2801 
+IQ4_XS, KV f16                               8-16k          33202  0.01166  0.00169  0.1290  96.83%  0.3491 
+IQ4_XS, KV f16                               16-32k         79198  0.00799  0.00047  0.1050  97.78%  0.2440 
+IQ4_XS, KV f16                               32-48k         57749  0.00904  0.00065  0.1103  97.39%  0.2899 
+IQ4_XS, KV f16                               48k+           39289  0.00917  0.00218  0.1113  97.46%  0.2656 
+IQ4_XS, KV f16                               decode_tail     2751  0.01203  0.00200  0.1447  96.69%  0.3147 
+IQ4_XS, KV f16                               pre_tail_prefill    4397  0.00917  0.00093  0.1061  97.36%  0.2730 
+                                             depth trend (per-seq 32k+ minus 8-32k): -0.00066 ± 0.00070 (n_seq 6)
+
+IQ4_XS, KV K f16 / V q8_0                    all_prefill   210503  0.00910  0.00080  0.1106  97.46%  0.2768     +0.00001  0.00002  4/6
+IQ4_XS, KV K f16 / V q8_0                    0-8k            1065  0.00927  0.00123  0.1097  98.69%  0.1408     -0.00028  0.00024  2/6
+IQ4_XS, KV K f16 / V q8_0                    8-32k         112400  0.00906  0.00091  0.1103  97.50%  0.2752     -0.00001  0.00002  2/6
+IQ4_XS, KV K f16 / V q8_0                    32k+           97038  0.00914  0.00094  0.1110  97.41%  0.2801     +0.00005  0.00003  5/6
+IQ4_XS, KV K f16 / V q8_0                    8-16k          33202  0.01165  0.00169  0.1264  96.83%  0.3493     -0.00001  0.00004  4/6
+IQ4_XS, KV K f16 / V q8_0                    16-32k         79198  0.00798  0.00047  0.1047  97.78%  0.2442     -0.00001  0.00003  2/6
+IQ4_XS, KV K f16 / V q8_0                    32-48k         57749  0.00910  0.00064  0.1100  97.40%  0.2900     +0.00006  0.00003  5/6
+IQ4_XS, KV K f16 / V q8_0                    48k+           39289  0.00920  0.00215  0.1131  97.43%  0.2656     +0.00004  0.00004  3/4
+IQ4_XS, KV K f16 / V q8_0                    decode_tail     2751  0.01216  0.00207  0.1435  96.76%  0.3154     +0.00013  0.00014  4/6
+IQ4_XS, KV K f16 / V q8_0                    pre_tail_prefill    4397  0.00910  0.00085  0.1212  97.34%  0.2721     -0.00008  0.00015  3/6
+                                             depth trend (per-seq 32k+ minus 8-32k): -0.00057 ± 0.00070 (n_seq 6)
+
+IQ4_XS, KV q8_0/q8_0                         all_prefill   210503  0.00913  0.00079  0.1118  97.46%  0.2767     +0.00005  0.00003  5/6
+IQ4_XS, KV q8_0/q8_0                         0-8k            1065  0.00973  0.00144  0.1247  98.50%  0.1417     +0.00018  0.00032  3/6
+IQ4_XS, KV q8_0/q8_0                         8-32k         112400  0.00911  0.00091  0.1114  97.51%  0.2750     +0.00004  0.00002  5/6
+IQ4_XS, KV q8_0/q8_0                         32k+           97038  0.00914  0.00095  0.1120  97.39%  0.2801     +0.00005  0.00005  4/6
+IQ4_XS, KV q8_0/q8_0                         8-16k          33202  0.01169  0.00164  0.1283  96.84%  0.3493     +0.00003  0.00005  5/6
+IQ4_XS, KV q8_0/q8_0                         16-32k         79198  0.00803  0.00048  0.1053  97.79%  0.2439     +0.00004  0.00001  6/6
+IQ4_XS, KV q8_0/q8_0                         32-48k         57749  0.00913  0.00066  0.1123  97.32%  0.2899     +0.00009  0.00005  5/6
+IQ4_XS, KV q8_0/q8_0                         48k+           39289  0.00916  0.00213  0.1115  97.50%  0.2657     -0.00001  0.00006  2/4
+IQ4_XS, KV q8_0/q8_0                         decode_tail     2751  0.01206  0.00200  0.1443  96.51%  0.3145     +0.00003  0.00013  3/6
+IQ4_XS, KV q8_0/q8_0                         pre_tail_prefill    4397  0.00906  0.00094  0.1163  97.43%  0.2722     -0.00012  0.00016  2/6
+                                             depth trend (per-seq 32k+ minus 8-32k): -0.00062 ± 0.00072 (n_seq 6)
+
+J1 (IQ4_XS + ssm_out Q6_K), KV f16           all_prefill   210503  0.00833  0.00072  0.1012  97.56%  0.2765     -0.00076  0.00009  0/6
+J1 (IQ4_XS + ssm_out Q6_K), KV f16           0-8k            1065  0.00873  0.00136  0.1140  98.59%  0.1420     -0.00082  0.00068  3/6
+J1 (IQ4_XS + ssm_out Q6_K), KV f16           8-32k         112400  0.00831  0.00082  0.1021  97.60%  0.2751     -0.00076  0.00010  0/6
+J1 (IQ4_XS + ssm_out Q6_K), KV f16           32k+           97038  0.00834  0.00086  0.1003  97.50%  0.2796     -0.00075  0.00012  0/6
+J1 (IQ4_XS + ssm_out Q6_K), KV f16           8-16k          33202  0.01079  0.00152  0.1151  96.96%  0.3491     -0.00087  0.00017  0/6
+J1 (IQ4_XS + ssm_out Q6_K), KV f16           16-32k         79198  0.00727  0.00040  0.0952  97.87%  0.2441     -0.00072  0.00007  0/6
+J1 (IQ4_XS + ssm_out Q6_K), KV f16           32-48k         57749  0.00833  0.00060  0.1005  97.46%  0.2894     -0.00072  0.00010  0/6
+J1 (IQ4_XS + ssm_out Q6_K), KV f16           48k+           39289  0.00837  0.00195  0.1003  97.57%  0.2651     -0.00079  0.00023  0/4
+J1 (IQ4_XS + ssm_out Q6_K), KV f16           decode_tail     2751  0.01105  0.00183  0.1228  96.80%  0.3148     -0.00098  0.00018  0/6
+J1 (IQ4_XS + ssm_out Q6_K), KV f16           pre_tail_prefill    4397  0.00866  0.00081  0.1110  97.50%  0.2733     -0.00052  0.00027  1/6
+                                             depth trend (per-seq 32k+ minus 8-32k): -0.00052 ± 0.00065 (n_seq 6)
+
+Q5_K_S, KV q8_0/q8_0                         all_prefill   210503  0.00366  0.00028  0.0454  98.40%  0.2770     -0.00543  0.00053  0/6
+Q5_K_S, KV q8_0/q8_0                         0-8k            1065  0.00230  0.00039  0.0315  99.06%  0.1387     -0.00725  0.00116  0/6
+Q5_K_S, KV q8_0/q8_0                         8-32k         112400  0.00362  0.00029  0.0447  98.43%  0.2773     -0.00546  0.00064  0/6
+Q5_K_S, KV q8_0/q8_0                         32k+           97038  0.00371  0.00038  0.0460  98.36%  0.2782     -0.00538  0.00058  0/6
+Q5_K_S, KV q8_0/q8_0                         8-16k          33202  0.00464  0.00046  0.0546  97.95%  0.3505     -0.00702  0.00128  0/6
+Q5_K_S, KV q8_0/q8_0                         16-32k         79198  0.00319  0.00021  0.0408  98.63%  0.2466     -0.00480  0.00028  0/6
+Q5_K_S, KV q8_0/q8_0                         32-48k         57749  0.00361  0.00027  0.0441  98.36%  0.2893     -0.00543  0.00039  0/6
+Q5_K_S, KV q8_0/q8_0                         48k+           39289  0.00386  0.00084  0.0488  98.35%  0.2619     -0.00530  0.00134  0/4
+Q5_K_S, KV q8_0/q8_0                         decode_tail     2751  0.00393  0.00079  0.0491  98.00%  0.3141     -0.00810  0.00131  0/6
+Q5_K_S, KV q8_0/q8_0                         pre_tail_prefill    4397  0.00349  0.00036  0.0460  98.23%  0.2682     -0.00568  0.00058  0/6
+                                             depth trend (per-seq 32k+ minus 8-32k): -0.00018 ± 0.00030 (n_seq 6)
+
+Q6_K, KV K f16 / V q8_0 [KV-only control]    all_prefill   210503  0.00029  0.00003  0.0037  99.53%  0.2741     -0.00879  0.00078  0/6
+Q6_K, KV K f16 / V q8_0 [KV-only control]    0-8k            1065  0.00022  0.00007  0.0037  99.72%  0.1362     -0.00933  0.00122  0/6
+Q6_K, KV K f16 / V q8_0 [KV-only control]    8-32k         112400  0.00028  0.00002  0.0036  99.54%  0.2747     -0.00879  0.00089  0/6
+Q6_K, KV K f16 / V q8_0 [KV-only control]    32k+           97038  0.00031  0.00003  0.0038  99.52%  0.2749     -0.00879  0.00092  0/6
+Q6_K, KV K f16 / V q8_0 [KV-only control]    8-16k          33202  0.00035  0.00003  0.0041  99.45%  0.3470     -0.01130  0.00167  0/6
+Q6_K, KV K f16 / V q8_0 [KV-only control]    16-32k         79198  0.00025  0.00002  0.0034  99.57%  0.2443     -0.00774  0.00045  0/6
+Q6_K, KV K f16 / V q8_0 [KV-only control]    32-48k         57749  0.00029  0.00002  0.0035  99.52%  0.2861     -0.00876  0.00063  0/6
+Q6_K, KV K f16 / V q8_0 [KV-only control]    48k+           39289  0.00033  0.00008  0.0042  99.53%  0.2583     -0.00883  0.00210  0/4
+Q6_K, KV K f16 / V q8_0 [KV-only control]    decode_tail     2751  0.00044  0.00008  0.0055  99.71%  0.3103     -0.01159  0.00194  0/6
+Q6_K, KV K f16 / V q8_0 [KV-only control]    pre_tail_prefill    4397  0.00033  0.00005  0.0044  99.39%  0.2664     -0.00884  0.00091  0/6
+                                             depth trend (per-seq 32k+ minus 8-32k): +0.00001 ± 0.00003 (n_seq 6)
+
+Q6_K, KV K f16 / V q8_0, run 1 [determinism control vs Q6K_mixed] all_prefill   210503  0.00029  0.00003  0.0037  99.53%  0.2741     -0.00879  0.00078  0/6
+Q6_K, KV K f16 / V q8_0, run 1 [determinism control vs Q6K_mixed] 0-8k            1065  0.00022  0.00007  0.0037  99.72%  0.1362     -0.00933  0.00122  0/6
+Q6_K, KV K f16 / V q8_0, run 1 [determinism control vs Q6K_mixed] 8-32k         112400  0.00028  0.00002  0.0036  99.54%  0.2747     -0.00879  0.00089  0/6
+Q6_K, KV K f16 / V q8_0, run 1 [determinism control vs Q6K_mixed] 32k+           97038  0.00031  0.00003  0.0038  99.52%  0.2749     -0.00879  0.00092  0/6
+Q6_K, KV K f16 / V q8_0, run 1 [determinism control vs Q6K_mixed] 8-16k          33202  0.00035  0.00003  0.0041  99.45%  0.3470     -0.01130  0.00167  0/6
+Q6_K, KV K f16 / V q8_0, run 1 [determinism control vs Q6K_mixed] 16-32k         79198  0.00025  0.00002  0.0034  99.57%  0.2443     -0.00774  0.00045  0/6
+Q6_K, KV K f16 / V q8_0, run 1 [determinism control vs Q6K_mixed] 32-48k         57749  0.00029  0.00002  0.0035  99.52%  0.2861     -0.00876  0.00063  0/6
+Q6_K, KV K f16 / V q8_0, run 1 [determinism control vs Q6K_mixed] 48k+           39289  0.00033  0.00008  0.0042  99.53%  0.2583     -0.00883  0.00210  0/4
+Q6_K, KV K f16 / V q8_0, run 1 [determinism control vs Q6K_mixed] decode_tail     2751  0.00044  0.00008  0.0055  99.71%  0.3103     -0.01159  0.00194  0/6
+Q6_K, KV K f16 / V q8_0, run 1 [determinism control vs Q6K_mixed] pre_tail_prefill    4397  0.00033  0.00005  0.0044  99.39%  0.2664     -0.00884  0.00091  0/6
+                                             depth trend (per-seq 32k+ minus 8-32k): +0.00001 ± 0.00003 (n_seq 6)
+
+Q6_K, KV q8_0/q8_0 [KV-only control]         all_prefill   210503  0.00030  0.00003  0.0036  99.52%  0.2741     -0.00879  0.00078  0/6
+Q6_K, KV q8_0/q8_0 [KV-only control]         0-8k            1065  0.00020  0.00004  0.0029  99.62%  0.1366     -0.00935  0.00124  0/6
+Q6_K, KV q8_0/q8_0 [KV-only control]         8-32k         112400  0.00030  0.00003  0.0035  99.50%  0.2747     -0.00878  0.00089  0/6
+Q6_K, KV q8_0/q8_0 [KV-only control]         32k+           97038  0.00031  0.00003  0.0037  99.54%  0.2749     -0.00879  0.00092  0/6
+Q6_K, KV q8_0/q8_0 [KV-only control]         8-16k          33202  0.00036  0.00003  0.0041  99.43%  0.3471     -0.01130  0.00166  0/6
+Q6_K, KV q8_0/q8_0 [KV-only control]         16-32k         79198  0.00027  0.00003  0.0034  99.53%  0.2443     -0.00772  0.00045  0/6
+Q6_K, KV q8_0/q8_0 [KV-only control]         32-48k         57749  0.00029  0.00002  0.0035  99.54%  0.2862     -0.00875  0.00063  0/6
+Q6_K, KV q8_0/q8_0 [KV-only control]         48k+           39289  0.00033  0.00006  0.0042  99.55%  0.2584     -0.00884  0.00211  0/4
+Q6_K, KV q8_0/q8_0 [KV-only control]         decode_tail     2751  0.00041  0.00007  0.0051  99.71%  0.3101     -0.01162  0.00194  0/6
+Q6_K, KV q8_0/q8_0 [KV-only control]         pre_tail_prefill    4397  0.00035  0.00005  0.0047  99.59%  0.2665     -0.00883  0.00091  0/6
+                                             depth trend (per-seq 32k+ minus 8-32k): -0.00001 ± 0.00002 (n_seq 6)
+
+Q6_K, KV f16, re-run [determinism control]   all_prefill   210503  0.00000  0.00000  0.0000 100.00%  0.2741     -0.00909  0.00081  0/6
+Q6_K, KV f16, re-run [determinism control]   0-8k            1065  0.00000  0.00000  0.0000 100.00%  0.1368     -0.00955  0.00126  0/6
+Q6_K, KV f16, re-run [determinism control]   8-32k         112400  0.00000  0.00000  0.0000 100.00%  0.2747     -0.00907  0.00092  0/6
+Q6_K, KV f16, re-run [determinism control]   32k+           97038  0.00000  0.00000  0.0000 100.00%  0.2749     -0.00909  0.00095  0/6
+Q6_K, KV f16, re-run [determinism control]   8-16k          33202  0.00000  0.00000  0.0000 100.00%  0.3471     -0.01166  0.00169  0/6
+Q6_K, KV f16, re-run [determinism control]   16-32k         79198  0.00000  0.00000  0.0000 100.00%  0.2443     -0.00799  0.00047  0/6
+Q6_K, KV f16, re-run [determinism control]   32-48k         57749  0.00000  0.00000  0.0000 100.00%  0.2860     -0.00904  0.00065  0/6
+Q6_K, KV f16, re-run [determinism control]   48k+           39289  0.00000  0.00000  0.0000 100.00%  0.2586     -0.00917  0.00218  0/4
+Q6_K, KV f16, re-run [determinism control]   decode_tail     2751  0.00000  0.00000  0.0000 100.00%  0.3100     -0.01203  0.00200  0/6
+Q6_K, KV f16, re-run [determinism control]   pre_tail_prefill    4397  0.00000  0.00000  0.0000 100.00%  0.2668     -0.00917  0.00093  0/6
+                                             depth trend (per-seq 32k+ minus 8-32k): +0.00000 ± 0.00000 (n_seq 6)
+
+REF NLL by bucket: all_prefill 0.2741, 0-8k 0.1368, 8-32k 0.2747, 32k+ 0.2749, 8-16k 0.3471, 16-32k 0.2443, 32-48k 0.2860, 48k+ 0.2586, decode_tail 0.3100, pre_tail_prefill 0.2668
+
+Pure KV effect (same weights): KL(arm_f16KV || arm_quantKV)
+
+KL(IQ4_f16 || IQ4_q8) all_prefill  rows  210503 KLD 0.00032 ± 0.00003 p99 0.0039 top1 99.51%
+KL(IQ4_f16 || IQ4_q8) 0-8k         rows    1065 KLD 0.00022 ± 0.00004 p99 0.0034 top1 99.62%
+KL(IQ4_f16 || IQ4_q8) 8-32k        rows  112400 KLD 0.00030 ± 0.00002 p99 0.0038 top1 99.51%
+KL(IQ4_f16 || IQ4_q8) 32k+         rows   97038 KLD 0.00033 ± 0.00004 p99 0.0040 top1 99.51%
+KL(IQ4_f16 || IQ4_q8) 8-16k        rows   33202 KLD 0.00038 ± 0.00003 p99 0.0045 top1 99.44%
+KL(IQ4_f16 || IQ4_q8) 16-32k       rows   79198 KLD 0.00027 ± 0.00001 p99 0.0036 top1 99.54%
+KL(IQ4_f16 || IQ4_q8) 32-48k       rows   57749 KLD 0.00032 ± 0.00002 p99 0.0038 top1 99.50%
+KL(IQ4_f16 || IQ4_q8) 48k+         rows   39289 KLD 0.00035 ± 0.00008 p99 0.0044 top1 99.52%
+KL(IQ4_f16 || IQ4_q8) decode_tail  rows    2751 KLD 0.00046 ± 0.00009 p99 0.0056 top1 99.16%
+KL(IQ4_f16 || IQ4_q8) pre_tail_prefill rows    4397 KLD 0.00037 ± 0.00006 p99 0.0046 top1 99.45%
+
+KL(IQ4_f16 || IQ4_mixed) all_prefill  rows  210503 KLD 0.00031 ± 0.00003 p99 0.0039 top1 99.52%
+KL(IQ4_f16 || IQ4_mixed) 0-8k         rows    1065 KLD 0.00025 ± 0.00004 p99 0.0039 top1 99.81%
+KL(IQ4_f16 || IQ4_mixed) 8-32k        rows  112400 KLD 0.00030 ± 0.00002 p99 0.0038 top1 99.50%
+KL(IQ4_f16 || IQ4_mixed) 32k+         rows   97038 KLD 0.00032 ± 0.00004 p99 0.0039 top1 99.53%
+KL(IQ4_f16 || IQ4_mixed) 8-16k        rows   33202 KLD 0.00037 ± 0.00003 p99 0.0045 top1 99.43%
+KL(IQ4_f16 || IQ4_mixed) 16-32k       rows   79198 KLD 0.00027 ± 0.00002 p99 0.0036 top1 99.53%
+KL(IQ4_f16 || IQ4_mixed) 32-48k       rows   57749 KLD 0.00031 ± 0.00002 p99 0.0038 top1 99.49%
+KL(IQ4_f16 || IQ4_mixed) 48k+         rows   39289 KLD 0.00034 ± 0.00009 p99 0.0042 top1 99.59%
+KL(IQ4_f16 || IQ4_mixed) decode_tail  rows    2751 KLD 0.00044 ± 0.00007 p99 0.0060 top1 99.27%
+KL(IQ4_f16 || IQ4_mixed) pre_tail_prefill rows    4397 KLD 0.00034 ± 0.00004 p99 0.0042 top1 99.52%
+
+KL(REF_q6k_f16 || Q6K_q8) all_prefill  rows  210503 KLD 0.00030 ± 0.00003 p99 0.0036 top1 99.52%
+KL(REF_q6k_f16 || Q6K_q8) 0-8k         rows    1065 KLD 0.00020 ± 0.00004 p99 0.0029 top1 99.62%
+KL(REF_q6k_f16 || Q6K_q8) 8-32k        rows  112400 KLD 0.00030 ± 0.00003 p99 0.0035 top1 99.50%
+KL(REF_q6k_f16 || Q6K_q8) 32k+         rows   97038 KLD 0.00031 ± 0.00003 p99 0.0037 top1 99.54%
+KL(REF_q6k_f16 || Q6K_q8) 8-16k        rows   33202 KLD 0.00036 ± 0.00003 p99 0.0041 top1 99.43%
+KL(REF_q6k_f16 || Q6K_q8) 16-32k       rows   79198 KLD 0.00027 ± 0.00003 p99 0.0034 top1 99.53%
+KL(REF_q6k_f16 || Q6K_q8) 32-48k       rows   57749 KLD 0.00029 ± 0.00002 p99 0.0035 top1 99.54%
+KL(REF_q6k_f16 || Q6K_q8) 48k+         rows   39289 KLD 0.00033 ± 0.00006 p99 0.0042 top1 99.55%
+KL(REF_q6k_f16 || Q6K_q8) decode_tail  rows    2751 KLD 0.00041 ± 0.00007 p99 0.0051 top1 99.71%
+KL(REF_q6k_f16 || Q6K_q8) pre_tail_prefill rows    4397 KLD 0.00035 ± 0.00005 p99 0.0047 top1 99.59%
+
+KL(REF_q6k_f16 || Q6K_mixed) all_prefill  rows  210503 KLD 0.00029 ± 0.00003 p99 0.0037 top1 99.53%
+KL(REF_q6k_f16 || Q6K_mixed) 0-8k         rows    1065 KLD 0.00022 ± 0.00007 p99 0.0037 top1 99.72%
+KL(REF_q6k_f16 || Q6K_mixed) 8-32k        rows  112400 KLD 0.00028 ± 0.00002 p99 0.0036 top1 99.54%
+KL(REF_q6k_f16 || Q6K_mixed) 32k+         rows   97038 KLD 0.00031 ± 0.00003 p99 0.0038 top1 99.52%
+KL(REF_q6k_f16 || Q6K_mixed) 8-16k        rows   33202 KLD 0.00035 ± 0.00003 p99 0.0041 top1 99.45%
+KL(REF_q6k_f16 || Q6K_mixed) 16-32k       rows   79198 KLD 0.00025 ± 0.00002 p99 0.0034 top1 99.57%
+KL(REF_q6k_f16 || Q6K_mixed) 32-48k       rows   57749 KLD 0.00029 ± 0.00002 p99 0.0035 top1 99.52%
+KL(REF_q6k_f16 || Q6K_mixed) 48k+         rows   39289 KLD 0.00033 ± 0.00008 p99 0.0042 top1 99.53%
+KL(REF_q6k_f16 || Q6K_mixed) decode_tail  rows    2751 KLD 0.00044 ± 0.00008 p99 0.0055 top1 99.71%
+KL(REF_q6k_f16 || Q6K_mixed) pre_tail_prefill rows    4397 KLD 0.00033 ± 0.00005 p99 0.0044 top1 99.39%
+
+KL(Q6K_mixed_run1 || Q6K_mixed) all_prefill  rows  210503 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(Q6K_mixed_run1 || Q6K_mixed) 0-8k         rows    1065 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(Q6K_mixed_run1 || Q6K_mixed) 8-32k        rows  112400 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(Q6K_mixed_run1 || Q6K_mixed) 32k+         rows   97038 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(Q6K_mixed_run1 || Q6K_mixed) 8-16k        rows   33202 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(Q6K_mixed_run1 || Q6K_mixed) 16-32k       rows   79198 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(Q6K_mixed_run1 || Q6K_mixed) 32-48k       rows   57749 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(Q6K_mixed_run1 || Q6K_mixed) 48k+         rows   39289 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(Q6K_mixed_run1 || Q6K_mixed) decode_tail  rows    2751 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(Q6K_mixed_run1 || Q6K_mixed) pre_tail_prefill rows    4397 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+
+KL(REF_q6k_f16 || REF_rep) all_prefill  rows  210503 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(REF_q6k_f16 || REF_rep) 0-8k         rows    1065 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(REF_q6k_f16 || REF_rep) 8-32k        rows  112400 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(REF_q6k_f16 || REF_rep) 32k+         rows   97038 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(REF_q6k_f16 || REF_rep) 8-16k        rows   33202 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(REF_q6k_f16 || REF_rep) 16-32k       rows   79198 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(REF_q6k_f16 || REF_rep) 32-48k       rows   57749 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(REF_q6k_f16 || REF_rep) 48k+         rows   39289 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(REF_q6k_f16 || REF_rep) decode_tail  rows    2751 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+KL(REF_q6k_f16 || REF_rep) pre_tail_prefill rows    4397 KLD 0.00000 ± 0.00000 p99 0.0000 top1 100.00%
+
+
+Review notes (codex-review.txt, gpt-6.1-sol read-only; each point checked):
+- Pooled means above are row-weighted; sequence-equal-weighted means agree within 0.0001 (IQ4_f16 0.00916 all / 0.00940 8-32k /
+  0.00874 32k+; Q5KS_q8 0.00367; J1 d = -0.00077 +- 0.00009; IQ4_q8 d = +0.00004 +- 0.00003).
+- Depth: 95% upper bound (t, 5 df) on the within-sequence 32k+ minus 8-32k trend: IQ4 +0.0012 (12% of its KLD), J1 +0.0012,
+  Q5KS +0.0006 (16%), Q6K_q8 +0.00004. "No detected increase", not proof of none; 6 purposively chosen sessions; depth confounded with content.
+- Mixed vs q8/q8 were each compared with f16 only (both ~0.0003); they were not compared with each other.
+- J1 differs from the published IQ4_XS in more than ssm_out (own imatrix/type map rebuild; see SP/vast-gguf-j), so its gain is the recipe's, not ssm_out's alone.
+- Top-64 estimator: no exact full-vocab window at 32k+ in this run (validated earlier at >=4096 in SP/kld data2 only).
+- Determinism: REF re-run byte-identical over all 6 sequences (cmp). Q6K_mixed ran twice by accident (duplicate queue);
+  run1 output was complete (renamed at 02:16:46) and byte-identical to run2; the *_run1.log is a copy of run2's partial log.
+- Decode tail: 511 rows/sequence, the 1-token (serving decode) path; q8_0 K there uses the FA vec kernel with Q quantized to q8_1,
+  mixed falls back to f16 conversion. Tail KLD is higher for every weight arm but its content differs (REF NLL 0.310 vs 0.267 pre-tail).

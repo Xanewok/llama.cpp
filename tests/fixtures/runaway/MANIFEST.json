@@ -1,0 +1,106 @@
+[
+ {
+  "onset": 23395,
+  "period": 12,
+  "kind": "reasoning",
+  "origin": "weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair1/attempts/0957923a4a4b4e1b-01/codex-state/sessions/2026/09/30/rollout-2026-09-30T23-22-37-01a0f4a0-8b1d-73a1-8a1b-f316dd232125.jsonl",
+  "note": "truncated at onset+20000 chars",
+  "name": "loop_reasoning_letters_p12",
+  "chars": 43395,
+  "sha256": "b832b2cdf2c6e4e38edc7ff0bd83eaf3ce1420109e8915e56c12fa8114594c88"
+ },
+ {
+  "onset": 39411,
+  "period": 3,
+  "kind": "reasoning",
+  "origin": "2026-09-12-mixed-pair/campaign-swift-fullsuite-20260915/swift-iq3-xxs/attempts/c166943d9bbf48fc-01/codex-state/sessions/2026/09/15/rollout-2026-09-15T06-35-26-01a0a3c7-0c62-7e22-8fa1-caa9f4899df3.jsonl",
+  "note": "truncated at onset+20000 chars",
+  "name": "loop_reasoning_letters_p3",
+  "chars": 59411,
+  "sha256": "598486fd2591e06f3ea3738807f01c461656037ad47d087fa05707783a65d49a"
+ },
+ {
+  "onset": 26192,
+  "period": 195,
+  "kind": "reasoning",
+  "origin": "weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase1-S4-A-IQ4_XS-e3b59faa312a-pair3/attempts/0957923a4a4b4e1b-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T03-20-10-01a0f57a-06b9-7352-a17b-cc35bd5134ec.jsonl",
+  "note": "truncated at onset+20000 chars",
+  "name": "loop_reasoning_letters_p195",
+  "chars": 46192,
+  "sha256": "30768bca1d6a762036ba0437d9c985ec54d16a41999d4f6ebe44d7bd07b56b88"
+ },
+ {
+  "onset": 2332,
+  "period": 23,
+  "kind": "function_call",
+  "origin": "weekend-20260930-main/campaign-swift15-weekend-20260930-main-phase2-S5-A-IQ4_XS-e3b59faa312a-pair2/attempts/ad1513a00c7e62e8-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T05-35-35-01a0f5f6-012e-76e0-a12f-1500776e6ec1.jsonl",
+  "note": "truncated at onset+20000 chars",
+  "name": "loop_args_table_p23",
+  "chars": 22332,
+  "sha256": "cf61a5370a60a669f931182bb4fa0a97d838ccdaf637a49f70a8394cfa599d6d"
+ },
+ {
+  "onset": 3067,
+  "period": 21,
+  "kind": "function_call",
+  "origin": "2026-09-28-dual-5060ti/campaign-hq15-ckptab-g32i8-r1-20261001/attempts/02115757a053dbc3-01/codex-state/sessions/2026/10/01/rollout-2026-10-01T15-48-46-01a0f827-665b-7483-9000-02fef4f7b876.jsonl",
+  "note": "truncated at onset+20000 chars",
+  "name": "loop_args_map_p21",
+  "chars": 23067,
+  "sha256": "9931ac1bcbdbd87151bf5cdcc67cd1aecc5fc8b12d95a43cc40f0099d2a489a2"
+ },
+ {
+  "longest_run": 345,
+  "kind": "reasoning",
+  "origin": "2026-09-28-dual-5060ti/campaign-swift15-iq4-xs-longtail-20260929-gs2-pair1/attempts/bc1f56f9814127e2-01/codex-state/sessions/2026/09/29/rollout-2026-09-29T21-36-33-01a0ef19-14a4-7fa3-a487-25f3c5afe13e.jsonl",
+  "note": "self-recovered S-run, 115 repeats / 345 chars",
+  "name": "nearmiss_letters_recovered",
+  "chars": 26764,
+  "sha256": "f892f365011b5d43a2376ca28b304f734f3e15a7824b8a0df1f36a27178fc261"
+ },
+ {
+  "kind": "reasoning",
+  "origin": "2026-09-28-dual-5060ti/campaign-swift15-q6-k-lost4-rep1-20260929/attempts/324e7345fc156ed5-01/codex-state/sessions/2026/09/28/rollout-2026-09-28T23-51-42-01a0ea6e-7581-71d2-b85c-3fd5c81802e7.jsonl",
+  "zlib_ratio": 0.335,
+  "name": "legit_reasoning_long",
+  "chars": 150035,
+  "sha256": "da1b5786c62ea8fc2c3ab0e6588ee77ff79b34394d81665f1af150245e1a8ecc"
+ },
+ {
+  "kind": "function_call",
+  "origin": "two-agent-hq-v3/measure/attempts/agent-0-rust-doubly-linked-list/codex-state/sessions/2026/10/03/rollout-2026-10-03T19-47-59-01a1034f-205d-78a0-889e-af613ea5c70c.jsonl",
+  "longest_run": 0,
+  "name": "legit_args_longest",
+  "chars": 22471,
+  "sha256": "284ad6123a7845068a56a22f5d29be080e455e325b4b96ee4b9a78cdc6e068f6"
+ },
+ {
+  "kind": "reasoning",
+  "origin": "2026-09-28-dual-5060ti/campaign-hyperqwen15-u16-minp-k4-longtail-20260929/attempts/c3db2925b8a412bc-01/codex-state/sessions/2026/09/29/rollout-2026-09-29T09-03-46-01a0ec67-e4dc-7562-abfb-5574f0d4ba26.jsonl",
+  "run": [
+   719,
+   1807,
+   6543
+  ],
+  "name": "nearmiss_paragraph_repeat",
+  "chars": 8418,
+  "sha256": "a83dc150e2ceb431b492be9b3f0797a171379f18d10cad670ce1c6dc0c56ed5d"
+ },
+ {
+  "name": "loop_tokens_table_catch",
+  "tokens": 7000,
+  "origin": "ra-rates build-ra-catch retained p0-base-no-spec-...-5-776e6ec1-0003 (first 7000 tokens)"
+ },
+ {
+  "name": "nearmiss_table_recovered",
+  "chars": 4105,
+  "sha256": "43fee6a1453ad7df3d281d3457db975862fea8b6d8e43f64e5f7161106b8612f",
+  "longest_run": [
+   16,
+   3445,
+   190
+  ],
+  "origin": "ra-rates build-ra-catch catch-branch p1-swift-S3-swift15-llamacpp-5-776e6ec1-0019-offset64-no-spec-0000",
+  "note": "harness-labelled non-loop; model closed the [0; 4] table after the run"
+ }
+]

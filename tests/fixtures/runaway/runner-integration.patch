@@ -1,0 +1,66 @@
+diff --git a/scripts/experiments/dual_5060ti/run_vllm_longtail.py b/scripts/experiments/dual_5060ti/run_vllm_longtail.py
+index 3882814..da29814 100644
+--- a/scripts/experiments/dual_5060ti/run_vllm_longtail.py
++++ b/scripts/experiments/dual_5060ti/run_vllm_longtail.py
+@@ -80,6 +80,8 @@ class UsageProxy(socketserver.ThreadingMixIn, http.server.HTTPServer):
+     def stop(self):
+         self.shutdown()
+         self.server_close()
++        if getattr(self, "guard", None):
++            self.guard.stop()
+         with self.lock:
+             calls = list(self.calls)
+         with (self.out / "model-calls.jsonl").open("w") as stream:
+@@ -185,7 +187,13 @@ class VllmEngine:
+             raise ValueError("agentic probe requires the one declared model at the declared context")
+ 
+     def meter(self, out):
+-        return UsageProxy(self.upstream, out)
++        guard = None
++        if os.environ.get("QWEN_RUNAWAY_GUARD", "") not in ("", "0"):  # opt-in: bridge -> UsageProxy -> guard -> vLLM
++            from scripts.instruments import runaway_guard
++            guard = runaway_guard.guard_from_env(self.upstream, out).start()
++        proxy = UsageProxy(guard.port if guard else self.upstream, out)
++        proxy.guard = guard
++        return proxy
+ 
+     @staticmethod
+     def context_peak(sampled, context):
+diff --git a/scripts/instruments/agentic_probe.py b/scripts/instruments/agentic_probe.py
+index ec1adb1..f4f8dd0 100644
+--- a/scripts/instruments/agentic_probe.py
++++ b/scripts/instruments/agentic_probe.py
+@@ -3,7 +3,9 @@
+ from __future__ import annotations
+ 
+ import argparse
++import contextlib
+ import json
++import os
+ from pathlib import Path
+ import re
+ import shutil
+@@ -234,6 +236,14 @@ stream_idle_timeout_ms = 900000
+ '''
+ 
+ 
++def _guard_port(port, out):
++    # Opt-in runaway guard (QWEN_RUNAWAY_GUARD=buffer|stream): the bridge dials the guard instead of the engine.
++    if os.environ.get("QWEN_RUNAWAY_GUARD", "") in ("", "0"):
++        return contextlib.nullcontext(port)
++    from scripts.instruments import runaway_guard
++    return runaway_guard.guarded_port(port, out)
++
++
+ def fresh_context_peak(before, after, context):
+     # This server includes generated tokens in n_tokens_max; adding n_decoded double-counts them.
+     if before.get("n_tokens_max") != 0:
+@@ -285,7 +295,7 @@ def probe(asset_dir, task_id, url, context, out, timeout, engine=None):
+         with tempfile.TemporaryDirectory(prefix="qwen-bridge-") as bridge_dir:
+             bridge = Path(bridge_dir) / "model.sock"
+             port = int(url.rsplit(":", 1)[-1]) if engine is None else sampler.port
+-            with isolated_exec.inference_bridge(bridge, port):
++            with _guard_port(port, out) as port, isolated_exec.inference_bridge(bridge, port):
+                 for attempt in range(2):
+                     (out / f"prompt-{attempt}.txt").write_text(prompt)
+                     transcript = out / f"codex-{attempt}.jsonl"

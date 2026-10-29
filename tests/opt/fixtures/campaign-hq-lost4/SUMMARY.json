@@ -1,0 +1,14 @@
+{
+  "updated_epoch": 1790637205.3091218,
+  "state": "complete",
+  "model": "hyperqwen-swift15-w4a16",
+  "tasks": 4,
+  "solved": 4,
+  "timeouts": 0,
+  "wall_seconds": 615.2605578340081,
+  "output_tokens": 52284.0,
+  "prefill_seconds": 79.19645800197759,
+  "decode_seconds": 499.85646799403185,
+  "peak_context_tokens": 34239,
+  "draft_acceptance": 0.7168966279046414
+}

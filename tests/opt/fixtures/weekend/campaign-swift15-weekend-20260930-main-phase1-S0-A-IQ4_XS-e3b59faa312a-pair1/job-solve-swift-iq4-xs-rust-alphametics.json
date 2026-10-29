@@ -1,0 +1,94 @@
+{
+  "job": "solve-swift-iq4-xs-rust-alphametics",
+  "model": "swift15-iq4-xs",
+  "config": {
+    "devices": [
+      "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46",
+      "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f"
+    ],
+    "context": 102400,
+    "slots": 1,
+    "mode": "tensor",
+    "split": "50,50",
+    "ubatch": 128,
+    "maximum": 3,
+    "chat_template": "bartowski-leading-instructions-v1",
+    "workload": "agentic"
+  },
+  "target": 0,
+  "task": "rust/alphametics",
+  "seed": 1729,
+  "status": "passed",
+  "attempt": "attempts/bc1f56f9814127e2-01",
+  "probe": {
+    "workload": "agentic",
+    "task_id": "rust/alphametics",
+    "complete": true,
+    "task_success": true,
+    "timed_out": false,
+    "error": null,
+    "verified_wall_seconds": 115.06790550699225,
+    "prefill_seconds": 12.5132,
+    "decode_seconds": 90.7923,
+    "other_seconds": 11.762405506992252,
+    "grader_seconds": 2.8168873410031665,
+    "grading_rounds": 1,
+    "expected_passed_tests": 10,
+    "harness_verified": true,
+    "metrics_scope": "task_single_slot",
+    "metrics_delta": {
+      "prefill_tokens": 9189.0,
+      "cached_prompt_tokens": 63328.0,
+      "prefill_seconds": 12.5132,
+      "decode_tokens": 8392.0,
+      "decode_seconds": 90.7923,
+      "draft_tokens": 7851.0,
+      "draft_accepted_tokens": 5777.0,
+      "drafts": 2617.0,
+      "server_high_water_tokens": 17585.0,
+      "prefill_tps": 734.3445321740243,
+      "decode_tps": 92.43074577910241
+    },
+    "mtp": {
+      "draft_accept_rate": 0.7358298305948286,
+      "accepted_per_draft": 2.207489491784486
+    },
+    "mtp_live": true,
+    "depth_verified": true,
+    "overlap_verified": true,
+    "context_occupancy_requirement": "natural task history",
+    "peak_context_tokens": 17585,
+    "legacy_sampled_context_tokens": 23881,
+    "context_peak_source": "fresh-server n_tokens_max",
+    "client_context": 102400,
+    "client_compaction": 86016,
+    "agent_stats": {
+      "agent_turns": 1,
+      "tool_calls": 5,
+      "prompt_tokens": 72517,
+      "completion_tokens": 8392,
+      "cached_input_tokens": 63328,
+      "cache_write_tokens": 0,
+      "reasoning_tokens": 0
+    },
+    "throughput_output_cap_applied": false,
+    "external_network": false,
+    "pristine_grader": true,
+    "test_scope": "trusted-tests-v2"
+  },
+  "decode_tps": 92.43074577910241,
+  "prefill_tps": 734.3445321740243,
+  "finished_at": 1790806889.518744,
+  "elapsed_seconds": 124.90182184200967,
+  "minimum_free_mib": {
+    "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46": 5120.0,
+    "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f": 5711.0
+  },
+  "peak_temperature_c": {
+    "GPU-ee9a3956-297c-604b-b4c1-f07930d27e46": 68.0,
+    "GPU-3fe72007-d2f3-11c0-4d57-cc6fbde1451f": 65.0
+  },
+  "sampled_board_energy_wh": 8.079008398487833,
+  "energy_scope": "whole_attempt_including_load_and_probe; trapezoidal_board_power",
+  "workload": "agentic"
+}

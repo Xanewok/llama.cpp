@@ -1,0 +1,56 @@
+{
+ "valid": true,
+ "block_M": 848,
+ "pool_tokens_M": 199033,
+ "canary": false,
+ "cells": [
+  {
+   "depth": 60000,
+   "minimum_D": 58512,
+   "probes": [
+    {
+     "stream": 1,
+     "retained": true,
+     "cached_tokens": 58512
+    },
+    {
+     "stream": 0,
+     "retained": true,
+     "cached_tokens": 58512
+    }
+   ]
+  },
+  {
+   "depth": 62747,
+   "minimum_D": 61056,
+   "probes": [
+    {
+     "stream": 1,
+     "retained": true,
+     "cached_tokens": 62720
+    },
+    {
+     "stream": 0,
+     "retained": false,
+     "cached_tokens": 0
+    }
+   ]
+  },
+  {
+   "depth": 62748,
+   "minimum_D": 61056,
+   "probes": [
+    {
+     "stream": 1,
+     "retained": true,
+     "cached_tokens": 62720
+    },
+    {
+     "stream": 0,
+     "retained": false,
+     "cached_tokens": 0
+    }
+   ]
+  }
+ ]
+}

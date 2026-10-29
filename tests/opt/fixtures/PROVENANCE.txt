@@ -1,0 +1,15 @@
+Trimmed copies of real result files (no synthetic data). Campaign dirs keep SUMMARY/manifest/job files, sha256 sidecars,
+attempts/*/launch.json and model-calls.jsonl; workspaces and logs are dropped. hq-conc serve.log keeps only the
+"non-default args" and version lines; prefix.json keeps cells/probes without prompt hashes and request bodies.
+weekend/summary.json is cut to two rows with `path` rewritten to the basename (second row deliberately has no directory).
+
+campaign-hq-1task     results/2026-09-28-dual-5060ti/campaign-hyperqwen-validate-20260928
+campaign-hq-lost4     results/2026-09-28-dual-5060ti/campaign-hyperqwen15-u64-minp-lost4-rep2-20260929
+campaign-llama-lost4  results/2026-09-28-dual-5060ti/campaign-swift15-iq4-xs-lost4-rep1-20260929
+weekend/              ~/repos/qwen38-weekend/results/weekend-20260930-main (summary.json rows 0 and first other eligible row, one campaign dir)
+graph-reuse-ab/       ~/repos/graph-reuse/codex/runs/20261003-173851 (ab-summary.json, inputs.json, per-boot command.json/SOURCE/SHA256SUMS)
+hq-conc/hq-2x94k      scratchpad queue/out/hq-2x94k/raw/boot1 (conc schema 1, no `valid` key)
+hq-conc/hq-prefix-loss-v3  ~/repos/hq-conc/queue-out/hq-prefix-loss-v3/measure/raw/boot1
+two-agent-{hq,llama}-v3    ~/repos/two-agent/results/two-agent-{hq,llama}-v3/measure/{SUMMARY,manifest}.json
+queue-np/raw          scratchpad queue/out/np2-fdown6mid/raw/02-q8-fix-r1.*
+kld/                  scratchpad kld-j5/out-b1/results.txt, vast-refbf/results.json, vast-kld-l/results.txt, vast-gguf/results.txt

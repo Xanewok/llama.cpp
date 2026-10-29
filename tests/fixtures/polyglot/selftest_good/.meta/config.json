@@ -1,0 +1,7 @@
+{
+  "files": {
+    "example": [".meta/example.py"],
+    "solution": ["solution.py"],
+    "test": ["test_solution.py"]
+  }
+}

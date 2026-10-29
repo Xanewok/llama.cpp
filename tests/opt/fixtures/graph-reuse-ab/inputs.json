@@ -1,0 +1,10 @@
+{
+  "/home/xanewok/models/hyperqwen/Swift-1.5-Qwen3.8-27B-W4A16-syv-fast/swift_draft_vocab_ids.json": "e30af79520ade5b7ddb851d75cf271f07d407dc768bf646e4517607d562a65a6",
+  "/home/xanewok/repos/graph-reuse/codex/inputs/warmup.json": "6fa8b1e2a19699a3eaba82471fcb273f23396e30b4ff8cf555f50c8587a23986",
+  "/home/xanewok/repos/graph-reuse/codex/inputs/long-think.json": "6e18bab5176400f5305f1e83e00887338f5a699af0325a9f0d108c8ff76893b7",
+  "/home/xanewok/repos/graph-reuse/codex/inputs/think.json": "05c565303bacd228f6fc748c107aa6728d0408c14658d2202c681bda4988c469",
+  "/home/xanewok/repos/graph-reuse/codex/inputs/long-tool.json": "eed6f87978eae4a0f09686275a9f02ad35d2435f751aa4e86baa18e5c7870cae",
+  "/home/xanewok/repos/graph-reuse/codex/inputs/PROVENANCE.json": "693f15038165d193ca43f76a0da277fe23f3945524d1a341f6f14ad75142551e",
+  "/home/xanewok/repos/graph-reuse/codex/inputs/tool.json": "60750315e3094adad1d45b42200c019f84923b8a557e036a3f1bcbe2f8e2c526",
+  "/home/xanewok/repos/graph-reuse/codex/inputs/chat-template.jinja": "4af3dcf0e98bf87adf684a4824683ab15fffd64e93ed1170061ef86a15827ba8"
+}

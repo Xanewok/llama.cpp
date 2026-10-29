@@ -1,0 +1,20 @@
+[
+  {
+    "task_id": "fixture-first",
+    "language": "python",
+    "source_dir": "polyglot/pass_one",
+    "test_cmd": "python -m unittest -q"
+  },
+  {
+    "task_id": "fixture-crash",
+    "language": "python",
+    "source_dir": "polyglot/does-not-exist",
+    "test_cmd": "python -m unittest -q"
+  },
+  {
+    "task_id": "fixture-last",
+    "language": "python",
+    "source_dir": "polyglot/pass_one",
+    "test_cmd": ["python", "-m", "unittest", "-q"]
+  }
+]
